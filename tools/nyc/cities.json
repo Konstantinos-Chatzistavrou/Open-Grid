@@ -1,0 +1,323 @@
+{
+  "_doc": "Real-scale cities built by tools/nyc (docs/cities.md). Pick one with CITY=<id> in front of any stage. origin = [lat, lon] of the game frame's (0,0); area = [south, west, north, east] (degrees) of the part that is built; everything is 1:1 metres. widths = kerb-to-kerb roadway width (m) by OSM class when the data says nothing wider. style = facade look (web/src/scene/nyc/facade.ts CITY_STYLES).",
+  "nyc": {
+    "name": "New York",
+    "district": "Manhattan",
+    "country": "US",
+    "origin": [
+      40.758,
+      -73.9855
+    ],
+    "area": [
+      40.699,
+      -74.025,
+      40.883,
+      -73.905
+    ],
+    "data": "assets_source/downloads/nyc",
+    "pbf": "NewYork.osm.pbf",
+    "out": "web/public/assets/nyc/tiles",
+    "route": "web/public/data/tracks/nyc_route.json",
+    "buildings": "nyc_footprints",
+    "mask": "manhattan",
+    "grid_deg": 29,
+    "drive": "right",
+    "style": "nyc",
+    "landmarks": true
+  },
+  "london": {
+    "name": "London",
+    "district": "Westminster and the City",
+    "country": "GB",
+    "origin": [
+      51.508,
+      -0.1281
+    ],
+    "area": [
+      51.495,
+      -0.156,
+      51.5205,
+      -0.074
+    ],
+    "data": "assets_source/downloads/cities/london",
+    "pbf": "London.osm.pbf",
+    "out": "web/public/assets/cities/london/tiles",
+    "route": "web/public/data/tracks/london_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 0,
+    "drive": "left",
+    "style": "london",
+    "floors": {
+      "default": 5,
+      "residential": 5,
+      "house": 3,
+      "commercial": 6,
+      "office": 8,
+      "retail": 4,
+      "church": 6,
+      "industrial": 3
+    },
+    "widths": {
+      "primary": 14.0,
+      "secondary": 12.0,
+      "tertiary": 10.0,
+      "residential": 8.0,
+      "unclassified": 8.0,
+      "living_street": 6.0,
+      "service": 4.5
+    },
+    "spawn": [
+      51.50795,
+      -0.12775,
+      "Trafalgar Square"
+    ],
+    "route_via": [
+      [
+        51.50795,
+        -0.12775
+      ],
+      [
+        51.507,
+        -0.1418
+      ],
+      [
+        51.5101,
+        -0.1347
+      ],
+      [
+        51.5118,
+        -0.1235
+      ],
+      [
+        51.5093,
+        -0.1188
+      ]
+    ],
+    "small_floors": [
+      110,
+      3
+    ]
+  },
+  "paris": {
+    "name": "Paris",
+    "district": "Champs-Elysees to Notre-Dame",
+    "country": "FR",
+    "origin": [
+      48.8656,
+      2.3212
+    ],
+    "area": [
+      48.85,
+      2.286,
+      48.88,
+      2.356
+    ],
+    "data": "assets_source/downloads/cities/paris",
+    "pbf": "Paris.osm.pbf",
+    "out": "web/public/assets/cities/paris/tiles",
+    "route": "web/public/data/tracks/paris_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 0,
+    "drive": "right",
+    "style": "paris",
+    "floors": {
+      "default": 7,
+      "residential": 7,
+      "apartments": 7,
+      "house": 4,
+      "commercial": 7,
+      "office": 8,
+      "retail": 6,
+      "church": 8,
+      "industrial": 4
+    },
+    "widths": {
+      "primary": 16.0,
+      "secondary": 12.0,
+      "tertiary": 10.0,
+      "residential": 8.0,
+      "unclassified": 8.0,
+      "living_street": 6.0,
+      "service": 4.5
+    },
+    "spawn": [
+      48.8656,
+      2.3212,
+      "Place de la Concorde"
+    ],
+    "route_via": [
+      [
+        48.8656,
+        2.3212
+      ],
+      [
+        48.8728,
+        2.2985
+      ],
+      [
+        48.8682,
+        2.3012
+      ],
+      [
+        48.8646,
+        2.3022
+      ],
+      [
+        48.8638,
+        2.312
+      ]
+    ]
+  },
+  "tokyo": {
+    "name": "Tokyo",
+    "district": "Shibuya to Shinjuku",
+    "country": "JP",
+    "origin": [
+      35.6595,
+      139.7005
+    ],
+    "area": [
+      35.654,
+      139.69,
+      35.6975,
+      139.715
+    ],
+    "data": "assets_source/downloads/cities/tokyo",
+    "pbf": "Tokyo.osm.pbf",
+    "out": "web/public/assets/cities/tokyo/tiles",
+    "route": "web/public/data/tracks/tokyo_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 0,
+    "drive": "left",
+    "style": "tokyo",
+    "skip_elevated": true,
+    "floors": {
+      "default": 5,
+      "residential": 4,
+      "apartments": 8,
+      "house": 2,
+      "commercial": 8,
+      "office": 10,
+      "retail": 6,
+      "industrial": 3
+    },
+    "widths": {
+      "primary": 18.0,
+      "secondary": 12.0,
+      "tertiary": 9.0,
+      "residential": 6.0,
+      "unclassified": 6.0,
+      "living_street": 4.5,
+      "service": 4.0
+    },
+    "spawn": [
+      35.6595,
+      139.7005,
+      "Shibuya Crossing"
+    ],
+    "route_via": [
+      [
+        35.6595,
+        139.7005
+      ],
+      [
+        35.6688,
+        139.7052
+      ],
+      [
+        35.6652,
+        139.7123
+      ],
+      [
+        35.6618,
+        139.706
+      ]
+    ],
+    "small_floors": [
+      160,
+      3
+    ]
+  },
+  "losangeles": {
+    "name": "Los Angeles",
+    "district": "Downtown",
+    "country": "US",
+    "origin": [
+      34.049,
+      -118.255
+    ],
+    "area": [
+      34.034,
+      -118.272,
+      34.062,
+      -118.235
+    ],
+    "data": "assets_source/downloads/cities/losangeles",
+    "pbf": "LosAngeles.osm.pbf",
+    "out": "web/public/assets/cities/losangeles/tiles",
+    "route": "web/public/data/tracks/losangeles_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 38,
+    "drive": "right",
+    "style": "losangeles",
+    "skip_elevated": true,
+    "floors": {
+      "default": 3,
+      "residential": 4,
+      "apartments": 6,
+      "house": 2,
+      "commercial": 4,
+      "office": 12,
+      "retail": 2,
+      "industrial": 2
+    },
+    "widths": {
+      "primary": 20.0,
+      "secondary": 16.0,
+      "tertiary": 13.0,
+      "residential": 11.0,
+      "unclassified": 10.0,
+      "living_street": 7.0,
+      "service": 5.0
+    },
+    "spawn": [
+      34.049,
+      -118.255,
+      "Pershing Square"
+    ],
+    "route_via": [
+      [
+        34.049,
+        -118.255
+      ],
+      [
+        34.0486,
+        -118.2594
+      ],
+      [
+        34.0545,
+        -118.2552
+      ],
+      [
+        34.0551,
+        -118.2489
+      ],
+      [
+        34.0527,
+        -118.2441
+      ],
+      [
+        34.0465,
+        -118.251
+      ]
+    ],
+    "small_floors": [
+      200,
+      2
+    ]
+  }
+}

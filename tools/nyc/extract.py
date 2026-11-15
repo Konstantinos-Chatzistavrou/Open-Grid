@@ -18,11 +18,20 @@ import osmium
 from pyproj import Transformer
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-D = os.path.join(ROOT, "assets_source/downloads/nyc")
+sys.path.insert(0, os.path.dirname(__file__))
+from tilelib import CITY, CITY_ID, FRINGE   # CITY=<id> picks the city (cities.json); New York by default
+D = os.path.join(ROOT, CITY["data"])
 OUT = os.path.join(D, "derived")
-ORIGIN = (40.7580, -73.9855)   # Times Square (lat, lon)
-BBOX = (40.6990, -74.0250, 40.8830, -73.9050)   # S W N E: Manhattan island with a little river around it
+ORIGIN = tuple(CITY["origin"])   # (lat, lon) of the game frame's (0, 0): Times Square for New York
+_A = CITY["area"]                # S W N E of the drivable area
+if CITY.get("mask") == "manhattan":
+    BBOX = tuple(_A)             # Manhattan island with a little river around it
+else:                            # area cities: the content reaches FRINGE m beyond the drivable box, plus a margin for the tile edges
+    _m = FRINGE + 450.0
+    _dlat, _dlon = _m / 111320.0, _m / (111320.0 * math.cos(math.radians(ORIGIN[0])))
+    BBOX = (_A[0] - _dlat, _A[1] - _dlon, _A[2] + _dlat, _A[3] + _dlon)
 FT = 0.3048
+FLOOR_M = 3.3
 TR = Transformer.from_crs("EPSG:4326", f"+proj=tmerc +lat_0={ORIGIN[0]} +lon_0={ORIGIN[1]} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m", always_xy=True)
 
 
@@ -51,11 +60,60 @@ NODE_KIND = [("natural", {"tree": "tree"}), ("highway", {"traffic_signals": "sig
              ("railway", {"subway_entrance": "subway_entrance"}), ("tourism", {"artwork": "artwork"}), ("leisure", {"picnic_table": "bench"})]
 
 
+def _num(v):
+    try:
+        return float(str(v).replace(",", ".").split()[0].rstrip("m"))
+    except (ValueError, IndexError):
+        return None
+
+
+def _year(t):
+    for k in ("start_date", "building:start_date", "construction_date", "year_of_construction"):
+        v = t.get(k, "")
+        for i in range(len(v) - 3):
+            if v[i:i + 4].isdigit() and 1000 < int(v[i:i + 4]) < 2100:
+                return int(v[i:i + 4])
+    return 0
+
+
 class Handler(osmium.SimpleHandler):
-    def __init__(self, files):
+    def __init__(self, files, osm_buildings=False):
         super().__init__()
         self.f = files
-        self.n = {k: 0 for k in ("roads", "areas", "rails", "nodes")}
+        self.osm_buildings = osm_buildings
+        self.parts = []   # building:part (x, y, height) for outlines without a height of their own
+        self.n = {k: 0 for k in ("roads", "areas", "rails", "nodes", "buildings")}
+
+    def building(self, a, t):
+        """OSM buildings (cities without an official footprint set): height from height / building:levels / roof:levels,
+        else 0 (filled later from the neighbours or the city's typical floors by type: fill_heights)."""
+        bt = t.get("building") or "yes"
+        if bt in ("no", "roof", "carport", "canopy", "ruins", "shed", "bunker") or t.get("location") == "underground" or t.get("layer", "0").startswith("-"):
+            return
+        h = _num(t.get("height")) or _num(t.get("building:height"))
+        lv = _num(t.get("building:levels"))
+        if not h and lv:
+            h = lv * FLOOR_M + (_num(t.get("roof:levels")) or 0) * FLOOR_M * 0.6 + 1.0
+        mh = _num(t.get("min_height")) or ((_num(t.get("building:min_level")) or 0) * FLOOR_M)
+        try:
+            for o in a.outer_rings():
+                oc = [(n.lon, n.lat) for n in o]
+                if not inside(oc[0][1], oc[0][0]):
+                    continue
+                r = [xy([p[0] for p in oc], [p[1] for p in oc])]
+                if t.get("building:part") and not t.get("building"):
+                    if h:
+                        cx = sum(p[0] for p in r[0]) / len(r[0]); cy = sum(p[1] for p in r[0]) / len(r[0])
+                        self.parts.append((cx, cy, h))
+                    continue
+                for i in a.inner_rings(o):
+                    ic = [(n.lon, n.lat) for n in i]
+                    r.append(xy([p[0] for p in ic], [p[1] for p in ic]))
+                self.f["buildings"].write(json.dumps({"id": f"o{a.orig_id()}_{self.n['buildings']}", "h": round(h, 1) if h else 0, "g": 0, "min": round(mh, 1),
+                                                      "year": _year(t), "code": bt, "name": t.get("name", ""), "rings": r}) + "\n")
+                self.n["buildings"] += 1
+        except (osmium.InvalidLocationError, RuntimeError):
+            return
 
     def node(self, n):
         if not n.tags or not n.location.valid() or not inside(n.location.lat, n.location.lon):
@@ -76,6 +134,9 @@ class Handler(osmium.SimpleHandler):
         hw, rw = t.get("highway"), t.get("railway")
         if not (hw in ROAD_KEEP or rw in ("subway", "rail", "tram", "light_rail")):
             return
+        if hw and CITY.get("skip_elevated") and (hw in ("motorway", "motorway_link") or
+                                                 (t.get("bridge") and t.get("layer", "0") not in ("0", "1") and hw in ("trunk", "trunk_link", "primary"))):
+            return   # Tokyo's expressways / LA's freeways run on viaducts and in trenches: the flat street level is the map
         try:
             pts = [(n.lon, n.lat) for n in w.nodes if n.location.valid()]
         except osmium.InvalidLocationError:
@@ -104,6 +165,9 @@ class Handler(osmium.SimpleHandler):
 
     def area(self, a):
         t = a.tags
+        if self.osm_buildings and (t.get("building") or t.get("building:part")):
+            self.building(a, t)
+            return
         kind = None
         for key, m in AREA_KIND:
             v = t.get(key)
@@ -151,17 +215,77 @@ def footprints():
     return n
 
 
+def fill_heights(path, parts):
+    """OSM cities: buildings without a height take the tallest building:part inside them, else the median of the known
+    heights within 70 m (a Paris block is one height), else the city's typical floors for the building type (cities.json
+    `floors`), varied +-25 % by a hash so a street is not one flat cornice."""
+    import zlib
+    import numpy as np
+    from shapely.geometry import Point, Polygon
+    from shapely.strtree import STRtree
+    rows = [json.loads(l) for l in open(path)]
+    polys = []
+    for r in rows:
+        try:
+            p = Polygon(r["rings"][0], r["rings"][1:])
+            polys.append(p if p.is_valid else p.buffer(0))
+        except Exception:
+            polys.append(Polygon())
+    if parts:
+        pts = [Point(x, y) for x, y, _ in parts]
+        pt = STRtree(pts)
+        for r, p in zip(rows, polys):
+            if p.is_empty:
+                continue
+            hs = [parts[i][2] for i in pt.query(p, predicate="contains")]
+            if hs and max(hs) > (r["h"] or 0):
+                r["h"] = round(max(hs), 1)
+    known = [(i, p.representative_point()) for i, (r, p) in enumerate(zip(rows, polys)) if r["h"] and not p.is_empty]
+    tree = STRtree([c for _, c in known]) if known else None
+    fl = CITY.get("floors", {})
+    filled = {"part/explicit": len(known), "neighbours": 0, "type": 0}
+    for r, p in zip(rows, polys):
+        if r["h"] or p.is_empty:
+            continue
+        c = p.representative_point()
+        hs = []
+        if tree is not None:
+            hs = [rows[known[i][0]]["h"] for i in tree.query(c.buffer(70.0))]
+        seed = (zlib.crc32(r["id"].encode()) & 0xFFFF) / 65535.0
+        if len(hs) >= 3:
+            r["h"] = round(float(np.median(hs)) * (0.88 + 0.24 * seed), 1)
+            filled["neighbours"] += 1
+        else:
+            floors = fl.get(r["code"], fl.get("default", 4))
+            sm = CITY.get("small_floors")   # [footprint m2, floors]: Tokyo's and London's small lots are 2-3 storey houses
+            if sm and p.area < sm[0]:
+                floors = min(floors, sm[1] if p.area > sm[0] * 0.4 else max(1, sm[1] - 1))
+            if p.area < 60:   # kiosks, sheds
+                floors = 1
+            r["h"] = round(max(3.5, floors * FLOOR_M * (0.75 + 0.5 * seed) + 1.0), 1)
+            filled["type"] += 1
+    with open(path, "w") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    return filled
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     t0 = time.time()
-    nb = footprints()
+    osm_b = CITY.get("buildings") != "nyc_footprints"
+    nb = 0 if osm_b else footprints()
     print(f"buildings: {nb} ({time.time() - t0:.0f}s)", flush=True)
-    files = {k: open(os.path.join(OUT, f"{k}.ndjson"), "w") for k in ("roads", "areas", "rails", "nodes")}
-    h = Handler(files)
-    h.apply_file(os.path.join(D, "NewYork.osm.pbf"), locations=True, idx="flex_mem")
+    layers = ("roads", "areas", "rails", "nodes") + (("buildings",) if osm_b else ())
+    files = {k: open(os.path.join(OUT, f"{k}.ndjson"), "w") for k in layers}
+    h = Handler(files, osm_buildings=osm_b)
+    h.apply_file(os.path.join(D, CITY["pbf"]), locations=True, idx="flex_mem")
     for f in files.values():
         f.close()
-    meta = {"origin_latlon": ORIGIN, "bbox_latlon": BBOX, "frame": "metres, x east, y north, z up, origin Times Square", "buildings": nb, **h.n}
+    if osm_b:
+        nb = h.n["buildings"]
+        print("heights:", fill_heights(os.path.join(OUT, "buildings.ndjson"), h.parts), flush=True)
+    meta = {"city": CITY_ID, "origin_latlon": ORIGIN, "bbox_latlon": BBOX, "frame": "metres, x east, y north, z up, origin " + CITY.get("spawn", [0, 0, "the city origin"])[2] if CITY_ID != "nyc" else "metres, x east, y north, z up, origin Times Square", "buildings": nb, **h.n}
     json.dump(meta, open(os.path.join(OUT, "meta.json"), "w"), indent=1)
     print(meta, f"{time.time() - t0:.0f}s")
 

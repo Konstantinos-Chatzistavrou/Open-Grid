@@ -285,7 +285,10 @@ def gen_tile(world, ix, iy, debug=False):
     t = Tile(world, ix, iy)
     O = t.out
     seed0 = ix * 7919 + iy * 104729
-    mid_zone = abs(ix * 256 + 128) < 1500 and -1200 < iy * 256 + 128 < 2200       # Midtown: steam stacks, scaffolds, shop signs
+    if T.CITY_ID == "nyc":
+        mid_zone = abs(ix * 256 + 128) < 1500 and -1200 < iy * 256 + 128 < 2200       # Midtown: steam stacks, scaffolds, shop signs
+    else:   # other cities: the busy centre gets the shop signs and scaffolds; steam stacks are a New York thing
+        mid_zone = math.hypot(ix * 256 + 128, iy * 256 + 128) < 1800
 
     # lamps + street trees along host roads ----------------------------------------------------------------------------------------
     lamps = []
@@ -429,7 +432,7 @@ def gen_tile(world, ix, iy, debug=False):
         # construction sheds on the sidewalk instead, gen_buildings)
     # steam stacks: at most one per Midtown tile, on the kerb edge just outside the carriageway (never in a lane)
     steam_cand.sort()
-    nsteam = (1 if hf(seed0, 51) < 0.6 else 0) if mid_zone else 0
+    nsteam = (1 if hf(seed0, 51) < 0.6 else 0) if mid_zone and T.CITY_ID == "nyc" else 0
     for h, px, py, ta, tb, wa, wb in steam_cand[:nsteam]:
         sa, sb = (1 if hf(seed0, 53) > 0.5 else -1), (1 if hf(seed0, 54) > 0.5 else -1)
         sx, sy = px + sa * (wb + 9.0) * ta[0] + sb * (wa + 0.7) * tb[0], py + sa * (wb + 9.0) * ta[1] + sb * (wa + 0.7) * tb[1]
@@ -696,15 +699,28 @@ def write_debug(world, ix, iy, outdir):
         json.dump({"roads": roads, "blds": blds}, f, separators=(",", ":"))
 
 
+_WORLD = None
+
+
+def _gen(t):
+    try:
+        return t, round_json(gen_tile(_WORLD, *t))
+    except Exception as ex:
+        print(f"tile {t} failed: {ex!r}", flush=True)
+        return t, {}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--box", nargs=4, type=int, metavar=("IX0", "IX1", "IY0", "IY1"))
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--out", default=T.OUT_TILES)
     ap.add_argument("--debug", action="store_true", help="also write _dbg_{ix}_{iy}.json (road + building outlines) for the test page")
+    ap.add_argument("--jobs", type=int, default=1)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    world = T.World()
+    global _WORLD
+    world = _WORLD = T.World()
     if a.all:
         tiles = sorted(world.tiles_with_content())
     elif a.box:
@@ -714,8 +730,12 @@ def main():
         ap.error("--box or --all")
     tot = {}
     nfiles = 0
-    for (ix, iy) in tiles:
-        O = round_json(gen_tile(world, ix, iy))
+    if a.jobs > 1:
+        import multiprocessing as mp
+        it = mp.get_context("fork").Pool(a.jobs).imap_unordered(_gen, tiles, chunksize=2)
+    else:
+        it = map(_gen, tiles)
+    for (ix, iy), O in it:
         n = sum(len(v) for v in O.values())
         if n == 0:
             continue

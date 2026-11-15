@@ -59,6 +59,9 @@ export interface MenuHooks {
   cam?(az: number, el: number, dist: number): void;
   /** the driving camera mode chosen in Settings */
   camMode?(mode: string): void;
+  /** pick the real-scale city (cities.ts): main reloads into it */
+  city?(id: string): void;
+  cities?(): { list: { id: string; name: string; district: string; country: string; blurb: string }[]; current: string };
   partyCreate(): void;
   partyJoin(code: string): void;
   partyLeave(): void;
@@ -602,12 +605,20 @@ export class Menu {
     const sel = this.sel;
     const laps = [1, 3, 5, 10].map((n) => `<button class="chip ${sel.laps === n ? 'on' : ''}" data-act="laps" data-v="${n}">${n}</button>`).join('');
     const inParty = this.party ? `<span class="pill">In party ${esc(this.party.code)}</span>` : '';
+    const cs = this.hooks.cities?.();
+    const cur = cs?.list.find((c) => c.id === cs.current);
+    const cityRow = cs && !this.party ? `<div class="city-row">
+        <span class="dim">CITY</span>
+        ${cs.list.map((c) => `<button class="chip city-chip ${c.id === cs.current ? 'on' : ''}" data-act="city" data-v="${c.id}" title="${esc(c.district)}"><b>${esc(c.name)}</b><small>${esc(c.country)}</small></button>`).join('')}
+        ${cur ? `<span class="dim city-blurb">${esc(cur.district)} · 1:1 · ${esc(cur.blurb)}</span>` : ''}
+      </div>` : '';
     return `<div class="modes-screen">
       <div class="m-head">
         <button data-act="home" class="back-btn">← Main Menu</button>
         <div><div class="kicker">SELECT EVENT</div><h2>Tonight's run</h2></div>
         <div class="m-car dim">Driving: <b>${esc(this.car().name)}</b></div>
       </div>
+      ${cityRow}
       <div class="mode-cards">
         <div class="mcard">
           <div class="mcard-top"><span class="micon">01</span><b>Race</b><span class="dim">6-car grid · you vs 5 rivals</span></div>
@@ -651,10 +662,16 @@ export class Menu {
       </div></div>`;
     }
     const carName = (id: string) => this.cars.find((c) => c.id === id)?.name ?? '—';
+    // one city per party: the leader's (members load their own saved city; a guest switches with one click, which reloads)
+    const cs = this.hooks.cities?.();
+    const cityName = (id?: string) => cs?.list.find((c) => c.id === id)?.name ?? '';
+    const leaderCity = p.members.find((m) => m.host)?.city;
+    const wrongCity = !!cs && !!leaderCity && cs.current !== leaderCity;
+    const spread = p.members.some((m) => m.city && leaderCity && m.city !== leaderCity);
     const members = p.members.map((m) => `<div class="member">
         <span class="avatar">${helmetSvg(skinOf(m.skin), 30)}<i class="dot" style="background:${hex(m.paint)}"></i></span>
         <div class="mtext"><div class="mname"><b>${esc(m.name)}</b>${m.host ? '<span class="pill gold">LEADER</span>' : ''}${m.id === p.selfId ? '<span class="pill">YOU</span>' : ''}</div>
-        <span class="dim">${esc(carName(m.car))} · <span class="mstate ${m.ready ? 'ok' : ''}">${p.phase === 'loading' ? (m.ready ? 'on the grid' : 'loading…') : p.phase === 'driving' ? 'driving' : 'in lobby'}</span></span></div>
+        <span class="dim">${esc(carName(m.car))}${m.city ? ` · ${esc(cityName(m.city))}` : ''} · <span class="mstate ${m.ready ? 'ok' : ''}">${p.phase === 'loading' ? (m.ready ? 'on the grid' : 'loading…') : p.phase === 'driving' ? 'driving' : 'in lobby'}</span></span></div>
       </div>`).join('');
     const empty = Array.from({ length: Math.max(0, MAX_MEMBERS - p.members.length) }, () => '<div class="member empty"><i class="dot"></i><div class="mtext"><span class="dim">Open slot</span></div></div>').join('');
     const modeChip = (m: PartyMode, label: string) => `<button class="chip ${p.mode === m ? 'on' : ''}" data-act="pmode" data-v="${m}" ${p.isHost ? '' : 'disabled'}>${label}</button>`;
@@ -666,6 +683,8 @@ export class Menu {
     let action: string;
     if (p.phase === 'driving') action = p.mode === 'free' ? '<button class="primary huge" data-act="prejoin">▶ Rejoin Free Roam</button>' : p.isHost ? '<button class="huge" data-act="plobby">Everyone back to lobby</button>' : '<div class="dim wait">The party is racing. You can join the next one.</div>';
     else if (p.phase === 'loading') action = '<div class="dim wait"><span class="spin inline"></span> Loading…</div>';
+    else if (wrongCity) action = `<button class="primary huge" data-act="city" data-v="${esc(leaderCity!)}">Switch to ${esc(cityName(leaderCity))}</button>`;
+    else if (p.isHost && spread) action = `<div class="dim wait"><span class="spin inline"></span> Waiting for everyone to switch to ${esc(cityName(leaderCity))}…</div>`;
     else action = p.isHost ? `<button class="primary huge" data-act="pstart">▶ Start ${p.mode === 'race' ? `Race · ${p.laps} Lap${p.laps > 1 ? 's' : ''}` : 'Free Roam'}</button>`
       : '<div class="dim wait"><span class="spin inline"></span> Waiting for the leader to start…</div>';
     const share = typeof navigator.share === 'function' ? '<button class="small" data-act="pshare">Share…</button>' : '';
@@ -786,6 +805,7 @@ export class Menu {
     switch (act) {
       case 'play': this.sp.last = this.mp.last = null; this.show('modes'); break;
       case 'cam-mode': this.camMode = v; this.hooks.camMode?.(v); this.render(); break;
+      case 'city': this.hooks.city?.(v); break;
       case 'laylow': this.hooks.layLow?.(); break;
       case 'garage-open': this.show('garage'); this.hooks.preview(); break;
       case 'home': this.show('title'); break;

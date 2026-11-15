@@ -217,8 +217,60 @@ PALETTE = {
 }
 
 
+# other cities (tools/nyc/cities.json `style`): their own materials by kind; same luminance range as New York's so the
+# night grade and the facade shader read them the same way
+CITY_PALETTES = {
+    # London: yellow-grey stock brick, red brick, Portland stone, white stucco terraces; offices in stone and dark glass
+    "london": {0: [(0.44, 0.37, 0.27), (0.40, 0.33, 0.24), (0.42, 0.17, 0.12), (0.62, 0.60, 0.53), (0.66, 0.64, 0.58)],
+               1: [(0.60, 0.58, 0.51), (0.55, 0.52, 0.45), (0.44, 0.37, 0.27), (0.42, 0.18, 0.13), (0.64, 0.62, 0.56)],
+               2: [(0.58, 0.56, 0.50), (0.50, 0.49, 0.46), (0.34, 0.35, 0.36), (0.20, 0.22, 0.24)],
+               4: [(0.40, 0.18, 0.13), (0.44, 0.37, 0.27), (0.36, 0.34, 0.31)]},
+    # Paris: Lutetian limestone (warm cream), a few brick and render
+    "paris": {0: [(0.64, 0.57, 0.45), (0.60, 0.54, 0.43), (0.67, 0.61, 0.50), (0.58, 0.52, 0.42)],
+              1: [(0.66, 0.59, 0.47), (0.62, 0.56, 0.45), (0.69, 0.63, 0.52), (0.60, 0.55, 0.46), (0.56, 0.50, 0.40)],
+              2: [(0.64, 0.58, 0.48), (0.55, 0.53, 0.49), (0.40, 0.40, 0.40)],
+              4: [(0.52, 0.44, 0.34), (0.48, 0.30, 0.22)]},
+    # Tokyo: white and grey tile, beige render, dark metal, lots of curtain wall
+    "tokyo": {0: [(0.62, 0.61, 0.58), (0.55, 0.54, 0.52), (0.58, 0.52, 0.44), (0.46, 0.44, 0.42), (0.66, 0.64, 0.60)],
+              1: [(0.60, 0.59, 0.56), (0.52, 0.50, 0.47), (0.56, 0.50, 0.42), (0.38, 0.38, 0.39), (0.64, 0.62, 0.58)],
+              2: [(0.56, 0.56, 0.55), (0.44, 0.45, 0.46), (0.26, 0.27, 0.29), (0.60, 0.58, 0.54)],
+              4: [(0.48, 0.47, 0.45), (0.40, 0.40, 0.41)]},
+    # Los Angeles: stucco, terracotta, art-deco stone downtown, blue-green glass towers
+    "losangeles": {0: [(0.64, 0.55, 0.42), (0.60, 0.48, 0.36), (0.66, 0.62, 0.54), (0.54, 0.36, 0.26)],
+                   1: [(0.62, 0.56, 0.46), (0.58, 0.52, 0.42), (0.52, 0.34, 0.24), (0.64, 0.60, 0.52)],
+                   2: [(0.60, 0.57, 0.50), (0.52, 0.50, 0.46), (0.30, 0.32, 0.33)],
+                   4: [(0.50, 0.32, 0.22), (0.56, 0.50, 0.40), (0.42, 0.40, 0.37)]},
+}
+# typical construction year by city (OSM rarely has start_date): spread around it per building
+CITY_YEAR = {"london": (1885, 45), "paris": (1868, 25), "tokyo": (1988, 18), "losangeles": (1955, 30)}
+OFFICE_CODES = {"office", "commercial", "hotel", "government", "bank"}
+HOUSE_CODES = {"house", "terrace", "detached", "semidetached_house", "townhouse", "residential", "apartments"}
+
+
+def city_year(d, rng):
+    y = int(d.get("year") or 0)
+    if y > 1700 or tl.CITY_ID not in CITY_YEAR:
+        return y
+    c, sd = CITY_YEAR[tl.CITY_ID]
+    h = float(d["h"])
+    if h > 70:                       # towers are recent everywhere
+        return int(max(c, 1975) + rng.random() * 45)
+    return int(np.clip(c + rng.normal(0, sd), 1700, 2024))
+
+
+def classify_city(h, area, year, code, rng):
+    """Kinds for OSM cities: the building tag helps (offices vs homes); otherwise New York's rules."""
+    if code in OFFICE_CODES and h >= 22:
+        return 3 if (year >= 1985 and h >= 45 and rng.random() < 0.6) else 2
+    if code in ("industrial", "warehouse", "garage", "garages", "service") and h < 30:
+        return 4
+    if code in HOUSE_CODES and h < 30:
+        return 0 if h < 16 else 1
+    return classify(h, area, year, rng)
+
+
 def tint_for(kind, rng):
-    pal = PALETTE[kind]
+    pal = CITY_PALETTES.get(tl.CITY.get("style"), {}).get(kind) or PALETTE[kind]
     t = np.array(pal[int(rng.integers(len(pal)))], np.float32)
     return np.clip(t * (0.85 + 0.3 * rng.random()), 0, 1)
 
@@ -327,12 +379,12 @@ def match_landmarks(items):
 def build_building(A, poly, d, idx, lm, detail, far=False):
     """Emit one building into A = {'facade': Acc, 'roof': Acc}. detail: 2 full, 1 no small props, 0 bare. Returns triangles added."""
     h = float(d["h"])
-    year = int(d.get("year") or 0)
     key = f"{d['id']}#{idx}"
     seed01 = hash01(key)
     rng = np.random.default_rng(zlib.crc32(key.encode()))
+    year = city_year(d, rng)
     area = poly.area
-    kind = 5 if lm is not None else classify(h, area, year, rng)
+    kind = 5 if lm is not None else (classify(h, area, year, rng) if tl.CITY_ID == "nyc" else classify_city(h, area, year, d.get("code", ""), rng))
     era = float(np.clip(((year if year > 1700 else 1930) - 1900) / 100.0, 0.0, 1.0))
     floors = max(1, int(round(h / FLOOR_H[kind])))
     tint = np.array(lm["tint"], np.float32) if lm else tint_for(kind, rng)
@@ -550,12 +602,54 @@ def tile_buildings(ix, iy):
     return out
 
 
+_LAND = None
+
+
+def tile_walls(ix, iy):
+    """Invisible walls at the edge of the drivable area inside this tile (sea wall, river banks, bridge sides, the area
+    cities' limits): tilelib.drivable / edge_walls, with land = the mask plus piers minus OSM water, as ground.py draws it."""
+    global _LAND
+    from shapely.geometry import box as sbox
+    from shapely.ops import unary_union
+    if _LAND is None:
+        _LAND = tl.land_polygon()
+    x0, y0, x1, y1 = tl.tile_bounds(ix, iy)
+    T = sbox(x0, y0, x1, y1)
+    B = sbox(x0 - 30, y0 - 30, x1 + 30, y1 + 30)
+    water, piers = [], []
+    for a, g in _W.query("areas", B.bounds, 2):
+        g = g.buffer(0) if not g.is_valid else g
+        if a["kind"] == "water": water.append(g)
+        elif a["kind"] == "pier": piers.append(g)
+    land = _LAND.intersection(B)
+    if piers:
+        land = land.union(unary_union(piers).intersection(B))
+    if water:
+        w = unary_union(water).intersection(B)
+        if piers:
+            w = w.difference(unary_union(piers))
+        land = land.difference(w)
+    land = land.buffer(0)
+    if tl.drive_box() is None and land.contains(T):
+        return []
+    D = tl.drivable(land, asphalt(ix, iy), B)
+    if D.contains(T):
+        return []
+    return tl.edge_walls(D, T)
+
+
 def build_tile(ix, iy, outdir, compress=True):
     t0 = time.time()
     bl = tile_buildings(ix, iy)
+    walls = tile_walls(ix, iy)
     if not bl:
-        return None
-    lms = match_landmarks([(k, p, float(it["h"]), it["id"], p.centroid.coords[0]) for k, (it, p, j) in enumerate(bl)])
+        if not walls:
+            return None
+        name = tl.tile_name(ix, iy)
+        with open(os.path.join(outdir, f"{name}.col.json"), "w") as f:
+            json.dump({"buildings": [], "walls": walls, "ground": 0}, f, separators=(",", ":"))
+        return {"bld_bytes": 0, "far_bytes": 0, "tris": 0, "detail": 0, "far_tris": 0, "colliders": 0, "walls": len(walls), "n": 0, "landmarks": [], "sec": round(time.time() - t0, 2)}
+    lms = match_landmarks([(k, p, float(it["h"]), it["id"], p.centroid.coords[0]) for k, (it, p, j) in enumerate(bl)]) if tl.CITY.get("landmarks") else {}
     name = tl.tile_name(ix, iy)
     res = {}
     for detail in (2, 1, 0):
@@ -593,8 +687,8 @@ def build_tile(ix, iy, outdir, compress=True):
         for q in parts(u):
             cols += colliders(q, max(small[g][1] for g in grp), 0, A)
     with open(os.path.join(outdir, f"{name}.col.json"), "w") as f:
-        json.dump({"buildings": cols, "ground": 0}, f, separators=(",", ":"))
-    res.update(colliders=len(cols), n=len(bl), landmarks=[lm["name"] for lm in lms.values()])
+        json.dump({"buildings": cols, **({"walls": walls} if walls else {}), "ground": 0}, f, separators=(",", ":"))
+    res.update(colliders=len(cols), walls=len(walls), n=len(bl), landmarks=[lm["name"] for lm in lms.values()])
     if compress:
         for ext in ("bld", "far"):
             compress_glb(os.path.join(outdir, f"{name}.{ext}.glb"))
@@ -671,6 +765,11 @@ def main():
     tiles = set()
     if a.all:
         tiles |= set(_BUCKETS)
+        # tiles with ground but no building of their own (water edges, parks) still need their walls
+        import glob
+        for f in glob.glob(os.path.join(a.out, "*.ground.glb")):
+            k = os.path.basename(f).split(".")[0].split("_")
+            tiles.add((int(k[0]), int(k[1])))
     if a.box:
         x0, x1, y0, y1 = a.box
         tiles |= {(ix, iy) for ix in range(x0, x1 + 1) for iy in range(y0, y1 + 1) if (ix, iy) in _BUCKETS}
@@ -679,7 +778,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     if a.test_streets and a.box:
         export_test_streets(os.path.join(a.out, "_test_streets.json"), a.box)
-    jobs = [(ix, iy, a.out, not a.no_compress) for ix, iy in sorted(tiles)]
+    jobs = [(ix, iy, a.out, False) for ix, iy in sorted(tiles)]   # compressed in one batch at the end (meshopt_batch.mjs)
     nb = nt = 0
     t1 = time.time()
     stats = []
@@ -692,7 +791,13 @@ def main():
                 continue
             nb += r["n"]; nt += 1; stats.append(r)
             print(f"{ix:>3},{iy:>3}: {r['n']:4d} bld {r['tris']:6d} tris (detail {r['detail']}) bld {r['bld_bytes'] / 1024:6.0f} KB | far {r['far_tris']:5d} tris {r['far_bytes'] / 1024:5.1f} KB"
-                  f" | col {r['colliders']:4d} | {r['sec']}s" + (f" {r['landmarks']}" if r["landmarks"] else ""), flush=True)
+                  f" | col {r['colliders']:4d} walls {r.get('walls', 0):3d} | {r['sec']}s" + (f" {r['landmarks']}" if r["landmarks"] else ""), flush=True)
+    if not a.no_compress:
+        from ground import meshopt_all
+        done = [tuple(int(v) for v in os.path.basename(f).split(".")[0].split("_")) for f in
+                [os.path.join(a.out, f"{ix}_{iy}.bld.glb") for ix, iy in sorted(tiles)] if os.path.exists(f)]
+        for ext in ("bld", "far"):
+            meshopt_all(a.out, done, ext, "medium")
     dt = time.time() - t1
     if stats:
         print(f"{nt} tiles, {nb} buildings in {dt:.0f}s ({nb / dt:.0f} buildings/s); max tris {max(s['tris'] for s in stats)}, "
