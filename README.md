@@ -166,8 +166,12 @@ Handling is matched to a Corvette C7 Z51: 60-0 mph 31.7 m (real 31.7-32.6 m), sk
 
 ## Licence
 
-- **Everything we made** (C++ core, TypeScript, shaders, scripts, server, 3D models, textures, car and track data,
-  docs): **Apache License 2.0** (`LICENSE`, SPDX `Apache-2.0`; `NOTICE`). Free to use, change and redistribute, also
-  commercially, as long as you keep the licence, the copyright and the NOTICE, and mark files you changed.
+Two licences (details per folder in `LICENSING.md`):
+
+- **Code** (C++ core, TypeScript, shaders, scripts, server): **Apache License 2.0** (`LICENSE`, `NOTICE`, SPDX
+  `Apache-2.0`).
+- **Everything else we made** (3D models, textures, car and track data, docs): **Creative Commons
+  Attribution-NonCommercial 4.0** (`LICENSES/CC-BY-NC-4.0.txt`, SPDX `CC-BY-NC-4.0`): free to share and adapt with
+  credit, no commercial use.
 - **Third-party material** keeps its own licence, listed in `CREDITS.md`: map data ODbL (OpenStreetMap), the fitted tyre
   data BSD-3-Clause (Project Chrono), original car models CC BY 4.0, city models and textures CC0.

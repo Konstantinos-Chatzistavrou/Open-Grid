@@ -1,10 +1,14 @@
 Open Grid
 Copyright 2026 OpenGrid contributors
 
-Licensed under the Apache License, Version 2.0 (see LICENSE).
+The software (source code, shaders, scripts, configuration) is licensed under the Apache License, Version 2.0
+(see LICENSE). The 3D models, textures, car and track data, documentation and artwork made by OpenGrid contributors
+are NOT covered by the Apache License: they are licensed under Creative Commons Attribution-NonCommercial 4.0
+International (LICENSES/CC-BY-NC-4.0.txt): no commercial use without written permission. LICENSING.md lists which
+files are which.
 
-This repository also contains third-party material that keeps its own licence: car models adapted from
-CC BY 4.0 originals, map data derived from OpenStreetMap (ODbL 1.0, (c) OpenStreetMap contributors) and NYC
-Open Data (public domain), CC0 textures and models, fonts under the SIL Open Font License, tyre data under
-BSD-3-Clause, and libraries under MIT / Apache-2.0. Their authors, sources and licences are listed in
-CREDITS.md and LICENSING.md; keep those credits when you redistribute.
+This repository also contains third-party material that keeps its own licence: car models adapted from CC BY 4.0
+originals, map data derived from OpenStreetMap (ODbL 1.0, (c) OpenStreetMap contributors) and NYC Open Data (public
+domain), CC0 textures and models, fonts under the SIL Open Font License, tyre data under BSD-3-Clause, and libraries
+under MIT / Apache-2.0. Their authors, sources and licences are listed in CREDITS.md; keep those credits when you
+redistribute.
