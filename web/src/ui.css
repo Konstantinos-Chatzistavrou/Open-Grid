@@ -314,6 +314,16 @@ html, body { font-family: var(--text); font-size: 15px; }
 }
 @media (prefers-reduced-motion: reduce) { #menu .tnav, #menu .mcard::before, #menu .g-rail .rail { transition: none; } }
 
+/* ---- rear-view mirror: the frame only. The picture is drawn by the renderer into exactly this box (post.ts mirrorRect,
+   copied from this element by main.ts), so moving or resizing the mirror is a CSS change. ---- */
+#mirror { position: absolute; left: 50%; top: 20px; transform: translateX(-50%); width: min(27vw, 540px); aspect-ratio: 3.4;
+  border: 2px solid #0b0d12; outline: 1px solid #ffffff2e; box-shadow: 0 6px 22px #000a, inset 0 0 0 1px #ffffff14, inset 0 -18px 26px -18px #000c;
+  pointer-events: none; }
+#mirror::after { content: ""; position: absolute; left: 50%; top: -9px; width: 34px; height: 8px; transform: translateX(-50%);
+  background: #0b0d12; clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%); }
+body.touch #mirror { top: 6px; width: min(30vw, 300px); }
+@media (max-height: 520px) { #mirror { top: 6px; width: min(28vw, 280px); } }
+
 
 /* ---- city picker (Game Modes): one chip per real-scale city (cities.ts) ---- */
 #menu .city-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 18px; }

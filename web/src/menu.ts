@@ -59,6 +59,7 @@ export interface MenuHooks {
   cam?(az: number, el: number, dist: number): void;
   /** the driving camera mode chosen in Settings */
   camMode?(mode: string): void;
+  mirror?(on: boolean): void;
   /** pick the real-scale city (cities.ts): main reloads into it */
   city?(id: string): void;
   cities?(): { list: { id: string; name: string; district: string; country: string; blurb: string }[]; current: string };
@@ -143,6 +144,8 @@ export class Menu {
   private settingsNote = '';
   /** the driving camera chosen in Settings (main owns the rig) */
   camMode = 'chase';
+  /** the rear-view mirror at the top of the screen while driving */
+  mirror = true;
   assists!: AssistSettings;
   private settingsFrom: Screen = 'title';
   /** the loading screen ('busy' shows it; main may hold it while the game warms up) */
@@ -293,6 +296,7 @@ export class Menu {
       ${row('GEARBOX', chip('as-gb', 'auto', 'Automatic', a.gearbox === 'auto') + chip('as-gb', 'manual', 'Manual', a.gearbox === 'manual'), 'Manual: Q / E, bumpers or paddles.')}
       ${row('DRIVING LINE', chip('as-line', 'off', 'Off', a.line === 'off') + chip('as-line', 'braking', 'Braking zones', a.line === 'braking') + chip('as-line', 'full', 'Full', a.line === 'full'), 'The racing line on the road: blue = keep going, yellow = ease off, red = brake.')}
       ${row('CAMERA', (['chase', 'far', 'cinematic', 'drift', 'hood', 'bumper', 'orbit'] as const).map((k) => chip('cam-mode', k, k[0].toUpperCase() + k.slice(1), this.camMode === k)).join(''), 'Chase is the default; drift keeps the camera on your travel line so the tail hangs out; cinematic is the low wide shot; hood and bumper are first-person; orbit is the showcase pan. C cycles any time while driving.')}
+      ${row('REAR MIRROR', chip('mirror', '0', 'Off', !this.mirror) + chip('mirror', '1', 'On', this.mirror), 'The view behind the car, top centre, in every camera. Off saves a few frames per second.')}
       <div class="dim note">Assists never change the car: same physics and tyres for everyone; they only help with your inputs. Keys 1 / 2 / 3 / 5 switch ABS / traction / stability / gearbox while driving.</div>`;
     const g = (k: Gfx, label: string) => chip('gfx', k, label, this.gfx === k);
     const more = inSession ? '<div class="dim note">Race rules, graphics and tests can be changed from the main menu.</div>' : `
@@ -805,6 +809,7 @@ export class Menu {
     switch (act) {
       case 'play': this.sp.last = this.mp.last = null; this.show('modes'); break;
       case 'cam-mode': this.camMode = v; this.hooks.camMode?.(v); this.render(); break;
+      case 'mirror': this.mirror = v === '1'; this.hooks.mirror?.(this.mirror); this.render(); break;
       case 'city': this.hooks.city?.(v); break;
       case 'laylow': this.hooks.layLow?.(); break;
       case 'garage-open': this.show('garage'); this.hooks.preview(); break;

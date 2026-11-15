@@ -17,7 +17,7 @@
 // changes which pipeline renders: no material, light set or pipeline changes, no recompiles, no
 // render-target resizes of the scene. Measured: switching costs no frame over the normal budget.
 import * as THREE from 'three/webgpu';
-import { Fn, clamp, float, int, log, max, min, pass, positionView, rtt, screenUV, textureSize, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { Fn, clamp, float, int, log, max, min, mix, pass, positionView, rtt, screenUV, step, textureSize, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import * as SMAAModule from 'three/addons/tsl/display/SMAANode.js';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
@@ -198,6 +198,20 @@ export class Post {
   private sharpness = uniform(0.5);
   private _scale = 1;
   preset: PresetName;
+  /**
+   * Rear-view mirror: a second scene pass from a camera at the car's tail (main.ts places it every frame), drawn into
+   * a strip of the final image. `mirrorRect` is that strip in screen UV (x0, y0, x1, y1; y down from the top) - main.ts
+   * copies it from the #mirror element, so CSS decides where the mirror is. The pass has the main pass's target
+   * formats, so it compiles no pipeline of its own; it renders only while `mirror` is on, every `mirrorEvery`-th frame.
+   */
+  readonly mirrorCam = new THREE.PerspectiveCamera(28, 3.4, 0.25, 230);
+  readonly mirrorRect = uniform(new THREE.Vector4(0.37, 0.03, 0.63, 0.17));
+  mirrorEvery = 1;
+  private mirrorMix = uniform(0);
+  private mirrorPass!: THREE.PassNode;
+  private mirrorTick = 0;
+  get mirror() { return this.mirrorMix.value > 0; }
+  set mirror(on: boolean) { this.mirrorMix.value = on ? 1 : 0; }
 
   constructor(private renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, private opts: PostOptions) {
     this.scenePass = pass(scene, camera);
@@ -217,12 +231,25 @@ export class Post {
     let sharedTonedKey = '';
     const ssrOn = q.get('ssr') !== '0';
     const aoOn = q.get('ao') !== '0';
+    // the mirror: its own small pass, composited last (after the upscale: it is drawn at its own resolution)
+    this.mirrorPass = pass(scene, this.mirrorCam);
+    {
+      const mp = this.mirrorPass as unknown as { updateBefore(f: unknown): unknown };
+      const render = mp.updateBefore.bind(mp);
+      mp.updateBefore = (f) => (this.mirrorMix.value > 0 && this.mirrorTick++ % Math.max(1, this.mirrorEvery) === 0 ? render(f) : undefined);
+    }
+    const mr = this.mirrorRect, su = screenUV;
+    // a mirror: left and right swapped
+    const mUv = vec2(float(1).sub(su.x.sub(mr.x).div(mr.z.sub(mr.x))), su.y.sub(mr.y).div(mr.w.sub(mr.y)));
+    const mImg = toneGrade(this.mirrorPass.getTextureNode('output').sample(mUv), curve, false);
+    const mIn = step(mr.x, su.x).mul(step(su.x, mr.z)).mul(step(mr.y, su.y)).mul(step(su.y, mr.w)).mul(this.mirrorMix);
+    const withMirror = (base: THREE.Node) => mix(base as THREE.Node<'vec4'>, vec4(mImg.rgb.mul(0.94), 1), mIn);
     for (const name of PRESET_ORDER) {
       const pr = PRESETS[name];
       const p = new THREE.RenderPipeline(renderer);
       if (pr.direct) {
         p.outputColorTransform = false;
-        p.outputNode = toneGrade(color, curve, false);
+        p.outputNode = withMirror(toneGrade(color, curve, false));
         this.pipelines.set(name, p);
         continue;
       }
@@ -270,7 +297,7 @@ export class Post {
         src = fx;
       }
       p.outputColorTransform = false;
-      p.outputNode = casUpscale(src, this.sharpness, pr.grain && grading);
+      p.outputNode = withMirror(casUpscale(src, this.sharpness, pr.grain && grading));
       this.pipelines.set(name, p);
     }
     this.preset = opts.preset;
@@ -289,6 +316,8 @@ export class Post {
   setScale(s: number) {
     this._scale = s;
     this.scenePass.setResolutionScale(s);
+    // the mirror strip is about a quarter of the screen wide: a quarter of the main pass's pixels across is its 1:1
+    this.mirrorPass.setResolutionScale(Math.min(0.45, 0.07 + 0.3 * s));
     this.maxFx?.setScale(s);
     this.depthFx?.setScale(s);
     for (const r of this.scaled) r.setResolutionScale(s);
