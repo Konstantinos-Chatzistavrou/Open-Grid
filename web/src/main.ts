@@ -698,6 +698,50 @@ async function main() {
   const post = new Post(renderer, scene, camera, { bloom: params.get('bloom') !== '0', aa: params.get('aa') !== '0', scale, preset: PRESET_ORDER[presetIdx] });
   // The showroom's own pipeline on the garage scene. Phones keep their tuned pixel budget there too.
   const showPost = garage ? new ShowroomPost(renderer, garage.scene, camera, PRESET_ORDER[presetIdx]) : null;
+  // ---- rear-view mirror (Settings > Rear mirror; post.ts mirror pass, the #mirror frame in ui.css) -----------------------
+  // A camera just behind the tail looks back along the car's heading (yaw only: the picture does not roll with the body).
+  // The frame's place on screen is CSS: its rect is copied into post.mirrorRect (re-read twice a second: resize,
+  // fullscreen, hidden HUD). It updates every 3rd rendered frame (4th on low / medium) and sees 160 m: the scene is
+  // drawn a second time, with its own light clusters (measured: ~10 % of the frame when drawn every 2nd frame at 230 m). Phones and potato start with it off.
+  const mirrorEl = document.getElementById('mirror')!;
+  let mirrorOn = !isTouch && !potato;
+  try { const v = localStorage.getItem('nr.mirror'); if (v !== null) mirrorOn = v === '1'; } catch { /* blocked */ }
+  let mirrorRectAt = -1e9, mirrorLaidOut = false;
+  post.mirrorCam.far = 160; post.mirrorCam.updateProjectionMatrix();   // fewer tiles and props drawn twice
+  const mirrorFwd = new THREE.Vector3(), mirrorAt = new THREE.Vector3(), mirrorQ = new THREE.Quaternion();
+  const placeMirrorCam = () => {
+    const root = visual.root, cam = post.mirrorCam;
+    root.getWorldQuaternion(mirrorQ);
+    mirrorFwd.set(0, 0, 1).applyQuaternion(mirrorQ).setY(0);
+    if (mirrorFwd.lengthSq() < 1e-6) mirrorFwd.set(0, 0, 1);
+    mirrorFwd.normalize();
+    // the tail in the car's frame (root = the CG): body length from the collision box, 0.25 m past the bumper
+    const back = shape.boxSize[2] / 2 - shape.boxCentre[2] + visual.cg.z + 0.25;
+    root.getWorldPosition(mirrorAt);
+    cam.position.copy(mirrorAt).addScaledVector(mirrorFwd, -back);
+    cam.position.y = mirrorAt.y - visual.cg.y + 1.05;
+    cam.up.set(0, 1, 0);
+    cam.lookAt(cam.position.x - mirrorFwd.x * 20, cam.position.y - 1.1, cam.position.z - mirrorFwd.z * 20);
+    cam.updateMatrixWorld();
+  };
+  const updateMirror = (now: number) => {
+    const want = mirrorOn && driving() && state !== 'spectate' && !inGarage && screenNone();   // not under the pause / results menus
+    if (mirrorEl.hidden === want) mirrorEl.hidden = !want;
+    if (!want) { post.mirror = false; mirrorLaidOut = false; return; }
+    if (!mirrorLaidOut || now - mirrorRectAt > 500) {
+      mirrorRectAt = now;
+      const c = renderer.domElement.getBoundingClientRect(), r = mirrorEl.getBoundingClientRect();
+      mirrorLaidOut = c.width > 0 && r.width > 2 && r.height > 2;   // zero size: the HUD is hidden (H)
+      if (mirrorLaidOut) {
+        post.mirrorRect.value.set((r.left - c.left) / c.width, (r.top - c.top) / c.height, (r.right - c.left) / c.width, (r.bottom - c.top) / c.height);
+        const asp = r.width / r.height, cam = post.mirrorCam;
+        if (Math.abs(cam.aspect - asp) > 1e-3) { cam.aspect = asp; cam.updateProjectionMatrix(); }
+      }
+    }
+    post.mirror = mirrorLaidOut;
+    post.mirrorEvery = post.preset === 'low' || post.preset === 'medium' ? 4 : 3;
+    if (mirrorLaidOut) placeMirrorCam();
+  };
   const showScale = (p: PresetName) => (isTouch ? Math.min(SHOW_PRESETS[p].scale, Math.max(0.5, guessScale())) : SHOW_PRESETS[p].scale);
   const syncShowPreset = () => {
     if (!garage || !showPost) return;
@@ -787,11 +831,13 @@ async function main() {
   {
     const culled: THREE.Object3D[] = [];
     scene.traverse((o) => { if (o.frustumCulled && (o as THREE.Mesh).isMesh) { o.frustumCulled = false; culled.push(o); } });
+    if (mirrorOn) { placeMirrorCam(); post.mirror = true; post.mirrorEvery = 1; }   // its pipelines and buffers now, not at the first race
     await warm();
     mark('compile street');
     // one real frame per likely preset with culling off: GPU buffers/bind groups for every city tile + prop
     // are created now (rendering presets back to back inside one frame skips per-frame node updates)
     await post.warmupFrames();
+    post.mirror = false;
     for (const o of culled) o.frustumCulled = true;
   }
   mark('warm presets');
@@ -1127,6 +1173,7 @@ async function main() {
     layLow: () => { if (sp.kind !== 'sp' || sp.xp < 300) return; sp.penalty(300); heat.clear(); renderHeat(); menu.heat = 0; menu.render(); },
     // driving camera chosen in Settings: chase / far / cinematic / hood / bumper (C cycles)
     camMode: (mode) => { try { localStorage.setItem('nr.cam', mode); } catch { /* blocked */ } rig.setMode(mode as never); },
+    mirror: (on) => { mirrorOn = on; try { localStorage.setItem('nr.mirror', on ? '1' : '0'); } catch { /* blocked */ } },
   });
   menu.gfx = gfx;
   const loader = new Loader();
@@ -1136,6 +1183,7 @@ async function main() {
   menu.fits = (id) => visual.custom.hasBody(id);
   menu.layLowCost = sp.kind === 'sp' ? 300 : -1;   // reputation is the SP wallet; the online career has no spend path yet
   try { const cam = localStorage.getItem('nr.cam'); if (cam) menu.camMode = cam; } catch { /* blocked */ }
+  menu.mirror = mirrorOn;
   const rerender = () => { if (['title', 'shop', 'garage', 'lobby', 'results', 'settings', 'profile'].includes(menu.screen)) menu.render(); };
   let syncedProfile: unknown = null;
   let looksPulled = false;
@@ -1908,6 +1956,7 @@ async function main() {
       const hasCasters = ai.mode === 'race' || remote !== null || damage.debrisCount > 0;
       if (hasCasters && ++frameNo % (params.has('se') ? num('se', 2) : PRESETS[post.preset].shadowEvery) === 0) for (const sh of headShadows) sh.needsUpdate = true;
       const tPost = performance.now();
+      if (!inGarage) updateMirror(now);
       if (inGarage) showPost!.render(); else post.render();
       prof.post += performance.now() - tPost;
       // never while the garage is up: the probe's cube render rebuilds ShadowNodes and destroys the sun's shadow map
