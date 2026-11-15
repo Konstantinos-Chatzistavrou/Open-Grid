@@ -1,5 +1,8 @@
 # New York tiles: data contract (read this before touching tools/nyc or web/src/scene/nyc)
 
+The same contract serves every city since 2026-11-15 (docs/cities.md): `CITY=<id>` picks the city, the tiles of the
+others live in `web/public/assets/cities/<id>/tiles/`, and `col.json` may carry `walls` (the edge of the drivable area).
+
 Goal: all of Manhattan at real scale, streamed in 256 m tiles, locked 30 fps on the i3 laptop (45 fps phone target). The pipeline is automatic
 from open data (OpenStreetMap ODbL + NYC Open Data, public domain): adding area = generating more tiles. Plan and scope: docs/nyc_plan.md.
 
@@ -19,7 +22,7 @@ Library: tools/nyc/tilelib.py (`World` with spatial index + mask, `Mesh`, `write
 | file | owner | content |
 |---|---|---|
 | `{ix}_{iy}.ground.glb` | ground.py | roads, sidewalks, curbs, crosswalks, lane markings, plazas, parks, water, rails. Materials by NAME: `road`, `sidewalk`, `curb`, `marking`, `crosswalk`, `plaza`, `grass`, `water`, `rail`. UV in metres (u east, v north) so tiling textures/shaders need no per-tile scale. Vertex colour = tint, alpha = baked AO / edge darkening. |
-| `{ix}_{iy}.graph.json` | ground.py | road graph for traffic: `{nodes:[[x,y]], edges:[{a,b,w,lanes,oneway,hw,name,pts?}]}` game-frame metres. |
+| `{ix}_{iy}.graph.json` | ground.py | road graph: `{nodes:[[x,y]], edges:[{a,b,w,lanes,oneway,hw,name,pts?}]}` game-frame metres. Build-time only since 2026-11-15: written to `derived/graphs/` (not published); build_index.py merges them into `map.json` (the minimap's one file) and builds the route from them. |
 | `{ix}_{iy}.bld.glb` | buildings.py | LOD0 buildings. Materials `facade` (walls) and `roof`. `facade`: COLOR_0 = wall tint (a = baked AO), UV = (metres along the wall, metres up from ground), custom attribute `_BLD` = (seed 0..1, floors, kind, era): kind 0 residential walk-up, 1 mid-rise, 2 office, 3 glass tower, 4 industrial/loft, 5 landmark; era 0 (pre-1900) .. 1 (after 2000) from `year`. The shader (web/src/scene/nyc/facade.ts) builds windows, floors, lit/unlit windows at night from these: NO textures. |
 | `{ix}_{iy}.far.glb` | buildings.py | LOD1: the same buildings as plain prisms (no roof detail, ~12 tris each), same attributes. Used beyond ~500 m. |
 | `{ix}_{iy}.col.json` | buildings.py | colliders for the physics: `{buildings:[{cx,cy,z0,z1,hx,hy,yaw}]}` oriented boxes (game frame) merged/simplified, plus ground height `{ground: z}` (flat tile ground; Manhattan is flat enough for racing). |
@@ -56,6 +59,6 @@ Reported: buildings in the middle of a street, some invisible until hit, some th
   the index with `cache: 'no-cache'` and appends `?v=` to every tile URL. vercel.json now gives the year-long
   `immutable` lifetime only to the hashed bundle files directly under /assets; assets in sub-folders revalidate after
   an hour. Before this a rebuilt tile kept its name and a returning player would have kept the old one for a year.
-- Still open: outside the 8 x 11 real tiles the city is the procedural grid of infiniteNyc.ts (the "square
-  buildings"); its streets do not line up with the real ones at the seam. The race route lies entirely inside the real tiles.
+- Closed 2026-11-15: all of Manhattan is real tiles now and index.json `fill: false` turns the procedural grid of
+  infiniteNyc.ts off; the shore is walled (docs/cities.md "Edges").
 
