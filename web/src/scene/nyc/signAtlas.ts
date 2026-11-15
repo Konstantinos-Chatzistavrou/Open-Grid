@@ -6,6 +6,135 @@ import * as THREE from 'three/webgpu';
 
 let cachedAtlas: THREE.CanvasTexture | null = null;
 
+// ---- texts: per city (setSignCity, called by main.ts before the atlas is drawn). No real brand, venue chain, newspaper,
+// index or ticker: every name here is made up (CREDITS.md: de-branded city).
+type SignTexts = typeof NYC_TEXT;
+const NYC_TEXT = {
+  perfNo: "N° 9",
+  perfTop: "FIFTH AVENUE FLAGSHIP · PARIS · NEW YORK",
+  perfName: "L’OR DE NUIT",
+  perfSub: "EAU DE PARFUM INTENSE",
+  perfAddr: "MAISON VALENTIN · 700 FIFTH AVE",
+  showTop: "★ WINNER OF 9 STAGE AWARDS · MERIDIAN THEATRE · W 45TH ST ★",
+  showName: "EMPIRE OF LIGHTS",
+  showQuote: "“THE MOST ELECTRIFYING NIGHT ON BROADWAY” — THE EVENING CHRONICLE",
+  showTime: "TONIGHT AT 8:00 PM · TICKETS AT BOX OFFICE",
+  mktTop: "TIMES SQUARE MARKET WALL // GLOBAL INDICES LIVE",
+  mktRibbon: "▲ ORBX 448.10 (+1.4%)   ▲ HLCN 212.40 (+2.1%)   ▲ QNTA 189.30 (+1.7%)   ▲ VRTX 612.00 (+2.9%)",
+  techTop: "FIFTH AVENUE FLAGSHIP · NEW YORK",
+  sodaSub: "ICE COLD · ZERO SUGAR · TIMES SQUARE EDITION",
+  gpTop: "GT WORLD STREET SERIES · NEW YORK",
+  gpCircuit: "7TH AVE · BROADWAY · 5TH AVE · 34TH ST CIRCUIT",
+  newsCam: "MANHATTAN SKYLINE CAM · MIDTOWN WEST 54°F",
+  newsHead: "MIDTOWN NIGHT GRAND PRIX",
+  newsSub: "SEVENTH AVENUE & TIMES SQUARE CORRIDOR CLOSED FOR STREET CIRCUIT",
+  newsBreak: "BREAKING NEWS   RECORD LAP TIMES SET ACROSS RAIN-SLICKED SEVENTH AVENUE",
+  newsTransit: "TRANSIT: 1/2/3 N/Q/R/W ON TIME · FDR DRIVE CLEAR · WEATHER: LIGHT RAIN ENDING · 54°F",
+  filmTop: "FILMED IN 70MM · GRAND CINEMAS 42ND STREET",
+  filmName: "REDLINE MANHATTAN",
+  filmCredits: "METRO PICTURES PRESENTS A NIGHT RUN PRODUCTION \"REDLINE MANHATTAN\" · SOUNDTRACK IN IMMERSIVE SOUND",
+  idx1: "GRID 100",
+  idx2: "MTR 500",
+  shops: [["CITY CARE · PHARMACY", "24 HOUR PRESCRIPTIONS · MARKET"], ["BROADWAY ARTISAN PIZZA", "COAL FIRED BRICK OVEN · EST. 1964"], ["MIDTOWN GOURMET DELI", "HOT GRILL · SANDWICHES · COFFEE 24HR"], ["METRO NATIONAL BANK", "24H ATM · PRIVATE CLIENT · VAULT"], ["VARENNE & CO. HOROLOGY", "FINE SWISS TIMEPIECES · FIFTH AVE"], ["MERIDIAN LOUNGE & BAR", "LIVE JAZZ · COCKTAILS · LATE KITCHEN"], ["BLUE HOUR ESPRESSO", "SINGLE ORIGIN ROASTERS · BAKERY"], ["TIMES SQUARE ELECTRONICS", "CAMERAS · AUDIO · LENSES · DUTY FREE"]],
+};
+const CITY_TEXT: Record<string, Partial<SignTexts>> = {
+  london: {
+    perfTop: "BOND STREET FLAGSHIP · PARIS · LONDON",
+    perfAddr: "MAISON VALENTIN · NEW BOND STREET",
+    showTop: "★ WINNER OF 7 STAGE AWARDS · REGENT THEATRE · SHAFTESBURY AVE ★",
+    showQuote: "“THE WEST END’S MOST ELECTRIFYING NIGHT” — THE EVENING CHRONICLE",
+    showTime: "TONIGHT AT 7:30 PM · TICKETS AT BOX OFFICE",
+    mktTop: "CITY OF LONDON // GLOBAL INDICES LIVE",
+    techTop: "REGENT STREET FLAGSHIP · LONDON",
+    sodaSub: "ICE COLD · ZERO SUGAR · PICCADILLY EDITION",
+    gpTop: "GT WORLD STREET SERIES · LONDON",
+    gpCircuit: "PICCADILLY · STRAND · PALL MALL · WHITEHALL CIRCUIT",
+    newsCam: "WEST END SKYLINE CAM · TRAFALGAR 9°C",
+    newsHead: "WEST END NIGHT GRAND PRIX",
+    newsSub: "PICCADILLY & STRAND CLOSED FOR STREET CIRCUIT",
+    newsBreak: "BREAKING NEWS   RECORD LAP TIMES SET ACROSS RAIN-SLICKED PICCADILLY",
+    newsTransit: "UNDERGROUND: GOOD SERVICE · EMBANKMENT CLEAR · WEATHER: DRIZZLE · 9°C",
+    filmTop: "FILMED IN 70MM · GRAND CINEMAS LEICESTER SQUARE",
+    filmName: "REDLINE LONDON",
+    filmCredits: "METRO PICTURES PRESENTS A NIGHT RUN PRODUCTION \"REDLINE LONDON\" · SOUNDTRACK IN IMMERSIVE SOUND",
+    idx1: "CITY 100",
+    idx2: "LDN 250",
+    shops: [["STRAND CHEMIST", "PRESCRIPTIONS · HEALTH & BEAUTY"], ["SOHO WOOD-FIRED PIZZA", "NEAPOLITAN · EST. 1972"], ["THE CROWN & ANCHOR", "FREE HOUSE · REAL ALES · SUNDAY ROAST"], ["METRO NATIONAL BANK", "24H CASH · PRIVATE CLIENT"], ["VARENNE & CO. HOROLOGY", "FINE SWISS TIMEPIECES · BURLINGTON ARCADE"], ["MERIDIAN COCKTAIL BAR", "LIVE JAZZ · LATE LICENCE"], ["BLUE HOUR ESPRESSO", "SPECIALITY COFFEE · BAKERY"], ["WEST END ELECTRONICS", "CAMERAS · AUDIO · REPAIRS"]],
+  },
+  paris: {
+    perfTop: "AVENUE MONTAIGNE · PARIS",
+    perfAddr: "MAISON VALENTIN · RUE DU FAUBOURG",
+    showTop: "★ LE SPECTACLE DE L’ANNÉE · THÉÂTRE MERIDIEN · BD HAUSSMANN ★",
+    showName: "EMPIRE DES LUMIÈRES",
+    showQuote: "« LA NUIT LA PLUS ÉLECTRIQUE DE PARIS » — LE COURRIER DU SOIR",
+    showTime: "CE SOIR 20H30 · BILLETTERIE SUR PLACE",
+    mktTop: "PARIS LA BOURSE // INDICES MONDIAUX EN DIRECT",
+    techTop: "BOUTIQUE CHAMPS-ÉLYSÉES · PARIS",
+    sodaSub: "GLACÉ · ZÉRO SUCRE · ÉDITION CONCORDE",
+    gpTop: "GT WORLD STREET SERIES · PARIS",
+    gpCircuit: "CHAMPS-ÉLYSÉES · CONCORDE · RIVOLI · QUAIS",
+    newsCam: "CAMÉRA TOUR · CONCORDE 8°C",
+    newsHead: "GRAND PRIX DE NUIT DE PARIS",
+    newsSub: "CHAMPS-ÉLYSÉES ET RUE DE RIVOLI FERMÉS POUR LE CIRCUIT",
+    newsBreak: "FLASH INFO   RECORDS DU TOUR SOUS LA PLUIE SUR LES CHAMPS-ÉLYSÉES",
+    newsTransit: "MÉTRO : TRAFIC NORMAL · VOIES SUR BERGE DÉGAGÉES · MÉTÉO : AVERSES · 8°C",
+    filmTop: "TOURNÉ EN 70MM · GRAND CINÉMA DES BOULEVARDS",
+    filmName: "LIGNE ROUGE PARIS",
+    filmCredits: "METRO PICTURES PRÉSENTE UNE PRODUCTION NIGHT RUN « LIGNE ROUGE PARIS » · EN SON IMMERSIF",
+    idx1: "SEINE 40",
+    idx2: "EUR 600",
+    shops: [["PHARMACIE DU LOUVRE", "OUVERT 24H/24 · PARAPHARMACIE"], ["BOULANGERIE SAINT-HONORÉ", "PAIN AU LEVAIN · VIENNOISERIES"], ["BRASSERIE DE LA CONCORDE", "FRUITS DE MER · OUVERT TARD"], ["BANQUE NATIONALE DU CENTRE", "DISTRIBUTEUR 24H · CONSEIL PRIVÉ"], ["VARENNE & CIE HORLOGERIE", "MONTRES SUISSES · PLACE VENDÔME"], ["CAFÉ DE LA SEINE", "BAR · TERRASSE · CONCERTS JAZZ"], ["L’HEURE BLEUE CAFÉ", "TORRÉFACTEUR · PÂTISSERIE"], ["RIVOLI ÉLECTRONIQUE", "PHOTO · AUDIO · DÉTAXE"]],
+  },
+  tokyo: {
+    perfTop: "GINZA FLAGSHIP · PARIS · TOKYO",
+    perfAddr: "MAISON VALENTIN · OMOTESANDO",
+    showTop: "★ SHIBUYA STAGE AWARDS 7 WINS · MERIDIAN HALL ★",
+    showQuote: "“TOKYO’S MOST ELECTRIFYING NIGHT” — THE EVENING CHRONICLE",
+    showTime: "TONIGHT 19:00 · TICKETS AT THE BOX OFFICE",
+    mktTop: "SHIBUYA MARKET WALL // GLOBAL INDICES LIVE",
+    techTop: "OMOTESANDO FLAGSHIP · TOKYO",
+    sodaSub: "ICE COLD · ZERO SUGAR · SHIBUYA EDITION",
+    gpTop: "GT WORLD STREET SERIES · TOKYO",
+    gpCircuit: "SHIBUYA · OMOTESANDO · MEIJI-DORI · SHINJUKU",
+    newsCam: "SHIBUYA SCRAMBLE CAM · 12°C",
+    newsHead: "SHIBUYA NIGHT GRAND PRIX",
+    newsSub: "MEIJI-DORI & OMOTESANDO CLOSED FOR STREET CIRCUIT",
+    newsBreak: "BREAKING NEWS   RECORD LAP TIMES SET ACROSS RAIN-SLICKED MEIJI-DORI",
+    newsTransit: "TRAINS: ALL LINES ON TIME · YAMATE-DORI CLEAR · WEATHER: LIGHT RAIN · 12°C",
+    filmTop: "FILMED IN 70MM · GRAND CINEMAS SHINJUKU",
+    filmName: "REDLINE TOKYO",
+    filmCredits: "METRO PICTURES PRESENTS A NIGHT RUN PRODUCTION \"REDLINE TOKYO\" · SOUNDTRACK IN IMMERSIVE SOUND",
+    idx1: "SBY 225",
+    idx2: "PAC 500",
+    shops: [["SHIBUYA DRUGSTORE", "COSMETICS · MEDICINE · OPEN LATE"], ["RAMEN YOKOCHO", "TONKOTSU · SHOYU · OPEN 24H"], ["IZAKAYA NIGHT OWL", "YAKITORI · SAKE · HIGHBALL"], ["METRO TRUST BANK", "ATM 24H · FOREIGN EXCHANGE"], ["VARENNE & CO. TIMEPIECES", "SWISS WATCHES · GINZA"], ["KARAOKE STAR", "PRIVATE ROOMS · ALL NIGHT"], ["BLUE HOUR COFFEE", "HAND DRIP · BAKERY"], ["SHINJUKU ELECTRONICS", "CAMERAS · GAMES · TAX FREE"]],
+  },
+  losangeles: {
+    perfTop: "RODEO FLAGSHIP · PARIS · LOS ANGELES",
+    perfAddr: "MAISON VALENTIN · 7TH STREET",
+    showTop: "★ WINNER OF 9 STAGE AWARDS · MERIDIAN THEATRE · BROADWAY DTLA ★",
+    showQuote: "“THE MOST ELECTRIFYING NIGHT IN DOWNTOWN” — THE EVENING CHRONICLE",
+    mktTop: "FINANCIAL DISTRICT // GLOBAL INDICES LIVE",
+    techTop: "GRAND AVENUE FLAGSHIP · LOS ANGELES",
+    sodaSub: "ICE COLD · ZERO SUGAR · DOWNTOWN EDITION",
+    gpTop: "GT WORLD STREET SERIES · LOS ANGELES",
+    gpCircuit: "BROADWAY · GRAND AVE · FIGUEROA · 1ST ST CIRCUIT",
+    newsCam: "DOWNTOWN SKYLINE CAM · BUNKER HILL 61°F",
+    newsHead: "DOWNTOWN NIGHT GRAND PRIX",
+    newsSub: "FIGUEROA & GRAND AVENUE CLOSED FOR STREET CIRCUIT",
+    newsBreak: "BREAKING NEWS   RECORD LAP TIMES SET ACROSS RAIN-SLICKED FIGUEROA",
+    newsTransit: "TRANSIT: METRO ON TIME · 110 & 101 CLEAR · WEATHER: RARE RAIN · 61°F",
+    filmTop: "FILMED IN 70MM · GRAND CINEMAS BROADWAY",
+    filmName: "REDLINE LOS ANGELES",
+    filmCredits: "METRO PICTURES PRESENTS A NIGHT RUN PRODUCTION \"REDLINE LOS ANGELES\" · SOUNDTRACK IN IMMERSIVE SOUND",
+    idx1: "PAC 100",
+    idx2: "MTR 500",
+    shops: [["CITY CARE · PHARMACY", "24 HOUR PRESCRIPTIONS · MARKET"], ["TACOS EL GRAND 24HR", "AL PASTOR · CARNE ASADA · HORCHATA"], ["BROADWAY DELI & GRILL", "BREAKFAST ALL DAY · EST. 1948"], ["METRO NATIONAL BANK", "24H ATM · PRIVATE CLIENT"], ["VARENNE & CO. HOROLOGY", "FINE SWISS TIMEPIECES · 7TH ST"], ["MERIDIAN ROOFTOP BAR", "COCKTAILS · DJ · SKYLINE VIEWS"], ["BLUE HOUR ESPRESSO", "COLD BREW · BAKERY"], ["DOWNTOWN ELECTRONICS", "CAMERAS · AUDIO · REPAIRS"]],
+  },
+};
+let S: SignTexts = NYC_TEXT;
+/** The city whose names the signs carry; call before getSignAtlasTexture(). */
+export function setSignCity(id: string) { S = { ...NYC_TEXT, ...(CITY_TEXT[id] ?? {}) }; cachedAtlas = null; }
+
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -63,7 +192,7 @@ function drawBillboard(ctx: CanvasRenderingContext2D, idx: number, x: number, y:
     ctx.fillStyle = '#f8e3b4';
     ctx.font = '700 20px Georgia, serif';
     ctx.textAlign = 'center';
-    ctx.fillText('N° 5', bx + bw * 0.5, by + bh * 0.49);
+    ctx.fillText(S.perfNo, bx + bw * 0.5, by + bh * 0.49);
 
     // Bottle cap
     ctx.fillStyle = '#e8c47c';
@@ -73,18 +202,18 @@ function drawBillboard(ctx: CanvasRenderingContext2D, idx: number, x: number, y:
     ctx.textAlign = 'left';
     ctx.fillStyle = '#e6c280';
     ctx.font = '600 18px "Inter", "Helvetica Neue", sans-serif';
-    ctx.fillText('FIFTH AVENUE FLAGSHIP · PARIS · NEW YORK', 54, 68);
+    ctx.fillText(S.perfTop, 54, 68);
     ctx.fillStyle = '#ffffff';
     ctx.font = '700 68px Georgia, "Times New Roman", serif';
-    ctx.fillText('L’OR DE NUIT', 52, 152);
+    ctx.fillText(S.perfName, 52, 152);
     ctx.fillStyle = 'rgba(255,240,215,0.85)';
     ctx.font = '300 28px Georgia, serif';
-    ctx.fillText('EAU DE PARFUM INTENSE', 54, 198);
+    ctx.fillText(S.perfSub, 54, 198);
     ctx.fillStyle = '#d4af37';
     ctx.fillRect(54, 224, 190, 3);
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.font = '500 20px "Inter", sans-serif';
-    ctx.fillText('MAISON VALENTIN · 725 FIFTH AVE', 54, 326);
+    ctx.fillText(S.perfAddr, 54, 326);
   } else if (idx === 1) {
     // 1: BROADWAY MUSICAL MARQUEE ("METROPOLIS LIVE ON BROADWAY")
     const bg = ctx.createRadialGradient(w * 0.5, h * 0.45, 20, w * 0.5, h * 0.5, w * 0.65);
@@ -111,24 +240,24 @@ function drawBillboard(ctx: CanvasRenderingContext2D, idx: number, x: number, y:
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffd97d';
     ctx.font = '700 22px "Inter", sans-serif';
-    ctx.fillText('★ WINNER OF 9 TONY AWARDS · IMPERIAL THEATRE · W 45TH ST ★', w * 0.5, 76);
+    ctx.fillText(S.showTop, w * 0.5, 76);
 
     ctx.fillStyle = '#ffffff';
     ctx.shadowColor = 'rgba(255, 195, 75, 0.85)';
     ctx.shadowBlur = 24;
     ctx.font = '900 84px "Impact", "Arial Black", sans-serif';
-    ctx.fillText('EMPIRE OF LIGHTS', w * 0.5, 188);
+    ctx.fillText(S.showName, w * 0.5, 188);
     ctx.shadowBlur = 0;
 
     ctx.fillStyle = '#ffcf70';
     ctx.font = '700 30px Georgia, serif';
-    ctx.fillText('“THE MOST ELECTRIFYING NIGHT ON BROADWAY” — THE NEW YORK TIMES', w * 0.5, 246);
+    ctx.fillText(S.showQuote, w * 0.5, 246);
 
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(w * 0.32, 278, w * 0.36, 52);
     ctx.fillStyle = '#5a0812';
     ctx.font = '800 24px "Inter", sans-serif';
-    ctx.fillText('TONIGHT AT 8:00 PM · TICKETS AT BOX OFFICE', w * 0.5, 312);
+    ctx.fillText(S.showTime, w * 0.5, 312);
   } else if (idx === 2) {
     // 2: NASDAQ / GLOBAL MARKETS LIVE FINANCIAL TOWER
     const bg = ctx.createLinearGradient(0, 0, 0, h);
@@ -149,7 +278,7 @@ function drawBillboard(ctx: CanvasRenderingContext2D, idx: number, x: number, y:
     ctx.fillRect(0, 0, w, 58);
     ctx.fillStyle = '#38bdf8';
     ctx.font = '800 26px "Inter", sans-serif';
-    ctx.fillText('TIMES SQUARE MARKETSITE // GLOBAL INDICES LIVE', 36, 38);
+    ctx.fillText(S.mktTop, 36, 38);
 
     //Glowing area chart on right half
     ctx.save();
@@ -179,10 +308,10 @@ function drawBillboard(ctx: CanvasRenderingContext2D, idx: number, x: number, y:
 
     // Ticker rows on left
     const rows = [
-      ['NDX 100', '20,842.65', '+1.84%'],
-      ['S&P 500', '5,914.20', '+1.12%'],
-      ['NVDA', '142.88', '+4.65%'],
-      ['AAPL', '234.50', '+1.92%'],
+      [S.idx1, '20,842.65', '+1.84%'],
+      [S.idx2, '5,914.20', '+1.12%'],
+      ['NOVA', '142.88', '+4.65%'],
+      ['AXON', '234.50', '+1.92%'],
     ];
     rows.forEach(([sym, val, chg], i) => {
       const ry = 104 + i * 44;
@@ -200,7 +329,7 @@ function drawBillboard(ctx: CanvasRenderingContext2D, idx: number, x: number, y:
     ctx.fillRect(0, h - 68, w, 68);
     ctx.fillStyle = '#38bdf8';
     ctx.font = '700 24px monospace';
-    ctx.fillText('▲ MSFT 448.10 (+1.4%)   ▲ AMZN 212.40 (+2.1%)   ▲ GOOGL 189.30 (+1.7%)   ▲ META 612.00 (+2.9%)', 32, h - 26);
+    ctx.fillText(S.mktRibbon, 32, h - 26);
   } else if (idx === 3) {
     // 3: TECH FLAGSHIP SMARTPHONE LAUNCH ("AETHER 16 PRO · TITANIUM")
     const bg = ctx.createLinearGradient(0, 0, w, h);
@@ -235,7 +364,7 @@ function drawBillboard(ctx: CanvasRenderingContext2D, idx: number, x: number, y:
 
     ctx.fillStyle = '#38bdf8';
     ctx.font = '700 20px "Inter", sans-serif';
-    ctx.fillText('NEW YORK FIFTH AVENUE CUBE', 56, 78);
+    ctx.fillText(S.techTop, 56, 78);
     ctx.fillStyle = '#ffffff';
     ctx.font = '800 68px "Inter", "Helvetica Neue", sans-serif';
     ctx.fillText('Aether 16 Pro', 54, 158);
@@ -272,7 +401,7 @@ function drawBillboard(ctx: CanvasRenderingContext2D, idx: number, x: number, y:
     ctx.font = 'italic 900 86px Georgia, "Times New Roman", serif';
     ctx.fillText('Solaris Classic', w * 0.5, 156);
     ctx.font = '700 28px "Inter", sans-serif';
-    ctx.fillText('ICE COLD · ZERO SUGAR · TIMES SQUARE EDITION', w * 0.5, 214);
+    ctx.fillText(S.sodaSub, w * 0.5, 214);
   } else if (idx === 5) {
     // 5: AUTOMOTIVE / SUPERCAR WORLD SERIES ("OPEN GRID // MIDTOWN GP")
     const bg = ctx.createLinearGradient(0, 0, w, 0);
@@ -294,7 +423,7 @@ function drawBillboard(ctx: CanvasRenderingContext2D, idx: number, x: number, y:
 
     ctx.fillStyle = '#ff2a4b';
     ctx.font = '800 22px "Inter", sans-serif';
-    ctx.fillText('FIA GT WORLD STREET SERIES · NEW YORK', 48, 72);
+    ctx.fillText(S.gpTop, 48, 72);
     ctx.fillStyle = '#ffffff';
     ctx.font = 'italic 900 76px "Impact", "Arial Black", sans-serif';
     ctx.fillText('OPEN GRID GP', 48, 166);
@@ -303,7 +432,7 @@ function drawBillboard(ctx: CanvasRenderingContext2D, idx: number, x: number, y:
     ctx.fillText('VELA GT-R · 9,000 RPM NATURALLY ASPIRATED', 48, 224);
     ctx.fillStyle = '#94a3b8';
     ctx.font = '600 22px monospace';
-    ctx.fillText('7TH AVE · BROADWAY · 5TH AVE · 34TH ST CIRCUIT', 48, 318);
+    ctx.fillText(S.gpCircuit, 48, 318);
   } else if (idx === 6) {
     // 6: 24-HOUR LIVE NETWORK NEWS & WEATHER ("NY1 / METRO NEWS HD")
     ctx.fillStyle = '#08142c';
@@ -325,28 +454,28 @@ function drawBillboard(ctx: CanvasRenderingContext2D, idx: number, x: number, y:
     ctx.fillText('● LIVE', 60, 65);
     ctx.fillStyle = '#93c5fd';
     ctx.font = '700 24px "Inter", sans-serif';
-    ctx.fillText('MANHATTAN SKYLINE CAM · MIDTOWN WEST 54°F', 182, 65);
+    ctx.fillText(S.newsCam, 182, 65);
 
     ctx.fillStyle = '#ffffff';
     ctx.font = '900 58px "Inter", sans-serif';
-    ctx.fillText('MIDTOWN NIGHT GRAND PRIX', 42, 156);
+    ctx.fillText(S.newsHead, 42, 156);
     ctx.fillStyle = '#fde047';
     ctx.font = '700 30px "Inter", sans-serif';
-    ctx.fillText('SEVENTH AVENUE & TIMES SQUARE CORRIDOR CLOSED FOR STREET CIRCUIT', 42, 210);
+    ctx.fillText(S.newsSub, 42, 210);
 
     // Lower third breaking news banner
     ctx.fillStyle = '#b91c1c';
     ctx.fillRect(0, h - 110, w, 54);
     ctx.fillStyle = '#ffffff';
     ctx.font = '800 26px "Inter", sans-serif';
-    ctx.fillText('BREAKING NEWS   RECORD LAP TIMES SET ACROSS RAIN-SLICKED SEVENTH AVENUE', 42, h - 74);
+    ctx.fillText(S.newsBreak, 42, h - 74);
 
     // Bottom yellow ticker
     ctx.fillStyle = '#facc15';
     ctx.fillRect(0, h - 56, w, 56);
     ctx.fillStyle = '#090d16';
     ctx.font = '800 24px monospace';
-    ctx.fillText('TRANSIT: 1/2/3 N/Q/R/W ON TIME · FDR DRIVE CLEAR · WEATHER: LIGHT RAIN ENDING · 54°F', 42, h - 20);
+    ctx.fillText(S.newsTransit, 42, h - 20);
   } else {
     // 7: IMAX 70MM BLOCKBUSTER KEY ART ("SHADOW OVER MANHATTAN")
     const bg = ctx.createLinearGradient(0, 0, 0, h);
@@ -368,16 +497,16 @@ function drawBillboard(ctx: CanvasRenderingContext2D, idx: number, x: number, y:
     ctx.textAlign = 'center';
     ctx.fillStyle = '#7dd3fc';
     ctx.font = '600 20px "Inter", sans-serif';
-    ctx.fillText('FILMED FOR IMAX 70MM · AMC EMPIRE 25 TIMES SQUARE', w * 0.5, 68);
+    ctx.fillText(S.filmTop, w * 0.5, 68);
     ctx.fillStyle = '#ffffff';
     ctx.font = '900 76px "Inter", "Arial Black", sans-serif';
-    ctx.fillText('REDLINE MANHATTAN', w * 0.5, 178);
+    ctx.fillText(S.filmName, w * 0.5, 178);
     ctx.fillStyle = '#fed7aa';
     ctx.font = '700 26px "Inter", sans-serif';
     ctx.fillText('EVERY STREET HAS A PRICE · IN THEATRES FRIDAY', w * 0.5, 232);
     ctx.fillStyle = 'rgba(203, 213, 225, 0.65)';
     ctx.font = '500 15px monospace';
-    ctx.fillText('METRO PICTURES PRESENTS A NIGHT RUN PRODUCTION "REDLINE MANHATTAN" SOUNDTRACK AVAILABLE IN DOLBY ATMOS', w * 0.5, 342);
+    ctx.fillText(S.filmCredits, w * 0.5, 342);
   }
 
   ctx.restore();
@@ -390,16 +519,17 @@ function drawShopSign(ctx: CanvasRenderingContext2D, idx: number, x: number, y: 
   ctx.clip();
   ctx.translate(x, y);
 
-  const specs: { bg: string; border: string; fg: string; sub: string; title: string; tag: string }[] = [
-    { bg: '#0c111d', border: '#38bdf8', fg: '#ffffff', sub: '#38bdf8', title: 'DUANE READE · PHARMACY', tag: '24 HOUR PRESCRIPTIONS · MARKET' },
-    { bg: '#16090b', border: '#f59e0b', fg: '#fde68a', sub: '#f87171', title: 'BROADWAY ARTISAN PIZZA', tag: 'COAL FIRED BRICK OVEN · EST. 1964' },
-    { bg: '#091410', border: '#34d399', fg: '#ecfdf5', sub: '#6ee7b7', title: 'MIDTOWN GOURMET DELI', tag: 'BOAR’S HEAD · HOT GRILL · COFFEE 24HR' },
-    { bg: '#0a0d18', border: '#60a5fa', fg: '#ffffff', sub: '#93c5fd', title: 'METRO NATIONAL BANK', tag: '24H ATM · PRIVATE CLIENT · VAULT' },
-    { bg: '#14110c', border: '#d4af37', fg: '#fffbeb', sub: '#fcd34d', title: 'TOURNEAU & CO. HOROLOGY', tag: 'FINE SWISS TIMEPIECES · FIFTH AVE' },
-    { bg: '#110c18', border: '#f472b6', fg: '#fdf2f8', sub: '#f9a8d4', title: 'PARAMOUNT LOUNGE & BAR', tag: 'LIVE JAZZ · COCKTAILS · LATE KITCHEN' },
-    { bg: '#0e1318', border: '#e2e8f0', fg: '#f8fafc', sub: '#94a3b8', title: 'BLUE BOTTLE ESPRESSO', tag: 'SINGLE ORIGIN ROASTERS · BAKERY' },
-    { bg: '#180c0c', border: '#ef4444', fg: '#ffffff', sub: '#fca5a5', title: 'TIMES SQUARE ELECTRONICS', tag: 'CAMERAS · AUDIO · LENSES · DUTY FREE' },
+  const C = [
+    { bg: '#0c111d', border: '#38bdf8', fg: '#ffffff', sub: '#38bdf8' },
+    { bg: '#16090b', border: '#f59e0b', fg: '#fde68a', sub: '#f87171' },
+    { bg: '#091410', border: '#34d399', fg: '#ecfdf5', sub: '#6ee7b7' },
+    { bg: '#0a0d18', border: '#60a5fa', fg: '#ffffff', sub: '#93c5fd' },
+    { bg: '#14110c', border: '#d4af37', fg: '#fffbeb', sub: '#fcd34d' },
+    { bg: '#110c18', border: '#f472b6', fg: '#fdf2f8', sub: '#f9a8d4' },
+    { bg: '#0e1318', border: '#e2e8f0', fg: '#f8fafc', sub: '#94a3b8' },
+    { bg: '#180c0c', border: '#ef4444', fg: '#ffffff', sub: '#fca5a5' },
   ];
+  const specs = C.map((c, i) => ({ ...c, title: S.shops[i][0], tag: S.shops[i][1] }));
   const s = specs[idx % specs.length];
   ctx.fillStyle = s.bg;
   ctx.fillRect(0, 0, w, h);

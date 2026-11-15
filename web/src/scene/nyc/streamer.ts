@@ -74,8 +74,13 @@ const AVENUE = 29 * Math.PI / 180;   // Manhattan's grid is rotated ~29 degrees 
 interface IndexJson {
   tile?: number; spawn?: { x: number; y: number; heading: number };
   tiles: Record<string, { files?: string[]; bbox?: number[] }>;
+  /** false: the city is real data to its walled edge, no procedural fill (tools/nyc/build_index.py) */
+  fill?: boolean;
+  city?: string; name?: string; grid_deg?: number; drive?: 'left' | 'right';
 }
-interface ColJson { ground?: number; buildings?: { cx: number; cy: number; z0: number; z1: number; hx: number; hy: number; yaw: number }[] }
+type ColBox = { cx: number; cy: number; z0: number; z1: number; hx: number; hy: number; yaw: number };
+/** walls: invisible limits of the drivable area (sea wall, river banks, bridge sides, a city's edge): tools/nyc tilelib.edge_walls */
+interface ColJson { ground?: number; buildings?: ColBox[]; walls?: ColBox[] }
 type Part = 'ground' | 'bld' | 'far';
 
 interface Tile {
@@ -323,7 +328,8 @@ export class NycStreamer {
     const now = performance.now();
     // priming (before the first frame) only loads the immediate ring; the rest streams in budgeted afterwards
     const nearR = prime ? Math.min(o.nearLoad, 300) : o.nearLoad, farR = prime ? Math.min(o.farLoad, 560) : o.farLoad;
-    this.ensureProceduralRing(p.x, p.z, farR + TILE * 0.5);
+    // index.fill === false: every tile of this city is real data and its edge is walled (shore, barriers): no made-up grid beyond it
+    if (this.index?.fill !== false) this.ensureProceduralRing(p.x, p.z, farR + TILE * 0.5);
     for (const t of this.tiles.values()) {
       t.d = this.dist(t, p.x, p.z);
       // forward bias: tiles ahead of a moving car load first (up to 150 m of priority)
@@ -556,6 +562,13 @@ export class NycStreamer {
         }
       } });
     }
+    const ws = c?.walls ?? [];
+    if (ws.length) this.queue.push({ tile: t, kind: 'col', gen, cost: 0.2, run: () => {
+      for (const b of ws) {
+        q.setFromAxisAngle(Y, b.yaw);
+        make(RAPIER.ColliderDesc.cuboid(b.hx, Math.max(0.1, (b.z1 - b.z0) / 2), b.hy).setTranslation(b.cx, (b.z0 + b.z1) / 2, -b.cy).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }), S.wall);
+      }
+    } });
     this.queue.push({ tile: t, kind: 'col', gen, cost: 0.05, run: () => { t.col = 3; this.breaches.reapply(t.key); } });
   }
 

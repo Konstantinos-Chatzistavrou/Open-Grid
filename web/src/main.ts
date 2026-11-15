@@ -18,6 +18,9 @@ import { CoreCar, CoreRace, OUT, loadCore, type LapInfo, type RawInput } from '.
 import { CarBody, DT, PhysicsWorld, loadRapier, type CarShape } from './physics/world';
 import { CityLighting, loadCity } from './scene/city';
 import { NycStreamer, nycCityShim } from './scene/nyc';
+import { setGroundGrid } from './scene/nyc/groundMaterials';
+import { setSignCity } from './scene/nyc/signAtlas';
+import { CITIES, currentCity, saveCity } from './cities';
 import { StreetObstacles, type PoleHit } from './scene/nyc/obstacles';
 import { drawEarly, type BreachSpec, type WallHit } from './scene/nyc/breach';
 import { CarVisual, type CarVisualConfig } from './scene/car';
@@ -288,10 +291,15 @@ async function main() {
     return j.cars;
   });
   const useNyc = params.get('city') !== 'old';
+  // the real-scale city of this session (cities.ts: New York, London, Paris, Tokyo, Los Angeles); `useNyc` = streamed city tiles
+  const cityInfo = currentCity(params);
+  setGroundGrid(cityInfo.grid);
+  setSignCity(cityInfo.id);
+  { const cr = document.getElementById('credits'); if (cr) cr.innerHTML = cr.innerHTML.replace(/OpenStreetMap contributors<\/a> \(ODbL\)( &amp; NYC Open Data)?/, `OpenStreetMap contributors</a> (ODbL)${cityInfo.id === 'nyc' ? ' &amp; NYC Open Data' : ''}`); }
   const [catalog, defaultCfg, route] = await Promise.all([
     catalogP,
     fetchVisualCfg(DEFAULT_VISUAL),
-    fetch(useNyc ? '/data/tracks/nyc_route.json' : '/data/tracks/city_route.json').then((r) => r.json()),
+    fetch(useNyc ? cityInfo.route : '/data/tracks/city_route.json').then((r) => r.json()),
     loadCore(),
     loadRapier(),
   ]);
@@ -325,6 +333,7 @@ async function main() {
   let core = new CoreCar(coreJson());
   const pw = new PhysicsWorld();
   const nyc = useNyc ? new NycStreamer(scene, renderer, pw, camera, {
+    base: cityInfo.base,
     surfaces: core.info.surfaces,
     debug: params.get('nycdebug') === '1',
     fogDensity: num('fog', potato ? 0.0045 : 0.0024),
@@ -1038,7 +1047,7 @@ async function main() {
     }
   };
   const paintInt = () => parseInt(paintOf(sel, catalog).slice(1), 16);
-  const meForParty = () => ({ name: sel.name, car: sel.car, paint: paintInt(), skin: sel.skin, look: customOf(sel) });
+  const meForParty = () => ({ name: sel.name, car: sel.car, paint: paintInt(), skin: sel.skin, look: customOf(sel), city: cityInfo.id });
   /** The garage look (parts, colours) and the driver's skin on the car on show. */
   const applyLook = () => { visual.custom.apply(customOf(sel), paintOf(sel, catalog)); visual.driver.setSkin(skinOf(sel.skin)); };
   /** The online account keeps each car's look; a garage click pushes once (debounced) once the profile is known. */
@@ -1062,6 +1071,15 @@ async function main() {
       if (swap) { await steadyFrames(5, 70, 6000); loader.hide(); }
     })(); },
     play: (mode) => void startSession(mode),
+    // another city: every tile, collider and route belongs to one city, so the game reloads into it (the choice is kept)
+    city: (id) => {
+      if (id === cityInfo.id) return;
+      saveCity(id);
+      const u = new URL(location.href); u.searchParams.delete('city');
+      if (party) u.searchParams.set('party', party.code);   // a party follows its leader's city: the invite is waiting after the reload
+      void loader.show(`Loading ${CITIES.find((c) => c.id === id)?.name ?? 'the city'}…`).then(() => location.replace(u.toString()));
+    },
+    cities: () => ({ list: CITIES, current: cityInfo.id }),
     gfx: (g2) => applyGfx(g2),
     resume: () => resume(),
     restart: () => { menu.show('none'); if (raceLaps() > 0) void beginRace(); else { resetCar(); setState('race'); audio.muted = false; prev = performance.now(); } },
@@ -1159,11 +1177,10 @@ async function main() {
   minimap.setRoute(route.samples);
   input.onMap = () => minimap.show(!minimap.visible);
   if (nyc) void (async () => {
+    // one merged street map per city (tools/nyc/build_index.py map.json)
     try {
-      const idx = await fetch('/assets/nyc/tiles/index.json').then((r) => r.json()) as { tiles: Record<string, { files: string[] }> };
-      const names = Object.entries(idx.tiles).filter(([, t]) => t.files.some((f) => f.endsWith('.graph.json'))).map(([k]) => k);
-      for (let i = 0; i < names.length; i += 6)   // a few at a time: never competes with the city tiles for long
-        await Promise.all(names.slice(i, i + 6).map((k) => fetch(`/assets/nyc/tiles/${k}.graph.json`).then((r) => r.json()).then((g) => minimap.addGraph(g)).catch(() => {})));
+      const m = await fetch(cityInfo.base + 'map.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      if (m) minimap.addGraph(m);
     } catch { /* no map: the minimap shows the route only */ }
   })();
   const mmFwd = new THREE.Vector3();
@@ -1434,7 +1451,8 @@ async function main() {
       const slot = party ? Math.max(0, party.members.findIndex((m) => m.id === party!.selfId)) : 0;
       grid = mode === 'online' ? { ds: -8 * (slot >> 1), lat: slot % 2 ? 2.2 : -2.2 } : { ds: 0, lat: 0 };
     }
-    if (mode === 'online' && party?.mode === 'race' && !rejoin && cloud.available) {
+    // ranked rooms time the New York route only (cloud/): races in the other cities are unranked for now
+    if (mode === 'online' && party?.mode === 'race' && !rejoin && cloud.available && cityInfo.id === 'nyc') {
       // ranked: the online race room times this race and pays the online career (it decides whether it counts)
       ranked?.close();
       if (mp.ready) {

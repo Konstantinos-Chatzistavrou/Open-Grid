@@ -1,4 +1,4 @@
-"""Shared tile library for the New York build (see docs/nyc_tiles.md). Used by ground.py, buildings.py, props.py and build_tiles.py.
+"""Shared tile library for the city builds (New York first; CITY=<id> picks another, see cities.json) (see docs/nyc_tiles.md). Used by ground.py, buildings.py, props.py and build_tiles.py.
 
 Frame: metres, x east, y north, z up, origin Times Square (extract.py). Tile grid 256 m: tile (ix, iy) covers [ix*256, (ix+1)*256) x [iy*256, ...).
 glTF is Y-up: a game-frame point (x, y, z) is written as (x, z, -y) (the same mapping the game uses: three.js position = (x, z, -y)), relative to the
@@ -10,17 +10,28 @@ from dataclasses import dataclass, field
 import numpy as np
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-D = os.environ.get("NYC_DATA") or os.path.join(ROOT, "assets_source/downloads/nyc")
+# Which city: CITY=<id> (tools/nyc/cities.json); New York is the default so every older command works unchanged.
+CITIES = json.load(open(os.path.join(os.path.dirname(__file__), "cities.json")))
+CITY_ID = os.environ.get("CITY", "nyc")
+if CITY_ID not in CITIES:
+    raise SystemExit(f"unknown CITY={CITY_ID}: one of {', '.join(k for k in CITIES if not k.startswith('_'))}")
+CITY = CITIES[CITY_ID]
+D = os.environ.get("NYC_DATA") or os.path.join(ROOT, CITY["data"])
 if not os.path.isdir(os.path.join(D, "derived")):   # git worktrees do not have the (gitignored) data: use the main checkout's
     import subprocess   # the main checkout is the parent of git's common directory
     try:
         common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=ROOT,
                                 capture_output=True, text=True, check=True).stdout.strip()
-        D = os.path.join(os.path.dirname(common), "assets_source/downloads/nyc")
+        alt = os.path.join(os.path.dirname(common), CITY["data"])
+        if os.path.isdir(os.path.join(alt, "derived")):
+            D = alt
     except (OSError, subprocess.CalledProcessError):
         pass
 DERIVED = os.path.join(D, "derived")
-OUT_TILES = os.path.join(ROOT, "web/public/assets/nyc/tiles")
+OUT_TILES = os.path.join(ROOT, CITY["out"])
+# per-tile road graphs: build-time only (routes, map.json, spawn), so they are not published with the tiles
+GRAPH_DIR = os.path.join(DERIVED, "graphs")
+MASK_FILE = "manhattan_mask.json" if CITY.get("mask") == "manhattan" else "mask.json"
 TILE = 256.0
 
 
@@ -43,11 +54,94 @@ def read_ndjson(name):
 
 
 def manhattan_polygon(buffer_m=60.0):
-    """Shapely polygon of Manhattan (+ buffer) in the game frame (derived/manhattan_mask.json, from mask.py)."""
+    """Shapely polygon of the built area (+ buffer) in the game frame: Manhattan's outline for New York, the city's `area` box elsewhere
+    (derived/manhattan_mask.json or derived/mask.json, from mask.py)."""
     from shapely.geometry import Polygon
     from shapely.ops import unary_union
-    mask = json.load(open(os.path.join(DERIVED, "manhattan_mask.json")))
+    mask = json.load(open(os.path.join(DERIVED, MASK_FILE)))
     return unary_union([Polygon(p[0], p[1:]) for p in mask]).buffer(buffer_m)
+
+
+def mask_polygon(buffer_m=60.0):
+    return manhattan_polygon(buffer_m)
+
+
+FRINGE = float(CITY.get("fringe_m", 200.0))   # area cities: real buildings/ground this far beyond the drivable box (a city, not a cliff, behind the barrier)
+
+
+def drive_box():
+    """Area cities: the drivable box (game frame) = derived/drive.json (mask.py). None for Manhattan (the island is the limit)."""
+    p = os.path.join(DERIVED, "drive.json")
+    if CITY.get("mask") == "manhattan" or not os.path.exists(p):
+        return None
+    from shapely.geometry import Polygon
+    return Polygon(json.load(open(p)))
+
+
+def land_polygon():
+    """Land before OSM water is cut out: Manhattan's outline, or (area cities) the content box with a wide margin so no tile
+    ever shows 'sea' beyond the built area."""
+    if CITY.get("mask") == "manhattan":
+        return manhattan_polygon(0).buffer(0)
+    return manhattan_polygon(0).buffer(FRINGE + 400.0)
+
+
+def drivable(land, asphalt, bounds):
+    """Where a car may be, inside `bounds` (shapely box): land (water and piers already applied by the caller), plus bridge
+    decks (asphalt over water) inside the drive box for area cities; clipped to the drive box. Manhattan: land only (its
+    bridges and tunnels lead off the built area: blocked at the shore)."""
+    db = drive_box()
+    if db is None:   # Manhattan: asphalt hanging over the river within 40 m of the shore (FDR Drive, bridge approaches) still counts
+        D = land
+        if asphalt is not None and not asphalt.is_empty:
+            D = D.union(asphalt.difference(land).intersection(land.buffer(40.0)))
+        return D.intersection(bounds).buffer(0)
+    D = land.intersection(db)
+    if asphalt is not None and not asphalt.is_empty:
+        D = D.union(asphalt.intersection(db).difference(land))
+    return D.intersection(bounds).buffer(0)
+
+
+def edge_walls(D, T, height=2.6, thick=0.5, step=24.0):
+    """Invisible wall boxes along the boundary of the drivable area D that lies inside tile box T: [{cx,cy,z0,z1,hx,hy,yaw}]
+    (the col.json box format), each just outside D. Long runs are cut into <= step m pieces."""
+    from shapely.geometry import LineString, MultiLineString, GeometryCollection
+    out = []
+    if D.is_empty:
+        return out
+    b = D.boundary.intersection(T)
+    lines = []
+    def walk(g):
+        if isinstance(g, LineString):
+            lines.append(g)
+        elif isinstance(g, (MultiLineString, GeometryCollection)):
+            for q in g.geoms:
+                walk(q)
+    walk(b)
+    for ln in lines:
+        ln = ln.simplify(0.4)
+        c = list(ln.coords)
+        for (ax, ay), (bx, by) in zip(c, c[1:]):
+            L = math.hypot(bx - ax, by - ay)
+            if L < 0.3:
+                continue
+            n = max(1, int(math.ceil(L / step)))
+            ux, uy = (bx - ax) / L, (by - ay) / L
+            for k in range(n):
+                s0, s1 = L * k / n, L * (k + 1) / n
+                mx, my = ax + ux * (s0 + s1) / 2, ay + uy * (s0 + s1) / 2
+                # outside = the side of the segment that is not in D
+                nx, ny = -uy, ux
+                if D.contains(_pt(mx + nx * 0.6, my + ny * 0.6)):
+                    nx, ny = -nx, -ny
+                out.append({"cx": round(mx + nx * thick, 2), "cy": round(my + ny * thick, 2), "z0": -1.0, "z1": height,
+                            "hx": round((s1 - s0) / 2 + thick, 2), "hy": thick, "yaw": round(math.atan2(uy, ux), 4)})
+    return out
+
+
+def _pt(x, y):
+    from shapely.geometry import Point
+    return Point(x, y)
 
 
 class World:

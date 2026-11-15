@@ -18,9 +18,11 @@ export const GROUND_MATERIAL_NAMES = ['road', 'sidewalk', 'curb', 'marking', 'cr
 export type GroundMaterialName = typeof GROUND_MATERIAL_NAMES[number];
 
 // Manhattan's street grid is rotated 29 degrees from true north: slabs and pavers are laid out along it, so they line up with the kerbs.
-const GRID = (29 * Math.PI) / 180;
-const CS = Math.cos(GRID);
-const SN = Math.sin(GRID);
+// Other cities set their own street-grid angle before the materials are made (setGroundGrid; cities.ts `gridDeg`).
+let CS = Math.cos((29 * Math.PI) / 180);
+let SN = Math.sin((29 * Math.PI) / 180);
+/** The street grid's angle from east (degrees) for slabs and pavers; call before createGroundMaterials. */
+export function setGroundGrid(deg: number) { CS = Math.cos((deg * Math.PI) / 180); SN = Math.sin((deg * Math.PI) / 180); }
 
 // ---- shared node snippets (built once per createGroundMaterials call; each material owns its own nodes where they are mutated)
 const P = uv();                                                         // metres, world aligned

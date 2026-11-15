@@ -50,6 +50,14 @@ def road_width(r):
     if hw.endswith("_link"):
         return max(w, 6.5)
     nm = r.get("name") or ""
+    cw = tilelib.CITY.get("widths")
+    if cw:   # other cities: their own street classes (London and Tokyo streets are far narrower than Manhattan's); data width wins when wider
+        rule = cw.get(hw, cw.get("unclassified", 8.0))
+        if ow and hw in ("primary", "secondary"):
+            rule *= 0.8
+        if any(k in nm for k in ("Avenue", "Boulevard", "Champs")) and hw in ("primary", "secondary", "tertiary"):
+            rule = max(rule, 16.0)
+        return min(max(rule, min(w, rule * 1.6)), 30.0)
     if any(k in nm for k in ("Avenue", "Broadway", "Boulevard", "Bowery", "Expressway")) and hw in ("primary", "secondary", "tertiary", "living_street", "residential", "unclassified"):
         return min(max(18.0 if ow else 21.0, w), 30.0)
     rule = {"primary": 19.0 if ow else 22.0, "secondary": 14.0, "tertiary": 13.0, "residential": 11.0 if ow else 12.0, "unclassified": 11.0,
@@ -201,6 +209,50 @@ def wall_strip(line, z0, z1, face_left, color=(1, 1, 1, 1)):
     nrm = np.repeat(np.column_stack([nl, np.zeros(n)]), 4, axis=0).astype(np.float32)
     col = np.tile(np.array(color, dtype=np.float32), (n * 4, 1))
     return pos, idx, uv.astype(np.float32), col, nrm
+
+
+def barrier(line, D, h=0.95, t=0.55):
+    """A concrete barrier along `line` (on the boundary of the drivable area D), standing just outside D: two vertical faces
+    and a top. Returns [(pos, idx, uv, col, nrm)] for Acc.add."""
+    c = np.asarray(line.simplify(0.2).coords)[:, :2]
+    if len(c) < 2:
+        return []
+    mid = (c[0] + c[1]) / 2
+    d = c[1] - c[0]
+    n = np.array([-d[1], d[0]]) / max(np.linalg.norm(d), 1e-6)
+    side = -1.0 if D.contains(Point(*(mid + n * 0.5))) else 1.0      # +n points out of D: put the barrier there
+    def off(k):
+        out = []
+        for i in range(len(c)):
+            a = c[max(i - 1, 0)]; b = c[min(i + 1, len(c) - 1)]
+            dd = b - a; nn = np.array([-dd[1], dd[0]]) / max(np.linalg.norm(dd), 1e-6)
+            out.append(c[i] + nn * side * k)
+        return LineString(out)
+    inner, outer = off(0.05), off(t)
+    col = (0.62, 0.62, 0.6, 1.0)
+    res = []
+    for ln, left in ((inner, side < 0), (outer, side > 0)):
+        w = wall_strip(ln, 0.0, h, left, col)
+        if w:
+            res.append(w)
+    # top: quads between the two offset lines
+    a, b = np.asarray(inner.coords), np.asarray(outer.coords)
+    m = len(a)
+    pos = np.zeros((m * 2, 3)); pos[:m, :2] = a; pos[m:, :2] = b; pos[:, 2] = h
+    idx = []
+    for i in range(m - 1):
+        q = [i, i + 1, m + i + 1, m + i]
+        idx += [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]
+    idx = np.array(idx)
+    # wind so the top faces up
+    e1 = pos[idx[0, 1]] - pos[idx[0, 0]]; e2 = pos[idx[0, 2]] - pos[idx[0, 0]]
+    if np.cross(e1, e2)[2] < 0:
+        idx = idx[:, ::-1]
+    s = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(a, axis=0), axis=1))])
+    uv = np.concatenate([np.column_stack([s, np.zeros(m)]), np.column_stack([s, np.full(m, t)])]).astype(np.float32)
+    nrm = np.tile(np.array([0, 0, 1], np.float32), (m * 2, 1))
+    res.append((pos, idx, uv, np.tile(np.array(col, np.float32), (m * 2, 1)), nrm))
+    return res
 
 
 def densify(c, step):
@@ -375,9 +427,9 @@ class Context:
         from tilelib import World
         t = time.time()
         self.world = World(layers=("roads", "areas", "rails"))
-        mask = json.load(open(os.path.join(tilelib.DERIVED, "manhattan_mask.json")))
-        self.land = unary_union([Polygon(p[0], p[1:]) for p in mask]).buffer(0)
-        self.land_far = self.land.buffer(120)
+        self.land = tilelib.land_polygon()                 # Manhattan's outline, or (area cities) far beyond the built box
+        self.extent = tilelib.manhattan_polygon(0).buffer(0)   # what gets tiles: the island, or the box + fringe
+        self.land_far = self.extent.buffer(120)
         self.net = Network(self.world)
         self.load_s = time.time() - t
 
@@ -520,6 +572,23 @@ def build_tile(ctx, ix, iy, debug=False):
                 if w:
                     acc.add("curb", w[0], w[1], w[2], w[3], w[4])
 
+    # --- barriers: where the drivable area ends on the asphalt (bridges off the island, the area cities' limits) a concrete
+    #     barrier stands across the road; buildings.py puts the matching invisible walls into col.json (tilelib.edge_walls)
+    #     and a lower parapet along the rest of that edge (shore, river banks, the city limit), so no wall is invisible
+    D = tilelib.drivable(land, road if not road.is_empty else None, B)
+    if not D.contains(T):
+        edge = D.boundary.intersection(T)
+        on_road = edge.intersection(road.buffer(0.6)) if not road.is_empty else None
+        for l in (linesof(on_road) if on_road is not None else []):
+            if l.length >= 0.8:
+                for g in barrier(l, D):
+                    acc.add("curb", *g)
+        rest = edge.difference(road.buffer(0.6)) if not road.is_empty else edge
+        for l in linesof(rest):
+            if l.length >= 0.8:
+                for g in barrier(l, D, h=0.75, t=0.35):
+                    acc.add("curb", *g)
+
     # --- park paths (footways inside parks)
     if path_lines and not park_r.is_empty:
         pp = unary_union([g.buffer(w / 2, quad_segs=2, cap_style="flat") for g, w in path_lines if g.intersects(park_r)])
@@ -608,7 +677,8 @@ def write_tile(ctx, ix, iy, outdir):
     tris = sum(len(m.idx) for m in meshes)
     if tris:
         size = write_glb(os.path.join(outdir, f"{name}.ground.glb"), meshes, (ix, iy), name)
-    with open(os.path.join(outdir, f"{name}.graph.json"), "w") as f:
+    os.makedirs(tilelib.GRAPH_DIR, exist_ok=True)
+    with open(os.path.join(tilelib.GRAPH_DIR, f"{name}.graph.json"), "w") as f:
         json.dump(graph, f, separators=(",", ":"))
     return {"tile": (ix, iy), "tris": int(tris), "bytes": size, "secs": time.time() - t, "edges": len(graph["edges"])}
 
@@ -616,7 +686,7 @@ def write_tile(ctx, ix, iy, outdir):
 def all_tiles(ctx):
     x0, y0, x1, y1 = ctx.land_far.bounds
     out = []
-    land20 = ctx.land.buffer(20)
+    land20 = ctx.extent.buffer(20)
     shapely.prepare(land20)
     for ix in range(int(math.floor(x0 / TILE)), int(math.floor(x1 / TILE)) + 1):
         for iy in range(int(math.floor(y0 / TILE)), int(math.floor(y1 / TILE)) + 1):
@@ -675,21 +745,18 @@ def main():
         meshopt_all(_OUT, [r["tile"] for r in res])
 
 
-def meshopt_all(outdir, tiles):
+def meshopt_all(outdir, tiles, ext="ground", level=None):
+    """meshopt every {tile}.{ext}.glb in one node process per 150 files (tools/nyc/meshopt_batch.mjs; npx per file costs seconds)."""
     import shutil, subprocess
-    if not shutil.which("npx"):
-        print("npx not found: skipping meshopt"); return
-    tot0 = tot1 = 0
-    for ix, iy in tiles:
-        p = os.path.join(outdir, f"{ix}_{iy}.ground.glb")
-        if not os.path.exists(p): continue
-        tmp = p + ".tmp.glb"
-        r = subprocess.run(["npx", "-y", "@gltf-transform/cli@4.5.1", "meshopt", p, tmp], capture_output=True, text=True)
-        if r.returncode == 0 and os.path.exists(tmp):
-            tot0 += os.path.getsize(p); tot1 += os.path.getsize(tmp); os.replace(tmp, p)
-        else:
-            print("meshopt failed for", p, r.stderr[-200:])
-    print(f"meshopt: {tot0 / 1e6:.1f} MB -> {tot1 / 1e6:.1f} MB")
+    if not shutil.which("node"):
+        print("node not found: skipping meshopt"); return
+    files = [os.path.join(outdir, f"{ix}_{iy}.{ext}.glb") for ix, iy in tiles]
+    files = [f for f in files if os.path.exists(f)]
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "meshopt_batch.mjs")
+    for k in range(0, len(files), 150):
+        cmd = ["node", script] + (["--level", level] if level else []) + files[k:k + 150]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        print((r.stdout.strip().splitlines() or [""])[-1], (r.stderr.strip().splitlines() or [""])[-1] if r.returncode else "", flush=True)
 
 
 if __name__ == "__main__":

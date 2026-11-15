@@ -20,9 +20,9 @@ const BROKER_TRIES = 4;          // the public broker drops connections now and 
 const brokerTrouble = (type?: string) => type === 'network' || type === 'server-error' || type === 'socket-error' || type === 'socket-closed';
 
 /** skin: the driver's helmet and suit (avatar); look: the car's visual parts (both checked on arrival, scene/driver.ts, scene/custom.ts) */
-export interface Member { id: string; name: string; car: string; paint: number; host: boolean; ready: boolean; skin?: string; look?: Custom }
+export interface Member { id: string; name: string; car: string; paint: number; host: boolean; ready: boolean; skin?: string; look?: Custom; city?: string }
 /** What we tell the party about ourselves. */
-export interface Me { name: string; car: string; paint: number; skin?: string; look?: Custom }
+export interface Me { name: string; car: string; paint: number; skin?: string; look?: Custom; city?: string }
 export type PartyMode = 'free' | 'race';
 export type Phase = 'lobby' | 'loading' | 'driving';
 /** Car pose (body centre) and velocity (m/s, optional: older senders and heartbeats of a parked car). */
@@ -31,7 +31,7 @@ export interface Pose { x: number; y: number; z: number; qx: number; qy: number;
 export interface Progress { d: number; lap: number; fin: number; best: number; dnf?: number }
 
 type Msg =
-  | { t: 'hello'; name: string; car: string; paint: number; skin?: string; look?: Custom }
+  | { t: 'hello'; name: string; car: string; paint: number; skin?: string; look?: Custom; city?: string }
   | { t: 'lobby'; members: Member[]; mode: PartyMode; laps: number; realism: boolean; phase: Phase }
   | { t: 'start'; mode: PartyMode; laps: number; realism: boolean }
   | { t: 'loaded' }
@@ -145,7 +145,7 @@ export class Party {
         peer.once('open', () => {
           peer.off('error', fail);
           const p = new Party(peer, code, true);
-          p.members = [{ id: peer.id, name: cleanName(me.name), car: me.car, paint: me.paint, host: true, ready: true, skin: me.skin, look: me.look }];
+          p.members = [{ id: peer.id, name: cleanName(me.name), car: me.car, paint: me.paint, host: true, ready: true, skin: me.skin, look: me.look, city: me.city }];
           peer.on('connection', (c) => p.accept(c));
           resolve(p);
         });
@@ -177,7 +177,7 @@ export class Party {
       peer.once('open', () => {
         const c = peer.connect(PREFIX + code, { reliable: true, serialization: 'json' });
         const p = new Party(peer, code, false);
-        c.on('open', () => c.send({ t: 'hello', name: cleanName(me.name), car: me.car, paint: me.paint, skin: me.skin, look: me.look } satisfies Msg));
+        c.on('open', () => c.send({ t: 'hello', name: cleanName(me.name), car: me.car, paint: me.paint, skin: me.skin, look: me.look, city: me.city } satisfies Msg));
         c.on('data', (d) => {
           const m = d as Msg;
           if (!settled) {
@@ -274,9 +274,9 @@ export class Party {
   updateMe(me: Me) {
     if (this.isHost) {
       const m = this.members.find((x) => x.id === this.selfId);
-      if (m) { m.name = cleanName(me.name); m.car = me.car; m.paint = me.paint; m.skin = me.skin; m.look = me.look; }
+      if (m) { m.name = cleanName(me.name); m.car = me.car; m.paint = me.paint; m.skin = me.skin; m.look = me.look; m.city = me.city; }
       this.pushLobby();
-    } else this.sendHost({ t: 'hello', name: cleanName(me.name), car: me.car, paint: me.paint, skin: me.skin, look: me.look });
+    } else this.sendHost({ t: 'hello', name: cleanName(me.name), car: me.car, paint: me.paint, skin: me.skin, look: me.look, city: me.city });
   }
 
   sendPose(p: Pose, paint: number) {
@@ -339,6 +339,7 @@ export class Party {
           mem.paint = Number.isInteger(m.paint) && m.paint >= 0 && m.paint <= 0xffffff ? m.paint : 0;
           mem.skin = skinOf(m.skin).id;
           mem.look = cleanCustom(m.look);
+          mem.city = typeof m.city === 'string' ? m.city.replace(/[^a-z]/g, '').slice(0, 16) : undefined;
           this.pushLobby();
           break;
         }

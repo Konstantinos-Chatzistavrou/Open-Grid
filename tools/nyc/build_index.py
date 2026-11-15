@@ -1,22 +1,33 @@
 #!/usr/bin/env python3
-"""Build web/public/assets/nyc/tiles/index.json and web/public/data/tracks/nyc_route.json from the generated tiles."""
+"""Build a city's tiles/index.json, its merged street map (map.json, for the minimap) and its race route
+(web/public/data/tracks/<city>_route.json) from the generated tiles. CITY=<id> (tools/nyc/cities.json), New York by default."""
 import glob
 import json
 import math
 import os
+import sys
 from collections import defaultdict
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-TILES_DIR = os.path.join(ROOT, "web", "public", "assets", "nyc", "tiles")
-ROUTE_OUT = os.path.join(ROOT, "web", "public", "data", "tracks", "nyc_route.json")
+sys.path.insert(0, os.path.dirname(__file__))
+import tilelib as tl
+
+ROOT = tl.ROOT
+TILES_DIR = tl.OUT_TILES
+ROUTE_OUT = os.path.join(ROOT, tl.CITY["route"])
 TILE = 256.0
+IS_NYC = tl.CITY_ID == "nyc"
+
+
+def to_frame(lat, lon):
+    from extract import xy
+    return tuple(xy([lon], [lat])[0])
 
 
 def tiles_version():
     import hashlib
     h = hashlib.sha1()
     for fn in sorted(os.listdir(TILES_DIR)):
-        if fn == "index.json" or fn.startswith("_"):
+        if fn in ("index.json", "map.json") or fn.startswith("_"):
             continue
         h.update(fn.encode())
         with open(os.path.join(TILES_DIR, fn), "rb") as f:
@@ -45,7 +56,7 @@ def build_index():
         zmax = 30.0
         files = []
         bytes_map = {}
-        for ext in ("ground.glb", "bld.glb", "far.glb", "col.json", "props.json", "graph.json"):
+        for ext in ("ground.glb", "bld.glb", "far.glb", "col.json", "props.json"):
             fn = f"{k}.{ext}"
             fp = os.path.join(TILES_DIR, fn)
             if os.path.exists(fp):
@@ -78,8 +89,10 @@ def build_index():
 
     # Find best spawn on 7th Avenue looking south-southwest straight through the Times Square bowtie (tile 0_0)
     spawn = {"x": 86.4, "y": 156.2, "heading": -2.083}
-    g0_path = os.path.join(TILES_DIR, "0_0.graph.json")
-    if os.path.exists(g0_path):
+    g0_path = os.path.join(tl.GRAPH_DIR, "0_0.graph.json")
+    if not IS_NYC:
+        spawn = city_spawn()
+    elif os.path.exists(g0_path):
         with open(g0_path) as f:
             g0 = json.load(f)
         best = None
@@ -108,7 +121,13 @@ def build_index():
 
     index = {
         "tile": 256,
-        "origin_latlon": [40.7580, -73.9855],
+        "city": tl.CITY_ID,
+        "name": tl.CITY["name"],
+        "origin_latlon": list(tl.CITY["origin"]),
+        "grid_deg": tl.CITY.get("grid_deg", 0),
+        "drive": tl.CITY.get("drive", "right"),
+        # every tile of the city is real data: no procedural fill beyond it (the shore / the barriers are the limit)
+        "fill": False,
         "spawn": spawn,
         "tiles": tiles,
         # content hash of every tile file: the game appends it to each tile URL (?v=), because /assets is served with a
@@ -127,7 +146,7 @@ def build_route(spawn):
     # Collect all graph edges across the Midtown tiles
     adj = defaultdict(list)
     node_xy = {}
-    for gp in glob.glob(os.path.join(TILES_DIR, "*.graph.json")):
+    for gp in glob.glob(os.path.join(tl.GRAPH_DIR, "*.graph.json")):
         with open(gp) as f:
             g = json.load(f)
         nodes = g.get("nodes", [])
@@ -143,8 +162,19 @@ def build_route(spawn):
             adj[u].append((v, pts, w, length))
             adj[v].append((u, list(reversed(pts)), w, length))
 
+    major_nodes = set()
+    for gp in glob.glob(os.path.join(tl.GRAPH_DIR, "*.graph.json")):
+        g = json.load(open(gp)); gids = g.get("gid", [])
+        for e in g.get("edges", []):
+            if e.get("hw") in ("trunk", "primary", "secondary") and gids:
+                major_nodes.add(gids[e["a"]]); major_nodes.add(gids[e["b"]])
+
     def nearest_node(tx, ty):
-        return min(node_xy.keys(), key=lambda k: math.hypot(node_xy[k][0] - tx, node_xy[k][1] - ty))
+        # other cities: waypoints snap to main roads only (a waypoint on a side street's dead end makes a U-turn)
+        pool = major_nodes if (not IS_NYC and major_nodes) else node_xy.keys()
+        return min(pool, key=lambda k: math.hypot(node_xy[k][0] - tx, node_xy[k][1] - ty))
+
+    used = set()
 
     def dijkstra(start, goal):
         import heapq
@@ -161,9 +191,11 @@ def build_route(spawn):
             for v, pts, w, length in adj[u]:
                 # Strongly prefer wide avenues & cross streets
                 w_pen = 1.0 if w >= 18 else (1.25 if w >= 13 else 2.2)
+                if not IS_NYC and (min(u, v), max(u, v)) in used:
+                    w_pen *= 25.0   # a loop, not an out-and-back: streets already on the route cost far more
                 nc = cost + length * w_pen
                 if v not in seen or nc < seen[v]:
-                    heapq.heappush(pq, (nc, v, path + [(u, v, pts)]))
+                    heapq.heappush(pq, (nc, v, path + [(u, v, pts, w)]))
         return []
 
     # Iconic Midtown loop waypoints (game frame metres around Times Square (0,0)):
@@ -178,21 +210,25 @@ def build_route(spawn):
         (220.0, -900.0),
         (640.0, -140.0),
         (160.0, 240.0),
-    ]
+    ] if IS_NYC else [(spawn["x"], spawn["y"])] + [to_frame(a, b) for a, b in tl.CITY["route_via"][1:]]
     wp_nodes = [nearest_node(x, y) for x, y in waypoints]
-    raw_pts = []
+    raw_pts, raw_w = [], []
     for i in range(len(wp_nodes)):
         u = wp_nodes[i]
         v = wp_nodes[(i + 1) % len(wp_nodes)]
         seg = dijkstra(u, v)
-        for _, _, pts in seg:
+        for a_, b_, _, _ in seg:
+            used.add((min(a_, b_), max(a_, b_)))
+        for _, _, pts, w in seg:
             for p in pts[:-1]:
                 if not raw_pts or math.hypot(p[0] - raw_pts[-1][0], p[1] - raw_pts[-1][1]) > 0.5:
                     raw_pts.append((float(p[0]), float(p[1])))
+                    raw_w.append(float(w))
 
     if len(raw_pts) < 8:
         # Fallback clean avenue rectangle if graph disconnected
         raw_pts = waypoints
+        raw_w = [18.0] * len(raw_pts)
 
     # Resample closed loop every ~8 metres with smooth headings
     closed = raw_pts + [raw_pts[0]]
@@ -220,8 +256,8 @@ def build_route(spawn):
             "z": 0.0,
             "heading": 0.0,
             "curvature": 0.0,
-            "width_left": 9.0,
-            "width_right": 9.0,
+            "width_left": round(max(3.0, raw_w[idx] / 2), 1) if not IS_NYC else 9.0,
+            "width_right": round(max(3.0, raw_w[idx] / 2), 1) if not IS_NYC else 9.0,
         })
 
     for k in range(n_samples):
@@ -231,7 +267,7 @@ def build_route(spawn):
 
     route = {
         "schema": "route/1",
-        "name": "Midtown Manhattan Circuit",
+        "name": "Midtown Manhattan Circuit" if IS_NYC else f"{tl.CITY['name']} Street Circuit",
         "closed": True,
         "units": "SI (m, rad); Z-up right-handed",
         "length_m": round(total_len, 2),
@@ -243,6 +279,68 @@ def build_route(spawn):
     print(f"Wrote {ROUTE_OUT}: length={total_len:.1f} m, {len(samples)} samples")
 
 
+DRIVE_HW = {"motorway", "trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street",
+            "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link", "road"}
+
+
+def merged_graph():
+    """All tiles' road graphs as one {nodes, edges} (edges deduplicated by their global node ids)."""
+    nodes, index, edges, seen = [], {}, [], set()
+    for gp in sorted(glob.glob(os.path.join(tl.GRAPH_DIR, "*.graph.json"))):
+        g = json.load(open(gp))
+        gids = g.get("gid", [])
+        if not gids:
+            continue
+        for e in g.get("edges", []):
+            a, b = gids[e["a"]], gids[e["b"]]
+            key = (min(a, b), max(a, b), round(e.get("len", 0), 1))
+            if key in seen:
+                continue
+            seen.add(key)
+            for gid, k in ((a, e["a"]), (b, e["b"])):
+                if gid not in index:
+                    index[gid] = len(nodes); nodes.append([round(g["nodes"][k][0], 1), round(g["nodes"][k][1], 1)])
+            ne = {"a": index[a], "b": index[b], "w": e.get("w", 10), "hw": e.get("hw", ""), "len": e.get("len", 0)}
+            if e.get("name"): ne["name"] = e["name"]
+            if e.get("oneway"): ne["oneway"] = True
+            if e.get("pts"): ne["pts"] = [[round(p[0], 1), round(p[1], 1)] for p in e["pts"]]
+            edges.append(ne)
+    return {"nodes": nodes, "edges": edges}
+
+
+def city_spawn():
+    """Spawn on the widest drivable street near the city's spawn point (cities.json `spawn`), facing along it toward the route's
+    first waypoint."""
+    sx, sy = to_frame(*tl.CITY["spawn"][:2])
+    via = tl.CITY.get("route_via", [])
+    tx, ty = to_frame(*via[1]) if len(via) > 1 else (sx, sy + 100)
+    best = None
+    for gp in glob.glob(os.path.join(tl.GRAPH_DIR, "*.graph.json")):
+        g = json.load(open(gp))
+        for e in g.get("edges", []):
+            if e.get("hw") not in DRIVE_HW or e.get("hw", "").startswith("motorway"):
+                continue
+            pts = e.get("pts") or [g["nodes"][e["a"]], g["nodes"][e["b"]]]
+            for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+                L = math.hypot(bx - ax, by - ay)
+                if L < 12:
+                    continue
+                mx, my = (ax + bx) / 2, (ay + by) / 2
+                score = math.hypot(mx - sx, my - sy) - 2.0 * min(e.get("w", 8), 20)
+                if best is None or score < best[0]:
+                    dx, dy = bx - ax, by - ay
+                    if dx * (tx - mx) + dy * (ty - my) < 0:
+                        dx, dy = -dx, -dy
+                    best = (score, mx, my, math.atan2(dy, dx))
+    if not best:
+        return {"x": sx, "y": sy, "heading": 0.0}
+    return {"x": round(best[1], 2), "y": round(best[2], 2), "heading": round(best[3], 4)}
+
+
 if __name__ == "__main__":
     sp = build_index()
+    mg = merged_graph()
+    with open(os.path.join(TILES_DIR, "map.json"), "w") as f:
+        json.dump(mg, f, separators=(",", ":"))
+    print(f"map.json: {len(mg['nodes'])} nodes, {len(mg['edges'])} edges")
     build_route(sp)
