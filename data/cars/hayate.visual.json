@@ -1,0 +1,80 @@
+{
+  "schema": "car_visual/1",
+  "name": "Hayate",
+  "physics": "cars/hayate.json",
+  "model": "res://assets/cars/v5/hayate_hero.glb",
+  "notes": "Derived from Generic Coupe \"Azura\" by mk2design, CC BY 4.0 (CREDITS.md): badges, plates and lettering removed, renamed. Model space +X left, +Y up, +Z forward, origin on the ground at the body length centre. Front axle z 1.091, rear -1.458 (wheelbase 2.550), model track 1.465 / 1.502.",
+  "cg_in_model_m": [
+    0.0,
+    0.54,
+    0.071
+  ],
+  "wheel_nodes": {
+    "fl": "wheel_FL",
+    "fr": "wheel_FR",
+    "rl": "wheel_RL",
+    "rr": "wheel_RR"
+  },
+  "wheel_visual_offset_m": 0.0,
+  "collision_box": {
+    "size_m": [
+      1.75,
+      0.72,
+      4.4
+    ],
+    "centre_in_model_m": [
+      0.0,
+      0.72,
+      0.0
+    ],
+    "end_lift_m": 0.13,
+    "end_lift_start_m": 1.62,
+    "note": "body 1.80 x 1.45 x 4.45 m; flat underside, rising to each end; wheels are raycasts"
+  },
+  "paint_material": "paint",
+  "default_paint": [
+    0.85,
+    0.6,
+    0.02
+  ],
+  "headlights": [
+    [
+      -0.6,
+      0.55,
+      1.87
+    ],
+    [
+      0.6,
+      0.55,
+      1.87
+    ]
+  ],
+  "panels": {
+    "front": [
+      "body"
+    ],
+    "rear": [
+      "taillight_bar"
+    ],
+    "left": [],
+    "right": []
+  },
+  "detachable": {},
+  "front_lights": [],
+  "rear_lights": [
+    "taillight_bar"
+  ],
+  "engine_smoke_in_model_m": [
+    0.0,
+    0.7,
+    1.52
+  ],
+  "lod_model": "res://assets/cars/v3/vela_gt_traffic.glb",
+  "lod_distance_m": 30.0,
+  "driver_seat_m": [
+    0.37,
+    0.3,
+    -0.15
+  ],
+  "driver_scale": 1
+}

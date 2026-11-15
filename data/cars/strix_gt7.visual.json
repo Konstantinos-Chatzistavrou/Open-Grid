@@ -1,0 +1,85 @@
+{
+  "schema": "car_visual/1",
+  "name": "Strix GT7",
+  "physics": "cars/strix_gt7.json",
+  "model": "res://assets/cars/v5/strix_gt7_hero.glb",
+  "notes": "Derived from Tokii Abyss GT.7 V12 by Glas'kavin (@fiendishfarlander76), CC BY 4.0 (CREDITS.md): badges, plates and lettering removed, renamed. Model space +X left, +Y up, +Z forward, origin on the ground at the body length centre. Front axle z 1.392, rear -1.358 (wheelbase 2.750), model track 1.698 / 1.664.",
+  "cg_in_model_m": [
+    0.0,
+    0.46,
+    -0.231
+  ],
+  "wheel_nodes": {
+    "fl": "wheel_FL",
+    "fr": "wheel_FR",
+    "rl": "wheel_RL",
+    "rr": "wheel_RR"
+  },
+  "wheel_visual_offset_m": 0.0,
+  "collision_box": {
+    "size_m": [
+      2.0,
+      0.72,
+      5.13
+    ],
+    "centre_in_model_m": [
+      0.0,
+      0.72,
+      0.0
+    ],
+    "end_lift_m": 0.13,
+    "end_lift_start_m": 1.99,
+    "note": "body 2.21 x 1.23 x 5.18 m; flat underside, rising to each end; wheels are raycasts"
+  },
+  "paint_material": "paint",
+  "default_paint": [
+    0.78,
+    0.79,
+    0.81
+  ],
+  "headlights": [
+    [
+      -0.6,
+      0.55,
+      2.24
+    ],
+    [
+      0.6,
+      0.55,
+      2.24
+    ]
+  ],
+  "panels": {
+    "front": [
+      "body",
+      "beam_L",
+      "beam_R"
+    ],
+    "rear": [
+      "taillight_bar"
+    ],
+    "left": [],
+    "right": []
+  },
+  "detachable": {},
+  "front_lights": [
+    "beam_L",
+    "beam_R"
+  ],
+  "rear_lights": [
+    "taillight_bar"
+  ],
+  "engine_smoke_in_model_m": [
+    0.0,
+    0.7,
+    -1.89
+  ],
+  "lod_model": "res://assets/cars/v3/vela_gt_traffic.glb",
+  "lod_distance_m": 30.0,
+  "driver_seat_m": [
+    0.37,
+    0.3,
+    0.35
+  ],
+  "driver_scale": 1
+}

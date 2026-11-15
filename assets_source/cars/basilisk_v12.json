@@ -1,0 +1,194 @@
+{
+ "id": "basilisk_v12",
+ "source": "Fictional supercar - V12 Goblin by ollitei, CC BY 4.0",
+ "wheelbase": 2.7,
+ "rot_z_deg": 180,
+ "remove": {
+  "objects": [
+   "^car_shadow",
+   "^clearcoat"
+  ],
+  "uv": [
+   {
+    "material": "car_body",
+    "rect": [
+     0.1835,
+     0.478,
+     0.2025,
+     0.508
+    ]
+   }
+  ]
+ },
+ "tyre": [
+  "^car_tire"
+ ],
+ "wheel_objects": [
+  "^car_wheel_",
+  "^car_brake_"
+ ],
+ "caliper_objects": [
+  "^car_brake_"
+ ],
+ "paint_from_texture": {
+  "material": "car_body",
+  "image": "Image_4",
+  "rgb": [
+   0.22,
+   0.5,
+   0.094
+  ],
+  "tol": 0.14
+ },
+ "mat_map": {
+  "^car_glass": "glass"
+ },
+ "texture_fixes": [
+  {
+   "image": "Image_3",
+   "rects": [
+    [
+     0.1505,
+     0.759,
+     0.229,
+     0.86,
+     0.04,
+     0.04,
+     0.045
+    ],
+    [
+     0.0405,
+     0.801,
+     0.067,
+     0.862,
+     0.04,
+     0.04,
+     0.045
+    ],
+    [
+     0.003,
+     0.872,
+     0.13,
+     1.0,
+     0.03,
+     0.03,
+     0.03
+    ]
+   ]
+  },
+  {
+   "image": "Image_4",
+   "rects": [
+    [
+     0.1505,
+     0.759,
+     0.229,
+     0.86,
+     0.04,
+     0.04,
+     0.045
+    ],
+    [
+     0.0405,
+     0.801,
+     0.067,
+     0.862,
+     0.04,
+     0.04,
+     0.045
+    ],
+    [
+     0.003,
+     0.872,
+     0.13,
+     1.0,
+     0.03,
+     0.03,
+     0.03
+    ]
+   ]
+  },
+  {
+   "image": "Image_4.001",
+   "rects": [
+    [
+     0.1505,
+     0.759,
+     0.229,
+     0.86,
+     0.04,
+     0.04,
+     0.045
+    ],
+    [
+     0.0405,
+     0.801,
+     0.067,
+     0.862,
+     0.04,
+     0.04,
+     0.045
+    ],
+    [
+     0.003,
+     0.872,
+     0.13,
+     1.0,
+     0.03,
+     0.03,
+     0.03
+    ]
+   ]
+  },
+  {
+   "image": "Image_1",
+   "rects": [
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.085,
+     0.5,
+     0.5,
+     1.0
+    ],
+    [
+     0.0,
+     0.915,
+     1.0,
+     1.0,
+     0.5,
+     0.5,
+     1.0
+    ]
+   ]
+  }
+ ],
+ "tex_size": 2048,
+ "game": {
+  "name": "Basilisk V12",
+  "base": "vela_gt",
+  "layout": "rwd",
+  "mass_kg": 1380,
+  "weight_front": 0.42,
+  "cg_height_m": 0.45,
+  "torque_scale": 1.32,
+  "redline_rpm": 8200,
+  "final_drive": 3.7,
+  "aero": {
+   "drag_area_m2": 0.7,
+   "downforce_area_m2": 0.55,
+   "front_balance": 0.44
+  },
+  "price": 210000,
+  "paint": "#1f8a3a",
+  "default_paint": [
+   0.05,
+   0.36,
+   0.08
+  ],
+  "tag": "Mid-engined V12 with a fanged nose. Light, loud and twitchy at the limit.",
+  "seat_z": 0.15,
+  "engine": "rear"
+ }
+}

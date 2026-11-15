@@ -1,0 +1,89 @@
+{
+ "id": "hayate",
+ "source": "Generic Coupe \"Azura\" by mk2design, CC BY 4.0",
+ "wheelbase": 2.55,
+ "remove": {
+  "objects": [
+   "^Shadow_"
+  ],
+  "materials": [
+   "Azura_Shadow"
+  ]
+ },
+ "tyre": [
+  "^Azura_Tire"
+ ],
+ "wheel_parts": [
+  "^Azura_Alloy"
+ ],
+ "wheel_objects": [
+  "^WH_"
+ ],
+ "caliper_objects": [
+  "^WH_.._Azura_Textures"
+ ],
+ "mat_map": {
+  "^Azura_Body": "paint",
+  "^Azura_Glass$": "glass",
+  "^Azura_Glass_Red": "tail",
+  "^Azura_Black": "trim"
+ },
+ "tail": [
+  "^taillight"
+ ],
+ "texture_fixes": [
+  {
+   "image": "Image_0",
+   "rects": [
+    [
+     0.002,
+     0.002,
+     0.235,
+     0.13,
+     0.82,
+     0.82,
+     0.8
+    ]
+   ]
+  }
+ ],
+ "tex_size": 2048,
+ "game": {
+  "name": "Hayate",
+  "base": "vela_gt",
+  "layout": "awd",
+  "awd_front_split": 0.45,
+  "mass_kg": 1390,
+  "weight_front": 0.6,
+  "cg_height_m": 0.5,
+  "torque_scale": 0.78,
+  "redline_rpm": 7200,
+  "final_drive": 4.1,
+  "aero": {
+   "drag_area_m2": 0.66,
+   "downforce_area_m2": 0.18,
+   "front_balance": 0.5
+  },
+  "price": 38000,
+  "paint": "#f2c40c",
+  "default_paint": [
+   0.85,
+   0.6,
+   0.02
+  ],
+  "tag": "Nineties turbo coupe with four-wheel drive. Cheap, grippy and begging for a body kit.",
+  "seat_z": -0.15,
+  "engine": "front",
+  "tail": true
+ },
+ "shape": {
+  "nose_len": 0.2,
+  "nose_drop": 0.07,
+  "nose_taper": 0.06,
+  "cabin_back": 0.2,
+  "roof_drop": 0.07,
+  "roof_narrow": 0.03,
+  "haunch": 0.07,
+  "tail_cut": 0.14
+ }
+}

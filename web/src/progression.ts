@@ -27,6 +27,9 @@ export const CAR_REQ: Record<string, Req> = {
   k_concept: { spLevel: 1, mpLevel: 10, price: 120_000 },
   kestrel_gt: { spLevel: 6, mpLevel: 5, price: 140_000 },
   harrier_gt: { spLevel: 12, mpLevel: 10, price: 160_000 },
+  hayate: { spLevel: 3, mpLevel: 3, price: 38_000 },
+  basilisk_v12: { spLevel: 18, mpLevel: 15, price: 210_000 },
+  strix_gt7: { spLevel: 25, mpLevel: 20, price: 260_000 },
 };
 export const STARTER_CAR = 'vela_gt';
 /** Upgrade stages 1..3 per part. */
