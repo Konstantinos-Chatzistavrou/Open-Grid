@@ -1,6 +1,7 @@
 {
   "name": "opengrid-matchmaking",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "description": "Optional self-hosted PeerJS matchmaking for OpenGrid parties (the game defaults to the public PeerJS broker)",
   "scripts": {

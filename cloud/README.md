@@ -4,7 +4,7 @@ The server of the **online career**: accounts, XP, credits, purchases, and the r
 It runs on Cloudflare's free plan (Workers + D1 + SQLite-backed Durable Objects). No servers to maintain; going over a
 free daily limit makes requests fail until 00:00 UTC (results wait in the players' browsers), never a bill.
 
-Licence: AGPL-3.0-or-later, like the game's code.
+Licence: Apache-2.0, like the rest of the game.
 
 ## What it does
 
