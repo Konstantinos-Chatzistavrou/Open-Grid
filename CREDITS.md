@@ -60,10 +60,39 @@ Build: `assets_source/scripts/make_trees.py` -> `web/public/assets/trees/`.
   Changes as for the Kestrel GT (livery, sponsor and manufacturer marks, grille emblem, plates removed; re-shaped; splitter,
   grille, diffuser, wing and light bars replaced; flat materials; `assets_source/scripts/make_car5.py`).
 
+- **Hayate** (`web/public/assets/cars/v5/hayate_hero.glb`): modified from "Generic Coupe \"Azura\"" by mk2design,
+  https://sketchfab.com/3d-models/generic-coupe-azura-2e1a3699de7e4f688d328dc005ef1aac, licensed CC BY 4.0. Changes: renamed;
+  licence-plate text removed from the texture; body re-shaped (longer, lower nose, cabin moved back, lower roof, wider rear
+  haunches, shorter tail); flat paint, glass, trim and lamp materials; re-scaled, wheels split for the game; textures
+  downscaled to WebP; compressed. Build: `assets_source/scripts/sketchfab_build.py` with `assets_source/cars/hayate.json`.
+
+- **Basilisk V12** (`web/public/assets/cars/v5/basilisk_v12_hero.glb`): modified from "Fictional supercar - V12 Goblin" by ollitei,
+  https://sketchfab.com/3d-models/fictional-supercar-v12-goblin-0a20e49ad5774d778567cb5c3f345786, licensed CC BY 4.0.
+  Changes: renamed; the original's own emblem, "V12" lettering, licence plate (with the author's web address) and tyre
+  sidewall lettering removed; painted panels split from the texture into a recolourable paint material; shadow plane and
+  duplicate clear-coat shell removed; turned, re-scaled, wheels split for the game; textures downscaled to WebP; compressed
+  (`assets_source/cars/basilisk_v12.json`).
+
+- **Strix GT7** (`web/public/assets/cars/v5/strix_gt7_hero.glb`): modified from "Tokii Abyss GT.7 V12" by Glas'kavin
+  (Sketchfab @fiendishfarlander76, "Nyx421" in the file), https://sketchfab.com/3d-models/tokii-abyss-gt7-v12-c399568541104e0e903cf138b1e24908, licensed
+  CC BY 4.0. Changes: renamed; nose and tail badges, sticker labels and the dashboard screen removed; flat paint, glass and
+  lamp materials; skinned parts baked, engine, interior and chassis decimated; re-scaled, wheels split for the game;
+  textures downscaled to WebP; compressed (`assets_source/cars/strix_gt7.json`).
+
+  Licence evidence for these three (the Sketchfab API record of each model, downloaded 2026-11-15):
+  `assets_source/licenses/downloaded_cars_2026-11-15/`.
+
 ## New York (Midtown / Manhattan) city data
 - Street network, parks, water, trees, signals and street furniture: (c) OpenStreetMap contributors, Open Database Licence (ODbL), https://www.openstreetmap.org/copyright
   (extract from download.bbbike.org). Building footprints, official roof heights, ground elevation and construction years: NYC Open Data "Building Footprints"
   (dataset 5zhs-2jue) and "Borough Boundaries" (gthc-hcne), City of New York, public domain. Processing: tools/nyc/.
+
+## London, Paris, Tokyo and Los Angeles city data
+- Streets, building footprints and heights (height / building:levels tags; missing heights estimated from neighbouring
+  buildings and the city's typical floors), parks, water, rails, trees, signals and street furniture: (c) OpenStreetMap
+  contributors, Open Database Licence (ODbL), https://www.openstreetmap.org/copyright. City extracts from
+  download.bbbike.org. Processing: tools/nyc/ with `CITY=<id>` (docs/cities.md). The generated tiles in
+  `web/public/assets/cities/` are a Produced Work from the OpenStreetMap database.
 
 ## Software
 - three.js (MIT), Rapier (Apache-2.0), meshoptimizer (MIT), Basis Universal transcoder

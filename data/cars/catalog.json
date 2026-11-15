@@ -36,6 +36,33 @@
       "physics": "cars/k_concept.json",
       "visual": "cars/k_concept.visual.json",
       "paint": "#9b1c12"
+    },
+    {
+      "id": "strix_gt7",
+      "price": 260000,
+      "name": "Strix GT7",
+      "tag": "Track hypercar: a jet-fighter canopy, a wing like a door and a V12 behind your head.",
+      "physics": "cars/strix_gt7.json",
+      "visual": "cars/strix_gt7.visual.json",
+      "paint": "#e6e7ea"
+    },
+    {
+      "id": "hayate",
+      "price": 38000,
+      "name": "Hayate",
+      "tag": "Nineties turbo coupe with four-wheel drive. Cheap, grippy and begging for a body kit.",
+      "physics": "cars/hayate.json",
+      "visual": "cars/hayate.visual.json",
+      "paint": "#f2c40c"
+    },
+    {
+      "id": "basilisk_v12",
+      "price": 210000,
+      "name": "Basilisk V12",
+      "tag": "Mid-engined V12 with a fanged nose. Light, loud and twitchy at the limit.",
+      "physics": "cars/basilisk_v12.json",
+      "visual": "cars/basilisk_v12.visual.json",
+      "paint": "#1f8a3a"
     }
   ]
 }

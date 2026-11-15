@@ -1,0 +1,87 @@
+{
+ "id": "strix_gt7",
+ "source": "Tokii Abyss GT.7 V12 by Glas'kavin (@fiendishfarlander76), CC BY 4.0",
+ "wheelbase": 2.75,
+ "remove": {
+  "objects": [
+   "^Icosphere",
+   "^Object_73$",
+   "^Object_85$",
+   "^Object_110$",
+   "^Object_111$",
+   "^Object_47$"
+  ],
+  "materials": [
+   "StickerLabels",
+   "SteeringWheelScree"
+  ]
+ },
+ "tyre": [
+  "^TireTread"
+ ],
+ "wheel_parts": [
+  "^Rim",
+  "^Brake_Disk",
+  "^BrakePad",
+  "^Aluminum$"
+ ],
+ "caliper": [
+  "^BrakePad"
+ ],
+ "mat_map": {
+  "^CarPaintMain": "paint",
+  "^Glass$": "glass",
+  "^Headlight": "light",
+  "^TailLight": "tail",
+  "^RedTintGlass": "tail"
+ },
+ "head": [
+  "^headlight_lens"
+ ],
+ "tail": [
+  "^taillight"
+ ],
+ "decimate": [
+  "EngineMetal",
+  "DarkMetal",
+  "InteriorFabric",
+  "CarbonFibre",
+  "Radiator",
+  "Aluminum",
+  "LightMetal",
+  "EngineCover",
+  "Brake_Disk",
+  "RimSecondary",
+  "RimAccent"
+ ],
+ "max_part_tris": 3000,
+ "tex_size": 1024,
+ "game": {
+  "name": "Strix GT7",
+  "base": "k_concept",
+  "layout": "rwd",
+  "mass_kg": 1320,
+  "weight_front": 0.41,
+  "cg_height_m": 0.42,
+  "torque_scale": 1.5,
+  "redline_rpm": 8500,
+  "final_drive": 3.5,
+  "aero": {
+   "drag_area_m2": 0.78,
+   "downforce_area_m2": 0.85,
+   "front_balance": 0.42
+  },
+  "price": 260000,
+  "paint": "#e6e7ea",
+  "default_paint": [
+   0.78,
+   0.79,
+   0.81
+  ],
+  "tag": "Track hypercar: a jet-fighter canopy, a wing like a door and a V12 behind your head.",
+  "seat_z": 0.35,
+  "engine": "rear",
+  "beams": true,
+  "tail": true
+ }
+}
