@@ -1,7 +1,7 @@
 # Credits
 
-Our own work is licensed as described in `LICENSING.md` (code AGPL-3.0-or-later; models, data and docs
-CC BY-NC 4.0). The third-party material below keeps the licence stated for it.
+Our own work (code, models, data and docs) is licensed under the Apache License 2.0 (`LICENSE`, `LICENSING.md`).
+The third-party material below keeps the licence stated for it.
 
 ## 3D models
 - **Vela GT (player, traffic and remote cars)** is a modified version of

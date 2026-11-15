@@ -275,7 +275,7 @@ export class Menu {
         </div>
         <div class="t-foot">
           <div class="dim note">${esc(this.gfxNote || 'WebGPU · 240 Hz physics')} · Assists: ${this.assists.preset[0].toUpperCase() + this.assists.preset.slice(1)}</div>
-          <a class="source-link dim" href="https://github.com/Konstantinos-Chatzistavrou/Racing-Game" target="_blank" rel="noopener">Source code · code AGPL-3.0 · assets CC BY-NC 4.0</a>
+          <a class="source-link dim" href="https://github.com/Konstantinos-Chatzistavrou/Racing-Game" target="_blank" rel="noopener">Source code · Apache-2.0</a>
         </div>
       </div>
       <div class="t-heat heat-chip ${this.heat >= 5 ? 'maxed' : this.heat === 4 ? 'hot' : ''}"><span>HEAT</span>${Array.from({ length: 5 }, (_, i) => `<i class="${i < this.heat ? 'on' : ''}"></i>`).join('')}<b>${this.heat}/5</b></div>
