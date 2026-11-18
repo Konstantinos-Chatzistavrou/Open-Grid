@@ -45,6 +45,26 @@ export class Garage {
     const rim = new THREE.DirectionalLight(0xa8c8ff, 0.9);
     rim.position.set(-4, 3.2, -6);
     this.scene.add(key, key.target, rim, rim.target);
+    // contact shadow under the hero: the turntable's mirror floor otherwise reads as the car floating
+    const S = 256;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const cx = cv.getContext('2d')!;
+    const grad = cx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    grad.addColorStop(0, 'rgba(0,0,0,0.62)');
+    grad.addColorStop(0.5, 'rgba(0,0,0,0.34)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    cx.fillStyle = grad;
+    cx.fillRect(0, 0, S, S);
+    const tex = new THREE.CanvasTexture(cv);
+    const shadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(5.4, 2.7),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.95 }),
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = 0.012;
+    shadow.renderOrder = 2;
+    this.scene.add(shadow);
   }
 
   get env(): THREE.Texture { return this.envRT.texture; }

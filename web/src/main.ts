@@ -443,7 +443,7 @@ async function main() {
         const u = mat.userData as { showroomSave?: number };
         const name = (mat.name ?? '') + ' ' + (mesh.name ?? '');
         if (!/light|drl|lens|beam|tail/i.test(name)) continue;
-        if (on) { if (u.showroomSave === undefined) u.showroomSave = mat.emissiveIntensity ?? 1; mat.emissiveIntensity = (u.showroomSave ?? 1) * 0.16; }
+        if (on) { if (u.showroomSave === undefined) u.showroomSave = mat.emissiveIntensity ?? 1; mat.emissiveIntensity = (u.showroomSave ?? 1) * 0.025; }
         else if (u.showroomSave !== undefined) { mat.emissiveIntensity = u.showroomSave; u.showroomSave = undefined; }
       }
     });
