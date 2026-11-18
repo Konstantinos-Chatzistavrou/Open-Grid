@@ -339,6 +339,23 @@ export function setupCarMaterials(model: THREE.Object3D, cfg: CarVisualConfig, p
     });
   });
   model.userData.carMats = { paint: paintMat, glass: glassMat, carbon: carbonMat };
+  // Panel badges: chrome nose and rear emblems, sized and placed from the model's own bounds so they fit any car.
+  // (Panel-gap lines are not here: they need a gap normal map with the car's UVs, which the CC BY models don't carry.)
+  try {
+    const bb = new THREE.Box3().setFromObject(model);
+    const h = bb.max.y - bb.min.y;
+    if (h > 0.5) {
+      const chrome = new THREE.MeshPhysicalMaterial({ name: 'badge_chrome', color: 0xdfe3e8, metalness: 1, roughness: 0.16, clearcoat: 1, clearcoatRoughness: 0.04 });
+      const ring = new THREE.TorusGeometry(h * 0.042, h * 0.0075, 8, 32);
+      const nose = new THREE.Mesh(ring, chrome);
+      nose.position.set(0, bb.min.y + h * 0.46, bb.max.z + 0.012);
+      nose.name = 'badge_nose';
+      const rear = new THREE.Mesh(ring, chrome);
+      rear.position.set(0, bb.min.y + h * 0.5, bb.min.z - 0.012);
+      rear.name = 'badge_rear';
+      model.add(nose, rear);
+    }
+  } catch { /* badges are cosmetic */ }
   return paintMat as THREE.MeshPhysicalMaterial | null;
 }
 

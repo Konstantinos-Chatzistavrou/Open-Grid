@@ -69,9 +69,9 @@ export class ShowroomPost {
           a.resolutionScale = 0.5;
           a.useTemporalFiltering = false;
           a.samples.value = 12;
-          a.radius.value = 0.7;
-          a.thickness.value = 1.4;
-          a.scale.value = 1.0;
+          a.radius.value = 1.05;
+          a.thickness.value = 1.8;
+          a.scale.value = 1.35;
           this.aos.push(a as unknown as { resolutionScale: number });
           const occ = a.getTextureNode().r;
           // light sources and their reflections are not occluded: fade the AO out with brightness
