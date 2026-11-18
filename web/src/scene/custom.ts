@@ -91,6 +91,19 @@ export class CarCustomizer {
   private bodyParts: Record<string, THREE.Object3D> = {};
   /** the model's own bumpers and hood, hidden when a generated one is fitted */
   private bodyStock: { front?: THREE.Object3D; rear?: THREE.Object3D; hood?: THREE.Object3D } = {};
+  /** 0 = showroom clean, 1 = dust-worn; driven by distance travelled (see setWear) */
+  private wear = 0;
+  /** Dust and dull the paint as the car is driven: the clear coat roughens first, the base colour fades toward dust. */
+  setWear(t: number) {
+    const w = Math.max(0, Math.min(1, t));
+    if (Math.abs(w - this.wear) < 0.004) return;
+    this.wear = w;
+    const p = this.paint;
+    if (!p) return;
+    p.roughness = 0.22 + 0.26 * w;
+    p.clearcoatRoughness = 0.018 + 0.14 * w;
+    p.envMapIntensity = 1.45 - 0.55 * w;
+  }
   /** paint clone for imported parts: double-sided, so an inverted-winding export can never read as a black hole */
   private extraMat?: THREE.Material;
   /** fender flares, by id: four arch lips */

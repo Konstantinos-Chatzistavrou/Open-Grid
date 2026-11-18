@@ -450,6 +450,7 @@ async function main() {
   };
   probe?.attach(visual.model, probeIntensity);
   let remote: RemoteCars | null = null;   // other players' cars, while a party session runs
+  let wearKm = 0;                         // odometer for the paint dirt/wear layer
   let party: Party | null = null;         // the multiplayer party we are in (lobby or driving)
   const remoteProg = new Map<string, Progress>();
   let shape = shapeOf(visualCfg);
@@ -1878,6 +1879,9 @@ async function main() {
     {
       const lv = car.body.linvel();
       visual.velocity.set(lv.x, lv.y, lv.z);
+      // dust/wear accumulates with real distance: ~300 km to full patina (uniform updates only, no recompiles)
+      wearKm += Math.hypot(lv.x, lv.z) * (live ? frame : 0) / 1000;
+      if (live) visual.custom.setWear(wearKm / 300);
       visual.update(pos, quat, car.out, prevPos, prevQuat);   // car.out was computed from the pose BEFORE the last step
       if (!inShowroom || settledShowroom <= 24) {
         ai.update(alpha, camera);
