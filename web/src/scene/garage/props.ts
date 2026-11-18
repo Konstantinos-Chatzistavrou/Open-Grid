@@ -37,6 +37,12 @@ export const PLACES: Place[] = [
   { m: 'metal_jerrycan_green', p: [11.66, 0, 6.62], ry: -0.3 },
   { m: 'utility_box_01', p: [11.76, 1.05, 7.9], ry: -HPI },
   { m: 'WetFloorSign_01', p: [6.9, 0, 8.3], ry: 2.6 },
+  // right bay front: rubber, crates and a cart so the right side reads as busy as the left
+  ...tyres(10.9, 1.6, 4), ...tyres(10.25, 0.9, 3, 1.1),
+  { m: 'plastic_crate_02', p: [10.4, 0, 2.6], ry: 0.35 },
+  { m: 'plastic_crate_02', p: [10.42, 0.254, 2.6], ry: -0.2 },
+  { m: 'Barrel_01', p: [11.5, 0, 1.2], ry: 0.8 },
+  { m: 'tool_cart', p: [10.35, 0, 3.1], ry: 2.4 },
   // left side: a project under a dust cover, a place to sit, more rubber
   { m: 'covered_car', p: [-10.85, 0, 5.5], ry: 0.04 },
   { m: 'sofa_02', p: [-8.2, 0, 8.4], ry: Math.PI },
