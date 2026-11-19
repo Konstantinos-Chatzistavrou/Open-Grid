@@ -9,6 +9,10 @@ const ALLOWED = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 /** whole names (case-insensitive) nobody may take: impersonation of the game / staff, and words the UI uses */
 const RESERVED = new Set(['admin', 'administrator', 'mod', 'moderator', 'staff', 'support', 'system', 'server', 'opengrid', 'official',
   'you', 'me', 'driver', 'player', 'guest', 'anonymous', 'null', 'undefined', 'leader', 'dnf', 'host', 'everyone']);
+const BLOCKED_HATE: RegExp[] = [
+  /n[i1!|]gg[ae3r]+/i, /f[a@4]gg?[o0]t/i, /k[i1!]ke/i, /h[i1!]tl[e3]r/i, /n[a@4]z[i1!]/i,
+  /ch[i1!]nk/i, /tr[a@4]nn[yi1]/i, /r[e3]t[a@4]rd/i, /\bkkk\b/i,
+];
 
 /** null if `s` is a valid username, otherwise why not (shown under the input as is). */
 export function usernameError(s: string): string | null {
@@ -20,6 +24,8 @@ export function usernameError(s: string): string | null {
   if (/[_.-]{2}/.test(s)) return 'No two of _ . - in a row.';
   const low = s.toLowerCase();
   if (RESERVED.has(low) || /^bot\d*$/.test(low)) return 'That name is reserved.';
+  const compact = low.replace(/[_.-]+/g, '');
+  if (BLOCKED_HATE.some((re) => re.test(low) || re.test(compact))) return 'Blocked by community moderation filter (hate speech not allowed on names/plates).';
   return null;
 }
 

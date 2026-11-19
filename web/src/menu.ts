@@ -22,6 +22,7 @@ import { SKINS, helmetSvg, skinOf } from './scene/driver';
 import { LANGS, getLang, setLang, t, type LangCode } from './i18n';
 import type { AccessibilitySettings, ColorblindMode, UiScale } from './accessibility';
 import type { AvatarGear } from './carMeet';
+import { INSURANCE_PREMIUM_CR, INSURANCE_PREMIUM_XP, conditionOf, repairCostOf, type MaintenanceStore, type ReportCategory } from './maintenance';
 
 /** Garage tabs: name, camera (azimuth, elevation, distance) that shows those parts. */
 const GTABS: { id: string; label: string; cam: string }[] = [
@@ -40,7 +41,12 @@ export type Gfx = 'auto' | 'max' | 'ultra' | 'high' | 'medium' | 'low' | 'potato
 export type Screen = 'none' | 'title' | 'garage' | 'modes' | 'lobby' | 'pause' | 'results' | 'busy' | 'controls' | 'settings' | 'shop' | 'profile';
 /** One line of the race standings. fin: finish time (s) or -1; d: distance covered (m); dnf: out of the race. */
 export interface Standing { name: string; you: boolean; fin: number; d: number; best: number; ai: boolean; dnf?: boolean; why?: string }
-export interface ResultData { total: number; best: number; laps: number[]; laps_target: number; standings: Standing[]; routeLength: number; online: boolean; /** credits paid for this race */ earned?: number }
+export interface ResultData {
+  total: number; best: number; laps: number[]; laps_target: number; standings: Standing[]; routeLength: number; online: boolean;
+  /** credits/XP paid for this race */ earned?: number;
+  /** Tow Truck Fee deducted when totaled, saved structural damage %, and Insurance discount */
+  towFeeXp?: number; repairBillXp?: number; insured?: boolean; damagePct?: number;
+}
 
 export interface MenuHooks {
   /** a visual choice changed (car, paint, finish): main updates the preview */
@@ -93,6 +99,9 @@ export interface MenuHooks {
   accessibility?(): void;
   language?(code: LangCode): void;
   cloudSync?(): void;
+  repairCar?(): void;
+  toggleInsurance?(on: boolean): void;
+  reportPlayer?(player: string, category: ReportCategory): void;
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -159,6 +168,8 @@ export class Menu {
   camMode = 'chase';
   /** console-cert accessibility (colorblind mode + HUD UI scale), telemetry & cloud save status */
   a11y: AccessibilitySettings = { colorblind: 'off', uiScale: 1 };
+  maint: MaintenanceStore = { cars: {}, insured: false, reports: [] };
+  private reportTarget = '';
   simhubOn = false;
   telemetrySamples = 0;
   /** the rear-view mirror at the top of the screen while driving */
@@ -446,11 +457,16 @@ export class Menu {
       glass: () => this.gGlass(), driver: () => this.gDriver(), perf: () => this.gPerf() } as Record<string, () => string>)[this.garageTab]?.() ?? '';
     const rail = GTABS.map((t, i) => `<button class="rail ${this.garageTab === t.id ? 'on' : ''}" data-act="gtab" data-v="${t.id}"><i>0${i + 1}</i><b>${t.label}</b></button>`).join('');
     const cls = now.power > 420 ? 'S' : now.power > 330 ? 'A' : now.power > 250 ? 'B' : 'C';
+    const cond = conditionOf(this.maint, sel.car);
+    const rep = repairCostOf(cond, this.maint.insured);
+    const condBadge = rep.pct > 0
+      ? `<button class="chip on" data-act="repair-car" title="Repair persistent race damage (${this.maint.insured ? '-50% Insured' : 'Standard rate'})">🔧 ${cond.totaled ? 'TOTALED' : `${rep.pct}% DAMAGED`} · Repair (${rep.xp} XP)</button>`
+      : `<span class="pill">✓ 100% MINT</span>`;
     return `<div class="garage">
       <header class="g-head">
         <div class="g-brand">GARAGE<span>BUILD YOUR CAR</span></div>
         <div class="g-carsum">
-          <div class="g-name">${esc(this.car().name)}<i>CLASS ${cls}</i></div>
+          <div class="g-name">${esc(this.car().name)}<i>CLASS ${cls}</i> ${condBadge}</div>
           <div class="g-stats">
             <span><b>${Math.round(now.power)}</b> kW</span>
             <span><b>${Math.round(now.mass)}</b> kg</span>
@@ -673,6 +689,8 @@ export class Menu {
           <div class="opts"><span class="dim">COPS</span>${cur?.mandatoryCops
             ? `<span class="pill gold">🚨 PATROLLED DISTRICT · ALWAYS ON</span><span class="dim small-note">${esc(cur.patrolNote)}</span>`
             : `<button class="chip ${sel.copMode ? 'on' : ''}" data-act="copmode" data-v="1">Cop Mode ON</button><button class="chip ${!sel.copMode ? 'on' : ''}" data-act="copmode" data-v="0">OFF</button><span class="dim small-note">${sel.copMode ? '+50%+ Rep/Cr · Bust = heavy fine / pink slip risk' : 'Clean track battle · standard payout'}</span>`}</div>
+          <div class="opts"><span class="dim">INSURANCE</span><button class="chip ${this.maint.insured ? 'on' : ''}" data-act="insure" data-v="1">🛡 Insured ON</button><button class="chip ${!this.maint.insured ? 'on' : ''}" data-act="insure" data-v="0">OFF</button><span class="dim small-note">${this.maint.insured ? `${INSURANCE_PREMIUM_XP} XP / $${INSURANCE_PREMIUM_CR} premium · -50% off repairs &amp; tow if wrecked` : 'Full repair &amp; Tow Truck Fee if totaled'}</span></div>
+          ${(() => { const r = repairCostOf(conditionOf(this.maint, sel.car), this.maint.insured); return r.pct > 0 ? `<div class="opts"><span class="pill gold">🔧 ${r.pct}% SAVED DAMAGE</span><button class="chip" data-act="repair-car">Repair (${r.xp} XP)</button></div>` : ''; })()}
           <div class="opts"><span class="dim">RULES</span><span class="pill ${sel.realism ? 'gold' : ''}">${sel.realism ? 'FULL REALISM' : 'RESPAWNS'}</span><span class="dim small-note">change on main menu</span></div>
           <div class="opts"><span class="dim">LAPS</span>${laps}</div>
           <button class="primary huge" data-act="start-race">Start Race · ${sel.laps} Lap${sel.laps > 1 ? 's' : ''}</button>
@@ -734,7 +752,8 @@ export class Menu {
     const rules = `<div class="opts"><span class="dim">MODE</span>${modeChip('race', `Race Event (${RACE_MAX_PLAYERS} max)`)}${modeChip('free', `Free Roam (${FREE_ROAM_MAX_PLAYERS} max)`)}
       ${p.mode === 'race' ? `<span class="dim sep">LAPS</span>${[1, 3, 5, 10].map(lapChip).join('')}` : ''}</div>
       ${p.mode === 'race' ? `<div class="opts"><span class="dim">COP MODE</span>${mandatoryCops ? `<span class="pill gold">🚨 PATROLLED DISTRICT · ALWAYS ON</span><span class="dim small-note">${esc(leaderCityObj?.patrolNote ?? '')}</span>` : `${copChip(true, 'Tactical Cops ON')}${copChip(false, 'Cops OFF')}<span class="dim small-note">PITs, roadblocks &amp; massive payouts</span>`}</div>
-      <div class="opts"><span class="dim">RULES</span>${realChip(true, 'Full Realism')}${realChip(false, 'Respawns')}<span class="dim small-note">${p.realism ? RULES.realism : RULES.respawn}</span></div>` : '<div class="opts"><span class="pill">NO POLICE</span><span class="dim small-note">16-player sandbox · AI traffic · [F] Headlight 1v1 Wagers · Speed Traps &amp; Drift Zones</span></div>'}`;
+      <div class="opts"><span class="dim">RULES</span>${realChip(true, 'Full Realism')}${realChip(false, 'Respawns')}<span class="dim small-note">${p.realism ? RULES.realism : RULES.respawn}</span></div>
+      <div class="opts"><span class="dim">INSURANCE</span><button class="chip ${this.maint.insured ? 'on' : ''}" data-act="insure" data-v="1">🛡 Insured (-50% Repairs/Tow)</button><button class="chip ${!this.maint.insured ? 'on' : ''}" data-act="insure" data-v="0">Uninsured</button><span class="dim small-note">Multiplayer damage persists until repaired</span></div>` : '<div class="opts"><span class="pill">NO POLICE</span><span class="dim small-note">16-player sandbox · AI traffic · [F] Headlight 1v1 Wagers · Speed Traps &amp; Drift Zones</span></div>'}`;
     let action: string;
     if (p.phase === 'driving') action = p.mode === 'free' ? '<button class="primary huge" data-act="prejoin">▶ Rejoin Free Roam</button>' : p.isHost ? '<button class="huge" data-act="plobby">Everyone back to lobby</button>' : '<div class="dim wait">The party is racing. You can join the next one.</div>';
     else if (p.phase === 'loading') action = '<div class="dim wait"><span class="spin inline"></span> Loading…</div>';
@@ -794,7 +813,16 @@ export class Menu {
     };
     const ord = (n: number) => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
     const table = ranked.length > 1 ? `<div class="standings">${ranked.map((s, i) => `<div class="srow ${s.you ? 'you' : ''}">
-        <span class="spos">${i + 1}</span><b>${esc(s.name)}</b><span class="dim">${s.best > 0 ? formatLap(s.best) : ''}</span><span class="sgap">${gap(s)}</span></div>`).join('')}</div>` : '';
+        <span class="spos">${i + 1}</span><b>${esc(s.name)}</b><span class="dim">${s.best > 0 ? formatLap(s.best) : ''}</span><span class="sgap">${gap(s)}</span>${!s.you && !s.ai ? `<button class="small" data-act="report-open" data-v="${esc(s.name)}" title="Report hate speech livery/plate, griefing, or cheating">🚩</button>` : ''}</div>`).join('')}</div>` : '';
+    const reportBar = this.reportTarget ? `<div class="pnote"><b>🚩 Report ${esc(this.reportTarget)}:</b>
+      <button class="small" data-act="report-send" data-k="hate_livery_plate" data-v="${esc(this.reportTarget)}">Hate Speech Livery/Plate</button>
+      <button class="small" data-act="report-send" data-k="griefing_ramming" data-v="${esc(this.reportTarget)}">Ramming / Griefing</button>
+      <button class="small" data-act="report-send" data-k="cheating" data-v="${esc(this.reportTarget)}">Cheating</button>
+      <button class="small" data-act="report-cancel">Cancel</button></div>` : '';
+    const maintLines: string[] = [];
+    if (r.towFeeXp) maintLines.push(`🚛 Tow Truck Fee (Totaled): -${r.towFeeXp} XP${r.insured ? ' (50% Insured)' : ''}`);
+    if (r.damagePct && r.damagePct > 0) maintLines.push(`🔧 Saved Car Damage: ${r.damagePct}% · Est. Repair ${r.repairBillXp ?? 0} XP${r.insured ? ' (-50% Insured)' : ''} — repair in Garage`);
+    const maintHtml = maintLines.length ? `<div class="pnote bad">${maintLines.map(esc).join('<br>')}</div>` : '';
     const rows = r.laps.map((t, i) => `<div class="row"><span>LAP ${i + 1}</span><b class="${t === r.best ? 'best' : ''}">${formatLap(t)}</b></div>`).join('');
     const p = this.party;
     const me = ranked.find((s) => s.you);
@@ -809,6 +837,8 @@ export class Menu {
       <div class="big ${pos === 1 && !me?.dnf ? 'win' : ''}">${me?.dnf ? 'DNF' : ranked.length > 1 ? `P${pos}<small> / ${ranked.length}</small>` : formatLap(r.total)}</div>
       <div class="dim">${me?.dnf ? `${r.laps.length} of ${r.laps_target} laps` : `${formatLap(r.total)} · ${r.laps_target} lap${r.laps_target > 1 ? 's' : ''}`} · Best lap <b class="best-inline">${formatLap(r.best)}</b></div>
       ${this.rewardHtml(r, !!me?.dnf)}
+      ${maintHtml}
+      ${reportBar}
       ${table}
       <div class="rows">${rows}</div>
       <div class="btns">${btns}</div>
@@ -913,6 +943,17 @@ export class Menu {
       case 'carmeet-open': this.hooks.carMeet?.(); break;
       case 'return-freeroam': this.lastResults = null; this.hooks.returnFreeRoam?.(); break;
       case 'cloud-sync': this.hooks.cloudSync?.(); break;
+      case 'insure': this.maint.insured = v === '1'; this.hooks.toggleInsurance?.(this.maint.insured); this.render(); break;
+      case 'repair-car': this.hooks.repairCar?.(); this.render(); break;
+      case 'report-open': this.reportTarget = v; this.render(); break;
+      case 'report-cancel': this.reportTarget = ''; this.render(); break;
+      case 'report-send': {
+        const cat = b.dataset.k as ReportCategory;
+        this.reportTarget = '';
+        this.hooks.reportPlayer?.(v, cat);
+        this.render();
+        break;
+      }
       case 'wear-skin': if (this.career.ownsSkin(v)) { sel.skin = v; this.save(); this.hooks.look(); this.hooks.partyMe(); this.render(); } break;
       case 'shop-car': this.shopCar = v; this.render(); break;
       case 'shop-drive': sel.car = v; this.shopCar = v; this.save(); this.render(); this.hooks.preview(); break;
