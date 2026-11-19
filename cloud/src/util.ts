@@ -16,6 +16,7 @@ export interface AccountRow {
   cars: string; mods: string; skins: string; clean: number; strikes: number; banned: number; net: string | null;
   username: string | null; username_at: number | null; seen: number | null; party: string | null;
   looks: string;
+  save_version?: number; save_prefs?: string; avatar_gear?: string;
 }
 
 export const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -68,6 +69,9 @@ export const profileOf = (a: AccountRow) => ({
   id: a.id, name: a.username ?? a.name, username: a.username, usernameAt: a.username_at, xp: a.xp, credits: a.credits,
   cars: JSON.parse(a.cars) as string[], mods: JSON.parse(a.mods), skins: JSON.parse(a.skins) as string[],
   looks: JSON.parse(a.looks ?? '{}') as Record<string, unknown>,
+  saveVersion: a.save_version ?? 1,
+  prefs: JSON.parse(a.save_prefs ?? '{}') as Record<string, unknown>,
+  avatarGear: JSON.parse(a.avatar_gear ?? '{}') as Record<string, unknown>,
   clean: a.clean, strikes: a.strikes, banned: !!a.banned, created: a.created,
 });
 

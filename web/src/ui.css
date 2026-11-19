@@ -372,3 +372,86 @@ body.touch #mirror { top: 6px; width: min(30vw, 300px); }
 .zb-row b { font-weight: 700; color: #f4f1ea; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .zb-row.you { background: rgba(255, 45, 106, 0.24); border-left: 2px solid var(--hot); color: #fff; }
 .zb-row.party { background: rgba(0, 229, 255, 0.16); border-left: 2px solid #00e5ff; color: #fff; }
+
+/* ---- Accessibility: HUD UI Scaling (--hud-scale) & German/long-locale text-expansion resilience ---- */
+:root { --hud-scale: 1; }
+#dash { transform-origin: bottom right; transform: scale(var(--hud-scale)); }
+#minimap { transform-origin: bottom left; transform: scale(var(--hud-scale)); }
+#laps { transform-origin: top right; transform: scale(var(--hud-scale)); }
+#menu button, #menu .chip, #menu .tnav b { overflow-wrap: anywhere; }
+
+/* ---- 4K Photo Mode Overlay ---- */
+body.photomode #hud, body.photomode #mirror, body.replaymode #hud, body.replaymode #mirror { display: none !important; }
+#photo-ui { position: fixed; inset: 0; z-index: 40; pointer-events: none; display: flex; align-items: flex-end; justify-content: center; padding: 20px; }
+#photo-ui[hidden], #replay-ui[hidden], #matchmaking-ui[hidden], #carmeet-ui[hidden] { display: none !important; }
+#photo-ui.ui-hidden .pm-panel { opacity: 0; pointer-events: none; }
+.pm-panel {
+  pointer-events: auto; width: min(880px, 94vw); background: rgba(6, 9, 16, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.16); border-top: 2px solid var(--hot);
+  padding: 14px 18px; backdrop-filter: blur(12px); box-shadow: 0 18px 46px rgba(0, 0, 0, 0.72);
+}
+.pm-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; gap: 12px; flex-wrap: wrap; }
+.pm-head b { font: italic 900 18px/1 var(--display); letter-spacing: .1em; color: #fff; }
+.pm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 14px; margin-bottom: 12px; }
+.pm-grid label { display: grid; grid-template-columns: 76px 1fr 56px; align-items: center; gap: 8px; font: 700 12px var(--display); letter-spacing: .1em; color: rgba(244, 241, 234, 0.8); }
+.pm-grid b { text-align: right; color: #00f0ff; }
+.pm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---- 5-Minute Cinematic Replay Editor ---- */
+#replay-ui { position: fixed; left: 0; right: 0; bottom: 16px; z-index: 38; display: flex; justify-content: center; pointer-events: none; padding: 0 16px; }
+.rp-bar {
+  pointer-events: auto; width: min(960px, 95vw); background: rgba(6, 9, 16, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.16); border-top: 2px solid #00f0ff;
+  padding: 12px 16px; backdrop-filter: blur(12px); display: flex; flex-direction: column; gap: 8px;
+}
+.rp-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.rp-top b { font: italic 900 17px/1 var(--display); letter-spacing: .1em; color: #fff; }
+.rp-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+#rp-scrub { width: 100%; accent-color: var(--hot); }
+.rp-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* ---- GTA Online-Style Instanced Matchmaking Transition ---- */
+#matchmaking-ui {
+  position: fixed; inset: 0; z-index: 45; background: rgba(4, 6, 12, 0.84);
+  backdrop-filter: blur(14px); display: flex; align-items: center; justify-content: center;
+}
+.mm-card {
+  width: min(520px, 90vw); background: rgba(10, 14, 24, 0.95); border: 1px solid rgba(255, 255, 255, 0.16);
+  border-left: 4px solid #c77dff; padding: 26px 28px; display: flex; flex-direction: column; gap: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.78);
+}
+.mm-card h2 { font: italic 900 32px/1 var(--display); margin: 0; color: #fff; }
+.mm-status { font: 700 14px var(--display); letter-spacing: .08em; color: #00f0ff; display: flex; align-items: center; gap: 8px; }
+.mm-bar { height: 6px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.mm-bar i { display: block; height: 100%; background: linear-gradient(90deg, #c77dff, #00f0ff); transition: width 0.35s ease; }
+
+/* ---- 5-Floor Car Meet Hub & Emote / Radio Panel ---- */
+#carmeet-ui { position: fixed; right: 18px; top: 84px; z-index: 34; width: min(370px, 92vw); }
+.cm-panel {
+  background: rgba(6, 9, 16, 0.92); border: 1px solid rgba(255, 255, 255, 0.15);
+  border-top: 2px solid #00f5a0; padding: 14px 16px; backdrop-filter: blur(12px);
+  display: flex; flex-direction: column; gap: 12px; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.7);
+}
+.cm-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cm-head b { font: italic 900 17px/1 var(--display); letter-spacing: .08em; color: #00f5a0; }
+.cm-sec { display: flex; flex-direction: column; gap: 6px; }
+.cm-sec > .dim { font: 700 11px var(--display); letter-spacing: .16em; }
+.cm-playrow { display: flex; gap: 6px; }
+.cm-playrow input { flex: 1; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.16); color: #fff; padding: 6px 8px; font-size: 12px; }
+.cm-embed { width: 100%; height: 86px; border: 0; border-radius: 6px; margin-top: 4px; background: #0b0e16; }
+
+/* Unified underground-neon button & chip theme for Photo Mode, Replay, Car Meet & Matchmaking overlays */
+.pm-panel button, .rp-bar button, .cm-panel button, .mm-card button {
+  appearance: none; cursor: pointer; background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.18); color: #f4f1ea;
+  padding: 6px 12px; font: 700 12px/1.1 var(--display); letter-spacing: .1em; text-transform: uppercase;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.pm-panel button:hover, .rp-bar button:hover, .cm-panel button:hover, .mm-card button:hover {
+  background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.36);
+}
+.pm-panel button.primary, .rp-bar button.primary, .cm-panel button.primary,
+.pm-panel button.on, .rp-bar button.on, .cm-panel button.on {
+  background: var(--hot); border-color: var(--hot); color: #fff;
+}
+.cm-panel .chips { display: flex; flex-wrap: wrap; gap: 5px; }

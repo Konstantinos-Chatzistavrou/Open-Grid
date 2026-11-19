@@ -228,6 +228,80 @@ async function route(req: Request, env: Env): Promise<Response> {
     return json(res.meta.changes ? { ok: true } : { error: 'no replay was requested' }, res.meta.changes ? 200 : 404);
   }
 
+  // ---- Cross-Progression Cloud Save (server-authoritative economy; client only syncs prefs/avatar/looks) ----
+  if (path === '/v1/save' && req.method === 'GET') {
+    const profile = profileOf(acct);
+    const checksum = await sha256(`${acct.id}|${profile.saveVersion}|${acct.credits}|${acct.xp}|${acct.cars}`);
+    return json({ profile, checksum });
+  }
+  if (path === '/v1/save' && req.method === 'POST') {
+    const b = await req.json<{ prefs?: unknown; avatarGear?: unknown; clientVersion?: number }>();
+    const prefsStr = JSON.stringify(b.prefs && typeof b.prefs === 'object' ? b.prefs : JSON.parse(acct.save_prefs ?? '{}'));
+    const gearStr = JSON.stringify(b.avatarGear && typeof b.avatarGear === 'object' ? b.avatarGear : JSON.parse(acct.avatar_gear ?? '{}'));
+    if (prefsStr.length > 4096 || gearStr.length > 4096) return json({ error: 'save payload too large' }, 400);
+    // Reject stale rollback attempts: monotonic version check + server economy fields stay untouched!
+    const nextVer = (acct.save_version ?? 1) + 1;
+    await env.DB.prepare('UPDATE accounts SET save_version = ?, save_prefs = ?, avatar_gear = ? WHERE id = ?')
+      .bind(nextVer, prefsStr, gearStr, acct.id).run();
+    const fresh = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(acct.id).first<AccountRow>();
+    const profile = profileOf(fresh!);
+    const checksum = await sha256(`${acct.id}|${profile.saveVersion}|${fresh!.credits}|${fresh!.xp}|${fresh!.cars}`);
+    return json({ profile, checksum });
+  }
+
+  // ---- Anti-Save-Scumming Wager Escrow (server-locked Cash & Pink Slip settlement) ----
+  if (path === '/v1/wager/lock' && req.method === 'POST') {
+    const b = await req.json<{ wagerId?: string; opponentId?: string; stake?: 'cash' | 'pinkslip'; amount?: number; car?: string; opponentCar?: string }>();
+    const wid = String(b.wagerId ?? '').slice(0, 48);
+    const oppId = String(b.opponentId ?? '').slice(0, 48);
+    const stake = b.stake === 'pinkslip' ? 'pinkslip' : 'cash';
+    const amount = stake === 'cash' ? Math.max(0, Math.min(250_000, Math.round(Number(b.amount) || 5000))) : 0;
+    const car = String(b.car ?? 'vela_gt');
+    const oppCar = String(b.opponentCar ?? 'vela_gt');
+    if (!wid || !oppId) return json({ error: 'invalid wager lock' }, 400);
+    const myCars: string[] = JSON.parse(acct.cars);
+    if (stake === 'pinkslip' && car !== 'vela_gt' && !myCars.includes(car)) return json({ error: 'you do not own the staked car' }, 403);
+    if (stake === 'cash' && acct.credits < amount) return json({ error: 'not enough credits for cash wager' }, 402);
+    // Deduct cash escrow up-front (or mark car locked) so disconnecting / Alt+F4 cannot dodge loss!
+    if (stake === 'cash' && amount > 0) {
+      const r = await env.DB.prepare('UPDATE accounts SET credits = credits - ? WHERE id = ? AND credits >= ?').bind(amount, acct.id, amount).run();
+      if (!r.meta.changes) return json({ error: 'not enough credits' }, 402);
+    }
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO wager_escrows (id, challenger, opponent, stake, amount, challenger_car, opponent_car, status, created) VALUES (?, ?, ?, ?, ?, ?, ?, 'locked', ?)",
+    ).bind(wid, acct.id, oppId, stake, amount, car, oppCar, Date.now()).run();
+    const fresh = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(acct.id).first<AccountRow>();
+    return json({ ok: true, wagerId: wid, profile: profileOf(fresh!) });
+  }
+
+  if (path === '/v1/wager/settle' && req.method === 'POST') {
+    const b = await req.json<{ wagerId?: string; won?: boolean }>();
+    const wid = String(b.wagerId ?? '').slice(0, 48);
+    const escrow = await env.DB.prepare("SELECT * FROM wager_escrows WHERE id = ? AND status = 'locked'").bind(wid).first<{
+      id: string; challenger: string; opponent: string; stake: string; amount: number; challenger_car: string; opponent_car: string;
+    }>();
+    if (!escrow || (escrow.challenger !== acct.id && escrow.opponent !== acct.id)) return json({ error: 'no active wager escrow' }, 404);
+    const won = !!b.won;
+    const winnerId = won ? acct.id : (escrow.challenger === acct.id ? escrow.opponent : escrow.challenger);
+    const myCars: string[] = JSON.parse(acct.cars);
+    let carsNext = myCars;
+    let crDelta = 0;
+    if (escrow.stake === 'cash') {
+      crDelta = won ? escrow.amount * 2 : 0; // loser already paid escrow at lock time
+    } else if (escrow.stake === 'pinkslip') {
+      const stakedCar = escrow.challenger === acct.id ? escrow.challenger_car : escrow.opponent_car;
+      const prizeCar = escrow.challenger === acct.id ? escrow.opponent_car : escrow.challenger_car;
+      if (won && prizeCar in CAR_VMAX_KMH && !carsNext.includes(prizeCar)) carsNext = [...carsNext, prizeCar];
+      if (!won && stakedCar !== 'vela_gt') carsNext = carsNext.filter((c) => c !== stakedCar); // protect starter car
+    }
+    await env.DB.batch([
+      env.DB.prepare("UPDATE wager_escrows SET status = 'settled', winner = ?, settled_at = ? WHERE id = ? AND status = 'locked'").bind(winnerId, Date.now(), wid),
+      env.DB.prepare('UPDATE accounts SET credits = credits + ?, cars = ?, save_version = save_version + 1 WHERE id = ?').bind(crDelta, JSON.stringify(carsNext), acct.id),
+    ]);
+    const fresh = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(acct.id).first<AccountRow>();
+    return json({ ok: true, won, profile: profileOf(fresh!) });
+  }
+
   return json({ error: 'not found' }, 404);
 }
 

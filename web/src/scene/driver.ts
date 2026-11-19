@@ -111,13 +111,13 @@ export class Driver {
     this.setSkin(SKINS[0]);
   }
 
-  setSkin(s: Skin) {
-    this.u.helmet.value.set(s.helmet);
-    this.u.accent.value.set(s.accent);
+  setSkin(s: Skin, override?: { helmet?: string; accent?: string; visor?: string; suit?: string; gloves?: string }) {
+    this.u.helmet.value.set(override?.helmet || s.helmet);
+    this.u.accent.value.set(override?.accent || s.accent);
     this.u.design.value = s.design;
-    this.suit.color.set(s.suit);
-    this.gloves.color.set(s.gloves);
-    this.visor.color.set(s.visor);
+    this.suit.color.set(override?.suit || s.suit);
+    this.gloves.color.set(override?.gloves || s.gloves);
+    this.visor.color.set(override?.visor || s.visor);
   }
 
   /** Every frame: steering (-1..1, + left) turns the arms; lateral g (m/s², + left) leans the head. */

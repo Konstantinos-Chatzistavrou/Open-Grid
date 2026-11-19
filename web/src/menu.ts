@@ -19,6 +19,9 @@ import { levelOf } from './progression';
 import type { Loader } from './loading';
 import { AERO_FINISHES, DIFFUSERS, FENDERS, FRONT_BUMPERS, GLOW_COLOURS, HEAD_TINTS, HOODS, LIVERIES, PART_COLOURS, REAR_BUMPERS, RIM_FINISHES, RIMS, SKIRTS, SPLITTERS, WINGS, type Custom } from './scene/custom';
 import { SKINS, helmetSvg, skinOf } from './scene/driver';
+import { LANGS, getLang, setLang, t, type LangCode } from './i18n';
+import type { AccessibilitySettings, ColorblindMode, UiScale } from './accessibility';
+import type { AvatarGear } from './carMeet';
 
 /** Garage tabs: name, camera (azimuth, elevation, distance) that shows those parts. */
 const GTABS: { id: string; label: string; cam: string }[] = [
@@ -80,6 +83,16 @@ export interface MenuHooks {
   look(): void;
   /** results screen: watch the cars still racing */
   spectate(): void;
+  /** Content Creator Suite, Telemetry, Car Meet, Accessibility & Localization hooks */
+  photoMode?(): void;
+  replayMode?(): void;
+  exportMotec?(): void;
+  simhubToggle?(on: boolean): void;
+  carMeet?(): void;
+  returnFreeRoam?(): void;
+  accessibility?(): void;
+  language?(code: LangCode): void;
+  cloudSync?(): void;
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -144,6 +157,10 @@ export class Menu {
   private settingsNote = '';
   /** the driving camera chosen in Settings (main owns the rig) */
   camMode = 'chase';
+  /** console-cert accessibility (colorblind mode + HUD UI scale), telemetry & cloud save status */
+  a11y: AccessibilitySettings = { colorblind: 'off', uiScale: 1 };
+  simhubOn = false;
+  telemetrySamples = 0;
   /** the rear-view mirror at the top of the screen while driving */
   mirror = true;
   assists!: AssistSettings;
@@ -261,10 +278,10 @@ export class Menu {
           <div class="logo">OPEN<span>GRID</span></div>
         </div>
         <nav class="title-btns">
-          ${nav('play', '01', 'Play', 'Race · Free roam · Online', true)}
-          ${nav('garage-open', '02', 'Garage', 'Paint, parts and tuning')}
-          ${nav('shop-open', '03', 'Shop', 'Cars, upgrades, driver gear')}
-          ${nav('settings-open', '04', 'Settings', 'Assists, controls, graphics')}
+          ${nav('play', '01', t('menu.play'), t('menu.play.sub'), true)}
+          ${nav('garage-open', '02', t('menu.garage'), t('menu.garage.sub'))}
+          ${nav('shop-open', '03', t('menu.shop'), t('menu.shop.sub'))}
+          ${nav('settings-open', '04', t('menu.settings'), t('menu.settings.sub'))}
           ${this.heat > 0 && this.layLowCost >= 0 ? nav('laylow', '05', 'Lay low', `Clear your heat · ${this.layLowCost} XP`, false, this.sp.xp < this.layLowCost ? 'disabled title="Not enough reputation"' : '').replace('tnav huge', 'tnav huge lay') : ''}
         </nav>
         ${invite}
@@ -311,10 +328,26 @@ export class Menu {
     return `<div class="lobby-screen"><div class="card lobby-card settings-card">
       <div class="lobby-head"><button data-act="settings-back" class="back-btn">← Back</button><div><div class="kicker">OPTIONS</div><h2>Settings</h2></div></div>
       <h3>Driving assists</h3>${assists}
-      <h3>Controls</h3><div class="chips"><button data-act="controls-open">🎮 Controllers, wheels &amp; keyboard…</button></div>
-      <h3>Online account</h3>
-      <div class="dim note">${this.cloud.available ? `Your online career is kept on the server, with no e-mail or password. The recovery code moves it to another device: keep it private, anyone with it can use your account.${this.mp.ready ? '' : ` (${esc(this.mp.note)})`}` : 'The online service is not set up for this build.'}</div>
-      ${this.cloud.available ? `<div class="chips"><button class="small" data-act="recovery">${this.recoveryShown ? 'Hide' : 'Show'} recovery code</button></div>
+      <h3>🌍 ${t('settings.language')}</h3>
+      <div class="chips">${LANGS.map((l) => chip('lang', l.code, l.native, getLang() === l.code)).join('')}</div>
+      <div class="dim note">String-table localization (UE5 Localization Dashboard ready) with automatic text-expansion layouts.</div>
+      <h3>♿ ${t('settings.accessibility')}</h3>
+      ${row(t('settings.colorblind').toUpperCase(),
+        (['off', 'protanopia', 'deuteranopia', 'tritanopia'] as ColorblindMode[]).map((m) => chip('a11y-cb', m, m[0].toUpperCase() + m.slice(1), this.a11y.colorblind === m)).join(''),
+        'Remaps Driving Line and Minimap icons (player, rivals, police, roadblocks, speed/drift zones) to high-contrast colorblind-safe palettes.')}
+      ${row(t('settings.uiscale').toUpperCase(),
+        ([0.85, 1, 1.15, 1.3] as UiScale[]).map((sc) => chip('a11y-scale', String(sc), `${Math.round(sc * 100)}%`, this.a11y.uiScale === sc)).join(''),
+        'Scales the speedometer, minimap, and telemetry HUD widgets cleanly.')}
+      <h3>📡 ${t('settings.telemetry')} &amp; MoTeC</h3>
+      <div class="chips">
+        ${chip('simhub', '1', 'SimHub UDP ON', this.simhubOn)}${chip('simhub', '0', 'OFF', !this.simhubOn)}
+        <button class="small" data-act="export-motec">📊 Export MoTeC (.ld / .ldx)${this.telemetrySamples ? ` · ${Math.round(this.telemetrySamples / 60)}s` : ''}</button>
+      </div>
+      <div class="dim note">Streams 311-byte Forza/SimHub Dash V2 packets (speed, RPM, tire temps, suspension, G-forces) via <code>tools/simhub_udp_bridge.mjs</code> (UDP 20777) &amp; exports MoTeC i2 Pro lap logs.</div>
+      <h3>Controls</h3><div class="chips"><button data-act="controls-open">🎮 Controllers, wheels &amp; full button remapping…</button></div>
+      <h3>💾 ${t('settings.cloudsave')}</h3>
+      <div class="dim note">${this.cloud.available ? `Server-authoritative cross-progression (v${this.mp.profile?.saveVersion ?? 1}): balance, cars, garage, and Pink Slip escrow live on the server to prevent save-scumming.${this.mp.ready ? '' : ` (${esc(this.mp.note)})`}` : 'Cloud saves & Pink Slip escrow sync automatically once connected to the online service.'}</div>
+      ${this.cloud.available ? `<div class="chips"><button class="small primary" data-act="cloud-sync">☁ Sync Cloud Save Now</button><button class="small" data-act="recovery">${this.recoveryShown ? 'Hide' : 'Show'} recovery code</button></div>
         ${this.recoveryShown ? `<input id="reccode" type="text" readonly value="${esc(this.cloud.recoveryCode || 'No account yet: open the multiplayer lobby once.')}" />` : ''}
         <div class="joinrow"><input id="restore" type="text" placeholder="Paste a recovery code to use that account here" spellcheck="false" autocomplete="off" /><button class="small" data-act="restore">Use</button></div>
         ${this.settingsNote ? `<div class="pnote ${this.settingsNote.startsWith('✓') ? '' : 'bad'}">${esc(this.settingsNote)}</div>` : ''}` : ''}
@@ -561,7 +594,17 @@ export class Menu {
   private gDriver() {
     const owned = SKINS.filter((k) => this.career.ownsSkin(k.id));
     const cards = owned.map((k) => `<button class="skin ${this.sel.skin === k.id ? 'on' : ''}" data-act="skin" data-v="${k.id}">${helmetSvg(k, 42)}<span>${esc(k.name)}</span></button>`).join('');
-    return `<h3>Driver gear <small class="dim">(your avatar in multiplayer)</small></h3><div class="skins">${cards}</div>
+    const gear = this.sel.avatarGear;
+    const gearSwatches = (slot: keyof AvatarGear, cur: string) =>
+      `<div class="sws">${PART_COLOURS.filter(Boolean).map((c) => `<button class="sw ${c === cur ? 'on' : ''}" style="background:${c}" data-act="gear" data-k="${slot}" data-v="${c}" aria-label="${c}"></button>`).join('')}</div>`;
+    return `<h3>Driver preset <small class="dim">(in-car &amp; walkable Car Meet avatar)</small></h3>
+      <div class="chips" style="margin-bottom:10px"><button class="chip on" data-act="gear-match">🎨 Match Car Livery &amp; Paint</button></div>
+      <div class="skins">${cards}</div>
+      <h3>Helmet colour</h3>${gearSwatches('helmet', gear.helmet)}
+      <h3>Helmet accent / visor stripe</h3>${gearSwatches('accent', gear.accent)}
+      <h3>Racing suit</h3>${gearSwatches('suit', gear.suit)}
+      <h3>Racing gloves</h3>${gearSwatches('gloves', gear.gloves)}
+      <h3>Racing shoes</h3>${gearSwatches('shoes', gear.shoes)}
       ${owned.length < SKINS.length ? '<button class="small more-cars" data-act="shop-gear">🛒 More helmets &amp; suits in the Shop</button>' : ''}`;
   }
   /** Body: the big shapes - rear wing, bumpers, hood (generated panels replace the stock ones). */
@@ -715,15 +758,22 @@ export class Menu {
   private pause() {
     const p = this.party;
     const online = !!p && p.phase !== 'lobby';
+    const isFree = this.sel.mode === 'free' || (online && p?.mode === 'free');
+    const creator = `<button data-act="photo-open">${t('pause.photo')}</button>
+         <button data-act="replay-open">${t('pause.replay')}</button>
+         <button data-act="export-motec">${t('pause.motec')}</button>
+         ${isFree ? `<button data-act="carmeet-open">${t('pause.carmeet')}</button>` : ''}`;
     const btns = online
-      ? `<button class="primary" data-act="resume">▶ Resume Driving</button>
+      ? `<button class="primary" data-act="resume">${t('pause.resume')}</button>
+         ${creator}
          ${p!.isHost ? '<button data-act="plobby">↩ End Session · Everyone to Lobby</button>' : '<button data-act="quit">↩ Back to Lobby</button>'}
-         <button data-act="settings-open">☰ Assists &amp; Controls</button>
+         <button data-act="settings-open">${t('pause.settings')}</button>
          <button data-act="pleave">${p!.isHost ? 'Close Party' : 'Leave Party'}</button>`
-      : `<button class="primary" data-act="resume">▶ Resume Driving</button>
-         <button data-act="restart">↻ Restart ${this.sel.mode === 'race' ? 'Race' : 'Session'}</button>
-         <button data-act="settings-open">☰ Assists &amp; Controls</button>
-         <button data-act="quit">← Quit to Main Menu</button>`;
+      : `<button class="primary" data-act="resume">${t('pause.resume')}</button>
+         ${creator}
+         <button data-act="restart">${t('pause.restart')} ${this.sel.mode === 'race' ? 'Race' : 'Session'}</button>
+         <button data-act="settings-open">${t('pause.settings')}</button>
+         <button data-act="quit">${t('pause.quit')}</button>`;
     return `<div class="card center pause-card">
       <div class="kicker">${online ? 'PARTY SESSION · OTHERS KEEP DRIVING' : 'SESSION PAUSED'}</div>
       <h2>Paused</h2>
@@ -751,8 +801,8 @@ export class Menu {
     const racing = ranked.some((s) => !s.you && s.fin < 0 && !s.dnf);
     const spec = racing ? '<button data-act="spectate">👁 Spectate</button>' : '';
     const btns = r.online
-      ? spec + (p?.isHost ? '<button class="primary" data-act="plobby">↩ Everyone to Lobby</button>' : '<span class="dim wait">Waiting for the leader…</span>') + `<button data-act="pleave">${p?.isHost ? 'Close Party' : 'Leave Party'}</button>`
-      : '<button class="primary" data-act="restart">↻ Race Again</button>' + spec + '<button data-act="quit-modes">Game Modes</button><button data-act="quit">Main Menu</button>';
+      ? spec + `<button data-act="export-motec">${t('results.export_motec')}</button>` + (p?.isHost ? '<button class="primary" data-act="plobby">↩ Everyone to Lobby</button>' : '<span class="dim wait">Waiting for the leader…</span>') + `<button data-act="pleave">${p?.isHost ? 'Close Party' : 'Leave Party'}</button>`
+      : `<button class="primary" data-act="return-freeroam">${t('results.return_freeroam')}</button><button data-act="restart">↻ Race Again</button><button data-act="export-motec">${t('results.export_motec')}</button><button data-act="replay-open">🎬 Replay</button>` + spec + '<button data-act="quit-modes">Game Modes</button><button data-act="quit">Main Menu</button>';
     return `<div class="card center results-card">
       <div class="kicker">${r.online ? 'PARTY RACE' : 'RACE'} RESULT</div>
       <h2>${me?.dnf ? `Did not finish${me.why ? ' · ' + esc(me.why) : ''}` : ranked.length > 1 ? `You finished ${ord(pos)}` : 'Race Complete'}</h2>
@@ -840,7 +890,29 @@ export class Menu {
         this.save(); this.hooks.look(); this.render();
         break;
       }
-      case 'skin': if (this.career.ownsSkin(v)) { sel.skin = v; this.save(); this.hooks.look(); this.hooks.partyMe(); this.render(); } break;
+      case 'skin': if (this.career.ownsSkin(v)) { sel.skin = v; const sk = skinOf(v); Object.assign(sel.avatarGear, { helmet: sk.helmet, accent: sk.accent, visor: sk.visor, suit: sk.suit, gloves: sk.gloves }); this.save(); this.hooks.look(); this.hooks.partyMe(); this.render(); } break;
+      case 'gear': {
+        const k = b.dataset.k as keyof AvatarGear;
+        if (k) { sel.avatarGear[k] = v; this.save(); this.hooks.look(); this.render(); }
+        break;
+      }
+      case 'gear-match': {
+        const paint = paintOf(sel, this.cars);
+        const liveryCol = customOf(sel).liveryColor || '#ff2d6a';
+        Object.assign(sel.avatarGear, { helmet: paint, accent: liveryCol, suit: paint, gloves: liveryCol, shoes: liveryCol });
+        this.save(); this.hooks.look(); this.render();
+        break;
+      }
+      case 'lang': setLang(v as LangCode); this.hooks.language?.(v as LangCode); this.render(); break;
+      case 'a11y-cb': this.a11y.colorblind = v as ColorblindMode; this.hooks.accessibility?.(); this.render(); break;
+      case 'a11y-scale': this.a11y.uiScale = Number(v) as UiScale; this.hooks.accessibility?.(); this.render(); break;
+      case 'simhub': this.simhubOn = v === '1'; this.hooks.simhubToggle?.(this.simhubOn); this.render(); break;
+      case 'export-motec': this.hooks.exportMotec?.(); break;
+      case 'photo-open': this.hooks.photoMode?.(); break;
+      case 'replay-open': this.hooks.replayMode?.(); break;
+      case 'carmeet-open': this.hooks.carMeet?.(); break;
+      case 'return-freeroam': this.lastResults = null; this.hooks.returnFreeRoam?.(); break;
+      case 'cloud-sync': this.hooks.cloudSync?.(); break;
       case 'wear-skin': if (this.career.ownsSkin(v)) { sel.skin = v; this.save(); this.hooks.look(); this.hooks.partyMe(); this.render(); } break;
       case 'shop-car': this.shopCar = v; this.render(); break;
       case 'shop-drive': sel.car = v; this.shopCar = v; this.save(); this.render(); this.hooks.preview(); break;

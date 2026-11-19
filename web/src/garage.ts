@@ -3,6 +3,7 @@
 
 import { cleanCustom, defaultCustom, type Custom } from './scene/custom';
 import { SKINS } from './scene/driver';
+import { DEFAULT_AVATAR_GEAR, type AvatarGear } from './carMeet';
 
 export interface CatalogCar { id: string; name: string; tag: string; physics: string; paint: string; /** visual config (default: the shared Vela GT body) */ visual?: string; /** Shop price, credits */ price?: number }
 export type Finish = 'gloss' | 'satin' | 'metallic' | 'pearl' | 'candy' | 'matte';
@@ -34,6 +35,8 @@ export interface Selection {
   custom: Record<string, Custom>;
   /** the driver's skin (helmet, suit): also the multiplayer avatar */
   skin: string;
+  /** Custom driver avatar gear colours (helmet, suit, gloves, shoes) synced to Car Meet & cloud save */
+  avatarGear: AvatarGear;
 }
 
 /** iridescence: strength of the angle-dependent colour shift of pearl paint (0 = none). */
@@ -192,7 +195,7 @@ export function loadSelection(cars: CatalogCar[], params: URLSearchParams): Sele
   const starter = cars.find((c) => c.id === 'vela_gt')?.id ?? cars[0].id;
   const side = (): Side => ({ car: starter, mods: {}, skin: 'classic' });
   const sel = { career: 'sp', sides: { sp: side(), mp: side() }, paint: {}, finish: 'gloss', mode: 'race', laps: 3,
-    name: `Driver ${Math.floor(1000 + Math.random() * 9000)}`, realism: true, copMode: true, custom: {} } as unknown as Selection;
+    name: `Driver ${Math.floor(1000 + Math.random() * 9000)}`, realism: true, copMode: true, custom: {}, avatarGear: { ...DEFAULT_AVATAR_GEAR } } as unknown as Selection;
   for (const k of ['car', 'mods', 'skin'] as const)
     Object.defineProperty(sel, k, { enumerable: false, get: () => sel.sides[sel.career][k], set: (v) => { (sel.sides[sel.career] as unknown as Record<string, unknown>)[k] = v; } });
   const cleanMods = (o: unknown) => {
@@ -224,6 +227,7 @@ export function loadSelection(cars: CatalogCar[], params: URLSearchParams): Sele
       if (typeof s.name === 'string' && s.name.trim()) sel.name = s.name.trim().slice(0, 18);
       if (typeof s.realism === 'boolean') sel.realism = s.realism;
       if (typeof s.copMode === 'boolean') sel.copMode = s.copMode;
+      if (s.avatarGear && typeof s.avatarGear === 'object') Object.assign(sel.avatarGear, s.avatarGear);
       if (s.custom && typeof s.custom === 'object') for (const [k, v] of Object.entries(s.custom)) if (cars.some((c) => c.id === k)) sel.custom[k] = cleanCustom(v);
     }
   } catch { /* storage blocked or corrupt: defaults */ }
