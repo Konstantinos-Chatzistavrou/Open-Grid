@@ -80,12 +80,17 @@ export class CarProbe {
 
   private end() { for (const o of this.hidden) o.visible = true; this.hidden.length = 0; }
 
+  /** Optional hook called right before each cubemap face renders (used by GPU meshlet culling). */
+  onBeforeFace: ((cam: THREE.Camera) => void) | null = null;
+
   private renderFace(i: number) {
     const r = this.renderer;
     if (this.cube.coordinateSystem !== r.coordinateSystem) {
       this.cube.coordinateSystem = r.coordinateSystem;
       this.cube.updateCoordinateSystem();
     }
+    const faceCam = this.cube.children[i] as THREE.Camera;
+    this.onBeforeFace?.(faceCam);
     const prevRT = r.getRenderTarget(), prevFace = r.getActiveCubeFace(), prevMip = r.getActiveMipmapLevel();
     // No shadow sampling in the probe's shaders: building the lights' ShadowNodes a second time (for this render
     // context) replaces their shadow maps and destroys the ones the main pass still binds (WebGPU "Destroyed
@@ -94,7 +99,7 @@ export class CarProbe {
     const sh = r.shadowMap.enabled;
     r.shadowMap.enabled = false;
     r.setRenderTarget(this.rt, i);
-    r.render(this.scene, this.cube.children[i] as THREE.Camera);
+    r.render(this.scene, faceCam);
     r.setRenderTarget(prevRT, prevFace, prevMip);
     r.shadowMap.enabled = sh;
   }

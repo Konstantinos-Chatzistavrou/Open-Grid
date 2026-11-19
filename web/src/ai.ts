@@ -26,10 +26,10 @@ import { createContactShadow, setupCarMaterials, type CarVisualConfig } from './
 import { assetUrl, loadGLTF } from './scene/loaders';
 import { drawEarly } from './scene/nyc/breach';
 
-/** strength of a rival's headlight pool on the road (a clustered point light, see create()) */
-const AI_BEAM = 60;
-/** the pool sits this far ahead of the nose and this high: low and close, so it lights road, not the car in front */
-const BEAM_AHEAD = 5.2, BEAM_Y = 0.4;
+/** strength of a rival's clustered headlight beam (SpotLight on WebGPU Clustered Forward+) */
+const AI_BEAM = 340;
+/** the beam target distance ahead of the nose */
+const BEAM_AHEAD = 14.0, BEAM_Y = 0.65;
 /**
  * A rival's speed change (m/s) from one crash that does no damage, and the damage per (m/s above it)^2. One crash
  * that changes its speed by 18 m/s wrecks it outright (a 130 km/h hit on a standing rival; the cars share the change);
@@ -173,7 +173,7 @@ interface AiCar {
   shadow: THREE.Object3D | null;
   body: RAPIER.RigidBody;
   wheels: { node: THREE.Object3D; rest: THREE.Quaternion }[];
-  light: THREE.PointLight | null;
+  light: THREE.SpotLight | null;
   /** small parts drawn only near the camera (interior, brake discs, calipers, exhaust, plate, underbody) and whether they are shown */
   detail: THREE.Object3D[]; detailOn: boolean;
   /** merged wheel meshes (merge.ts mergeSpinningWheels): userData.spin = wheel angle */
@@ -275,16 +275,14 @@ export class AiTraffic {
       let shadow: THREE.Object3D | null = null;
       if (!black) root.add(shadow = createContactShadow(cb.size_m[0] * 1.22, cb.size_m[2] * 1.16, cb.centre_in_model_m[2]));
       scene.add(root);
-      // One unshadowed spot per car (cheap): lights up the road ahead, walls and the player as it
-      // passes. The light set never changes (that recompiles materials): 'off' parks the cars far below the city instead.
-      // A POINT light on the road ahead of the nose, not a spot at the lenses: spots are evaluated for every pixel of
-      // the frame (five rivals = five per-pixel lights, even switched off in free roam, ~1.5 ms at 1080p on the iGPU),
-      // point lights go through the clustered path and cost only where their pool reaches.
-      let light: THREE.PointLight | null = null;
+      // Clustered Forward+ unshadowed SpotLight headlight beam per rival: culled in the WGSL compute pass with a tight
+      // cone bounding sphere and skipped completely on CPU when intensity is 0 (free roam / wrecked).
+      let light: THREE.SpotLight | null = null;
       if (!black) {
-        light = new THREE.PointLight(0xfff3e0, AI_BEAM, 12, 2);
-        light.position.set(0, BEAM_Y, cb.size_m[2] / 2 + BEAM_AHEAD);
-        root.add(light);
+        light = new THREE.SpotLight(0xfff3e0, AI_BEAM, 42, 0.42, 0.5, 2);
+        light.position.set(0, BEAM_Y, cb.size_m[2] / 2 + 0.15);
+        light.target.position.set(0, -0.8, cb.size_m[2] / 2 + BEAM_AHEAD);
+        root.add(light, light.target);
       }
       const body = pw.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
       // Box from 0.15 m (nothing wedges under it) to 1.0 m: BELOW the top of the player's hull (1.2 m).
@@ -441,7 +439,7 @@ export class AiTraffic {
       // headlight pool: fades out as the player's car comes under it (a rival close behind used to flood the car white)
       if (c.light) {
         const fw = this.a.set(0, 0, 1).applyQuaternion(c.quat);
-        const lx = c.pos.x + fw.x * (BEAM_AHEAD + 2.2) - player.x, lz = c.pos.z + fw.z * (BEAM_AHEAD + 2.2) - player.z;
+        const lx = c.pos.x + fw.x * 6.5 - player.x, lz = c.pos.z + fw.z * 6.5 - player.z;
         const k = Math.min(1, Math.max(0, (Math.hypot(lx, lz) - 2.5) / 4.5));
         c.light.intensity = c.wrecked ? 0 : AI_BEAM * k * k * (3 - 2 * k);
       }

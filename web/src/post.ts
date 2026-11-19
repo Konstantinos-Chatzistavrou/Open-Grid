@@ -23,7 +23,9 @@ import * as SMAAModule from 'three/addons/tsl/display/SMAANode.js';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { CURVES, GRADE, LOOKS, applyLook, filmGrain, toneGrade, type CurveName } from './fx/grade';
 import { DepthFx } from './fx/depthFx';
+import { PlanarRoadReflector } from './fx/roadReflections';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
+export { ClusteredForwardLighting, type ClusteredForwardStats } from './fx/clusteredForward';
 
 export type PresetName = 'max' | 'ultra' | 'high' | 'medium' | 'low' | 'potato';
 export interface Preset {
@@ -193,6 +195,8 @@ export class Post {
   private smaas: ScaledSMAA[] = [];
   private maxFx: DepthFx | null = null;
   private depthFx: DepthFx | null = null;
+  /** Real-time planar wet-road reflection pass (hybridized with DepthFx SSR on max/ultra). */
+  readonly planarRoad: PlanarRoadReflector | null = null;
   /** Shared world position of the player car (mutated in-place by main.ts so DepthFx masks car roof ripples & underbody SSR). */
   readonly carPos = new THREE.Vector3(0, -100, 0);
   private sharpness = uniform(0.5);
@@ -213,8 +217,19 @@ export class Post {
   get mirror() { return this.mirrorMix.value > 0; }
   set mirror(on: boolean) { this.mirrorMix.value = on ? 1 : 0; }
 
+  /** Optional hook called immediately before any scene pass (main, planar road reflection, rear-view mirror) renders. */
+  onBeforeScenePass: ((cam: THREE.Camera) => void) | null = null;
+
   constructor(private renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, private opts: PostOptions) {
     this.scenePass = pass(scene, camera);
+    {
+      const sp = this.scenePass as unknown as { updateBefore(f: unknown): unknown };
+      const origScene = sp.updateBefore.bind(sp);
+      sp.updateBefore = (f) => {
+        this.onBeforeScenePass?.(camera);
+        return origScene(f);
+      };
+    }
     const color = this.scenePass.getTextureNode('output');
     const q = new URLSearchParams(location.search);
     const curve: CurveName = (CURVES as string[]).includes(q.get('tm') ?? '') ? (q.get('tm') as CurveName) : DEFAULT_CURVE;
@@ -230,13 +245,24 @@ export class Post {
     let sharedTonedFull: THREE.RTTNode | null = null;
     let sharedTonedKey = '';
     const ssrOn = q.get('ssr') !== '0';
+    const planarOn = q.get('planar') !== '0' && ssrOn && PRESET_ORDER.some((n) => PRESETS[n].ssr);
     const aoOn = q.get('ao') !== '0';
+    if (planarOn) {
+      this.planarRoad = new PlanarRoadReflector(scene, { resScale: 0.32, every: 2 });
+      this.planarRoad.onBeforeRender = (cam) => this.onBeforeScenePass?.(cam);
+    }
     // the mirror: its own small pass, composited last (after the upscale: it is drawn at its own resolution)
     this.mirrorPass = pass(scene, this.mirrorCam);
     {
       const mp = this.mirrorPass as unknown as { updateBefore(f: unknown): unknown };
       const render = mp.updateBefore.bind(mp);
-      mp.updateBefore = (f) => (this.mirrorMix.value > 0 && this.mirrorTick++ % Math.max(1, this.mirrorEvery) === 0 ? render(f) : undefined);
+      mp.updateBefore = (f) => {
+        if (this.mirrorMix.value > 0 && this.mirrorTick++ % Math.max(1, this.mirrorEvery) === 0) {
+          this.onBeforeScenePass?.(this.mirrorCam);
+          return render(f);
+        }
+        return undefined;
+      };
     }
     const mr = this.mirrorRect, su = screenUV;
     // a mirror: left and right swapped
@@ -254,10 +280,10 @@ export class Post {
         continue;
       }
       const fx = pr.ao && pr.ssr && ssrOn
-        ? (this.maxFx ??= new DepthFx(this.scenePass, camera, { resScale: 0.75, quality: 0.3, maxDistance: 85, intensity: 0.72, withAo: aoOn, carPos: this.carPos }))
+        ? (this.maxFx ??= new DepthFx(this.scenePass, camera, { resScale: 0.75, quality: 0.3, maxDistance: 85, intensity: 0.72, withAo: aoOn, carPos: this.carPos, planar: this.planarRoad, planarIntensity: 0.56 }))
         : null;
       const lite = !fx && pr.ssr && ssrOn
-        ? (this.depthFx ??= new DepthFx(this.scenePass, camera, { resScale: 0.5, quality: 0.16, maxDistance: 55, intensity: 0.6, carPos: this.carPos }))
+        ? (this.depthFx ??= new DepthFx(this.scenePass, camera, { resScale: 0.5, quality: 0.16, maxDistance: 55, intensity: 0.6, carPos: this.carPos, planar: this.planarRoad, planarIntensity: 0.44 }))
         : null;
       let lit: THREE.Node<'vec4'> = fx ? fx.color : lite ? lite.color : color;
       // bloom numbers are per preset (emitter bias, see BLOOM); presets with the same numbers share one node, presets
@@ -320,11 +346,22 @@ export class Post {
     this.mirrorPass.setResolutionScale(Math.min(0.45, 0.07 + 0.3 * s));
     this.maxFx?.setScale(s);
     this.depthFx?.setScale(s);
+    this.planarRoad?.setScale(s);
     for (const r of this.scaled) r.setResolutionScale(s);
     for (const m of this.smaas) m.scale = s;
     for (const b of this.blooms) b.node.setResolutionScale(b.res * s);
     // full-resolution image: a light touch only (RCAS at 1:1 sharpens texture noise); reduced: stronger
     this.sharpness.value = s >= 0.99 ? 1.0 : 0.5;
+  }
+
+  /** Sync real-time planar road reflection camera to the current main camera & road height. */
+  syncRoadReflection(camera: THREE.PerspectiveCamera, roadY: number) {
+    if (!this.planarRoad) return;
+    const pr = PRESETS[this.preset];
+    const active = !!pr.ssr;
+    this.planarRoad.setEnabled(active);
+    this.planarRoad.every = this.preset === 'max' ? 1 : 2;
+    if (active) this.planarRoad.sync(camera, roadY);
   }
 
   /** called with the preset before every render */

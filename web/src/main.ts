@@ -7,7 +7,7 @@
 // Flow: loading -> title (graphics tuned once behind a cover) -> Play -> game modes: Race (you + 5 AI rivals) / Free Roam (just you) /
 // Multiplayer (party lobby). The garage (title -> Garage) is cars, paint and upgrades only: back to the title, or Continue -> game modes.
 import * as THREE from 'three/webgpu';
-import { Post, PRESETS, PRESET_ORDER, ScaledClusteredLighting, usePotatoOnly, type PresetName } from './post';
+import { ClusteredForwardLighting, Post, PRESETS, PRESET_ORDER, usePotatoOnly, type PresetName } from './post';
 import { CarProbe } from './fx/carProbe';
 import { nightEnvTexture } from './fx/nightEnv';
 import { Particles } from './scene/damage';
@@ -233,7 +233,12 @@ async function main() {
   initLoaders(renderer);   // shared glTF decoders (meshopt, KTX2), scene/loaders.ts
   const webgpu = !!(renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend;
   const backend = webgpu ? 'WebGPU' : 'WebGL 2';
-  if (webgpu) renderer.lighting = potato ? new ScaledClusteredLighting(96, 32, 12, 32, [960, 544]) : new ScaledClusteredLighting(512);   // needs compute shaders; grid follows the render scale
+  if (webgpu) {
+    // Clustered Forward+ WGSL compute lighting: clusters BOTH 100+ dynamic streetlights (PointLight) and car headlights (SpotLight)
+    renderer.lighting = potato
+      ? new ClusteredForwardLighting(128, 12, 7, 12, 16)
+      : new ClusteredForwardLighting(512, 24, 14, 16, 32);
+  }
 
   const scene = new THREE.Scene();
   // Night: very dark but never pure black. The hemisphere fill is the floor of the picture
@@ -450,7 +455,13 @@ async function main() {
   };
   probe?.attach(visual.model, probeIntensity);
   let remote: RemoteCars | null = null;   // other players' cars, while a party session runs
-  let wearKm = 0;                         // odometer for the paint dirt/wear layer
+  let wearKm = 0;                         // odometer for the WGSL paint dirt/wear layer
+  let driveTimeSec = 0;                   // cumulative driving time (s) for dynamic paint dirt/wear
+  const wearOverride = params.has('wear') ? Math.max(0, Math.min(1, Number(params.get('wear')))) : null;
+  if (wearOverride !== null) visual.custom.setWear(wearOverride, wearOverride * 240);
+  (globalThis as { __setWear?: (w: number, t?: number) => void }).__setWear = (w: number, t?: number) => {
+    visual.custom.setWear(w, t ?? w * 240);
+  };
   let party: Party | null = null;         // the multiplayer party we are in (lobby or driving)
   const remoteProg = new Map<string, Progress>();
   let shape = shapeOf(visualCfg);
@@ -779,12 +790,18 @@ async function main() {
   // Street-light reach (clustered point lights): about half the per-pixel cost of the street is these lights, and
   // 0.7 x their authored range gives most of it back; below that nothing more is saved (measured).
   const LIGHT_RANGE: Record<PresetName, number> = { max: 0.9, ultra: 0.8, high: 0.74, medium: 0.7, low: 0.66, potato: 0.55 };
-  /** street lights alive at once (the nearest ones): fewer lights, smaller cluster lists */
-  const LIGHT_CAP: Record<PresetName, number> = { max: 36, ultra: 32, high: 28, medium: 22, low: 16, potato: 8 };
+  /** Dynamic streetlights alive simultaneously via Clustered Forward+ WGSL compute pass (100+ on high/ultra/max, ?lights=N overrides) */
+  const LIGHT_CAP: Record<PresetName, number> = { max: 128, ultra: 112, high: 100, medium: 76, low: 48, potato: 12 };
+  const lightsOverride = params.has('lights') ? Math.max(0, Math.min(256, num('lights', 112))) : null;
   post.onPreset = (p) => {
     city.setBundled(true); city.props.drawScale = driving() ? DRAW_SCALE[p] : Math.min(0.45, DRAW_SCALE[p]);
-    const sp = nyc?.streetProps; if (sp) { sp.nearR = NEAR_TREES[p]; sp.rangeScale = LIGHT_RANGE[p]; sp.lightCap = LIGHT_CAP[p]; }
+    const sp = nyc?.streetProps;
+    if (sp) { sp.nearR = NEAR_TREES[p]; sp.rangeScale = LIGHT_RANGE[p]; sp.lightCap = lightsOverride ?? LIGHT_CAP[p]; }
   };
+  post.onBeforeScenePass = (cam) => { nyc?.cullMeshlets(cam); };
+  if (probe) probe.onBeforeFace = (cam) => { nyc?.cullMeshlets(cam); };
+  (globalThis as { __meshlets?: () => unknown; __readMeshletStats?: () => Promise<unknown> }).__meshlets = () => nyc?.meshletReport() ?? null;
+  (globalThis as { __readMeshletStats?: () => Promise<unknown> }).__readMeshletStats = () => nyc?.readMeshletStats() ?? Promise.resolve(null);
   post.onPreset(post.preset);
   // Headlight shadow map: only the car bodies cast into it (the city does not cast), re-rendered
   // every Nth frame by preset (stale by one frame = ~1 m of light travel at 130 km/h, invisible:
@@ -814,6 +831,9 @@ async function main() {
     try { await renderer.compileAsync(sc, camera); } finally { renderer.setRenderTarget(null); }
   };
   const warm = async () => {
+    nyc?.cullMeshlets(camera);
+    post.syncRoadReflection(camera, pos.y - visual.cg.y);
+    post.planarRoad?.forceNext();
     await compileFor(scene, post.sceneTarget);
     probe?.captureAll(pos, visual.root);
     for (const sh of headShadows) sh.needsUpdate = true;
@@ -1879,9 +1899,16 @@ async function main() {
     {
       const lv = car.body.linvel();
       visual.velocity.set(lv.x, lv.y, lv.z);
-      // dust/wear accumulates with real distance: ~300 km to full patina (uniform updates only, no recompiles)
-      wearKm += Math.hypot(lv.x, lv.z) * (live ? frame : 0) / 1000;
-      if (live) visual.custom.setWear(wearKm / 300);
+      // Dynamic WGSL paint dirt/wear accumulates with driving time (~4 min to full street grime) and distance
+      const spd = Math.hypot(lv.x, lv.z);
+      if (live && spd > 1.5) {
+        driveTimeSec += frame;
+        wearKm += (spd * frame) / 1000;
+        if (wearOverride === null) {
+          const wearT = Math.min(1, Math.max(driveTimeSec / 240, wearKm / 40));
+          visual.custom.setWear(wearT, driveTimeSec);
+        }
+      }
       visual.update(pos, quat, car.out, prevPos, prevQuat);   // car.out was computed from the pose BEFORE the last step
       if (!inShowroom || settledShowroom <= 24) {
         ai.update(alpha, camera);
@@ -1960,7 +1987,10 @@ async function main() {
       const hasCasters = ai.mode === 'race' || remote !== null || damage.debrisCount > 0;
       if (hasCasters && ++frameNo % (params.has('se') ? num('se', 2) : PRESETS[post.preset].shadowEvery) === 0) for (const sh of headShadows) sh.needsUpdate = true;
       const tPost = performance.now();
-      if (!inGarage) updateMirror(now);
+      if (!inGarage) {
+        updateMirror(now);
+        post.syncRoadReflection(camera, pos.y - visual.cg.y);
+      }
       if (inGarage) showPost!.render(); else post.render();
       prof.post += performance.now() - tPost;
       // never while the garage is up: the probe's cube render rebuilds ShadowNodes and destroys the sun's shadow map

@@ -669,8 +669,8 @@ export class NycProps {
     this.meshes.push(this.signs.set.mesh);
     scene.add(this.root);
 
-    // Light pool
-    const n = opts.lights ?? 36;
+    // Dynamic streetlight / traffic-signal / neon-sign pool fed into ClusteredForwardLighting (100+ active lights)
+    const n = opts.lights ?? 128;
     for (let i = 0; i < n; i++) {
       const light = new THREE.PointLight(0xffffff, 0, 20, 2);
       scene.add(light);
@@ -1349,7 +1349,7 @@ export class NycProps {
     this.camera.getWorldDirection(this.fwd);
     const fx = this.fwd.x, fy = -this.fwd.z;
     const cand = this.cand; cand.length = 0;
-    const R = 130;
+    const R = 240;
     for (const tl of this.tileLights.values()) {
       if (cx < tl.x0 - R || cx > tl.x0 + 256 + R || cy < tl.y0 - R || cy > tl.y0 + 256 + R) continue;
       const push = (kind: number, i: number, x: number, y: number, bias: number, range: number) => {
@@ -1360,8 +1360,8 @@ export class NycProps {
       };
       const L = tl.lamps, S = tl.signals, G = tl.signs;
       for (let i = 0; i < L.length; i++) if (!tl.brokenLamps.has(i)) push(0, i, L[i][0], L[i][1], 1, R);
-      for (let i = 0; i < S.length; i++) if (S[i][3] === 1 && !tl.brokenSignals.has(i)) push(1, i, S[i][0], S[i][1], 1.9, 55);
-      for (let i = 0; i < G.length; i++) push(2, i, G[i][0], G[i][1], 0.7, 150);
+      for (let i = 0; i < S.length; i++) if (S[i][3] === 1 && !tl.brokenSignals.has(i)) push(1, i, S[i][0], S[i][1], 1.7, 110);
+      for (let i = 0; i < G.length; i++) push(2, i, G[i][0], G[i][1], 0.75, 220);
     }
     cand.sort((a, b) => a.score - b.score);
     const n = Math.min(this.lightCap, this.lights.length, cand.length);
