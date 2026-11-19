@@ -10,6 +10,7 @@ import { assetUrl, loadGLTF } from './loaders';
 import type { DamageVisualConfig } from './damage';
 import { FINISHES, type Finish } from '../garage';
 import { CarCustomizer, installAero, installLivery } from './custom';
+import type { CarPaintWgslUniforms } from '../fx/carPaintWgsl';
 import { exactBox } from './parts/fit';
 import { Driver } from './driver';
 
@@ -248,27 +249,31 @@ export function setupCarMaterials(model: THREE.Object3D, cfg: CarVisualConfig, p
       if (mat.name === cfg.paint_material) {
         if (!paintMat) {
           const src = mat as unknown as THREE.MeshPhysicalMaterial;
-          paintMat = src.isMeshPhysicalMaterial ? src.clone() : new THREE.MeshPhysicalMaterial({ name: mat.name, metalness: 0.45, roughness: 0.22 });
-          if (!paintMat.normalMap) {
-            paintMat.normalMap = metallicFlake();
-            paintMat.normalScale.set(0.05, 0.05);
-          }
-          paintMat.clearcoat = 1;
-          paintMat.clearcoatRoughness = 0.018;   // Heat: a hard, near-mirror coat highlight, not a satin sheen
-          paintMat.clearcoatNormalMap = orangePeel();
-          // The orange peel used to be 0.055, as strong as the flake normal in the base coat - the two competed and
-          // the clear coat's highlight broke up into a blur. Keep a hint of peel (real paint has it, it is what stops
-          // the reflection looking like a CGI gradient) and let the flake live in the base coat only.
-          paintMat.clearcoatNormalScale.set(0.018, 0.018);
-          paintMat.ior = 1.52;
-          paintMat.specularIntensity = 1.08;
-          paintMat.iridescenceIOR = 1.7;
-          paintMat.iridescenceThicknessRange = [200, 520];
-          paintMat.envMapIntensity = 1.45;
-          paintMat.color.copy(color);
-          paintMat.userData.livery = installLivery(paintMat);   // garage liveries: uniforms, no recompiles
+          const nodePaint = new THREE.MeshPhysicalNodeMaterial({
+            name: mat.name,
+            map: src.map ?? null,
+            normalMap: src.normalMap ?? metallicFlake(),
+            normalScale: src.normalMap ? src.normalScale.clone() : new THREE.Vector2(0.05, 0.05),
+            roughnessMap: src.roughnessMap ?? null,
+            metalnessMap: src.metalnessMap ?? null,
+            aoMap: src.aoMap ?? null,
+            metalness: 0.45,
+            roughness: 0.22,
+          });
+          nodePaint.clearcoat = 1;
+          nodePaint.clearcoatRoughness = 0.018;   // hard, near-mirror lacquer coat highlight
+          nodePaint.clearcoatNormalMap = orangePeel();
+          nodePaint.clearcoatNormalScale.set(0.018, 0.018);
+          nodePaint.ior = 1.52;
+          nodePaint.specularIntensity = 1.08;
+          nodePaint.iridescenceIOR = 1.7;
+          nodePaint.iridescenceThicknessRange = [200, 520];
+          nodePaint.envMapIntensity = 1.45;
+          nodePaint.color.copy(color);
+          nodePaint.userData.livery = installLivery(nodePaint as unknown as THREE.MeshPhysicalMaterial);   // dual-layer WGSL car paint + liveries + dirt/wear
+          paintMat = nodePaint as unknown as THREE.MeshPhysicalMaterial;
         }
-        assign(paintMat);
+        if (paintMat) assign(paintMat);
         return;
       }
       if (mat.name === 'glass') {
@@ -542,6 +547,11 @@ export class CarVisual {
     // quiet grain, satin/matte barely any. normalScale is a uniform, so this costs no recompile.
     const flake = finish === 'metallic' ? 0.20 : finish === 'candy' ? 0.24 : finish === 'pearl' ? 0.14 : finish === 'satin' ? 0.05 : finish === 'matte' ? 0 : 0.08;
     m.normalScale.set(flake, flake);
+    const lu = m.userData.livery as CarPaintWgslUniforms | undefined;
+    if (lu) {
+      lu.flakeStrength.value = finish === 'candy' ? 0.55 : finish === 'metallic' ? 0.48 : finish === 'pearl' ? 0.36 : finish === 'gloss' ? 0.18 : finish === 'satin' ? 0.08 : 0.0;
+      lu.flopStrength.value = finish === 'pearl' ? 0.85 : finish === 'candy' ? 0.72 : finish === 'metallic' ? 0.58 : finish === 'gloss' ? 0.32 : finish === 'satin' ? 0.18 : 0.06;
+    }
     if (wasIri !== ((m.iridescence ?? 0) > 0)) m.needsUpdate = true;
   }
 

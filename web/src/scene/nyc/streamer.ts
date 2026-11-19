@@ -19,6 +19,7 @@ import { NycProps, type BuildingColliderBox } from './props';
 import { applyNycAtmosphere, type NycAtmosphere } from './atmosphere';
 import { generateProceduralNycTile, type ProceduralNycTileData } from './infiniteNyc';
 import { CityBatcher } from './batch';
+import { ensureMeshoptClusterizer } from '../../fx/meshletCuller';
 
 // ---- content discovery (see index.ts for the expected exports) -------------------------------------------------------------------------
 export interface NycPropsLike {
@@ -193,8 +194,12 @@ export class NycStreamer {
       this.overlay = d;
     }
     // On by default (measured: 261 -> 208 draws, render CPU 17.9 -> 13.5 ms at the pinned vantage); ?batchcity=0 keeps
-    // the per-tile path for A/B and for debugging a tile.
-    if (typeof location === 'undefined' || new URLSearchParams(location.search).get('batchcity') !== '0') this.batcher = new CityBatcher(scene);
+    // the per-tile path for A/B and for debugging a tile. On WebGPU, meshlet compute culling + drawIndexedIndirect is
+    // enabled by default (?meshlets=0 disables for A/B testing).
+    const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+    const isWebGPU = !!(renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend;
+    const useMeshlets = isWebGPU && q?.get('meshlets') !== '0';
+    if (!q || q.get('batchcity') !== '0') this.batcher = new CityBatcher(scene, useMeshlets);
     this.readyP = this.init();
   }
 
@@ -207,6 +212,7 @@ export class NycStreamer {
   // ---- init ---------------------------------------------------------------------------------------------------------------------------
   private async init() {
     this.o.onProgress?.(0.08);
+    if (this.batcher?.useMeshlets) await ensureMeshoptClusterizer();
     const [idx, mats, props] = await Promise.all([
       // revalidated on every start: the index names the tile set's version (see url())
       fetch(this.o.base + 'index.json', { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error(`NYC tiles missing (${r.status} ${this.o.base}index.json): run python3 tools/nyc/stub_tiles.py or build_tiles.py`); return r.json() as Promise<IndexJson>; }),
@@ -723,6 +729,21 @@ export class NycStreamer {
 
   /** The street furniture (poles, trees) for obstacles.ts; null until ready or with stub props. */
   get streetProps(): NycProps | null { return this.props instanceof NycProps ? this.props : null; }
+
+  /** Run the WebGPU compute meshlet culling pass for the given camera before rendering city batches. */
+  cullMeshlets(cam: THREE.Camera = this.camera) {
+    this.batcher?.cull(this.renderer, cam);
+  }
+
+  /** Report batched city + meshlet counts. */
+  meshletReport() {
+    return this.batcher?.report() ?? null;
+  }
+
+  /** Async GPU readback of exact meshlet frustum + cone culling counts. */
+  readMeshletStats() {
+    return this.batcher?.readGpuStats(this.renderer) ?? Promise.resolve(null);
+  }
 
   breakNearestPole(carPos: THREE.Vector3, carVel?: THREE.Vector3): boolean {
     return this.props?.breakNearestPole?.(carPos, carVel) ?? false;

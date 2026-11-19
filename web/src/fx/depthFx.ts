@@ -5,11 +5,12 @@
 // car roofs) reflects with fixed low roughness; everything else is discarded by SSR before ray-marching (weight 0).
 // No per-material puddles (that needs the material roughness attachment), no TRAA (SMAA stays).
 import * as THREE from 'three/webgpu';
-import { dot, float, getNormalFromDepth, getViewPosition, mix, rtt, smoothstep, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { dot, float, getNormalFromDepth, getViewPosition, max, min, mix, rtt, smoothstep, step, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import { noise11 as mx_noise_float } from './noiseTex';   // the same fields the road material reads (groundMaterials.ts)
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { ao as gtao } from 'three/addons/tsl/display/GTAONode.js';
 import { ssrOptions } from './ssr';
+import type { PlanarRoadReflector } from './roadReflections';
 
 export interface DepthFxOpts {
   resScale?: number;
@@ -18,6 +19,9 @@ export interface DepthFxOpts {
   intensity?: number;
   withAo?: boolean;
   carPos?: THREE.Vector3;
+  /** Optional real-time planar road reflection pass composited seamlessly where SSR misses/fades. */
+  planar?: PlanarRoadReflector | null;
+  planarIntensity?: number;
 }
 
 export class DepthFx {
@@ -98,7 +102,38 @@ export class DepthFx {
       const k = smoothstep(0.4, 2.2, luma).oneMinus().mul(0.38);
       base = beauty.mul(mix(1, a.r, k)) as unknown as THREE.Node<'vec4'>;
     }
-    this.color = base.add(this.node.rgb) as unknown as THREE.Node<'vec4'>;
+    let refl: THREE.Node<'vec3'> = this.node.rgb as unknown as THREE.Node<'vec3'>;
+    if (opts.planar) {
+      // Hybrid real-time Planar + SSR road reflections:
+      // SSR gives crisp near-field contact reflections; Planar fills off-screen towers, neon signs & overhead lamps.
+      const clip = opts.planar.viewProj.mul(vec4(wPos, 1.0));
+      const invW = float(1).div(max(clip.w, float(0.001)));
+      const ndc = clip.xy.mul(invW);
+      // WebGPU texture V=0 is top edge; NDC y=+1 is top edge
+      const pUvRaw = vec2(ndc.x.mul(0.5).add(0.5), float(0.5).sub(ndc.y.mul(0.5)));
+      const distort = vec2(rippleX.mul(1.8), rippleX.mul(2.6));
+      const pUv = pUvRaw.add(distort);
+      const inBounds = step(float(0.005), pUv.x)
+        .mul(step(pUv.x, float(0.995)))
+        .mul(step(float(0.005), pUv.y))
+        .mul(step(pUv.y, float(0.995)))
+        .mul(step(float(0.05), clip.w));
+      const pSample = opts.planar.textureNode.sample(pUv.clamp(0.002, 0.998)).rgb;
+      // Clamp specular fireflies matching SSR's maxLuminance cap
+      const pLuma = dot(pSample, vec3(0.2126, 0.7152, 0.0722));
+      const pSafe = pSample.mul(min(float(1), float(opt.maxLuminance).div(max(pLuma, float(0.001)))));
+      // Distance attenuation so very far horizon reflections blend gently into fog
+      const distFade = float(1).sub(smoothstep(float(45), float(180), vPos.z.negate()));
+      const ssrHit = (this.node.a as unknown as THREE.Node<'float'>).clamp(0, 1);
+      const planarWeight = wet
+        .mul(inBounds)
+        .mul(distFade)
+        .mul(float(1).sub(ssrHit.mul(0.68)))
+        .mul(opts.planar.enabled)
+        .mul(float(opts.planarIntensity ?? 0.52));
+      refl = refl.add(pSafe.mul(planarWeight)) as unknown as THREE.Node<'vec3'>;
+    }
+    this.color = base.add(refl) as unknown as THREE.Node<'vec4'>;
   }
 
   setScale(s: number) {

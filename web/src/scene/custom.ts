@@ -6,50 +6,79 @@
 // Liveries: the models have no paint UV layout, so stripes are drawn in the car's own space (model space, x = left,
 // y = up, z = forward) from the world position and a per-car inverse matrix (updated every frame by syncLivery).
 import * as THREE from 'three/webgpu';
-import { Fn, abs, float, materialColor, mix, positionWorld, smoothstep, texture, uniform, uv, vec3, vec4 } from 'three/tsl';
+import { float, materialColor, mix, smoothstep, texture, uniform, uv, vec4 } from 'three/tsl';
+import { installDualLayerCarPaint, type CarPaintWgslUniforms } from '../fx/carPaintWgsl';
 /** a colour uniform as an rgb node (the typings keep 'color' and 'vec3' apart; the shader does not) */
 const rgb = (u: THREE.UniformNode<'color', THREE.Color>) => u as unknown as THREE.Node<'vec3'>;
 
 import { AERO_NAMES, BODY_NAMES } from '../parts-names';
-import { BodyFit, DIFFUSERS_FIT, FLARES_FIT, SKIRTS_FIT, SPLITTERS_FIT, exactBox, fittedDiffuser, fittedFlares, fittedSkirt, fittedSplitter, reshaped, type FitWheel } from './parts/fit';
+import { BodyFit, DIFFUSERS_FIT, FLARES_FIT, SKIRTS_FIT, SPLITTERS_FIT, exactBox, fittedDiffuser, fittedSkirt, fittedSplitter, reshaped, type FitWheel } from './parts/fit';
 import { RIM_SPECS } from './parts/rims';
 import { WING_SPECS } from './parts/wings';
 import { AERO_FINISHES, HEAD_TINTS, RIM_FINISHES, WINGS, cleanCustom, defaultCustom, type AeroFinish, type Custom, type HeadTint, type RimFinish, type WingKind } from '../custom-data';
 export { AERO_FINISHES, DIFFUSERS, FENDERS, FRONT_BUMPERS, GLOW_COLOURS, HEAD_TINTS, HOODS, LIVERIES, PART_COLOURS, REAR_BUMPERS, RIM_FINISHES, RIMS, SKIRTS, SPLITTERS, WINGS, cleanCustom, defaultCustom } from '../custom-data';
 export type { AeroFinish, Custom, HeadTint, RimFinish, WingKind } from '../custom-data';
 
-// ---- shader nodes installed once on a car's paint / carbon material (setupCarMaterials) -------------------------------
-export interface LiveryUniforms {
-  style: THREE.UniformNode<'float', number>; color: THREE.UniformNode<'color', THREE.Color>;
-  inv: THREE.UniformNode<'mat4', THREE.Matrix4>; bottom: THREE.UniformNode<'float', number>; top: THREE.UniformNode<'float', number>;
-  /** underglow: the colour and how much of it the sills pick up (uniforms: no light, no recompile) */
-  glow: THREE.UniformNode<'color', THREE.Color>; glowAmt: THREE.UniformNode<'float', number>;
+/**
+ * Arch flare that reads as part of the panel. A ribbon is swept round the wheel's REAL arch, with the outstand
+ * (p.out) and the lip height (p.lip) tapering to zero at both feet: the end rings collapse onto the body surface,
+ * so the flare grows out of the panel instead of ending in mid air like a cut torus. The inner foot sits 22 mm
+ * inside the shoulder line, which hides the seam under the paint.
+ */
+function taperedFlares(fit: BodyFit, mat: THREE.Material, p: { out: number; lip: number }): THREE.Object3D {
+  const g = new THREE.Group();
+  for (const w of fit.wheels) {
+    const s = w.x >= 0 ? 1 : -1;
+    const R0 = w.r + 0.055;
+    const N = 48, a0 = -0.14 * Math.PI, a1 = 1.14 * Math.PI;
+    const pos: number[] = [], idx: number[] = [];
+    for (let i = 0; i <= N; i++) {
+      const u = i / N, a = a0 + (a1 - a0) * u;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      // 0 at the very ends, 1 over the crown; smooth so the outer face is tangent to the body at each foot
+      const t = THREE.MathUtils.smoothstep(Math.min(1, Math.min(u, 1 - u) / 0.17), 0, 1);
+      const grow = 0.55 + 0.45 * Math.sin(Math.PI * u);
+      const out = p.out * grow * t;
+      const lip = p.lip * t;
+      const R = R0 + 0.028 * t;
+      const z = w.z + ca * R;
+      const body = fit.shoulder(Math.min(fit.box.max.z, Math.max(fit.box.min.z, z)), s);
+      const xin = s * (body - 0.022);
+      const xout = s * (body + out);
+      const at = (rad: number, x: number) => new THREE.Vector3(x, w.y + sa * rad, w.z + ca * rad);
+      for (const v of [at(R, xin), at(R, xout), at(R + lip, xout), at(R + lip, xin)]) pos.push(v.x, v.y, v.z);
+    }
+    for (let i = 0; i < N; i++) {
+      const a = i * 4, b = (i + 1) * 4;
+      for (let j = 0; j < 4; j++) {
+        const j2 = (j + 1) % 4;
+        idx.push(a + j, a + j2, b + j2, a + j, b + j2, b + j);
+      }
+    }
+    // the section is traced in a fixed order; flip the winding once if it came out facing into the body, then add
+    // the reverse triangles as well so the flare is visible from either side of its thin ribbon (no open seams)
+    const nx = pos[3] - pos[0];
+    if (nx * s < 0) for (let i = 0; i < idx.length; i += 3) { const t2 = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = t2; }
+    const flip = idx.slice();
+    for (let i = 0; i < flip.length; i += 3) idx.push(flip[i], flip[i + 2], flip[i + 1]);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'fender_flare';
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    g.add(mesh);
+  }
+  return g;
 }
-/** Paint: base colour (material.color, set by the garage) with a livery mask in model space. */
+
+// ---- shader nodes installed once on a car's paint / carbon material (setupCarMaterials) -------------------------------
+export type LiveryUniforms = CarPaintWgslUniforms;
+/** Paint: dual-layer PBR clear-coat WGSL shader + model-space livery mask + dynamic dirt/wear mask + underglow sill wash. */
 export function installLivery(paint: THREE.MeshPhysicalMaterial): LiveryUniforms {
-  const u: LiveryUniforms = {
-    style: uniform(0), color: uniform(new THREE.Color(1, 1, 1)), inv: uniform(new THREE.Matrix4()), bottom: uniform(0.15), top: uniform(1.25),
-    glow: uniform(new THREE.Color(0x000000)), glowAmt: uniform(0),
-  };
-  const mask = Fn(() => {
-    const p = u.inv.mul(vec4(positionWorld, 1)).xyz;
-    const ax = abs(p.x), aa = float(0.006);
-    const h = p.y.sub(u.bottom).div(u.top.sub(u.bottom));
-    const band = (x: THREE.Node<'float'>, a: number, b: number) => smoothstep(a - 0.006, a + 0.006, x).mul(float(1).sub(smoothstep(b - 0.006, b + 0.006, x)));
-    const twin = band(ax, 0.07, 0.2);
-    const wide = float(1).sub(smoothstep(float(0.24).sub(aa), float(0.24).add(aa), ax));
-    const side = smoothstep(0.62, 0.7, ax).mul(band(h, 0.36, 0.45));
-    const two = float(1).sub(smoothstep(0.405, 0.415, h));
-    const is = (k: number) => float(1).sub(smoothstep(0.4, 0.6, abs(u.style.sub(k))));
-    return twin.mul(is(1)).add(wide.mul(is(2))).add(side.mul(is(3))).add(two.mul(is(4))).clamp(0, 1);
-  })();
-  paint.colorNode = mix(materialColor, rgb(u.color), mask);
-  // Underground: the underglow washes the sills and the underside of the body. Emissive at the bottom of the model,
-  // driven by two uniforms, so a colour change (or turning it off) is a uniform write - no light, no recompile.
-  const hLow = u.inv.mul(vec4(positionWorld, 1)).xyz.y.sub(u.bottom).div(u.top.sub(u.bottom));
-  const under = float(1).sub(smoothstep(0.02, 0.2, hLow));
-  paint.emissiveNode = rgb(u.glow).mul(u.glowAmt.mul(under).mul(0.18));   // was 0.5: the paint read as a tinted glow
-  return u;
+  return installDualLayerCarPaint(paint as unknown as THREE.MeshPhysicalNodeMaterial);
 }
 export interface AeroUniforms { flat: THREE.UniformNode<'float', number>; color: THREE.UniformNode<'color', THREE.Color>; rough: THREE.UniformNode<'float', number> }
 /** Carbon parts: the weave, or a flat colour (gloss / matte black, body colour). */
@@ -91,19 +120,23 @@ export class CarCustomizer {
   private bodyParts: Record<string, THREE.Object3D> = {};
   /** the model's own bumpers and hood, hidden when a generated one is fitted */
   private bodyStock: { front?: THREE.Object3D; rear?: THREE.Object3D; hood?: THREE.Object3D } = {};
-  /** 0 = showroom clean, 1 = dust-worn; driven by distance travelled (see setWear) */
+  /** 0 = showroom clean, 1 = heavy road grime; driven by driving time + distance (see setWear) */
   private wear = 0;
-  /** Dust and dull the paint as the car is driven: the clear coat roughens first, the base colour fades toward dust. */
-  setWear(t: number) {
+  private driveTimeSec = 0;
+  /** Update the WGSL dynamic dirt/wear mask uniforms (zero material mutations, zero shader recompiles). */
+  setWear(t: number, driveTimeSec = this.driveTimeSec) {
     const w = Math.max(0, Math.min(1, t));
-    if (Math.abs(w - this.wear) < 0.004) return;
+    const dt = Math.max(0, driveTimeSec);
+    if (Math.abs(w - this.wear) < 0.002 && Math.abs(dt - this.driveTimeSec) < 0.25) return;
     this.wear = w;
-    const p = this.paint;
-    if (!p) return;
-    p.roughness = 0.22 + 0.26 * w;
-    p.clearcoatRoughness = 0.018 + 0.14 * w;
-    p.envMapIntensity = 1.45 - 0.55 * w;
+    this.driveTimeSec = dt;
+    const lu = this.paint?.userData.livery as LiveryUniforms | undefined;
+    if (lu) {
+      lu.wear.value = w;
+      lu.driveTime.value = dt;
+    }
   }
+  getWear() { return { wear: this.wear, driveTimeSec: this.driveTimeSec }; }
   /** paint clone for imported parts: double-sided, so an inverted-winding export can never read as a black hole */
   private extraMat?: THREE.Material;
   /** fender flares, by id: four arch lips */
@@ -157,9 +190,24 @@ export class CarCustomizer {
         else if (/^light_tail$|^taillight$|^tail_lens$/.test(n)) { const c = mine(m, i, mat, this.tail); if (!this.tailBase.has(c)) this.tailBase.set(c, c.color.clone()); }
       });
     });
-    let w = model.getObjectByName('wing') ?? model.getObjectByName('wing_assembly');
-    if (w?.name === 'wing_assembly' && w.parent && w.parent !== model && w.parent.name === 'wing') w = w.parent;
-    if (w) this.stockWing.push(w);
+    // Stock wing(s): every node that looks like the model's own spoiler, not just the first node called 'wing'.
+    // A model can carry the blade and its stands as siblings (or a 'wing_assembly' under 'wing'), and missing one of
+    // them is exactly what leaves a second spoiler on the car; collect them all, outermost first, de-duplicated.
+    {
+      const stockName = /^(wing|wing_assembly|spoiler|rear_wing|ducktail|gt_wing|tail_wing)([_ .-]|$)/i;
+      const collect = (o: THREE.Object3D) => {
+        if (!stockName.test(o.name)) return false;
+        for (let q: THREE.Object3D | null = o; q && q !== model; q = q.parent) if (this.stockWing.includes(q)) return true;
+        this.stockWing.push(o);
+        return true;
+      };
+      model.traverse((o) => { collect(o); });
+      // the old single-node fallback, kept for models whose assembly is named differently from its parts
+      if (!this.stockWing.length) {
+        const w = model.getObjectByName('wing') ?? model.getObjectByName('wing_assembly');
+        if (w) this.stockWing.push(w);
+      }
+    }
     for (const o of [model.getObjectByName('splitter')]) if (o) this.stockPanels.splitter.push(o);
     for (const n of ['skirt_L', 'skirt_R']) { const o = model.getObjectByName(n); if (o) this.stockPanels.skirt.push(o); }
     // The body's own outlines (parts/fit.ts): every generated part is swept along them, so it sits on THIS car.
@@ -179,7 +227,7 @@ export class CarCustomizer {
     });
     const notBody = /^wheel|caliper|^beam|shadow|blur|interior|seat|dashboard|steering|driver|plate|disc|^hub/i;
     const fit = new BodyFit(model, fitWheels, (mesh) => {
-      for (let o: THREE.Object3D | null = mesh; o && o !== model; o = o.parent) if (notBody.test(o.name) || o === w) return true;
+      for (let o: THREE.Object3D | null = mesh; o && o !== model; o = o.parent) if (notBody.test(o.name) || this.stockWing.includes(o)) return true;
       return false;
     });
     this.fit = fit;
@@ -266,7 +314,7 @@ export class CarCustomizer {
     // fender flares: a lip around each wheel's real arch, standing out from the body side there
     for (const spec of BODY_NAMES) {
       if (spec.kind !== 'fender') continue;
-      const g = fittedFlares(fit, paintMat, FLARES_FIT[spec.id] ?? { out: 0.03, lip: 0.05 });
+      const g = taperedFlares(fit, paintMat, FLARES_FIT[spec.id] ?? { out: 0.03, lip: 0.05 });
       g.name = 'fender_' + spec.id;
       g.visible = false;
       this.fenderParts[spec.id] = g;
@@ -377,6 +425,11 @@ export class CarCustomizer {
 
   /** Is there a bumper / hood with this id for this car? (The garage lists only those.) */
   hasBody(id: string) { return id in this.bodyParts; }
+  /** Choose a wing atomically: the generated wing and the stock one can never both be visible. */
+  setWing(id: WingKind) {
+    this.current = { ...this.current, wing: id };
+    this.showOptional();
+  }
 
   /** Apply a full set of choices (cheap: uniforms and visibility only). paintHex: the body colour (aero 'body'). */
   apply(c: Custom, paintHex?: string) {
@@ -389,7 +442,6 @@ export class CarCustomizer {
       au.color.value.set(c.aero === 'body' ? paintHex ?? '#888888' : '#0b0c0e');
       au.rough.value = c.aero === 'matte' ? 0.72 : c.aero === 'carbon' ? 0.28 : 0.14;
     }
-    for (const w of this.stockWing) w.visible = c.wing === 'stock';
     this.showOptional();
     const [met, rough] = RIM[c.rimFinish];
     for (const m of this.rim) { m.color.set(c.rimColor); m.metalness = met; m.roughness = rough; }
@@ -420,6 +472,12 @@ export class CarCustomizer {
     if (this.warm > 0) return;   // still warming: stay drawn, tiny
     const c = this.current;
     for (const [k, w] of Object.entries(this.wings)) if (w) w.visible = c.wing === k;
+    // Stock wing: shown ONLY for 'stock' and only when no generated wing is actually drawn. Deriving it from the
+    // rendered state (not from the id alone) makes a double spoiler impossible even if a caller applies a stale
+    // Custom: 'none' and every generated id hide it, and a generated wing that is visible always wins.
+    const anyWing = Object.values(this.wings).some((w) => !!w && w.visible);
+    const stockVisible = c.wing === 'stock' && !anyWing;
+    for (const w of this.stockWing) w.visible = stockVisible;
     for (const [k, w] of Object.entries(this.kits)) w.visible = c.splitter === k || c.diffuser === k || c.skirt === k;
     for (const [k, list] of Object.entries(this.wheelRims)) for (const r of list) r.visible = c.rims === k;
     for (const m of this.rimMeshes) m.visible = c.rims === 'stock';
@@ -432,11 +490,11 @@ export class CarCustomizer {
     this.glow.visible = !!c.underglow;
   }
 
-  /** Every frame, after the car root moved (root at pos / quat, in the scene): the livery's model-space matrix. */
+  /** Every frame, after the car root moved (root at pos / quat, in the scene): updates model-space inverse matrix for WGSL paint/flakes/dirt/livery. */
   sync(pos: THREE.Vector3, quat: THREE.Quaternion) {
     if (this.warm > 0 && --this.warm === 0) { for (const o of this.optional()) { if (o === this.glow) o.scale.copy(this.glowScale); else o.scale.setScalar(1); } this.showOptional(); }
     const lu = this.paint?.userData.livery as LiveryUniforms | undefined;
-    if (!lu || lu.style.value === 0) return;
+    if (!lu) return;
     this.model.updateMatrix();
     lu.inv.value.copy(this.m4.compose(pos, quat, ONE).multiply(this.model.matrix)).invert();
   }

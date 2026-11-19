@@ -18,6 +18,12 @@
 // Only the near (LOD0) path is batched. Far tiles stay per-tile because their visibility is toggled per tile
 // when a near tile covers them (hideFarIfNear), which one batch mesh cannot express.
 import * as THREE from 'three/webgpu';
+import {
+  GpuMeshletCuller,
+  buildMeshletsFromGeometry,
+  isMeshoptClusterizerReady,
+  type MeshletBatchGpuStats,
+} from '../../fx/meshletCuller';
 
 interface AttrSpec { name: string; size: number; def: number[]; raw?: boolean }
 /** The one vertex layout a batched geometry may use. */
@@ -37,6 +43,10 @@ export interface Alloc {
   vertCount: number;
   idxStart: number;
   idxCount: number;
+  meshletStart?: number;
+  meshletCount?: number;
+  meshletIdxStart?: number;
+  meshletIdxCount?: number;
 }
 export interface BatchReport {
   materials: number;
@@ -45,6 +55,8 @@ export interface BatchReport {
   indices: number;
   tiles: number;
   rejected: number;
+  meshlets: number;
+  gpuMeshletCulling: boolean;
 }
 
 const NORMAL_MATRIX = new THREE.Matrix3();
@@ -98,21 +110,26 @@ export class MaterialBatch {
   readonly allocs = new Set<Alloc>();
   readonly geometry = new THREE.BufferGeometry();
   readonly mesh: THREE.Mesh;
+  readonly culler: GpuMeshletCuller | null = null;
 
-  constructor(private scene: THREE.Scene, readonly material: THREE.Material) {
+  constructor(private scene: THREE.Scene, readonly material: THREE.Material, useMeshlets = false) {
     this.grow(4096, 8192);
+    if (useMeshlets) {
+      this.culler = new GpuMeshletCuller(this.geometry, 512, 131072);
+    }
     this.mesh = new THREE.Mesh(this.geometry, material);
     this.mesh.name = 'nyc_batch_' + (material.name || 'material');
     this.mesh.castShadow = false;
     this.mesh.receiveShadow = true;
     this.mesh.matrixAutoUpdate = false;
-    this.mesh.frustumCulled = false;   // the batch spans the whole streamed city
+    this.mesh.frustumCulled = false;   // the batch spans the whole streamed city (culled per-meshlet on GPU)
     this.scene.add(this.mesh);
   }
 
   get empty() { return this.allocs.size === 0; }
   get vertices() { return this.liveV; }
-  get indices() { return this.usedI; }
+  get indices() { return this.culler ? this.culler.totalIndices : this.usedI; }
+  get meshlets() { return this.culler ? this.culler.activeMeshlets : 0; }
 
   // ---- buffers -------------------------------------------------------------------------------------------------------
   private grow(capV: number, capI: number) {
@@ -138,8 +155,12 @@ export class MaterialBatch {
       // once and then only the written ranges after `needsUpdate`.
       this.geometry.setAttribute(a.name, new THREE.BufferAttribute(this.data[a.name], a.size).setUsage(THREE.StaticDrawUsage));
     }
-    this.geometry.setIndex(new THREE.BufferAttribute(this.index, 1).setUsage(THREE.StaticDrawUsage));
-    this.geometry.setDrawRange(0, this.usedI);
+    if (this.culler) {
+      this.culler.rebindGeometry();
+    } else {
+      this.geometry.setIndex(new THREE.BufferAttribute(this.index, 1).setUsage(THREE.StaticDrawUsage));
+      this.geometry.setDrawRange(0, this.usedI);
+    }
   }
 
   private reserveVerts(n: number): number {
@@ -221,15 +242,31 @@ export class MaterialBatch {
 
       bldOut[vertStart + i] = component(sb, i, 0, false, 0);
     }
-    for (let j = 0; j < idxCount; j++) {
-      const s = srcIndex ? Number((srcIndex.array as ArrayLike<number>)[j]) : j;
-      this.index[idxStart + j] = vertStart + s;
-    }
-    for (const a of ATTRS) dirty(this.geometry.attributes[a.name] as THREE.BufferAttribute, vertStart * a.size, count * a.size);
-    dirty(this.geometry.index as THREE.BufferAttribute, idxStart, idxCount);
-    this.geometry.setDrawRange(0, this.usedI);
-
     const alloc: Alloc = { vertStart, vertCount: count, idxStart, idxCount };
+
+    if (this.culler && isMeshoptClusterizerReady()) {
+      const localPos = this.data.position.subarray(vertStart * 3, (vertStart + count) * 3);
+      const localIdx = new Uint32Array(idxCount);
+      for (let j = 0; j < idxCount; j++) {
+        localIdx[j] = srcIndex ? Number((srcIndex.array as ArrayLike<number>)[j]) : j;
+      }
+      const ml = buildMeshletsFromGeometry(localPos, localIdx, 64, 124, 0.5);
+      const mRange = this.culler.append(ml, vertStart);
+      alloc.meshletStart = mRange.meshletStart;
+      alloc.meshletCount = mRange.meshletCount;
+      alloc.meshletIdxStart = mRange.indexStart;
+      alloc.meshletIdxCount = mRange.indexCount;
+      for (const a of ATTRS) dirty(this.geometry.attributes[a.name] as THREE.BufferAttribute, vertStart * a.size, count * a.size);
+    } else {
+      for (let j = 0; j < idxCount; j++) {
+        const s = srcIndex ? Number((srcIndex.array as ArrayLike<number>)[j]) : j;
+        this.index[idxStart + j] = vertStart + s;
+      }
+      for (const a of ATTRS) dirty(this.geometry.attributes[a.name] as THREE.BufferAttribute, vertStart * a.size, count * a.size);
+      dirty(this.geometry.index as THREE.BufferAttribute, idxStart, idxCount);
+      this.geometry.setDrawRange(0, this.usedI);
+    }
+
     this.allocs.add(alloc);
     this.liveV += count;
     return alloc;
@@ -238,8 +275,12 @@ export class MaterialBatch {
   /** Free a tile's range: zero its triangles first, so nothing stale is drawn before the buffers compact. */
   remove(alloc: Alloc) {
     if (!this.allocs.delete(alloc)) return;
-    this.index.fill(0, alloc.idxStart, alloc.idxStart + alloc.idxCount);
-    dirty(this.geometry.index as THREE.BufferAttribute, alloc.idxStart, alloc.idxCount);
+    if (this.culler && alloc.meshletStart !== undefined && alloc.meshletCount !== undefined) {
+      this.culler.disableRange(alloc.meshletStart, alloc.meshletCount);
+    } else {
+      this.index.fill(0, alloc.idxStart, alloc.idxStart + alloc.idxCount);
+      dirty(this.geometry.index as THREE.BufferAttribute, alloc.idxStart, alloc.idxCount);
+    }
     this.freeV.push({ start: alloc.vertStart, count: alloc.vertCount });
     this.freeI.push({ start: alloc.idxStart, count: alloc.idxCount });
     this.liveV -= alloc.vertCount;
@@ -251,26 +292,45 @@ export class MaterialBatch {
     const sorted = [...this.allocs].sort((a, b) => a.vertStart - b.vertStart);
     let nv = 0, ni = 0;
     let scratch = new Uint32Array(0);
+    const mlRanges: { alloc: Alloc; meshletStart: number; meshletCount: number; indexStart: number; indexCount: number; vertDelta: number }[] = [];
     for (const a of sorted) {
       for (const at of ATTRS) {
         const size = at.size, arr = this.data[at.name];
         arr.copyWithin(nv * size, a.vertStart * size, (a.vertStart + a.vertCount) * size);
       }
-      if (scratch.length < a.idxCount) scratch = new Uint32Array(a.idxCount);
-      // indices first into scratch: the destination can overlap the source block
-      for (let j = 0; j < a.idxCount; j++) scratch[j] = this.index[a.idxStart + j] - a.vertStart + nv;
-      for (let j = 0; j < a.idxCount; j++) this.index[ni + j] = scratch[j];
+      if (this.culler && a.meshletStart !== undefined && a.meshletCount !== undefined && a.meshletIdxStart !== undefined && a.meshletIdxCount !== undefined) {
+        mlRanges.push({
+          alloc: a,
+          meshletStart: a.meshletStart,
+          meshletCount: a.meshletCount,
+          indexStart: a.meshletIdxStart,
+          indexCount: a.meshletIdxCount,
+          vertDelta: nv - a.vertStart,
+        });
+      } else {
+        if (scratch.length < a.idxCount) scratch = new Uint32Array(a.idxCount);
+        // indices first into scratch: the destination can overlap the source block
+        for (let j = 0; j < a.idxCount; j++) scratch[j] = this.index[a.idxStart + j] - a.vertStart + nv;
+        for (let j = 0; j < a.idxCount; j++) this.index[ni + j] = scratch[j];
+      }
       a.vertStart = nv;
       a.idxStart = ni;
       nv += a.vertCount;
       ni += a.idxCount;
     }
     for (const at of ATTRS) this.data[at.name].fill(0, nv * at.size, this.usedV * at.size);
-    this.index.fill(0, ni, this.usedI);
+    if (!this.culler) this.index.fill(0, ni, this.usedI);
     this.usedV = nv;
     this.usedI = ni;
     this.freeV.length = 0;
     this.freeI.length = 0;
+    if (this.culler) {
+      this.culler.compactRanges(mlRanges);
+      for (const r of mlRanges) {
+        r.alloc.meshletStart = r.meshletStart;
+        r.alloc.meshletIdxStart = r.indexStart;
+      }
+    }
     this.rebuild();
   }
 
@@ -279,7 +339,12 @@ export class MaterialBatch {
     if (dead > 8192 && dead > this.usedV * 0.25) this.compact();
   }
 
+  cull(renderer: THREE.WebGPURenderer, camera: THREE.Camera) {
+    this.culler?.cull(renderer, camera);
+  }
+
   dispose() {
+    this.culler?.dispose();
     this.geometry.dispose();
     this.mesh.removeFromParent();
     this.allocs.clear();
@@ -298,14 +363,14 @@ export class CityBatcher {
   private tiles = new Map<string, { batch: MaterialBatch; alloc: Alloc }[]>();
   private rejected = 0;
 
-  constructor(private scene: THREE.Scene) {}
+  constructor(private scene: THREE.Scene, readonly useMeshlets = false) {}
 
   /** Batch a tile mesh. False = leave it in the scene as its own mesh. */
   add(tileKey: string, mesh: THREE.Mesh): boolean {
     const material = mesh.material as THREE.Material;
     if (!material || Array.isArray(mesh.material)) return false;
     let batch = this.batches.get(material);
-    if (!batch) { batch = new MaterialBatch(this.scene, material); this.batches.set(material, batch); }
+    if (!batch) { batch = new MaterialBatch(this.scene, material, this.useMeshlets); this.batches.set(material, batch); }
     const alloc = batch.add(mesh);
     if (!alloc) { this.rejected++; return false; }
     const list = this.tiles.get(tileKey);
@@ -313,6 +378,29 @@ export class CityBatcher {
     if (list) list.push(rec); else this.tiles.set(tileKey, [rec]);
     mesh.removeFromParent();
     return true;
+  }
+
+  /** Dispatch WebGPU compute meshlet culling + drawIndexedIndirect compaction for every material batch. */
+  cull(renderer: THREE.WebGPURenderer, camera: THREE.Camera) {
+    if (!this.useMeshlets) return;
+    for (const b of this.batches.values()) b.cull(renderer, camera);
+  }
+
+  /** Async GPU readback of exact meshlet culling counts across all city batches (for diagnostics/profiling). */
+  async readGpuStats(renderer: THREE.WebGPURenderer): Promise<MeshletBatchGpuStats & { culledPct: number }> {
+    const acc: MeshletBatchGpuStats = { meshletCount: 0, visibleMeshlets: 0, frustumCulled: 0, coneCulled: 0, visibleIndices: 0, totalIndices: 0 };
+    for (const b of this.batches.values()) {
+      if (!b.culler) continue;
+      const s = await b.culler.readStats(renderer);
+      acc.meshletCount += s.meshletCount;
+      acc.visibleMeshlets += s.visibleMeshlets;
+      acc.frustumCulled += s.frustumCulled;
+      acc.coneCulled += s.coneCulled;
+      acc.visibleIndices += s.visibleIndices;
+      acc.totalIndices += s.totalIndices;
+    }
+    const culledPct = acc.meshletCount > 0 ? Math.round((1 - acc.visibleMeshlets / acc.meshletCount) * 1000) / 10 : 0;
+    return { ...acc, culledPct };
   }
 
   /** Free every slot this tile owned; empty material batches are disposed. */
@@ -329,9 +417,9 @@ export class CityBatcher {
   }
 
   report(): BatchReport {
-    let vertices = 0, indices = 0;
-    for (const b of this.batches.values()) { vertices += b.vertices; indices += b.indices; }
-    return { materials: this.batches.size, draws: this.batches.size, vertices, indices, tiles: this.tiles.size, rejected: this.rejected };
+    let vertices = 0, indices = 0, meshlets = 0;
+    for (const b of this.batches.values()) { vertices += b.vertices; indices += b.indices; meshlets += b.meshlets; }
+    return { materials: this.batches.size, draws: this.batches.size, vertices, indices, tiles: this.tiles.size, rejected: this.rejected, meshlets, gpuMeshletCulling: this.useMeshlets };
   }
 
   dispose() {
