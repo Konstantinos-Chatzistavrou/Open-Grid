@@ -1,9 +1,10 @@
-// Dual-Layer PBR Clear-Coat Automotive Paint + Dynamic Dirt/Wear Mask WGSL Library (Engine-Agnostic, OpenGrid).
-// Evaluates in 3D car model space (UV-independent, zero seams across any car mesh):
-//   - Layer 1: Metallic base coat with Fresnel color-flop + 3D micro-flake platelet sparkle
-//   - Layer 2: Dielectric clear-coat attenuation & roughness response
-//   - Dynamic dirt/wear mask driven by driving time & distance (lower sills, wheel-arch spray,
-//     rear wake turbulence grime, and upper-body road dust haze).
+// Dual-Layer PBR Clear-Coat Automotive Paint + Texture-Sampled Dirt/Wear WGSL Library (Engine-Agnostic, OpenGrid).
+// Replaces expensive 18-hash procedural 3D FBM with 2 hardware-filtered reads of the baked 512x512 tileable
+// RGBA dirt/splatter mask (`car_dirt_mask_rgba.png` — identical asset reusable in UE5 Substrate materials):
+//   R = broad road-film blotches
+//   G = crisp radial mud/water splatter droplets
+//   B = aerodynamic wind-swept grime streaks
+//   A = fine dried road-dust micro-speckle
 
 fn hash3dPaint(p: vec3<f32>) -> vec3<f32> {
   var q = fract(p * vec3<f32>(0.1031, 0.1030, 0.0973));
@@ -11,84 +12,81 @@ fn hash3dPaint(p: vec3<f32>) -> vec3<f32> {
   return fract((q.xxy + q.yzz) * q.zyx);
 }
 
-fn valueNoise3dPaint(p: vec3<f32>) -> f32 {
-  let i = floor(p);
-  let f = fract(p);
-  let u = f * f * (3.0 - 2.0 * f);
-
-  let n000 = hash3dPaint(i + vec3<f32>(0.0, 0.0, 0.0)).x;
-  let n100 = hash3dPaint(i + vec3<f32>(1.0, 0.0, 0.0)).x;
-  let n010 = hash3dPaint(i + vec3<f32>(0.0, 1.0, 0.0)).x;
-  let n110 = hash3dPaint(i + vec3<f32>(1.0, 1.0, 0.0)).x;
-  let n001 = hash3dPaint(i + vec3<f32>(0.0, 0.0, 1.0)).x;
-  let n101 = hash3dPaint(i + vec3<f32>(1.0, 0.0, 1.0)).x;
-  let n011 = hash3dPaint(i + vec3<f32>(0.0, 1.0, 1.0)).x;
-  let n111 = hash3dPaint(i + vec3<f32>(1.0, 1.0, 1.0)).x;
-
-  let nx00 = mix(n000, n100, u.x);
-  let nx10 = mix(n010, n110, u.x);
-  let nx01 = mix(n001, n101, u.x);
-  let nx11 = mix(n011, n111, u.x);
-  let nxy0 = mix(nx00, nx10, u.y);
-  let nxy1 = mix(nx01, nx11, u.y);
-  return mix(nxy0, nxy1, u.z);
-}
-
-fn fbm3dPaint(p: vec3<f32>) -> f32 {
-  var v = 0.0;
-  var amp = 0.55;
-  var pos = p;
-  for (var i = 0; i < 3; i++) {
-    v += amp * valueNoise3dPaint(pos);
-    pos = pos * 2.07 + vec3<f32>(13.1, 7.7, 5.3);
-    amp *= 0.5;
-  }
-  return v;
-}
-
-// Evaluates organic 3D dirt/wear mask in car model space.
+// Evaluates organic dirt/splatter/scuff/wake-spray mask using 2 pre-sampled RGBA mask texels
+// (triplanar side projection + top/rear projection). ZERO procedural FBM loops.
 // Returns vec3<f32>(dirtCoverage, wetSplatter, wearHaze).
-fn evalCarDirtWear(
+fn evalCarDirtWearTex(
   pLocal: vec3<f32>,
   nLocal: vec3<f32>,
   bottomY: f32,
   topY: f32,
   wear: f32,
-  driveTime: f32
+  scuff: f32,
+  wakeSpray: f32,
+  texSide: vec4<f32>,
+  texTop: vec4<f32>
 ) -> vec3<f32> {
-  if (wear <= 0.001) {
+  let wearLevel = max(max(wear, scuff), wakeSpray);
+  if (wearLevel <= 0.001) {
     return vec3<f32>(0.0, 0.0, 0.0);
   }
 
   let heightSpan = max(topY - bottomY, 0.35);
   let h = clamp((pLocal.y - bottomY) / heightSpan, 0.0, 1.0);
 
-  let nLarge = fbm3dPaint(pLocal * vec3<f32>(2.4, 3.2, 1.8) + vec3<f32>(1.7, 0.3, 4.1));
-  let nMid = fbm3dPaint(pLocal * vec3<f32>(8.5, 10.0, 6.5) + vec3<f32>(7.3, 2.9, 1.1));
-  let nSpeck = valueNoise3dPaint(pLocal * 34.0 + vec3<f32>(3.1, 5.7, 9.2));
+  // Triplanar blend between side-projected streaks/splatter and top-projected dust/blotches
+  let upBlend = smoothstep(0.35, 0.85, abs(nLocal.y));
+  let mask = mix(texSide, texTop, upBlend);
+  let blotch = mask.r;
+  let splatter = mask.g;
+  let streaks = mask.b;
+  let grain = mask.a;
 
-  // 1. Lower rocker panels, front lip, rear diffuser
-  let sillBand = 1.0 - smoothstep(0.06, 0.48 + wear * 0.16, h + (nLarge - 0.5) * 0.24);
+  // 1. Lower rocker panels, front splitter, rear diffuser (strongest near wet asphalt)
+  let sillBand = 1.0 - smoothstep(0.05, 0.48 + wear * 0.16, h + (blotch - 0.5) * 0.26);
 
-  // 2. Wheel-arch spray plumes along outer flanks
-  let flank = smoothstep(0.55, 0.85, abs(pLocal.x));
-  let archSpray = flank * (1.0 - smoothstep(0.12, 0.64, h)) * smoothstep(0.28, 0.76, nMid * 0.62 + nSpeck * 0.38);
+  // 2. Wheel-arch spray plumes & wind-swept aerodynamic flank streaks
+  let flank = smoothstep(0.54, 0.84, abs(pLocal.x));
+  let archSpray = flank * (1.0 - smoothstep(0.10, 0.66, h)) * smoothstep(0.20, 0.78, splatter * 0.65 + streaks * 0.35);
 
   // 3. Rear wake turbulence grime (WGSL smoothstep requires low < high)
-  let rearWake = (1.0 - smoothstep(-1.75, -0.55, pLocal.z)) * (1.0 - smoothstep(0.22, 0.85, h));
+  let rearWake = (1.0 - smoothstep(-1.75, -0.50, pLocal.z)) * (1.0 - smoothstep(0.20, 0.86, h));
 
-  // 4. Subtle upper-surface dust settling on upward-facing panels
+  // 4. Front nose/hood road-mist spray when drafting closely behind rivals
+  let frontNose = smoothstep(0.35, 1.85, pLocal.z) * (1.0 - smoothstep(0.30, 0.92, h));
+  let draftMist = frontNose * wakeSpray * (0.45 + 0.55 * splatter);
+
+  // 5. Wall-scrape / crash damage matte scuffing on outer flanks & bumpers
+  let scrapeZone = max(flank, max(smoothstep(1.2, 2.0, pLocal.z), 1.0 - smoothstep(-2.0, -1.2, pLocal.z)));
+  let scuffMask = scrapeZone * scuff * smoothstep(0.18, 0.72, streaks * 0.6 + blotch * 0.4);
+
+  // 6. Upper-surface road dust settling on hood/roof
   let upFacing = smoothstep(0.30, 0.90, nLocal.y);
-  let topDust = upFacing * (0.30 + 0.42 * nLarge) * smoothstep(0.20, 1.0, wear);
+  let topDust = upFacing * (0.28 + 0.45 * blotch + 0.20 * grain) * smoothstep(0.18, 1.0, wear);
 
-  let droplet = smoothstep(0.22, 0.74, nMid * 0.55 + nSpeck * 0.45);
-  let wetRaw = clamp(sillBand * (0.60 + 0.50 * droplet) + archSpray * 0.90 + rearWake * (0.55 + 0.55 * droplet), 0.0, 1.0);
+  let droplet = smoothstep(0.18, 0.72, splatter * 0.62 + streaks * 0.24 + grain * 0.14);
+  let wetRaw = clamp(
+    sillBand * (0.58 + 0.52 * droplet) +
+    archSpray * 0.92 +
+    rearWake * (0.52 + 0.55 * droplet) +
+    draftMist * 0.85,
+    0.0,
+    1.0
+  );
 
-  let timeFactor = clamp(driveTime / 180.0, 0.0, 1.0);
-  let effectiveWear = clamp(max(wear, timeFactor * 0.85), 0.0, 1.0);
-  let dirtCoverage = clamp(wetRaw * smoothstep(0.02, 0.68, effectiveWear) + topDust * 0.52, 0.0, 0.95);
-  let wetSplatter = clamp(wetRaw * smoothstep(0.04, 0.60, effectiveWear), 0.0, 1.0);
-  let wearHaze = clamp(effectiveWear * (0.55 + 0.45 * (1.0 - h * 0.55)) * (0.7 + 0.3 * nLarge), 0.0, 1.0);
+  let dirtCoverage = clamp(
+    wetRaw * smoothstep(0.02, 0.68, max(wear, wakeSpray * 0.75)) +
+    scuffMask * 0.82 +
+    topDust * 0.50,
+    0.0,
+    0.95
+  );
+  let wetSplatter = clamp(wetRaw * smoothstep(0.04, 0.60, max(wear, wakeSpray * 0.8)) + scuffMask * 0.5, 0.0, 1.0);
+  let wearHaze = clamp(
+    max(wear, scuff * 0.7) * (0.52 + 0.48 * (1.0 - h * 0.55)) * (0.68 + 0.32 * blotch),
+    0.0,
+    1.0
+  );
 
   return vec3<f32>(dirtCoverage, wetSplatter, wearHaze);
 }
@@ -118,7 +116,7 @@ fn evalDualLayerPaintColor(
   );
   var paintRgb = mix(coreTint, flopHue, fres * flopStrength);
 
-  // 3D model-space metallic micro-flake platelet sparkle (no UV seams)
+  // 3D model-space metallic micro-flake platelet sparkle (single cell hash, no UV seams)
   let flakeCell = floor(pLocal * 210.0);
   let h3 = hash3dPaint(flakeCell);
   let flakeNormal = normalize(N + (h3 * 2.0 - vec3<f32>(1.0)) * 0.36);
@@ -130,7 +128,7 @@ fn evalDualLayerPaintColor(
   let coatDepth = 1.0 - clearcoatAmt * (0.12 * (1.0 - ndotv));
   paintRgb *= coatDepth;
 
-  let wetGrimeCol = vec3<f32>(0.085, 0.078, 0.068);
+  let wetGrimeCol = vec3<f32>(0.082, 0.075, 0.066);
   let dryDustCol = vec3<f32>(0.26, 0.235, 0.195);
   let grimeCol = mix(dryDustCol, wetGrimeCol, dirtMask.y * 0.72);
   paintRgb = mix(paintRgb, grimeCol, dirtMask.x * 0.88);
@@ -139,15 +137,15 @@ fn evalDualLayerPaintColor(
   return paintRgb;
 }
 
-// Standalone std140 UBO + PBR surface evaluator for custom WebGPU engines (matches packCarPaintUniforms).
+// Standalone std140 UBO + PBR surface evaluator for custom WebGPU engines (matches packCarPaintUniforms & UE5 MPC).
 struct CarPaintUniforms {
   invModel: mat4x4<f32>,
   baseColorAndMetal: vec4<f32>,      // rgb = baseColor, a = metalness
   liveryColorAndStyle: vec4<f32>,    // rgb = liveryColor, a = style index
   glowColorAndAmt: vec4<f32>,        // rgb = underglow, a = glowAmt
   coatParams: vec4<f32>,             // x = roughness, y = clearcoat, z = ccRough, w = flopStrength
-  wearParams: vec4<f32>,             // x = flakeStrength, y = wear, z = driveTime, w = bottomY
-  boundsExtra: vec4<f32>,            // x = topY, yzw = reserved
+  wearParams: vec4<f32>,             // x = flakeStrength, y = wear, z = scuff, w = bottomY
+  boundsExtra: vec4<f32>,            // x = topY, y = wakeSpray, zw = reserved
 }
 
 struct CarPaintSurface {
@@ -163,7 +161,9 @@ fn evalCarPaintSurface(
   u: CarPaintUniforms,
   worldPos: vec3<f32>,
   worldNormal: vec3<f32>,
-  camPos: vec3<f32>
+  camPos: vec3<f32>,
+  dirtTex: texture_2d<f32>,
+  dirtSampler: sampler
 ) -> CarPaintSurface {
   let pLocal = (u.invModel * vec4<f32>(worldPos, 1.0)).xyz;
   let nLocal = normalize((u.invModel * vec4<f32>(worldNormal, 0.0)).xyz);
@@ -171,7 +171,16 @@ fn evalCarPaintSurface(
   let bottomY = u.wearParams.w;
   let topY = u.boundsExtra.x;
 
-  let dirtMask = evalCarDirtWear(pLocal, nLocal, bottomY, topY, u.wearParams.y, u.wearParams.z);
+  let sideUv = vec2<f32>(pLocal.z * 0.55, pLocal.y * 0.85);
+  let topUv = vec2<f32>(pLocal.x * 0.65, pLocal.z * 0.45);
+  let texSide = textureSample(dirtTex, dirtSampler, sideUv);
+  let texTop = textureSample(dirtTex, dirtSampler, topUv);
+
+  let dirtMask = evalCarDirtWearTex(
+    pLocal, nLocal, bottomY, topY,
+    u.wearParams.y, u.wearParams.z, u.boundsExtra.y,
+    texSide, texTop
+  );
   let albedo = evalDualLayerPaintColor(
     u.baseColorAndMetal.rgb,
     pLocal,

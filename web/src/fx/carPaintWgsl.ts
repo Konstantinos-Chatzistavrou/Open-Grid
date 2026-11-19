@@ -1,6 +1,6 @@
-// Dual-Layer PBR Clear-Coat Car Paint WGSL Node Wrapper (Three.js WebGPU + TSL wgslFn).
-// Compiles native WGSL functions from shaders/car_paint.wgsl directly into a car's MeshPhysicalNodeMaterial,
-// preserving garage paint colors/finishes, model-space livery stripes, underglow sill wash, and vertex dents.
+// Thin Three.js WebGPU adapter for the engine-agnostic Dual-Layer PBR Car Paint core (`web/src/gpu/materials/`).
+// Samples the pre-baked 512x512 tileable RGBA dirt/splatter/streak texture (`car_dirt_mask_rgba.png`)
+// instead of running procedural 3D FBM loops per pixel (~5-6x lower fragment ALU on integrated GPUs).
 import * as THREE from 'three/webgpu';
 import {
   Fn,
@@ -16,19 +16,33 @@ import {
   normalWorld,
   positionWorld,
   smoothstep,
+  texture,
   uniform,
+  vec2,
   vec4,
   wgslFn,
 } from 'three/tsl';
 import {
+  CAR_DIRT_MASK_TEXTURE_PATH,
   CAR_PAINT_FINISHES,
   advancePaintWear,
   carPaintWgslSource,
+  createPaintWearState,
+  resetPaintWear,
   type CarPaintFinishName,
   type PaintWearAccumulator,
+  type PaintWearFrameInput,
 } from '../gpu/materials/carPaint';
 
-export { CAR_PAINT_FINISHES, advancePaintWear, type CarPaintFinishName, type PaintWearAccumulator };
+export {
+  CAR_PAINT_FINISHES,
+  advancePaintWear,
+  createPaintWearState,
+  resetPaintWear,
+  type CarPaintFinishName,
+  type PaintWearAccumulator,
+  type PaintWearFrameInput,
+};
 
 function extractFn(source: string, name: string): string {
   const re = new RegExp(`fn\\s+${name}\\b[\\s\\S]*?\\n\\}`, 'm');
@@ -39,18 +53,27 @@ function extractFn(source: string, name: string): string {
 
 type WgslInclude = Parameters<typeof wgslFn>[1];
 const hash3dPaintWgsl = wgslFn(extractFn(carPaintWgslSource, 'hash3dPaint'));
-const valueNoise3dPaintWgsl = wgslFn(extractFn(carPaintWgslSource, 'valueNoise3dPaint'), [hash3dPaintWgsl] as unknown as WgslInclude);
-const fbm3dPaintWgsl = wgslFn(extractFn(carPaintWgslSource, 'fbm3dPaint'), [valueNoise3dPaintWgsl] as unknown as WgslInclude);
-
-const evalCarDirtWearWgsl = wgslFn(
-  extractFn(carPaintWgslSource, 'evalCarDirtWear'),
-  [valueNoise3dPaintWgsl, fbm3dPaintWgsl] as unknown as WgslInclude,
-);
-
+const evalCarDirtWearTexWgsl = wgslFn(extractFn(carPaintWgslSource, 'evalCarDirtWearTex'));
 const evalDualLayerPaintColorWgsl = wgslFn(
   extractFn(carPaintWgslSource, 'evalDualLayerPaintColor'),
   [hash3dPaintWgsl] as unknown as WgslInclude,
 );
+
+let sharedDirtTex: THREE.Texture | null = null;
+/** Shared 512x512 tileable RGBA dirt/splatter/streak mask loaded once for all cars. */
+function getCarDirtMaskTexture(): THREE.Texture {
+  if (sharedDirtTex) return sharedDirtTex;
+  const tex = new THREE.TextureLoader().load(CAR_DIRT_MASK_TEXTURE_PATH);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = 4;
+  sharedDirtTex = tex;
+  return tex;
+}
 
 const rgb = (u: THREE.UniformNode<'color', THREE.Color>) => u as unknown as THREE.Node<'vec3'>;
 
@@ -67,13 +90,14 @@ export interface CarPaintWgslUniforms {
   /** Dual-layer paint tuning (uniforms updated by finish, no shader recompile) */
   flopStrength: THREE.UniformNode<'float', number>;
   flakeStrength: THREE.UniformNode<'float', number>;
-  /** Dynamic dirt/wear accumulation [0..1] + cumulative driving time (seconds) */
+  /** Gameplay-driven dirt/wear, scrape/damage scuff, and rival wake spray [0..1] */
   wear: THREE.UniformNode<'float', number>;
-  driveTime: THREE.UniformNode<'float', number>;
+  scuff: THREE.UniformNode<'float', number>;
+  wakeSpray: THREE.UniformNode<'float', number>;
 }
 
 /**
- * Installs the dual-layer PBR clear-coat WGSL shader + livery stripes + dynamic dirt/wear mask
+ * Installs the dual-layer PBR clear-coat WGSL shader + livery stripes + texture-sampled dirt/wear mask
  * onto a `THREE.MeshPhysicalNodeMaterial`. All finish, livery, underglow, and wear updates are pure
  * uniform writes (zero shader recompiles).
  */
@@ -89,14 +113,15 @@ export function installDualLayerCarPaint(paint: THREE.MeshPhysicalNodeMaterial):
     flopStrength: uniform(0.42),
     flakeStrength: uniform(0.28),
     wear: uniform(0),
-    driveTime: uniform(0),
+    scuff: uniform(0),
+    wakeSpray: uniform(0),
   };
 
   const pLocal = u.inv.mul(vec4(positionWorld, 1)).xyz;
   const nLocal = u.inv.mul(vec4(normalWorld, 0)).xyz.normalize();
   const vWorld = cameraPosition.sub(positionWorld).normalize();
 
-  // Model-space livery mask (same layout as original installLivery)
+  // Model-space livery mask
   const liveryMask = Fn(() => {
     const p = pLocal;
     const ax = abs(p.x);
@@ -112,19 +137,27 @@ export function installDualLayerCarPaint(paint: THREE.MeshPhysicalNodeMaterial):
     return twin.mul(is(1)).add(wide.mul(is(2))).add(side.mul(is(3))).add(two.mul(is(4))).clamp(0, 1);
   })();
 
-  // Dynamic WGSL dirt & wear mask (x=dirtCoverage, y=wetSplatter, z=wearHaze)
-  const dirtMask = evalCarDirtWearWgsl({
+  // Two hardware-filtered samples of the 512x512 tileable RGBA dirt/splatter/streak mask
+  const dirtTex = getCarDirtMaskTexture();
+  const sideUv = vec2(pLocal.z.mul(0.55), pLocal.y.mul(0.85));
+  const topUv = vec2(pLocal.x.mul(0.65), pLocal.z.mul(0.45));
+  const texSide = texture(dirtTex, sideUv);
+  const texTop = texture(dirtTex, topUv);
+
+  const dirtMask = evalCarDirtWearTexWgsl({
     pLocal,
     nLocal,
     bottomY: u.bottom,
     topY: u.top,
     wear: u.wear,
-    driveTime: u.driveTime,
+    scuff: u.scuff,
+    wakeSpray: u.wakeSpray,
+    texSide,
+    texTop,
   }) as unknown as THREE.Node<'vec3'>;
 
   const basePaint = mix(materialColor, rgb(u.color), liveryMask);
 
-  // Layer 1 + Layer 2 color response in WGSL (metallic flop + 3D micro-flakes + grime blend)
   paint.colorNode = evalDualLayerPaintColorWgsl({
     baseColor: basePaint,
     pLocal,
@@ -136,11 +169,6 @@ export function installDualLayerCarPaint(paint: THREE.MeshPhysicalNodeMaterial):
     dirtMask,
   }) as unknown as THREE.Node<'vec3'>;
 
-  // Dynamic PBR parameter modulation from dirt/wear mask:
-  // - Base roughness rises toward matte mud/dust (0.88)
-  // - Metalness drops to 0 under opaque grime
-  // - Clearcoat drops toward 0 where mud covers lacquer
-  // - Clearcoat roughness rises with fine road-film haze + grime
   paint.roughnessNode = mix(materialRoughness, float(0.88), dirtMask.x.max(dirtMask.z.mul(0.35))).clamp(0.04, 0.96);
   paint.metalnessNode = materialMetalness.mul(float(1).sub(dirtMask.x.mul(0.92))).clamp(0, 1);
   paint.clearcoatNode = materialClearcoat.mul(float(1).sub(dirtMask.x.mul(0.94))).clamp(0, 1);
@@ -150,7 +178,6 @@ export function installDualLayerCarPaint(paint: THREE.MeshPhysicalNodeMaterial):
     dirtMask.x.mul(0.85).add(dirtMask.z.mul(0.4)).clamp(0, 1),
   ).clamp(0.01, 0.65);
 
-  // Underglow sill wash (unchanged visual contract)
   const hLow = pLocal.y.sub(u.bottom).div(u.top.sub(u.bottom).max(0.25));
   const under = float(1).sub(smoothstep(0.02, 0.2, hLow));
   paint.emissiveNode = rgb(u.glow).mul(u.glowAmt.mul(under).mul(0.18));
