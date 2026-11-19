@@ -4,10 +4,17 @@ Realistic-handling street racing sim: an illegal night race through a city, with
 AI rivals. The game runs in the browser on **WebGPU** (three.js r186). Its vehicle physics is an
 engine-independent C++ core compiled to WebAssembly.
 
-## Run the web build
+## System Requirements
 
-Requirements: Node 20+, a browser with WebGPU. Chrome on Linux needs `chrome://flags` →
-**Unsafe WebGPU Support** + **Vulkan** (check `chrome://gpu` → "WebGPU: Hardware accelerated").
+> **Requires Chrome 124+ with `--enable-unsafe-webgpu` flag for web, or a PC with a 64-bit CPU, 8 GB RAM, and a Vulkan / DirectX 12 GPU for native.**
+
+- **Web (Lite / Demo build)**: Node 20+ (dev), Chrome / Edge 124+ with WebGPU enabled. On Linux Chrome, launch with `--enable-unsafe-webgpu` or enable `chrome://flags` → **Unsafe WebGPU Support** + **Vulkan** (verify in `chrome://gpu` → `WebGPU: Hardware accelerated`).
+- **Native (`core/` C++17 & UE5 plugin target)**: 64-bit x86_64/ARM64 CPU, 8 GB+ RAM, Vulkan 1.2 / DirectX 12 GPU, CMake 3.16+ & C++17 compiler (GCC/Clang/MSVC).
+- **SimHub Telemetry (optional)**: Run `node tools/simhub_udp_bridge.mjs` to stream 60 Hz 311-byte Forza/SimHub Dash V2 UDP packets on `127.0.0.1:20777`, or export MoTeC i2 Pro `.ld` / `.ldx` logs directly from the Pause / Results menu.
+
+See [`docs/DESIGN.md`](docs/DESIGN.md) for the full Master Design & Architecture Blueprint and [`docs/MODDING.md`](docs/MODDING.md) for the open-source Car Modding Pipeline.
+
+## Run the web build
 
 ```bash
 cd web
@@ -149,7 +156,8 @@ the start (free roam). The results screen has **Spectate** while others are stil
 | `web/` | Browser game: three.js WebGPU renderer, Rapier rigid bodies, WASM bridge (`web/wasm/bridge.cpp`) |
 | `data/` | Car and track data (JSON, engine-neutral) |
 | `assets_source/` | Blender sources and full-resolution textures |
-| `docs/` | Physics model, validation results, performance measurements, porting notes |
+| `docs/` | Master design blueprint (`DESIGN.md`), car modding pipeline (`MODDING.md`), physics & porting notes |
+| `cloud/` | Self-hostable Cloudflare Workers + D1 API (cloud saves, Pink Slip escrow, ranked rooms, moderation reports) |
 | `archive/` | Earlier circuit prototype |
 
 ## Native core tests

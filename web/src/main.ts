@@ -65,6 +65,7 @@ import { PhotoMode } from './photoMode';
 import { CinematicReplay } from './replay';
 import { RaceNodes } from './raceNodes';
 import { CarMeetHub } from './carMeet';
+import { INSURANCE_PREMIUM_XP, conditionOf, loadMaintenance, recordRaceDamage, repairCarCondition, repairCostOf, saveMaintenance, submitModerationReport, towFeeOf } from './maintenance';
 import { assetUrl, loadGLTF } from './scene/loaders';
 import { Identity } from './identity';
 import { usernameError } from './username';
@@ -319,6 +320,7 @@ async function main() {
   initLang();
   const a11y = loadAccessibility();
   applyAccessibility(a11y);
+  const maint = loadMaintenance();
   // credits, owned cars and upgrades. Dev server tests (?car=..., ?unlockall=1) own everything.
   // careers: single player (XP levels, this device) and online (the server's profile). Dev tests (?car=, ?unlockall=1)
   // unlock the whole single-player career.
@@ -1279,8 +1281,25 @@ async function main() {
         .then((res) => { mp.profile = res.profile; hud.toast('☁ CLOUD SAVE SYNCED', `v${res.profile.saveVersion ?? 1} · ${res.checksum.slice(0, 8)}`); menu.render(); })
         .catch((e: Error) => { hud.toast('CLOUD SYNC FAILED', e.message); });
     },
+    toggleInsurance: (on) => { maint.insured = on; saveMaintenance(maint); },
+    repairCar: () => {
+      const cond = conditionOf(maint, sel.car);
+      const rep = repairCostOf(cond, maint.insured);
+      if (rep.pct <= 0) return;
+      if (sp.kind === 'sp' && rep.xp > 0) sp.penalty(rep.xp);
+      repairCarCondition(maint, sel.car);
+      core.repair();
+      damage.repair();
+      hud.toast('🔧 CAR REPAIRED', `100% Mint${rep.xp ? ` · -${rep.xp} XP${maint.insured ? ' (-50% Insured)' : ''}` : ''}`);
+      menu.render();
+    },
+    reportPlayer: (player, category) => {
+      const rid = party?.code ?? `${cityInfo.id}_${Math.floor(Date.now() / 1000)}`;
+      void submitModerationReport(cloud, maint, rid, player, category).then((r) => hud.toast('🚩 REPORT SUBMITTED', r.message));
+    },
   });
   menu.a11y = a11y;
+  menu.maint = maint;
   menu.gfx = gfx;
   const loader = new Loader();
   menu.loader = loader;
@@ -1487,6 +1506,7 @@ async function main() {
   (g.__game as Record<string, unknown>).raceNodes = raceNodes;
   (g.__game as Record<string, unknown>).carMeet = carMeet;
   (g.__game as Record<string, unknown>).a11y = a11y;
+  (g.__game as Record<string, unknown>).maint = maint;
   {
     const inv = cleanCode(params.get('party') ?? '');
     if (inv.length >= 4) menu.invite = inv;
@@ -1897,6 +1917,26 @@ async function main() {
     const copsOn = copsActiveInRace();
     cops.breakOff();
     if (copsOn) bumpHeat(1);   // Heat lives strictly in Cop Race Events (never Free Roam)
+    // Persistent Multiplayer / Race Damage + Tow Truck Fee + In-Game Insurance (-50% repairs & tow)
+    const finalDmg = core.damage();
+    const totaled = !!finalDmg.totaled || myDnf === 'wrecked';
+    const sev = Math.min(1, Math.max(finalDmg.severity ?? 0, totaled ? 1 : 0));
+    const insured = maint.insured;
+    let towFeeXp = 0;
+    let repairBillXp = 0;
+    let damagePct = 0;
+    if (raceLaps() > 0) {
+      if (insured && sp.kind === 'sp') sp.penalty(INSURANCE_PREMIUM_XP);
+      if (sev > 0.04 || totaled) {
+        recordRaceDamage(maint, sel.car, sev, totaled);
+        const rep = repairCostOf(conditionOf(maint, sel.car), insured);
+        repairBillXp = rep.xp;
+        damagePct = rep.pct;
+      }
+      if (totaled) {
+        towFeeXp = towFeeOf(true, insured).xp;
+      }
+    }
     setState('results');
     audio.muted = true;
     const total = lapTimes.reduce((a, b) => a + b, 0);
@@ -1913,10 +1953,14 @@ async function main() {
         assistsOff: +(a.abs === 'off') + +(a.tc === 0) + +!a.stability + +(a.countersteer === 'off') + +(a.line === 'off'),
         manual: a.gearbox === 'manual', realism: sel.realism,
         copsEnabled: copsOn, heatLevel: heat.level, escapedCops: escapedCopsThisRace }, 'sp');
-      earned = sp.earn(reward.xp, myDnf ? 'race · DNF' : `race · P${pos} of ${order.length}${copsOn ? ` · COPS H${Math.max(1, heat.level)}` : ''}`, reward.parts).xp;
+      const netXp = Math.max(0, reward.xp - towFeeXp);
+      if (towFeeXp > reward.xp) sp.penalty(towFeeXp - reward.xp);
+      earned = sp.earn(netXp, myDnf ? 'race · DNF' : `race · P${pos} of ${order.length}${copsOn ? ` · COPS H${Math.max(1, heat.level)}` : ''}`, reward.parts).xp;
+    } else if (towFeeXp > 0 && sp.kind === 'sp') {
+      sp.penalty(towFeeXp);
     }
     menu.showResults({ total, best: lapTimes.length ? Math.min(...lapTimes) : 0, laps: lapTimes, laps_target: raceLaps(), standings: st,
-      routeLength: lap?.routeLength ?? route.length_m, online: sel.mode === 'online', earned });
+      routeLength: lap?.routeLength ?? route.length_m, online: sel.mode === 'online', earned, towFeeXp, repairBillXp, insured, damagePct });
     if (party) party.sendProgress({ d: lap?.distance ?? 0, lap: lap?.laps ?? 0, fin: lap?.finished ? total : -1, best: lap?.best ?? 0, dnf: myDnf ? 1 : 0 });
   }
 
