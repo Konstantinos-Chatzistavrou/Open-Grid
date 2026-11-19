@@ -223,7 +223,7 @@ function cloneCarScene(src: THREE.Object3D): THREE.Object3D {
   return root;
 }
 
-const Y = new THREE.Vector3(0, 1, 0), X = new THREE.Vector3(1, 0, 0), ONE = new THREE.Vector3(1, 1, 1);
+const Y = new THREE.Vector3(0, 1, 0), X = new THREE.Vector3(1, 0, 0), Z = new THREE.Vector3(0, 0, 1), ONE = new THREE.Vector3(1, 1, 1);
 
 /**
  * Game-side material setup shared by the player, AI and remote cars:
@@ -580,6 +580,53 @@ export class CarVisual {
     }));
   }
 
+  /** Visual stance camber (radians, negative = top tilted inward) matching tuned physics camber 1:1. */
+  private camberFrontRad = 0;
+  private camberRearRad = 0;
+  private qc = new THREE.Quaternion();
+  /** Dual rear exhaust flamethrower VFX group (flashes on NOS, upshifts, overrun pops & Garage rev). */
+  private flameGroup: THREE.Group | null = null;
+  private flameOuterMat: THREE.MeshBasicMaterial | null = null;
+  private flameInnerMat: THREE.MeshBasicMaterial | null = null;
+  private flameLevel = 0;
+
+  setStance(camberFrontDeg: number, camberRearDeg: number) {
+    this.camberFrontRad = (camberFrontDeg * Math.PI) / 180;
+    this.camberRearRad = (camberRearDeg * Math.PI) / 180;
+  }
+
+  /** Trigger or sustain flamethrower exhaust cones (`blueNos = true` gives blue-violet nitrous purge flame). */
+  setExhaustFlame(intensity: number, blueNos = false) {
+    if (!this.flameGroup) {
+      const g = new THREE.Group();
+      g.name = 'wheel_exhaust_flames';
+      const outerGeo = new THREE.ConeGeometry(0.11, 0.72, 10, 1, true).rotateX(-Math.PI / 2);
+      const innerGeo = new THREE.ConeGeometry(0.055, 0.44, 8, 1, true).rotateX(-Math.PI / 2);
+      this.flameOuterMat = new THREE.MeshBasicMaterial({ color: 0xff6a00, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+      this.flameInnerMat = new THREE.MeshBasicMaterial({ color: 0x60d8ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+      const rearZ = -this.cfg.collision_box.size_m[2] * 0.5 - 0.15;
+      for (const sx of [-0.52, 0.52]) {
+        const pair = new THREE.Group();
+        pair.position.set(sx, 0.34, rearZ);
+        const o = new THREE.Mesh(outerGeo, this.flameOuterMat); o.position.z = -0.34;
+        const inn = new THREE.Mesh(innerGeo, this.flameInnerMat); inn.position.z = -0.20;
+        pair.add(o, inn);
+        g.add(pair);
+      }
+      g.visible = false;
+      this.model.add(g);
+      this.flameGroup = g;
+    }
+    this.flameLevel = Math.max(this.flameLevel * 0.75, Math.max(0, Math.min(1.4, intensity)));
+    this.flameGroup.visible = this.flameLevel > 0.05;
+    if (this.flameGroup.visible && this.flameOuterMat && this.flameInnerMat) {
+      this.flameOuterMat.color.setHex(blueNos ? 0x1e90ff : 0xff6a00);
+      this.flameInnerMat.color.setHex(blueNos ? 0xe0f7ff : 0xffe066);
+      const flick = 0.8 + Math.random() * 0.45;
+      this.flameGroup.scale.set(0.8 + this.flameLevel * 0.4, 0.8 + this.flameLevel * 0.4, (0.45 + this.flameLevel * 0.85) * flick);
+    }
+  }
+
   static async load(cfg: CarVisualConfig, sharedHeadlights?: THREE.SpotLight[]): Promise<CarVisual> {
     const gltf = await loadGLTF(assetUrl(cfg.model));
     return new CarVisual(cfg, cloneCarScene(gltf.scene), sharedHeadlights);
@@ -633,10 +680,12 @@ export class CarVisual {
       }
       spinFrame = Math.max(spinFrame, Math.abs(omega) * this.renderDt);
 
+      const camb = i < 2 ? this.camberFrontRad : this.camberRearRad;
       this.qa.setFromAxisAngle(Y, steer);
+      this.qc.setFromAxisAngle(Z, side * camb);
       this.qb.setFromAxisAngle(X, w.spin);
       w.node.position.copy(centre);
-      w.node.quaternion.copy(this.qa).multiply(this.qb).multiply(w.rest);
+      w.node.quaternion.copy(this.qa).multiply(this.qc).multiply(this.qb).multiply(w.rest);
       if (w.caliper) {
         w.caliper.position.copy(centre);
         w.caliper.quaternion.copy(this.qa);

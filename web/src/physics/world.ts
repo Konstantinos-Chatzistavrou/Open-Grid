@@ -205,18 +205,35 @@ export class CarBody {
     this.syncOut(speed);
   }
 
+  /** Optional longitudinal Nitrous Oxide thrust (N) applied along the car's forward axis on this tick. */
+  nosThrustN = 0;
+
   /** One physics tick: rays -> contacts -> core forces -> applied to the body (world steps after). */
   tick(raw: RawInput, assists: AssistToggles) {
     const v = this.body.linvel();
     const c = this.raycastWheels();
     this.feedCrash(v);
-    const out = this.core.step(c, raw, assists, DT);
+    // Bug fix: ensure auto-gearbox immediately engages 1st from Neutral when throttle is pressed
+    let inRaw = raw;
+    if (assists.autoGearbox && Math.round(this.out[OUT.gear] ?? 1) === 1 && raw.throttle > 0.05 && raw.brake < 0.1 && !raw.shiftUp) {
+      inRaw = { ...raw, shiftUp: true };
+    }
+    const out = this.core.step(c, inRaw, assists, DT);
     this.body.resetForces(false);
     this.body.resetTorques(false);
-    this.body.addForce({ x: out[OUT.force], y: out[OUT.force + 1], z: out[OUT.force + 2] }, true);
+    let fx = out[OUT.force], fy = out[OUT.force + 1], fz = out[OUT.force + 2];
+    if (this.nosThrustN > 0) {
+      const r = this.body.rotation();
+      // World forward vector (+Z rotated by quaternion)
+      const fwdX = 2 * (r.x * r.z + r.w * r.y);
+      const fwdZ = 1 - 2 * (r.x * r.x + r.y * r.y);
+      fx += fwdX * this.nosThrustN;
+      fz += fwdZ * this.nosThrustN;
+    }
+    this.body.addForce({ x: fx, y: fy, z: fz }, true);
     this.body.addTorque({ x: out[OUT.torque], y: out[OUT.torque + 1], z: out[OUT.torque + 2] }, true);
     this.out = out;
-    this.prevF.set(out[OUT.force], out[OUT.force + 1], out[OUT.force + 2]);
+    this.prevF.set(fx, fy, fz);
   }
 
   /**

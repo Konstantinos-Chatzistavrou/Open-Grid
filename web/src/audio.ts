@@ -41,7 +41,55 @@ export class GameAudio {
   private lastGear = 1;
   private lastRpm = 800;
   private nextCrackleAt = 0;
+  private pitchMul = 1.0;
+  private revUntil = 0;
   muted = false;
+
+  /** Unique engine sound profile per car (V8 / Flat-6 / Twin-Turbo V6 / V10 / V12 firing ratios). */
+  setCarProfile(carId: string) {
+    const map: Record<string, number> = {
+      vela_gt: 1.00,
+      kestrel_gt: 1.14,
+      harrier_gt: 0.91,
+      strix_gt7: 1.28,
+      basilisk_v12: 1.48,
+    };
+    this.pitchMul = map[carId] ?? 1.0;
+  }
+
+  /** Garage Ignition button: starter motor crank + cold-start exhaust bark. */
+  triggerIgnition() {
+    this.unlock();
+    const ctx = this.ctx;
+    if (!ctx || !this.out) return;
+    const t = ctx.currentTime;
+    for (let i = 0; i < 4; i++) {
+      this.tone(t + i * 0.11, 0.08, 130 * this.pitchMul, 165 * this.pitchMul, 'sawtooth', 0.14);
+    }
+    this.burst(t + 0.44, 0.22, 'bandpass', 180 * this.pitchMul, 1.2, 0.36);
+    this.tone(t + 0.44, 0.35, 95 * this.pitchMul, 195 * this.pitchMul, 'sawtooth', 0.24);
+    this.tone(t + 0.78, 0.55, 195 * this.pitchMul, 105 * this.pitchMul, 'sawtooth', 0.16);
+  }
+
+  /** Garage Rev button: 1.3 s throttle blip to redline + lift-off exhaust pops/crackles. */
+  triggerGarageRev() {
+    this.unlock();
+    const ctx = this.ctx;
+    if (!ctx || !this.out) return;
+    const t = ctx.currentTime;
+    this.revUntil = performance.now() + 1350;
+    const p = this.pitchMul;
+    this.tone(t, 0.48, 105 * p, 410 * p, 'sawtooth', 0.28);
+    this.tone(t, 0.48, 52 * p, 205 * p, 'triangle', 0.24);
+    this.burst(t + 0.12, 0.38, 'bandpass', 360 * p, 1.1, 0.22);
+    this.tone(t + 0.48, 0.72, 410 * p, 105 * p, 'sawtooth', 0.20);
+    // Overrun flamethrower pops on lift-off!
+    this.exhaustPop(t + 0.52, 1.0);
+    this.exhaustPop(t + 0.64, 0.85);
+    this.exhaustPop(t + 0.79, 0.7);
+  }
+
+  get revvingInGarage(): boolean { return performance.now() < this.revUntil; }
 
   /**
    * Police siren while a pursuit is live: a wailing tone (LFO on pitch) at a level set by proximity. Silent and free
@@ -290,7 +338,7 @@ export class GameAudio {
     const thr = out[OUT.throttle];
     const gear = Math.round(out[OUT.gear]);
     const stalled = out[OUT.stalled] > 0.5;
-    const f = (rpm / 60) * (CYLINDERS / 2);
+    const f = (rpm / 60) * (CYLINDERS / 2) * this.pitchMul;
 
     // Idle lope & combustion cycle-to-cycle micro-instability
     const idleFactor = Math.max(0, 1 - (rpm - 650) / 900);

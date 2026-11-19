@@ -329,6 +329,21 @@ export class AiTraffic {
     return mine.lat;
   }
 
+  /** Scale active cruising traffic cars by time-of-day density (22:00-01:00 dense, 01:00-03:00 sparse, 04:00-05:30 near-zero). */
+  setCruiseDensity(density: number) {
+    if (this.mode !== 'cruise') return;
+    const keep = Math.max(1, Math.min(this.cars.length, Math.round(this.cars.length * density)));
+    for (let i = 0; i < this.cars.length; i++) {
+      const c = this.cars[i];
+      const active = i < keep || i === this.dragCarIdx;
+      c.model.visible = active;
+      if (c.shadow) c.shadow.visible = active;
+      if (c.light) c.light.intensity = active ? AI_BEAM : 0;
+      c.body.setEnabled(active);
+      if (!active) c.body.setTranslation({ x: 0, y: -500, z: 0 }, true);
+    }
+  }
+
   /** Race: on the grid, held (go() releases them). Cruise: Free Roam AI traffic cruising the streets. Off: parked out of sight. */
   setMode(mode: AiMode) {
     this.mode = mode;
