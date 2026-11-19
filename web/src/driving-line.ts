@@ -20,6 +20,16 @@ export class DrivingLine {
   private s = -1;
   private tmp = new THREE.Vector3();
   private c = new THREE.Color();
+  private cGo = BLUE.clone();
+  private cCaution = YELLOW.clone();
+  private cBrake = RED.clone();
+
+  /** Update racing-line colours dynamically for Colorblind accessibility modes. */
+  setPalette(go: [number, number, number], caution: [number, number, number], brake: [number, number, number]) {
+    this.cGo.setRGB(go[0], go[1], go[2]);
+    this.cCaution.setRGB(caution[0], caution[1], caution[2]);
+    this.cBrake.setRGB(brake[0], brake[1], brake[2]);
+  }
 
   constructor(scene: THREE.Scene, private ai: AiTraffic) {
     const g = new THREE.BufferGeometry();
@@ -83,9 +93,9 @@ export class DrivingLine {
       // deceleration needed to be at the profile speed by this point, as a fraction of what the car can do
       const vt = this.prof[i];
       const need = d > 1 ? (v * v - vt * vt) / (2 * d) / this.aBrake : v > vt + 1 ? 1 : 0;
-      if (need > 0.8) this.c.copy(RED);
-      else if (need > 0.35) this.c.copy(BLUE).lerp(YELLOW, Math.min(1, (need - 0.35) / 0.25)).lerp(RED, Math.max(0, (need - 0.6) / 0.2));
-      else this.c.copy(BLUE);
+      if (need > 0.8) this.c.copy(this.cBrake);
+      else if (need > 0.35) this.c.copy(this.cGo).lerp(this.cCaution, Math.min(1, (need - 0.35) / 0.25)).lerp(this.cBrake, Math.max(0, (need - 0.6) / 0.2));
+      else this.c.copy(this.cGo);
       // width: tapered at both ends; braking-zones mode hides the blue parts
       let w = WIDTH * Math.min(1, (k + 1) / 4, (N - k) / 10);
       if (mode === 'braking') w *= Math.max(0, Math.min(1, (need - 0.3) / 0.1));

@@ -1,0 +1,22 @@
+{
+  "locale": "de",
+  "ue5StringTableNamespace": "OpenGrid",
+  "entries": {
+    "menu.play": "Spielen",
+    "menu.garage": "Werkstatt",
+    "menu.shop": "Händler",
+    "menu.settings": "Einstellungen",
+    "mode.race": "Rennveranstaltung",
+    "mode.freeroam": "Freie Fahrt",
+    "mode.mp": "Mehrspieler",
+    "pause.photo": "Fotomodus (4K)",
+    "pause.replay": "Kinoreife Wiederholung (5 Min.)",
+    "pause.motec": "MoTeC-Telemetrie exportieren (.ld)",
+    "pause.carmeet": "Autotreffen & Gesten",
+    "settings.language": "Sprache",
+    "settings.colorblind": "Farbenblind-Modus",
+    "settings.uiscale": "HUD- / UI-Skalierung",
+    "settings.telemetry": "SimHub UDP-Telemetrie",
+    "settings.cloudsave": "Plattformübergreifender Cloud-Spielstand"
+  }
+}

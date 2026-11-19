@@ -8,10 +8,75 @@ import { BTN, PAD_LABELS, axisValue, classify, defaultCalibration, deviceKey, lo
 
 type RumblePad = Gamepad & { vibrationActuator?: { playEffect(t: string, o: object): Promise<unknown> } };
 
+export type BindAction =
+  | 'throttle' | 'brake' | 'steerLeft' | 'steerRight'
+  | 'shiftUp' | 'shiftDown' | 'handbrake' | 'clutch'
+  | 'reset' | 'camera' | 'lights' | 'flash' | 'stake' | 'board'
+  | 'photo' | 'replay' | 'carMeet' | 'stepOut' | 'interact'
+  | 'hud' | 'map' | 'garage' | 'pause';
+
+export const DEFAULT_KEY_BINDS: Record<BindAction, string> = {
+  throttle: 'KeyW',
+  brake: 'KeyS',
+  steerLeft: 'KeyA',
+  steerRight: 'KeyD',
+  shiftUp: 'KeyE',
+  shiftDown: 'KeyQ',
+  handbrake: 'Space',
+  clutch: 'ShiftLeft',
+  reset: 'KeyR',
+  camera: 'KeyC',
+  lights: 'KeyL',
+  flash: 'KeyF',
+  stake: 'KeyV',
+  board: 'KeyB',
+  photo: 'KeyP',
+  replay: 'KeyT',
+  carMeet: 'KeyU',
+  stepOut: 'KeyO',
+  interact: 'Enter',
+  hud: 'KeyH',
+  map: 'KeyM',
+  garage: 'KeyG',
+  pause: 'Escape',
+};
+
+export const DEFAULT_PAD_BINDS: Record<BindAction, number> = {
+  throttle: BTN.rt,
+  brake: BTN.lt,
+  steerLeft: -1,
+  steerRight: -1,
+  shiftUp: BTN.rb,
+  shiftDown: BTN.lb,
+  handbrake: BTN.a,
+  clutch: -1,
+  reset: BTN.b,
+  camera: BTN.y,
+  lights: BTN.x,
+  flash: BTN.ls,
+  stake: BTN.left,
+  board: BTN.right,
+  photo: BTN.up,
+  replay: BTN.down,
+  carMeet: BTN.rs,
+  stepOut: -1,
+  interact: BTN.a,
+  hud: BTN.back,
+  map: -1,
+  garage: -1,
+  pause: BTN.start,
+};
+
+const BINDS_KEY = 'nr.binds.v1';
+
 export class Input {
   readonly raw: RawInput = { steer: 0, throttle: 0, brake: 0, clutch: 0, handbrake: 0, shiftUp: false, shiftDown: false, device: 0, directGear: -99 };
   readonly assists: AssistToggles = { abs: true, tc: true, esc: false, autoGearbox: true };
   readonly settings: ControlsSettings = loadSettings();
+  keyBinds: Record<BindAction, string> = { ...DEFAULT_KEY_BINDS };
+  padBinds: Record<BindAction, number> = { ...DEFAULT_PAD_BINDS };
+  /** When set by ControlsUi, the next key or pad button press remaps this action instead of driving. */
+  listeningBind: { kind: 'key' | 'pad'; action: BindAction; onDone: () => void } | null = null;
   private keys = new Set<string>();
   private pending = { up: false, down: false };
   private padPrev = new Map<number, boolean[]>();
@@ -41,6 +106,16 @@ export class Input {
   onStakeToggle = () => {};
   /** Toggle Speed Trap & Drift Zone Global Leaderboard overlay (KeyB). */
   onBoard = () => {};
+  /** Open / close 4K Photo Mode (KeyP). */
+  onPhoto = () => {};
+  /** Open / close 5-minute Cinematic Replay Editor (KeyT). */
+  onReplay = () => {};
+  /** Toggle 5-Floor Car Meet RP Hub / Hood / Trunk / Radio panel (KeyU). */
+  onCarMeet = () => {};
+  /** Step out of car / get back in (walkable driver avatar in Car Meet, KeyO). */
+  onStepOut = () => {};
+  /** Interact with nearby Free Roam Race Node to enter Matchmaking Lobby (Enter). */
+  onInteract = () => {};
   onGarage = () => {};
   private lastLightTap = 0;
   onPause = () => {};
@@ -53,33 +128,45 @@ export class Input {
   suspended = false;
 
   constructor() {
+    this.loadBinds();
     addEventListener('keydown', (e) => {
       if (e.repeat || (e.target as HTMLElement)?.tagName === 'INPUT') return;
+      if (this.listeningBind?.kind === 'key') {
+        e.preventDefault();
+        if (e.code !== 'Escape') { this.keyBinds[this.listeningBind.action] = e.code; this.saveBinds(); }
+        const done = this.listeningBind.onDone;
+        this.listeningBind = null;
+        done();
+        return;
+      }
       this.keys.add(e.code);
       this.setSource('keys');
       this.onAnyInput();
-      switch (e.code) {
-        case 'KeyE': this.pending.up = true; break;
-        case 'KeyQ': this.pending.down = true; break;
-        case 'KeyR': this.onReset(); break;
-        case 'KeyC': this.onCamera(); break;
-        case 'KeyH': this.onHud(); break;
-        case 'KeyM': this.onMap(); break;
-        case 'KeyL': {
-          const now = performance.now();
-          if (now - this.lastLightTap < 450) { this.lastLightTap = 0; this.onFlash(); }
-          else { this.lastLightTap = now; this.onLights(); }
-          break;
-        }
-        case 'KeyF': this.onFlash(); break;
-        case 'KeyV': this.onStakeToggle(); break;
-        case 'KeyB': this.onBoard(); break;
-        case 'KeyG': this.onGarage(); break;
-        case 'Digit1': this.assists.abs = !this.assists.abs; this.onAssistKey(); break;
-        case 'Digit2': this.assists.tc = !this.assists.tc; this.onAssistKey(); break;
-        case 'Digit3': this.assists.esc = !this.assists.esc; this.onAssistKey(); break;
-        case 'Digit5': this.assists.autoGearbox = !this.assists.autoGearbox; this.onAssistKey(); break;
+      const b = this.keyBinds;
+      if (e.code === b.shiftUp) this.pending.up = true;
+      else if (e.code === b.shiftDown) this.pending.down = true;
+      else if (e.code === b.reset) this.onReset();
+      else if (e.code === b.camera) this.onCamera();
+      else if (e.code === b.hud) this.onHud();
+      else if (e.code === b.map) this.onMap();
+      else if (e.code === b.lights) {
+        const now = performance.now();
+        if (now - this.lastLightTap < 450) { this.lastLightTap = 0; this.onFlash(); }
+        else { this.lastLightTap = now; this.onLights(); }
       }
+      else if (e.code === b.flash) this.onFlash();
+      else if (e.code === b.stake) this.onStakeToggle();
+      else if (e.code === b.board) this.onBoard();
+      else if (e.code === b.photo) this.onPhoto();
+      else if (e.code === b.replay) this.onReplay();
+      else if (e.code === b.carMeet) this.onCarMeet();
+      else if (e.code === b.stepOut) this.onStepOut();
+      else if (e.code === b.interact) this.onInteract();
+      else if (e.code === b.garage) this.onGarage();
+      else if (e.code === 'Digit1') { this.assists.abs = !this.assists.abs; this.onAssistKey(); }
+      else if (e.code === 'Digit2') { this.assists.tc = !this.assists.tc; this.onAssistKey(); }
+      else if (e.code === 'Digit3') { this.assists.esc = !this.assists.esc; this.onAssistKey(); }
+      else if (e.code === 'Digit5') { this.assists.autoGearbox = !this.assists.autoGearbox; this.onAssistKey(); }
       if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -87,6 +174,42 @@ export class Input {
     addEventListener('gamepadconnected', () => this.onDevice());
     addEventListener('gamepaddisconnected', (e) => { if ((e as GamepadEvent).gamepad.index === this.activeIndex) { this.activeIndex = -1; this.setSource('keys'); } });
   }
+
+  private loadBinds() {
+    try {
+      const s = JSON.parse(localStorage.getItem(BINDS_KEY) ?? 'null');
+      if (s?.key && typeof s.key === 'object') Object.assign(this.keyBinds, s.key);
+      if (s?.pad && typeof s.pad === 'object') Object.assign(this.padBinds, s.pad);
+    } catch { /* blocked */ }
+  }
+  saveBinds() {
+    try { localStorage.setItem(BINDS_KEY, JSON.stringify({ key: this.keyBinds, pad: this.padBinds })); } catch { /* blocked */ }
+  }
+  resetBinds() {
+    this.keyBinds = { ...DEFAULT_KEY_BINDS };
+    this.padBinds = { ...DEFAULT_PAD_BINDS };
+    this.saveBinds();
+  }
+  /** Poll for a gamepad button press while remapping controller controls in ControlsUi. */
+  pollPadRebind() {
+    if (this.listeningBind?.kind !== 'pad') return;
+    for (const p of navigator.getGamepads?.() ?? []) {
+      if (!p || !p.connected) continue;
+      for (let i = 0; i < p.buttons.length; i++) {
+        if (p.buttons[i]?.pressed || (p.buttons[i]?.value ?? 0) > 0.55) {
+          this.padBinds[this.listeningBind.action] = i;
+          this.saveBinds();
+          const done = this.listeningBind.onDone;
+          this.listeningBind = null;
+          this.syncPads();
+          done();
+          return;
+        }
+      }
+    }
+  }
+  /** Check if a raw key code is currently held down (used by Photo Mode & Car Meet walkable avatar). */
+  isKeyDown(code: string): boolean { return this.keys.has(code); }
 
   get device(): DeviceKind { return this.source; }
   saveSettings() { saveSettings(this.settings); }
@@ -170,27 +293,37 @@ export class Input {
       this.readWheel(pad, r);
     } else if (this.source === 'pad' && pad) {
       r.device = 1;
+      const pb = this.padBinds;
       const dz = (x: number) => (Math.abs(x) < 0.06 ? 0 : x);
       r.steer = -dz(pad.axes[0] ?? 0);
-      r.throttle = pad.buttons[BTN.rt]?.value ?? 0;
-      r.brake = pad.buttons[BTN.lt]?.value ?? 0;
-      r.handbrake = pad.buttons[BTN.a]?.pressed ? 1 : 0;
-      r.clutch = 0;
+      r.throttle = pb.throttle >= 0 ? (pad.buttons[pb.throttle]?.value ?? 0) : 0;
+      r.brake = pb.brake >= 0 ? (pad.buttons[pb.brake]?.value ?? 0) : 0;
+      r.handbrake = pb.handbrake >= 0 && pad.buttons[pb.handbrake]?.pressed ? 1 : 0;
+      r.clutch = pb.clutch >= 0 ? (pad.buttons[pb.clutch]?.value ?? 0) : 0;
       const edge = this.edges(pad);
-      if (edge(BTN.rb)) this.pending.up = true;
-      if (edge(BTN.lb)) this.pending.down = true;
-      if (edge(BTN.b)) this.onReset();
-      if (edge(BTN.y)) this.onCamera();
-      if (edge(BTN.x)) this.onLights();
-      if (edge(BTN.back)) this.onHud();
-      if (edge(BTN.start)) this.onPause();
+      const hit = (i: number) => i >= 0 && edge(i);
+      if (hit(pb.shiftUp)) this.pending.up = true;
+      if (hit(pb.shiftDown)) this.pending.down = true;
+      if (hit(pb.reset)) this.onReset();
+      if (hit(pb.camera)) this.onCamera();
+      if (hit(pb.lights)) this.onLights();
+      if (hit(pb.flash)) this.onFlash();
+      if (hit(pb.stake)) this.onStakeToggle();
+      if (hit(pb.board)) this.onBoard();
+      if (hit(pb.photo)) this.onPhoto();
+      if (hit(pb.replay)) this.onReplay();
+      if (hit(pb.carMeet)) this.onCarMeet();
+      if (hit(pb.stepOut)) this.onStepOut();
+      if (hit(pb.hud)) this.onHud();
+      if (hit(pb.pause)) this.onPause();
     } else {
       r.device = 0;
-      r.steer = (k('KeyA') || k('ArrowLeft') ? 1 : 0) - (k('KeyD') || k('ArrowRight') ? 1 : 0);
-      r.throttle = k('KeyW') || k('ArrowUp') ? 1 : 0;
-      r.brake = k('KeyS') || k('ArrowDown') ? 1 : 0;
-      r.handbrake = k('Space') ? 1 : 0;
-      r.clutch = k('ShiftLeft') || k('ShiftRight') ? 1 : 0;
+      const kb = this.keyBinds;
+      r.steer = (k(kb.steerLeft) || k('ArrowLeft') ? 1 : 0) - (k(kb.steerRight) || k('ArrowRight') ? 1 : 0);
+      r.throttle = k(kb.throttle) || k('ArrowUp') ? 1 : 0;
+      r.brake = k(kb.brake) || k('ArrowDown') ? 1 : 0;
+      r.handbrake = k(kb.handbrake) ? 1 : 0;
+      r.clutch = k(kb.clutch) || k('ShiftRight') ? 1 : 0;
     }
     if (this.hold) {
       if (r.throttle > 0.05 && !this.locked) this.hold = false;

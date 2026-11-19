@@ -11,6 +11,12 @@ export interface Profile {
   cars: string[]; mods: Record<string, Mods>; skins: string[];
   /** the account's saved car looks: car id -> the garage's parts and colours */
   looks: Record<string, Custom>;
+  /** Monotonic server-authoritative cloud save version (anti-save-scum) */
+  saveVersion?: number;
+  /** Synced cross-platform preferences (language, colorblind, uiScale, last car/paint) */
+  prefs?: Record<string, unknown>;
+  /** Synced driver avatar gear (helmet, suit, gloves, shoes) */
+  avatarGear?: Record<string, unknown>;
   clean: number; strikes: number; banned: boolean; created: number;
 }
 
@@ -75,6 +81,20 @@ export class Cloud {
   buy(kind: 'car' | 'mod' | 'skin', id: string, stage?: number) { return this.call<Profile>('POST', '/v1/buy', { kind, id, stage }); }
   /** Keep this car's look with the account, so another device (and the other career) draws the same car. */
   saveLook(car: string, look: Custom) { return this.call<Profile>('POST', '/v1/look', { car, look }); }
+  /** Fetch server-authoritative cross-progression save + integrity checksum. */
+  getSave() { return this.call<{ profile: Profile; checksum: string }>('GET', '/v1/save'); }
+  /** Sync non-economy cross-device preferences & avatar gear; economy stays server-authoritative. */
+  syncSave(prefs: Record<string, unknown>, avatarGear?: object, clientVersion?: number) {
+    return this.call<{ profile: Profile; checksum: string }>('POST', '/v1/save', { prefs, avatarGear, clientVersion });
+  }
+  /** Lock a Cash or Pink Slip wager in server-side escrow before launch (anti-save-scumming). */
+  lockWagerEscrow(spec: { wagerId: string; opponentId: string; stake: 'cash' | 'pinkslip'; amount: number; car: string; opponentCar: string }) {
+    return this.call<{ ok: true; wagerId: string; profile: Profile }>('POST', '/v1/wager/lock', spec);
+  }
+  /** Settle a locked server-side wager escrow atomically. */
+  settleWagerEscrow(wagerId: string, won: boolean) {
+    return this.call<{ ok: true; won: boolean; profile: Profile }>('POST', '/v1/wager/settle', { wagerId, won });
+  }
   report(raceId: string, player: string, why: string) { return this.call<{ ok: true }>('POST', '/v1/report', { raceId, player, why }); }
   /** Upload the input recording of a race the server asked for (replay check). */
   replay(raceId: string, data: string) { return this.call<{ ok: true }>('POST', `/v1/replay/${encodeURIComponent(raceId)}`, { data }); }

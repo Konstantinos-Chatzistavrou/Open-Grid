@@ -58,6 +58,13 @@ import { AiTraffic, Lane } from './ai';
 import { Cops } from './cops';
 import { SpontaneousWagers, type NearbyCandidate } from './wagers';
 import { CityZones } from './zones';
+import { TelemetrySystem } from './telemetry';
+import { initLang } from './i18n';
+import { applyAccessibility, loadAccessibility, paletteOf, saveAccessibility } from './accessibility';
+import { PhotoMode } from './photoMode';
+import { CinematicReplay } from './replay';
+import { RaceNodes } from './raceNodes';
+import { CarMeetHub } from './carMeet';
 import { assetUrl, loadGLTF } from './scene/loaders';
 import { Identity } from './identity';
 import { usernameError } from './username';
@@ -309,6 +316,9 @@ async function main() {
     loadRapier(),
   ]);
   const sel = loadSelection(catalog, params);
+  initLang();
+  const a11y = loadAccessibility();
+  applyAccessibility(a11y);
   // credits, owned cars and upgrades. Dev server tests (?car=..., ?unlockall=1) own everything.
   // careers: single player (XP levels, this device) and online (the server's profile). Dev tests (?car=, ?unlockall=1)
   // unlock the whole single-player career.
@@ -1154,8 +1164,13 @@ async function main() {
   };
   const paintInt = () => parseInt(paintOf(sel, catalog).slice(1), 16);
   const meForParty = () => ({ name: sel.name, car: sel.car, paint: paintInt(), skin: sel.skin, look: customOf(sel), city: cityInfo.id });
-  /** The garage look (parts, colours) and the driver's skin on the car on show. */
-  const applyLook = () => { visual.custom.apply(customOf(sel), paintOf(sel, catalog)); visual.driver.setSkin(skinOf(sel.skin)); };
+  /** The garage look (parts, colours) and the driver's skin + avatar gear on the car & Car Meet avatar. */
+  let carMeetRef: CarMeetHub | null = null;
+  const applyLook = () => {
+    visual.custom.apply(customOf(sel), paintOf(sel, catalog));
+    visual.driver.setSkin(skinOf(sel.skin), sel.avatarGear);
+    carMeetRef?.setAvatarGear(sel.avatarGear);
+  };
   /** The online account keeps each car's look; a garage click pushes once (debounced) once the profile is known. */
   let lookPush = 0;
   const pushLook = () => {
@@ -1234,7 +1249,38 @@ async function main() {
     // driving camera chosen in Settings: chase / far / cinematic / hood / bumper (C cycles)
     camMode: (mode) => { try { localStorage.setItem('nr.cam', mode); } catch { /* blocked */ } rig.setMode(mode as never); },
     mirror: (on) => { mirrorOn = on; try { localStorage.setItem('nr.mirror', on ? '1' : '0'); } catch { /* blocked */ } },
+    photoMode: () => { if (driving()) { menu.show('none'); if (state === 'paused') setState(pausedFrom); photoMode.enter(pos); audio.muted = true; } },
+    replayMode: () => { if (driving() || state === 'results') { menu.show('none'); if (replay.enter()) audio.muted = true; } },
+    exportMotec: () => {
+      const res = telemetry.exportMotec();
+      hud.toast('📊 MoTeC EXPORTED', `${res.samples.toLocaleString()} samples (${(res.bytes / 1024).toFixed(0)} KB .ld + .ldx)`);
+    },
+    simhubToggle: (on) => {
+      telemetry.setSimHubStream(on);
+      hud.toast(on ? '📡 SIMHUB UDP STREAM ON' : 'SIMHUB UDP OFF', on ? 'Run: node tools/simhub_udp_bridge.mjs (UDP 20777)' : 'Telemetry stream paused');
+    },
+    carMeet: () => {
+      if (state === 'paused') resume();
+      if (raceLaps() === 0) carMeet.togglePanel(true);
+    },
+    returnFreeRoam: () => { void startSession('free'); },
+    accessibility: () => {
+      saveAccessibility(a11y);
+      applyAccessibility(a11y);
+      const pal = paletteOf(a11y);
+      drivingLine.setPalette(pal.lineGo, pal.lineCaution, pal.lineBrake);
+    },
+    language: () => {
+      if (cloud.available && mp.profile) void cloud.syncSave({ lang: document.documentElement.lang, a11y }, sel.avatarGear, mp.profile.saveVersion).catch(() => {});
+    },
+    cloudSync: () => {
+      if (!cloud.available) return;
+      void cloud.syncSave({ lang: document.documentElement.lang, a11y, car: sel.car, finish: sel.finish }, sel.avatarGear, mp.profile?.saveVersion)
+        .then((res) => { mp.profile = res.profile; hud.toast('☁ CLOUD SAVE SYNCED', `v${res.profile.saveVersion ?? 1} · ${res.checksum.slice(0, 8)}`); menu.render(); })
+        .catch((e: Error) => { hud.toast('CLOUD SYNC FAILED', e.message); });
+    },
   });
+  menu.a11y = a11y;
   menu.gfx = gfx;
   const loader = new Loader();
   menu.loader = loader;
@@ -1339,6 +1385,88 @@ async function main() {
   };
   input.onStakeToggle = () => { if (state === 'race' && raceLaps() === 0) wagers.toggleStake(); };
   input.onBoard = () => { if (state === 'race' && raceLaps() === 0) zones.boardVisible = !zones.boardVisible; };
+  // ---- Sim Racing Telemetry (SimHub UDP + MoTeC .ld/.ldx), Content Creator Suite, Race Nodes & 5-Floor Car Meet ----
+  const telemetry = new TelemetrySystem();
+  telemetry.reset(sel.name, catalog.find((c) => c.id === sel.car)?.name ?? sel.car, cityInfo.name);
+  const photoMode = new PhotoMode(renderer, camera, {
+    onRenderFrame: () => { if (inGarage) showPost!.render(); else post.render(); },
+    onExit: () => { if (state === 'race' && !replay.active) audio.muted = false; },
+    onToast: (title, detail) => hud.toast(title, detail),
+  });
+  const rpPos = new THREE.Vector3(), rpQuat = new THREE.Quaternion();
+  const replay = new CinematicReplay(renderer.domElement, camera, {
+    onApplyFrame: (fr) => {
+      rpPos.set(fr.px, fr.py, fr.pz);
+      rpQuat.set(fr.qx, fr.qy, fr.qz, fr.qw);
+      visual.update(rpPos, rpQuat, car.out, rpPos, rpQuat);
+      for (let i = 0; i < fr.ai.length && i < ai.cars.length; i++) {
+        ai.cars[i].root.position.set(fr.ai[i].x, fr.ai[i].y, fr.ai[i].z);
+        ai.cars[i].root.rotation.set(0, fr.ai[i].yaw, 0);
+      }
+    },
+    onOpenPhoto: () => { photoMode.enter(rpPos); },
+    onExportMotec: () => {
+      const res = telemetry.exportMotec();
+      hud.toast('📊 MoTeC EXPORTED', `${res.samples.toLocaleString()} samples (.ld + .ldx)`);
+    },
+    onExit: () => {
+      syncPose();
+      if (state === 'race') audio.muted = false;
+    },
+    onToast: (title, detail) => hud.toast(title, detail),
+  });
+  const raceNodes = new RaceNodes(scene, cityInfo.id, route.samples, cityInfo.mandatoryCops, {
+    onLaunchRace: (node) => {
+      sel.laps = node.laps;
+      sel.copMode = node.copMode;
+      saveSelection(sel);
+      void startSession('race');
+    },
+  });
+  raceNodes.setVisible(false);
+  const carMeet = new CarMeetHub(scene, {
+    onToast: (title, detail) => hud.toast(title, detail),
+    onSyncCamera: (cPos, target) => {
+      if (photoMode.active || replay.active) return;
+      camera.position.lerp(cPos, 0.16);
+      camera.lookAt(target);
+    },
+  });
+  carMeetRef = carMeet;
+  carMeet.attachToCar(visual.root);
+  carMeet.setAvatarGear(sel.avatarGear);
+  {
+    const pal = paletteOf(a11y);
+    drivingLine.setPalette(pal.lineGo, pal.lineCaution, pal.lineBrake);
+  }
+  input.onPhoto = () => {
+    if (photoMode.active) { photoMode.exit(); return; }
+    if (driving() && (state === 'race' || replay.active)) {
+      if (carMeet.panelOpen) carMeet.togglePanel(false);
+      photoMode.enter(replay.active ? rpPos : pos);
+      audio.muted = true;
+    }
+  };
+  input.onReplay = () => {
+    if (photoMode.active) return;
+    if (replay.active) { replay.exit(); return; }
+    if (state === 'race') { if (replay.enter()) audio.muted = true; }
+  };
+  input.onCarMeet = () => {
+    if (state === 'race' && raceLaps() === 0 && !photoMode.active && !replay.active) carMeet.togglePanel();
+  };
+  input.onStepOut = () => {
+    if (state === 'race' && raceLaps() === 0 && !photoMode.active && !replay.active) {
+      carMeet.toggleStepOut(pos, quat, Math.abs(car.out[OUT.speed]) * 3.6);
+    }
+  };
+  input.onInteract = () => {
+    if (state !== 'race' || raceLaps() !== 0 || photoMode.active || replay.active) return;
+    const node = raceNodes.nearby;
+    if (!node) return;
+    if (node.laps === 0) { carMeet.togglePanel(true); return; }
+    raceNodes.startMatchmaking(node);
+  };
   drivingLine.setCar(applyMods(physics[sel.car], modsOf(sel)));
   // every input device: force feedback (WebHID wheels), the Controls screen, pad / keyboard menu navigation
   const ffb = new ForceFeedback();
@@ -1353,6 +1481,12 @@ async function main() {
   (g.__game as Record<string, unknown>).zones = zones;
   (g.__game as Record<string, unknown>).cops = cops;
   (g.__game as Record<string, unknown>).ai = ai;
+  (g.__game as Record<string, unknown>).telemetry = telemetry;
+  (g.__game as Record<string, unknown>).photoMode = photoMode;
+  (g.__game as Record<string, unknown>).replay = replay;
+  (g.__game as Record<string, unknown>).raceNodes = raceNodes;
+  (g.__game as Record<string, unknown>).carMeet = carMeet;
+  (g.__game as Record<string, unknown>).a11y = a11y;
   {
     const inv = cleanCode(params.get('party') ?? '');
     if (inv.length >= 4) menu.invite = inv;
@@ -1560,6 +1694,7 @@ async function main() {
       visual.renderDt = capInterval ? capInterval / 1000 : 1 / 60;
       syncHeadlights();
       scene.add(visual.root);
+      carMeet.attachToCar(visual.root);
       damage = new DamageVisuals(visual, visualCfg, pw, scene);
       wireDamage();
       headShadows = visual.headlights.filter((s) => s.castShadow).map((s) => s.shadow);
@@ -1604,6 +1739,9 @@ async function main() {
     // online race = party grid slots (8-12 max).
     const isFreeSession = mode === 'free' || (mode === 'online' && party?.mode === 'free');
     zones.setVisible(isFreeSession);
+    raceNodes.setVisible(isFreeSession);
+    telemetry.reset(sel.name, catalog.find((c) => c.id === sel.car)?.name ?? sel.car, cityInfo.name);
+    replay.clear();
     if (mode === 'race' && ai.cars.length) {
       grid = { ds: 0, lat: 0 };
       grid = { ds: 0, lat: ai.setGrid(new THREE.Vector3(s0.x, s0.z, -s0.y)) };
@@ -1736,6 +1874,11 @@ async function main() {
     cops.breakOff();
     wagers.cancel();
     zones.setVisible(false);
+    raceNodes.setVisible(false);
+    raceNodes.cancelMatchmaking();
+    if (photoMode.active) photoMode.exit();
+    if (replay.active) replay.exit();
+    if (carMeet.panelOpen) carMeet.togglePanel(false);
     if (lastWagerHtml) { wagerHudEl.innerHTML = lastWagerHtml = ''; }
     if (lastZoneHtml) { zoneHudEl.innerHTML = lastZoneHtml = ''; }
     if (lastBoardHtml) { zoneBoardEl.innerHTML = lastBoardHtml = ''; }
@@ -1792,8 +1935,13 @@ async function main() {
       else if (e.code === 'Escape') finishRace();
       return;
     }
+    if (e.code === 'KeyH' && !e.repeat && photoMode.active) { photoMode.toggleUi(); return; }
     if (e.code !== 'Escape' || e.repeat) return;
-    if (state === 'race') { pausedFrom = state; setState('paused'); audio.muted = true; menu.show('pause'); }
+    if (photoMode.active) { photoMode.exit(); return; }
+    if (replay.active) { replay.exit(); return; }
+    if (raceNodes.matchmaking) { raceNodes.cancelMatchmaking(); return; }
+    if (carMeet.panelOpen) { carMeet.togglePanel(false); return; }
+    if (state === 'race') { pausedFrom = state; setState('paused'); audio.muted = true; menu.telemetrySamples = telemetry.sampleCount; menu.show('pause'); }
     else if (state === 'paused') resume();
   });
 
@@ -1897,6 +2045,7 @@ async function main() {
     sel.mode = 'free';
     ai.setMode(ai.cars.length ? 'cruise' : 'off');
     zones.setVisible(true);
+    raceNodes.setVisible(true);
     hud.show();
     if (wantsTouch()) enableTouch();
     resetCar();
@@ -1923,7 +2072,8 @@ async function main() {
     const frame = Math.min(0.1, (now - prev) / 1000);
     prev = now;
     const inShowroom = isShowroom(state);
-    const live = state !== 'paused' && (!inShowroom || settledShowroom < 24 || bench.active);
+    const frozenByCreator = photoMode.active || replay.active || raceNodes.matchmaking || carMeet.walking;
+    const live = state !== 'paused' && !frozenByCreator && (!inShowroom || settledShowroom < 24 || bench.active);
     if (bench.active) benchStep(frame);
     if (live) acc += frame; else acc = 0;
     // The street under the car is not built yet (a slow phone or network was outrun by the car, or a reset landed on an
@@ -2107,29 +2257,38 @@ async function main() {
         visual.applyHeadlights();
       }
       zones.update(frame, inFreeRoam, pos, kmhNow, car.out[OUT.sideslip] || 0, sel.name, sel.car, now);
-      const wh = inFreeRoam ? wagers.hudBanner() : '';
+      raceNodes.update(frame, inFreeRoam && !photoMode.active && !replay.active, pos);
+      carMeet.syncCarPose(pos, quat, kmhNow);
+      carMeet.update(frame, inFreeRoam && !photoMode.active && !replay.active, pos, (c) => input.isKeyDown(c));
+      if (live && state === 'race') {
+        telemetry.tick(frame, true, car.out, core.info, input.raw.throttle, input.raw.brake, input.raw.steer, lap);
+        replay.record(frame, pos, quat, car.out[OUT.speed], car.out[OUT.rpm], input.raw.steer, input.raw.brake, ai.cars.map((c) => ({ pos: c.pos, yaw: c.root.rotation.y })));
+      }
+      const wh = inFreeRoam ? (wagers.hudBanner() || raceNodes.promptHtml()) : '';
       if (wh !== lastWagerHtml) { wagerHudEl.innerHTML = lastWagerHtml = wh; }
       const zh = inFreeRoam ? zones.driftHudHtml() : '';
       if (zh !== lastZoneHtml) { zoneHudEl.innerHTML = lastZoneHtml = zh; }
       const bh = inFreeRoam ? zones.leaderboardHtml() : '';
       if (bh !== lastBoardHtml) { zoneBoardEl.innerHTML = lastBoardHtml = bh; }
     }
-    drivingLine.update(assistSet.line, state === 'race' || state === 'countdown', pos, car.out[OUT.speed]);
-    if (driving() && state !== 'paused' && state !== 'busy') {
+    drivingLine.update(assistSet.line, (state === 'race' || state === 'countdown') && !photoMode.active && !replay.active, pos, car.out[OUT.speed]);
+    if (driving() && state !== 'paused' && state !== 'busy' && !photoMode.active && !replay.active) {
       const watching = state === 'spectate';   // spectating: the map follows the watched car (no GPS directions)
       mmFwd.set(0, 0, 1).applyQuaternion(watching ? specQuat : quat);
+      const pal = paletteOf(a11y);
       const blips: Blip[] = [];
-      if (ai.mode === 'race') for (const c of ai.cars) blips.push({ x: c.pos.x, z: c.pos.z, color: '#ff4d6d' });
-      else if (ai.mode === 'cruise') for (const c of ai.cars) blips.push({ x: c.pos.x, z: c.pos.z, color: '#d0d8e8' });
-      if (remote) for (const id of remote.ids()) { const r = remote.get(id); if (r) blips.push({ x: r.root.position.x, z: r.root.position.z, color: '#4dd2ff' }); }
+      if (ai.mode === 'race') for (const c of ai.cars) blips.push({ x: c.pos.x, z: c.pos.z, color: pal.rival });
+      else if (ai.mode === 'cruise') for (const c of ai.cars) blips.push({ x: c.pos.x, z: c.pos.z, color: pal.traffic });
+      if (remote) for (const id of remote.ids()) { const r = remote.get(id); if (r) blips.push({ x: r.root.position.x, z: r.root.position.z, color: pal.peer }); }
       if (raceLaps() === 0) {
-        for (const zb of zones.minimapBlips()) blips.push(zb);
+        for (const zb of zones.minimapBlips()) blips.push({ x: zb.x, z: zb.z, color: zb.color === '#00e5ff' ? pal.speedTrap : pal.driftZone });
+        for (const rb of raceNodes.minimapBlips(pal.raceNode)) blips.push(rb);
         const fin = wagers.finishWorld;
-        if (fin) blips.push({ x: fin.x, z: fin.z, color: '#ff2d6a' });
+        if (fin) blips.push({ x: fin.x, z: fin.z, color: pal.dragFinish });
       } else if (cops.active) {
-        for (const u of cops.unitPositions()) blips.push({ x: u.x, z: u.z, color: '#2a9dff' });
+        for (const u of cops.unitPositions()) blips.push({ x: u.x, z: u.z, color: pal.cop });
         const rb = cops.roadblockWorld;
-        if (rb) blips.push({ x: rb.x, z: rb.z, color: '#ff9f1c' });
+        if (rb) blips.push({ x: rb.x, z: rb.z, color: pal.roadblock });
       }
       const L = lap?.routeLength ?? route.length_m;
       if (watching) minimap.update(now, specPos, mmFwd, specOut[OUT.speed], null, blips);
@@ -2150,6 +2309,9 @@ async function main() {
       if (garage!.dirtyEnv) { garage!.captureEnv(); probe?.fromCube(garage!.cube.texture); }
     }
     if (!driving() || state === 'busy') { placeShowroom(frame, pos); }
+    else if (photoMode.active) { photoMode.update(frame, (c) => input.isKeyDown(c)); }
+    else if (replay.active) { replay.update(frame); }
+    else if (carMeet.walking) { /* CarMeetHub updates smooth third-person walk camera */ }
     else {
       if (state === 'spectate') specCamera(frame);
       else if (live) rig.update(frame, pos, quat, carAcc, car.out);

@@ -1,0 +1,22 @@
+{
+  "locale": "en",
+  "ue5StringTableNamespace": "OpenGrid",
+  "entries": {
+    "menu.play": "Play",
+    "menu.garage": "Garage",
+    "menu.shop": "Shop",
+    "menu.settings": "Settings",
+    "mode.race": "Race Event",
+    "mode.freeroam": "Free Roam",
+    "mode.mp": "Multiplayer",
+    "pause.photo": "Photo Mode (4K)",
+    "pause.replay": "Cinematic Replay (5 min)",
+    "pause.motec": "Export MoTeC (.ld)",
+    "pause.carmeet": "Car Meet & Emotes",
+    "settings.language": "Language",
+    "settings.colorblind": "Colorblind Mode",
+    "settings.uiscale": "HUD / UI Scale",
+    "settings.telemetry": "SimHub UDP Telemetry",
+    "settings.cloudsave": "Cross-Progression Cloud Save"
+  }
+}

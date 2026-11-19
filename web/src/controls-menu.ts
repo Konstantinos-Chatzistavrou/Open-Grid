@@ -9,7 +9,7 @@
 import { Calibration } from './calibrate';
 import { PAD_BINDINGS, PAD_LABELS, axisValue, classify, defaultSettings, deviceKey, type PadFamily } from './devices';
 import { ForceFeedback } from './ffb';
-import type { Input } from './input';
+import type { BindAction, Input } from './input';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const FAMILY_NAME: Record<PadFamily, string> = { xbox: 'Xbox', playstation: 'PlayStation', switch: 'Switch Pro', generic: 'Generic' };
@@ -61,20 +61,52 @@ export class ControlsUi {
     const devices = `${dev.join('')}${pads.length ? '' : '<p class="dim small-note">No controller or wheel seen yet: plug it in and press any button on it (browsers only show a gamepad after a button press).</p>'}
       <p class="dim small-note">The device you last touched drives. Any mix works.</p>`;
 
-    // keyboard
-    const kb = (k: string) => `<kbd>${k}</kbd>`;
-    const keys = [['W / ↑', 'Throttle'], ['S / ↓', 'Brake (hold at a stop: reverse)'], ['A D / ← →', 'Steer'], ['Q / E', 'Shift down / up'], ['Shift', 'Clutch'],
-      ['Space', 'Handbrake'], ['R', 'Recover / repair'], ['C', 'Camera'], ['L', 'Lights'], ['H', 'Hide HUD'], ['Esc', 'Pause'], ['G', 'Menu'],
-      ['1 2 3 5', 'ABS / traction / stability / auto gearbox']].map(([k, a]) => `<div class="bind">${kb(k)}<span>${a}</span></div>`).join('');
+    // Full remappable Keyboard & Controller actions (console-cert accessibility requirement)
+    const ACTIONS: { id: BindAction; label: string; pad?: boolean }[] = [
+      { id: 'throttle', label: 'Throttle', pad: true },
+      { id: 'brake', label: 'Brake / Reverse', pad: true },
+      { id: 'steerLeft', label: 'Steer Left' },
+      { id: 'steerRight', label: 'Steer Right' },
+      { id: 'shiftUp', label: 'Shift Up', pad: true },
+      { id: 'shiftDown', label: 'Shift Down', pad: true },
+      { id: 'handbrake', label: 'Handbrake', pad: true },
+      { id: 'clutch', label: 'Clutch', pad: true },
+      { id: 'reset', label: 'Recover / Repair', pad: true },
+      { id: 'camera', label: 'Camera', pad: true },
+      { id: 'lights', label: 'Lights', pad: true },
+      { id: 'flash', label: 'Flash Wager (1v1)', pad: true },
+      { id: 'stake', label: 'Switch Wager Stakes', pad: true },
+      { id: 'board', label: 'Zone Leaderboards', pad: true },
+      { id: 'photo', label: 'Photo Mode (4K)', pad: true },
+      { id: 'replay', label: 'Cinematic Replay', pad: true },
+      { id: 'carMeet', label: 'Car Meet Hub', pad: true },
+      { id: 'stepOut', label: 'Step Out / Walk', pad: true },
+      { id: 'interact', label: 'Race Node Matchmaking', pad: true },
+      { id: 'hud', label: 'Hide HUD', pad: true },
+      { id: 'map', label: 'Minimap' },
+      { id: 'garage', label: 'Menu' },
+      { id: 'pause', label: 'Pause', pad: true },
+    ];
+    const fmtKey = (code: string) => code.replace(/^Key/, '').replace(/^Digit/, '');
+    const listen = this.input.listeningBind;
+    const keys = ACTIONS.map((a) => {
+      const wait = listen?.kind === 'key' && listen.action === a.id;
+      return `<div class="bind"><button class="chip ${wait ? 'on' : ''}" data-act="c-rebind-key" data-v="${a.id}">${wait ? 'Press key…' : esc(fmtKey(this.input.keyBinds[a.id]))}</button><span>${a.label}</span></div>`;
+    }).join('');
 
-    // controller layout
+    // controller layout (every button remappable)
     const fam = this.layout ?? (this.input.device === 'pad' ? this.input.family : (pads.map((p) => classify(p)).find((c) => c.kind === 'pad') as { family: PadFamily } | undefined)?.family ?? 'xbox');
     const L = PAD_LABELS[fam];
+    const padBtnName = (idx: number) => idx < 0 ? 'Unbound' : (Object.entries(L)[idx]?.[1] ?? `Btn ${idx}`);
     const famChips = (Object.keys(FAMILY_NAME) as PadFamily[]).map((f) => `<button class="chip ${f === fam ? 'on' : ''}" data-act="c-layout" data-v="${f}">${FAMILY_NAME[f]}</button>`).join('');
-    const binds = PAD_BINDINGS.map((b) => `<div class="bind">${kb(b.key === 'lstick' ? 'Left stick' : L[b.key] ?? b.key)}<span>${b.action}</span></div>`).join('');
-    const pad = `<div class="chips">${famChips}</div><div class="binds">${binds}</div>
+    const binds = ACTIONS.filter((a) => a.pad).map((a) => {
+      const wait = listen?.kind === 'pad' && listen.action === a.id;
+      const bIdx = this.input.padBinds[a.id];
+      return `<div class="bind"><button class="chip ${wait ? 'on' : ''}" data-act="c-rebind-pad" data-v="${a.id}">${wait ? 'Press button…' : esc(padBtnName(bIdx))}</button><span>${a.label}</span></div>`;
+    }).join('');
+    const pad = `<div class="chips">${famChips}</div><p class="dim small-note">Click any button below to remap every controller action individually.</p><div class="binds">${binds}</div>
       <div class="opts"><span class="dim">VIBRATION</span>${toggle('c-vib', s.padVibration)}<button class="chip" data-act="c-vibtest">Test</button></div>
-      <p class="dim small-note">Menus: D-pad / stick to move, ${L.a} to select, ${L.b} to go back. Vibration: front tyres scrubbing (light motor), rear sliding or spinning and crashes (heavy motor), ABS pulses. Chrome / Edge; Safari has no controller vibration.</p>`;
+      <p class="dim small-note">Menus: D-pad / stick to move, ${L.a} to select, ${L.b} to go back. Vibration: front tyres scrubbing (light motor), rear sliding or spinning and crashes (heavy motor), ABS pulses.</p>`;
 
     return `<div class="lobby-screen"><div class="card lobby-card controls-card">
       <div class="lobby-head"><button data-act="c-back" class="back-btn">← Back</button><div><div class="kicker">INPUT</div><h2>Controls</h2></div></div>
@@ -174,10 +206,20 @@ export class ControlsUi {
       case 'c-ffb': void this.ffb.connect(true); return true;
       case 'c-ffbtest': this.ffb.testPulse(); return true;
       case 'c-ffbinv': s.ffbInvert = v === '1'; break;
+      case 'c-rebind-key':
+        this.input.listeningBind = { kind: 'key', action: v as BindAction, onDone: () => { this.note = `✓ Remapped ${v}.`; this.rerender(); } };
+        this.note = `Press any key for "${v}" (Esc cancels)…`;
+        break;
+      case 'c-rebind-pad':
+        this.input.listeningBind = { kind: 'pad', action: v as BindAction, onDone: () => { this.note = `✓ Remapped controller button for ${v}.`; this.rerender(); } };
+        this.note = `Press any controller button for "${v}"…`;
+        break;
       case 'c-reset': {
         Object.assign(s, defaultSettings());
+        this.input.resetBinds();
+        this.input.listeningBind = null;
         this.input.disableTilt();
-        this.note = 'Controls reset to defaults.';
+        this.note = 'Controls & remappings reset to defaults.';
         break;
       }
       default: return false;
@@ -207,11 +249,12 @@ export class ControlsUi {
     this.save();
   }
 
-  /** Leaving the screen: stop a calibration in progress. */
-  leave() { if (this.cal) { this.cal = null; this.input.suspended = false; } this.note = ''; }
+  /** Leaving the screen: stop a calibration or rebind in progress. */
+  leave() { if (this.cal) { this.cal = null; this.input.suspended = false; } this.input.listeningBind = null; this.note = ''; }
 
   /** Every frame while the screen is up. */
   tick() {
+    this.input.pollPadRebind();
     if (this.cal) {
       const before = this.cal.step;
       this.cal.sample();
