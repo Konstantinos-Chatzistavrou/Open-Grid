@@ -9,7 +9,7 @@ import { PLATE_MAX, USERNAME_MAX, USERNAME_MIN, usernameError } from './username
 import { FINISHES, LOOK_PRESETS, MODS, MOD_KEYS, SWATCHES, applyLookPreset, applyMods, bodyEffect, bodyHint, customOf, kitEffect, kitHint, modsOf, paintOf, partEffect, rimHint, saveSelection, statsOf, wingHint,
   type CatalogCar, type Finish, type Mode, type ModKey, type Selection } from './garage';
 import { formatLap } from './hud';
-import { MAX_MEMBERS, cleanCode, type Party, type PartyMode } from './party';
+import { FREE_ROAM_MAX_PLAYERS, RACE_MAX_PLAYERS, cleanCode, type Party, type PartyMode } from './party';
 import type { ControlsUi } from './controls-menu';
 import { PRESET_INFO, applyPreset, matchPreset, type AssistSettings, type Preset } from './assists';
 import { fmt, fmtXp, type Career, type MpCareer, type SpCareer } from './career';
@@ -62,11 +62,11 @@ export interface MenuHooks {
   mirror?(on: boolean): void;
   /** pick the real-scale city (cities.ts): main reloads into it */
   city?(id: string): void;
-  cities?(): { list: { id: string; name: string; district: string; country: string; blurb: string }[]; current: string };
+  cities?(): { list: { id: string; name: string; district: string; country: string; blurb: string; mandatoryCops: boolean; patrolNote: string }[]; current: string };
   partyCreate(): void;
   partyJoin(code: string): void;
   partyLeave(): void;
-  partyMode(mode: PartyMode, laps: number, realism: boolean): void;
+  partyMode(mode: PartyMode, laps: number, realism: boolean, copMode: boolean): void;
   partyStart(): void;
   /** leader: everybody back to the lobby */
   partyLobby(): void;
@@ -625,21 +625,24 @@ export class Menu {
       ${cityRow}
       <div class="mode-cards">
         <div class="mcard">
-          <div class="mcard-top"><span class="micon">01</span><b>Race</b><span class="dim">6-car grid · you vs 5 rivals</span></div>
-          <p class="dim">Start mid-pack through the city. Rivals take their own lines and fight for position. Finish ahead of them all.</p>
-          <div class="opts"><span class="dim">RULES</span><span class="pill ${sel.realism ? 'gold' : ''}">${sel.realism ? 'FULL REALISM' : 'RESPAWNS'}</span><span class="dim small-note">change on the main menu</span></div>
+          <div class="mcard-top"><span class="micon">01</span><b>Race Event</b><span class="dim">Instanced · Tactical Cops · Sim Physics</span></div>
+          <p class="dim">High-stakes controlled street races where hardcore physics and tactical police AI (PIT maneuvers &amp; roadblocks) matter. Heat &amp; massive payouts live here.</p>
+          <div class="opts"><span class="dim">COPS</span>${cur?.mandatoryCops
+            ? `<span class="pill gold">🚨 PATROLLED DISTRICT · ALWAYS ON</span><span class="dim small-note">${esc(cur.patrolNote)}</span>`
+            : `<button class="chip ${sel.copMode ? 'on' : ''}" data-act="copmode" data-v="1">Cop Mode ON</button><button class="chip ${!sel.copMode ? 'on' : ''}" data-act="copmode" data-v="0">OFF</button><span class="dim small-note">${sel.copMode ? '+50%+ Rep/Cr · Bust = heavy fine / pink slip risk' : 'Clean track battle · standard payout'}</span>`}</div>
+          <div class="opts"><span class="dim">RULES</span><span class="pill ${sel.realism ? 'gold' : ''}">${sel.realism ? 'FULL REALISM' : 'RESPAWNS'}</span><span class="dim small-note">change on main menu</span></div>
           <div class="opts"><span class="dim">LAPS</span>${laps}</div>
           <button class="primary huge" data-act="start-race">Start Race · ${sel.laps} Lap${sel.laps > 1 ? 's' : ''}</button>
         </div>
         <div class="mcard">
-          <div class="mcard-top"><span class="micon">02</span><b>Free Roam</b><span class="dim">Just you · open city</span></div>
-          <p class="dim">The streets to yourself. Learn the car, chase lap times, no traffic and no clock pressure.</p>
-          <div class="opts"><span class="dim">Unlimited laps · lap timer runs</span></div>
-          <button class="primary huge" data-act="start-free">Drive</button>
+          <div class="mcard-top"><span class="micon">02</span><b>Free Roam</b><span class="dim">No Cops · AI Traffic · Social Sandbox</span></div>
+          <p class="dim">Cruising, car meets, Speed Traps &amp; Drift Zones with Global Leaderboards, and spontaneous headlight-flash [F] 1v1 Cash or Pink Slip drags from traffic lights.</p>
+          <div class="opts"><span class="pill">NO POLICE</span><span class="dim small-note">[F] Flash Wager · [V] Cash/Pink Slip · [B] Leaderboards</span></div>
+          <button class="primary huge" data-act="start-free">Cruise Free Roam</button>
         </div>
         <div class="mcard">
-          <div class="mcard-top"><span class="micon">03</span><b>Multiplayer</b><span class="dim">Party with friends · up to ${MAX_MEMBERS}</span></div>
-          <p class="dim">Create a party, send the invite link, then race or cruise together. Peer-to-peer: no account needed.</p>
+          <div class="mcard-top"><span class="micon">03</span><b>Multiplayer</b><span class="dim">${FREE_ROAM_MAX_PLAYERS} Free Roam · ${RACE_MAX_PLAYERS} Race Events</span></div>
+          <p class="dim">16-player chill Free Roam lobbies with spontaneous 1v1 drag wagers &amp; zone leaderboards, or instanced 8–12 player Race Events with optional Tactical Cop Mode.</p>
           <div class="opts">${inParty || '<span class="dim">Create or join a party</span>'}</div>
           <button class="primary huge" data-act="lobby">Party Lobby</button>
         </div>
@@ -677,13 +680,18 @@ export class Menu {
         <div class="mtext"><div class="mname"><b>${esc(m.name)}</b>${m.host ? '<span class="pill gold">LEADER</span>' : ''}${m.id === p.selfId ? '<span class="pill">YOU</span>' : ''}</div>
         <span class="dim">${esc(carName(m.car))}${m.city ? ` · ${esc(cityName(m.city))}` : ''} · <span class="mstate ${m.ready ? 'ok' : ''}">${p.phase === 'loading' ? (m.ready ? 'on the grid' : 'loading…') : p.phase === 'driving' ? 'driving' : 'in lobby'}</span></span></div>
       </div>`).join('');
-    const empty = Array.from({ length: Math.max(0, MAX_MEMBERS - p.members.length) }, () => '<div class="member empty"><i class="dot"></i><div class="mtext"><span class="dim">Open slot</span></div></div>').join('');
+    const maxSlots = p.maxMembers;
+    const leaderCityObj = cs?.list.find((c) => c.id === (leaderCity ?? cs.current));
+    const mandatoryCops = !!leaderCityObj?.mandatoryCops;
+    const empty = Array.from({ length: Math.max(0, maxSlots - p.members.length) }, () => '<div class="member empty"><i class="dot"></i><div class="mtext"><span class="dim">Open slot</span></div></div>').join('');
     const modeChip = (m: PartyMode, label: string) => `<button class="chip ${p.mode === m ? 'on' : ''}" data-act="pmode" data-v="${m}" ${p.isHost ? '' : 'disabled'}>${label}</button>`;
     const lapChip = (n: number) => `<button class="chip ${p.laps === n ? 'on' : ''}" data-act="plaps" data-v="${n}" ${p.isHost ? '' : 'disabled'}>${n}</button>`;
     const realChip = (on: boolean, label: string) => `<button class="chip ${p.realism === on ? 'on' : ''}" data-act="preal" data-v="${on ? 1 : 0}" ${p.isHost ? '' : 'disabled'}>${label}</button>`;
-    const rules = `<div class="opts"><span class="dim">MODE</span>${modeChip('race', 'Race')}${modeChip('free', 'Free Roam')}
+    const copChip = (on: boolean, label: string) => `<button class="chip ${(mandatoryCops ? on : p.copMode === on) ? 'on' : ''}" data-act="pcop" data-v="${on ? 1 : 0}" ${p.isHost && !mandatoryCops ? '' : 'disabled'}>${label}</button>`;
+    const rules = `<div class="opts"><span class="dim">MODE</span>${modeChip('race', `Race Event (${RACE_MAX_PLAYERS} max)`)}${modeChip('free', `Free Roam (${FREE_ROAM_MAX_PLAYERS} max)`)}
       ${p.mode === 'race' ? `<span class="dim sep">LAPS</span>${[1, 3, 5, 10].map(lapChip).join('')}` : ''}</div>
-      ${p.mode === 'race' ? `<div class="opts"><span class="dim">RULES</span>${realChip(true, 'Full Realism')}${realChip(false, 'Respawns')}<span class="dim small-note">${p.realism ? RULES.realism : RULES.respawn}</span></div>` : ''}`;
+      ${p.mode === 'race' ? `<div class="opts"><span class="dim">COP MODE</span>${mandatoryCops ? `<span class="pill gold">🚨 PATROLLED DISTRICT · ALWAYS ON</span><span class="dim small-note">${esc(leaderCityObj?.patrolNote ?? '')}</span>` : `${copChip(true, 'Tactical Cops ON')}${copChip(false, 'Cops OFF')}<span class="dim small-note">PITs, roadblocks &amp; massive payouts</span>`}</div>
+      <div class="opts"><span class="dim">RULES</span>${realChip(true, 'Full Realism')}${realChip(false, 'Respawns')}<span class="dim small-note">${p.realism ? RULES.realism : RULES.respawn}</span></div>` : '<div class="opts"><span class="pill">NO POLICE</span><span class="dim small-note">16-player sandbox · AI traffic · [F] Headlight 1v1 Wagers · Speed Traps &amp; Drift Zones</span></div>'}`;
     let action: string;
     if (p.phase === 'driving') action = p.mode === 'free' ? '<button class="primary huge" data-act="prejoin">▶ Rejoin Free Roam</button>' : p.isHost ? '<button class="huge" data-act="plobby">Everyone back to lobby</button>' : '<div class="dim wait">The party is racing. You can join the next one.</div>';
     else if (p.phase === 'loading') action = '<div class="dim wait"><span class="spin inline"></span> Loading…</div>';
@@ -693,7 +701,7 @@ export class Menu {
       : '<div class="dim wait"><span class="spin inline"></span> Waiting for the leader to start…</div>';
     const share = typeof navigator.share === 'function' ? '<button class="small" data-act="pshare">Share…</button>' : '';
     return `<div class="lobby-screen"><div class="card lobby-card">
-      <div class="lobby-head"><button data-act="modes" class="back-btn">← Game Modes</button><div><div class="kicker">MULTIPLAYER · ${p.members.length}/${MAX_MEMBERS}</div><h2>Party <span class="code">${esc(p.code)}</span></h2></div></div>
+      <div class="lobby-head"><button data-act="modes" class="back-btn">← Game Modes</button><div><div class="kicker">MULTIPLAYER · ${p.members.length}/${maxSlots}</div><h2>Party <span class="code">${esc(p.code)}</span></h2></div></div>
       <div class="invite-box"><span class="dim">INVITE</span><input id="plink" type="text" readonly value="${esc(p.link)}" />
         <button class="small" data-act="pcopy">Copy link</button>${share}</div>
       ${nameRow}
@@ -870,6 +878,7 @@ export class Menu {
       }
       case 'mod': { const m = { ...modsOf(sel) }; m[b.dataset.k as ModKey] = Number(v); sel.mods[sel.car] = m; this.save(); this.render(); break; }
       case 'laps': sel.laps = Number(v); this.save(); this.render(); break;
+      case 'copmode': sel.copMode = v === '1'; this.save(); this.render(); break;
       case 'start-race': sel.mode = 'race'; this.setCareer('sp'); this.save(); this.hooks.play('race'); break;
       case 'start-free': sel.mode = 'free'; this.setCareer('sp'); this.save(); this.hooks.play('free'); break;
       case 'resume': this.hooks.resume(); break;
@@ -884,9 +893,10 @@ export class Menu {
       case 'pcreate': this.hooks.partyCreate(); break;
       case 'pjoin': this.hooks.partyJoin(this.joinCode); break;
       case 'pleave': this.hooks.partyLeave(); break;
-      case 'pmode': this.party && this.hooks.partyMode(v as PartyMode, this.party.laps, this.party.realism); break;
-      case 'plaps': this.party && this.hooks.partyMode(this.party.mode, Number(v), this.party.realism); break;
-      case 'preal': this.party && this.hooks.partyMode(this.party.mode, this.party.laps, v === '1'); break;
+      case 'pmode': this.party && this.hooks.partyMode(v as PartyMode, this.party.laps, this.party.realism, v === 'free' ? false : this.party.copMode); break;
+      case 'plaps': this.party && this.hooks.partyMode(this.party.mode, Number(v), this.party.realism, this.party.copMode); break;
+      case 'preal': this.party && this.hooks.partyMode(this.party.mode, this.party.laps, v === '1', this.party.copMode); break;
+      case 'pcop': this.party && this.hooks.partyMode(this.party.mode, this.party.laps, this.party.realism, v === '1'); break;
       case 'realism': sel.realism = v === '1'; this.save(); this.render(); break;
       case 'spectate': this.hooks.spectate(); break;
       case 'pstart': this.hooks.partyStart(); break;

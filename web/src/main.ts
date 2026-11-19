@@ -39,7 +39,7 @@ import { fromToggles, loadAssists, saveAssists, toToggles } from './assists';
 import { MpCareer, SpCareer } from './career';
 import { Cloud } from './cloud';
 import { RankedLink } from './ranked';
-import { FREE_ROAM_XP_PER_KM, raceReward } from './progression';
+import { FREE_ROAM_XP_PER_KM, STARTER_CAR, copBustPenalty, raceReward } from './progression';
 import { DrivingLine } from './driving-line';
 import { Minimap, type Blip } from './minimap';
 import { Loader, steadyFrames } from './loading';
@@ -56,6 +56,8 @@ import { skinOf } from './scene/driver';
 import RAPIERLib from '@dimforge/rapier3d-compat';
 import { AiTraffic, Lane } from './ai';
 import { Cops } from './cops';
+import { SpontaneousWagers, type NearbyCandidate } from './wagers';
+import { CityZones } from './zones';
 import { assetUrl, loadGLTF } from './scene/loaders';
 import { Identity } from './identity';
 import { usernameError } from './username';
@@ -277,11 +279,7 @@ async function main() {
       syncToSize();
     });
   });
-  addEventListener('keydown', (e) => {
-    if (e.code !== 'KeyF' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement).tagName === 'INPUT') return;
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => {});
-  });
+  // Fullscreen shortcut (KeyF) is handled below once session state is ready so Free Roam can use [F] for headlight flash wagers.
 
   // --- physics + content (parallel prefetch for fast startup) ---------------------------------
   say('Loading physics & track…', 12);
@@ -543,6 +541,12 @@ async function main() {
   const raceLaps = () => sel.mode === 'race' ? sel.laps : sel.mode === 'online' && party?.mode === 'race' ? party.laps : 0;
   /** Race rules: full realism (no resets; wrecked / rolled over / stuck = DNF, then spectate) or respawns. A party uses the leader's. */
   const realism = () => raceLaps() > 0 && (sel.mode === 'online' ? party?.realism !== false : sel.realism);
+  /** Tactical Police AI runs ONLY in Race Events (never Free Roam); patrolled downtown cities (NYC, London) always enable cops. */
+  const copsActiveInRace = () => {
+    if (raceLaps() === 0) return false;
+    if (params.get('cops') === '0') return false;
+    return cityInfo.mandatoryCops || (sel.mode === 'online' ? (party?.copMode ?? true) : sel.copMode);
+  };
   /** Out of the race (realism): why, or '' while racing. */
   let myDnf = '';
   let rolledT = 0, stuckT = 0;
@@ -567,42 +571,56 @@ async function main() {
   renderHeat();
   const bumpHeat = (n: number) => { heat.add(n); renderHeat(); menu.heat = heat.level; };
   /**
-   * Cops (docs/design/heat-and-cops.md, slice 2): one unmarked car that joins a race you started at 3+ heat - never in
-   * the garage, never while cruising, never while tuning. Escape is distance, not a bar; a bust resets the heat only.
+   * Tactical Physics Police AI (Race Events with Cop Mode ON ONLY — never active in Free Roam).
+   * Uses rear-quarter PIT maneuvers (Rapier lateral/yaw impulse), flanking box-in, and physical roadblocks.
    */
   const copsEl = document.getElementById('cops')!;
   let copMsg = '';
   let copMsgUntil = 0;
+  let escapedCopsThisRace = false;
   const copNote = (t: string, ms = 3500) => { copMsg = t; copMsgUntil = performance.now() + ms; };
+  const pitRight = new THREE.Vector3();
   const cops = new Cops(new Lane(route.samples), {
     bust: () => {
-      // Busting is a setback, not a wipe: impound fee in reputation, heat reset, car kept (docs/design/heat-and-cops.md).
-      const fine = 150;
-      if (sp.kind === 'sp') sp.penalty(fine);
+      // Heavy fine + Pink Slip impound risk at Heat 5 (starter car protected from soft-lock).
+      const pen = copBustPenalty(heat.level, heat.level >= 5);
+      if (sp.kind === 'sp') sp.penalty(pen.fineXp);
       heat.clear(); renderHeat(); menu.heat = 0;
-      copNote(`BUSTED · -${fine} XP · heat reset`, 5000);
+      const impounded = pen.impoundCar && sel.car !== STARTER_CAR;
+      if (impounded) {
+        sel.car = STARTER_CAR;
+        saveSelection(sel);
+      }
+      const msg = impounded
+        ? `BUSTED · -${pen.fineXp} XP · PINK SLIP IMPOUNDED`
+        : `BUSTED · -${pen.fineXp} XP FINE · HEAT RESET`;
+      copNote(msg, 5500);
+      hud.toast('BUSTED BY PURSUIT SQUAD', impounded ? 'PINK SLIP IMPOUNDED' : `-${pen.fineXp} XP FINE`);
     },
-    escaped: () => { copNote('LOST THEM', 4000); },
+    escaped: () => {
+      escapedCopsThisRace = true;
+      copNote('ESCAPED PURSUIT · +25% ESCAPE BONUS', 4200);
+      hud.toast('PURSUIT EVADED', '+25% ESCAPE BONUS');
+    },
+    onPitNudge: (latSign, intensity) => {
+      // Realistic rear-quarter PIT kick: lateral slip + yaw rotation that skilled counter-steer can catch.
+      pitRight.set(1, 0, 0).applyQuaternion(quat).setY(0).normalize();
+      const lv = car.body.linvel();
+      const av = car.body.angvel();
+      const latDv = latSign * intensity * 4.2;
+      const yawDw = latSign * intensity * 1.65;
+      car.body.setLinvel({ x: lv.x + pitRight.x * latDv, y: lv.y, z: lv.z + pitRight.z * latDv }, true);
+      car.body.setAngvel({ x: av.x, y: av.y + yawDw, z: av.z }, true);
+      audio.impact(24, false);
+      rumbleKj = Math.max(rumbleKj, 24);
+    },
+    onAlert: (msg) => copNote(msg, 3500),
   });
-  // unmarked car: the traffic model, loaded in the background; the pursuit logic runs with or without it
+  // Patrol cruiser prototype: cloned into interceptor + flanker + 2-cruiser tactical roadblock with Rapier colliders.
   void loadGLTF('/assets/cars/v3/vela_gt_traffic.glb').then((g) => {
-    const root = g.scene;
-    root.visible = false;
-    root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.frustumCulled = false; });
-    // light bar: two blocks on the roof, flashed from the loop while the pursuit is live
-    const bar = new THREE.Group();
-    const blk = (c: number) => new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.09, 0.2), new THREE.MeshBasicMaterial({ color: c }));
-    const rl = blk(0x2a0008), bl = blk(0x001030);
-    rl.position.x = 0.18; bl.position.x = -0.18;
-    bar.add(rl, bl); bar.position.set(0, 1.38, -0.2);
-    root.add(bar);
-    copsLights = { r: rl.material as THREE.MeshBasicMaterial, b: bl.material as THREE.MeshBasicMaterial };
-    scene.add(root);
-    cops.root = root;
-  }).catch(() => { /* no visual: the chase still works */ });
+    cops.setupVisuals(g.scene, scene, pw);
+  }).catch(() => { /* pursuit & roadblock logic still runs even without cruiser mesh */ });
   let playerS = 0, copSpawned = false;
-  /** the cop's roof light bar, once its model loads */
-  let copsLights: { r: THREE.MeshBasicMaterial; b: THREE.MeshBasicMaterial } | null = null;
   /** test/dev hook: the headless probes set the dial directly */
   const setHeat = (n: number) => { heat.level = Math.max(0, Math.min(HEAT_MAX, n)); heat.lastGain = Date.now(); renderHeat(); menu.heat = heat.level; return heat.level; };
   const audio = new GameAudio();
@@ -668,6 +686,7 @@ async function main() {
     aiRace = ai.mode === 'race' ? ai.cars.map((c) => ({ idx: race.addCar(c.pos), lap: null, fin: -1 })) : [];
     raceT0 = ticks * DT;
     lapTimes = []; raceFinishedAt = -1; lap = null; racePaid = false; raceImpacts = 0;
+    copSpawned = false; escapedCopsThisRace = false; cops.breakOff(); wagers.cancel();
     myDnf = ''; rolledT = stuckT = 0; hud.outWarn = '';
     hud.resetLaps();
     remoteProg.clear();
@@ -1202,7 +1221,7 @@ async function main() {
       party?.leave();
       detachParty('');
     },
-    partyMode: (mode, laps, real) => party?.setMode(mode, laps, real),
+    partyMode: (mode, laps, real, copMode) => party?.setMode(mode, laps, real, copMode),
     partyStart: () => party?.start(),
     partyLobby: () => { if (party?.isHost) party.backToLobby(); quitSession('lobby'); },
     partyRejoin: () => { if (party?.phase === 'driving') void startSession('online', true); },
@@ -1273,6 +1292,53 @@ async function main() {
     } catch { /* no map: the minimap shows the route only */ }
   })();
   const mmFwd = new THREE.Vector3();
+  const flashFwd = new THREE.Vector3();
+  const wagerHudEl = document.getElementById('wager-hud')!;
+  const zoneHudEl = document.getElementById('zone-hud')!;
+  const zoneBoardEl = document.getElementById('zone-board')!;
+  let lastWagerHtml = '', lastZoneHtml = '', lastBoardHtml = '';
+  const wagers = new SpontaneousWagers(scene, {
+    sendNet: (msg) => party?.sendWager(msg),
+    onStartAiDrag: (aiIdx, held) => ai.startDrag(aiIdx, held),
+    onReleaseAiDrag: () => ai.releaseDrag(),
+    onEndAiDrag: () => ai.endDrag(),
+    onToast: (title, detail) => hud.toast(title, detail),
+    onComplete: (res) => {
+      if (res.won) {
+        if (res.xpReward > 0) sp.earn(res.xpReward, res.stake === 'pinkslip' ? `pink slip drag vs ${res.opponentName}` : `street drag vs ${res.opponentName}`);
+        hud.toast(
+          res.stake === 'pinkslip' ? `🏆 PINK SLIP WON · ${res.timeSec.toFixed(2)}s` : `🏆 $${res.amount.toLocaleString()} WON · ${res.timeSec.toFixed(2)}s`,
+          `+${res.xpReward} XP vs ${res.opponentName}`,
+        );
+      } else {
+        hud.toast(
+          res.stake === 'pinkslip' ? 'PINK SLIP LOST' : 'DRAG WAGER LOST',
+          `${res.opponentName} crossed 400 m first`,
+        );
+      }
+    },
+  });
+  const zones = new CityZones(scene, cityInfo.id, route.samples, {
+    onScore: (z, score, stars, isPB, xp) => {
+      if (xp > 0) sp.earn(xp, `${z.kind === 'speed' ? 'speed trap' : 'drift zone'} · ${z.name}`);
+      const unit = z.kind === 'speed' ? 'km/h' : 'PTS';
+      const st = '★'.repeat(stars) + '☆'.repeat(3 - stars);
+      hud.toast(
+        `${z.kind === 'speed' ? '⚡' : '🔥'} ${z.name}${isPB ? ' · NEW PB!' : ''}`,
+        `${score.toLocaleString()} ${unit} · ${st}${xp > 0 ? ` · +${xp} XP` : ''}`,
+      );
+    },
+    sendNet: (msg) => party?.sendZoneScore(msg),
+  });
+  zones.setVisible(false);
+  input.onFlash = () => {
+    if (state !== 'race' || raceLaps() !== 0) return;
+    flashFwd.set(0, 0, 1).applyQuaternion(quat).setY(0).normalize();
+    wagers.triggerFlash(pos, flashFwd, party?.selfId ?? 'solo');
+    party?.sendFlash();
+  };
+  input.onStakeToggle = () => { if (state === 'race' && raceLaps() === 0) wagers.toggleStake(); };
+  input.onBoard = () => { if (state === 'race' && raceLaps() === 0) zones.boardVisible = !zones.boardVisible; };
   drivingLine.setCar(applyMods(physics[sel.car], modsOf(sel)));
   // every input device: force feedback (WebHID wheels), the Controls screen, pad / keyboard menu navigation
   const ffb = new ForceFeedback();
@@ -1283,6 +1349,10 @@ async function main() {
   input.onDevice = () => { if (helpEl) helpEl.innerHTML = input.helpHtml(); };
   (g.__game as Record<string, unknown>).ffb = ffb;
   (g.__game as Record<string, unknown>).input = input;
+  (g.__game as Record<string, unknown>).wagers = wagers;
+  (g.__game as Record<string, unknown>).zones = zones;
+  (g.__game as Record<string, unknown>).cops = cops;
+  (g.__game as Record<string, unknown>).ai = ai;
   {
     const inv = cleanCode(params.get('party') ?? '');
     if (inv.length >= 4) menu.invite = inv;
@@ -1297,7 +1367,7 @@ async function main() {
     menu.partyNote = '';
     menu.invite = '';
     if (params.has('party')) history.replaceState(null, '', location.pathname + location.search.replace(/[?&]party=[^&]*/, '').replace(/^&/, '?'));
-    if (p.isHost) p.setMode(p.mode, p.laps, sel.realism);   // the leader's own rules setting is the party default
+    if (p.isHost) p.setMode(p.mode, p.laps, sel.realism, sel.copMode);   // the leader's own rules setting is the party default
     p.hooks = {
       changed: () => {
         if (remote) { remote.names = new Map(p.members.map((m) => [m.id, m.name])); remote.looks = new Map(p.members.map((m) => [m.id, { skin: m.skin, look: m.look }])); remote.refreshTags(); }
@@ -1316,6 +1386,15 @@ async function main() {
         const pl = streetProps?.poleAt(x, y);
         if (pl && driving()) poleHit({ pole: pl, point: { x: pl.x, y: pl.z, z: -pl.y }, impulse: 0, vx, vz }, false);
       },
+      flash: (id) => {
+        const m = p.members.find((x) => x.id === id);
+        if (m && state === 'race' && raceLaps() === 0) hud.toast(`⚡ ${m.name}`, 'FLASHED HIGH-BEAMS');
+      },
+      wager: (id, w) => {
+        const name = p.members.find((x) => x.id === id)?.name ?? 'Driver';
+        wagers.onNetWager(id, name, w, p.selfId);
+      },
+      zoneScore: (_id, z) => { zones.receiveNetScore(z); },
       closed: (reason) => detachParty(reason),
     };
     menu.show('lobby');
@@ -1521,7 +1600,10 @@ async function main() {
     await showCar();
     visual.setPaint(paintOf(sel, catalog), sel.finish);
     if (carKey() !== builtKey) rebuildPlayer();
-    // grid: single-player race = P4 of 6 between the rivals; party = slot by join order (two columns, 8 m rows)
+    // grid: single-player race = P4 of 6 between the rivals; Free Roam = live cruising AI traffic + Speed Traps / Drift Zones (NO COPS);
+    // online race = party grid slots (8-12 max).
+    const isFreeSession = mode === 'free' || (mode === 'online' && party?.mode === 'free');
+    zones.setVisible(isFreeSession);
     if (mode === 'race' && ai.cars.length) {
       grid = { ds: 0, lat: 0 };
       grid = { ds: 0, lat: ai.setGrid(new THREE.Vector3(s0.x, s0.z, -s0.y)) };
@@ -1535,6 +1617,11 @@ async function main() {
         await compileFor(scene, post.sceneTarget).catch(() => { /* they compile on first sight instead */ });
         for (const o of culled) o.frustumCulled = true;
       }
+    } else if (isFreeSession) {
+      // Free Roam social sandbox: cruising AI street traffic (no police!)
+      ai.setMode(ai.cars.length ? 'cruise' : 'off');
+      const slot = party ? Math.max(0, party.members.findIndex((m) => m.id === party!.selfId)) : 0;
+      grid = mode === 'online' ? { ds: -8 * (slot >> 1), lat: slot % 2 ? 2.2 : -2.2 } : { ds: 0, lat: 0 };
     } else {
       ai.setMode('off');
       const slot = party ? Math.max(0, party.members.findIndex((m) => m.id === party!.selfId)) : 0;
@@ -1646,6 +1733,12 @@ async function main() {
     rig.setTarget(car.body, core.info.redline);
     hud.hide();
     hud.board(null);
+    cops.breakOff();
+    wagers.cancel();
+    zones.setVisible(false);
+    if (lastWagerHtml) { wagerHudEl.innerHTML = lastWagerHtml = ''; }
+    if (lastZoneHtml) { zoneHudEl.innerHTML = lastZoneHtml = ''; }
+    if (lastBoardHtml) { zoneBoardEl.innerHTML = lastBoardHtml = ''; }
     menu.countdown('');
     audio.muted = true;
     ai.setMode('off');
@@ -1658,7 +1751,9 @@ async function main() {
   }
 
   function finishRace() {
-    bumpHeat(1);   // a finished race is a player action: +1 heat (docs/design/heat-and-cops.md)
+    const copsOn = copsActiveInRace();
+    cops.breakOff();
+    if (copsOn) bumpHeat(1);   // Heat lives strictly in Cop Race Events (never Free Roam)
     setState('results');
     audio.muted = true;
     const total = lapTimes.reduce((a, b) => a + b, 0);
@@ -1673,12 +1768,9 @@ async function main() {
       const a = assistSet;
       const reward = raceReward({ pos, laps: raceLaps(), dnf: !!myDnf, gained: ai.cars.length ? Math.max(0, 4 - pos) : 0, clean: raceImpacts === 0,
         assistsOff: +(a.abs === 'off') + +(a.tc === 0) + +!a.stability + +(a.countersteer === 'off') + +(a.line === 'off'),
-        manual: a.gearbox === 'manual', realism: sel.realism }, 'sp');
-      // High heat pays (design: "let high heat pay"): 4 stars x1.5, 5 stars x1.8 on the single-player purse. This is
-      // what makes the dial a gamble rather than a punishment.
-      const heatMul = heat.level >= 5 ? 1.8 : heat.level >= 4 ? 1.5 : 1;
-      const purse = Math.round(reward.xp * heatMul);
-      earned = sp.earn(purse, myDnf ? 'race · DNF' : `race · P${pos} of ${order.length}${heatMul > 1 ? ` · HEAT x${heatMul}` : ''}`, reward.parts).xp;
+        manual: a.gearbox === 'manual', realism: sel.realism,
+        copsEnabled: copsOn, heatLevel: heat.level, escapedCops: escapedCopsThisRace }, 'sp');
+      earned = sp.earn(reward.xp, myDnf ? 'race · DNF' : `race · P${pos} of ${order.length}${copsOn ? ` · COPS H${Math.max(1, heat.level)}` : ''}`, reward.parts).xp;
     }
     menu.showResults({ total, best: lapTimes.length ? Math.min(...lapTimes) : 0, laps: lapTimes, laps_target: raceLaps(), standings: st,
       routeLength: lap?.routeLength ?? route.length_m, online: sel.mode === 'online', earned });
@@ -1686,6 +1778,14 @@ async function main() {
   }
 
   addEventListener('keydown', (e) => {
+    if (e.code === 'KeyF' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && (e.target as HTMLElement).tagName !== 'INPUT') {
+      // In Free Roam, [F] flashes headlights for Spontaneous Wagers; elsewhere [F] toggles fullscreen.
+      if (!(driving() && raceLaps() === 0)) {
+        if (document.fullscreenElement) void document.exitFullscreen();
+        else void document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => {});
+      }
+      return;
+    }
     if (state === 'spectate' && !e.repeat) {
       if (e.code === 'ArrowLeft' || e.code === 'KeyA') specStep(-1);
       else if (e.code === 'ArrowRight' || e.code === 'KeyD') specStep(1);
@@ -1795,9 +1895,12 @@ async function main() {
   { const l = document.getElementById('loading'); if (l) { l.classList.add('out'); setTimeout(() => l.remove(), 450); } }   // fade, not a cut
   if (params.get('menu') === '0') {
     sel.mode = 'free';
+    ai.setMode(ai.cars.length ? 'cruise' : 'off');
+    zones.setVisible(true);
     hud.show();
     if (wantsTouch()) enableTouch();
     resetCar();
+    ai.go();
     setState('race');
     audio.muted = false;
   } else {
@@ -1865,13 +1968,13 @@ async function main() {
       if (inShowroom) { car.body.setLinvel({ x: 0, y: Math.min(0, car.body.linvel().y), z: 0 }, true); car.body.setAngvel({ x: 0, y: 0, z: 0 }, true); settledShowroom++; }   // parked for the showroom
       ai.tick(DT, car.body.translation());
       remote?.tick(now - (acc - DT) * 1000, DT);   // other players' bodies at this tick's time
-      if (remote?.colliders.size || obstacles || nyc || ai.mode === 'race') { const lv = car.body.linvel(), av = car.body.angvel(); preV.set(lv.x, lv.y, lv.z); preW.set(av.x, av.y, av.z); }
+      if (remote?.colliders.size || obstacles || nyc || ai.mode !== 'off') { const lv = car.body.linvel(), av = car.body.angvel(); preV.set(lv.x, lv.y, lv.z); preW.set(av.x, av.y, av.z); }
       const t0 = performance.now();
       pw.world.step();
       if (obstacles) { const h = obstacles.afterStep(car.collider, car.body, core.info.mass, preV, preW); if (h) poleHit(h, true); }
       if (nyc && driving()) { const w = nyc.breaches.check(car.collider, car.body, core.info.mass, preV, preW); if (w) wallHit(w); }
       if (remote?.colliders.size) halveRemoteHits(now - (acc - DT) * 1000);
-      if (ai.mode === 'race') ai.afterStep(car.collider, car.body, preV, preW);   // rivals take their half of a hit (ai.ts)
+      if (ai.mode !== 'off') ai.afterStep(car.collider, car.body, preV, preW);   // rivals & cruising traffic take their half of a hit (ai.ts)
       stepMs += (performance.now() - t0 - stepMs) * 0.01;   // Rapier cost per 240 Hz step, smoothed
       readBody(physPos, physQuat);
       // car acceleration for the camera spring, from the physics (low-passed ~25 ms)
@@ -1894,25 +1997,28 @@ async function main() {
     pos.lerpVectors(prevPos, physPos, alpha);
     quat.slerpQuaternions(prevQuat, physQuat, alpha);
     post.carPos.copy(pos);
-    // pursuit: track the player's arc length, call the cops once when a race at 3+ heat is underway, then update
+    // Tactical Police Pursuit: ONLY active in Race Events with Cop Mode ON (never in Free Roam!).
+    const copsOnNow = copsActiveInRace();
+    heatEl.hidden = raceLaps() === 0 && driving();
+    if (!copsOnNow && cops.active) cops.breakOff();
     playerS = cops.nearest(pos, playerS);
-    if (state === 'race' && sel.mode === 'race' && !copSpawned && heat.level >= 3 && ticks > 480) { copSpawned = true; cops.spawn(playerS, pos); }
+    if (state === 'race' && copsOnNow && !copSpawned && ticks > 360) {
+      copSpawned = true;
+      cops.spawn(playerS, pos, Math.max(1, heat.level));
+    }
     cops.update(frame, playerS, pos, Math.abs(car.out[OUT.speed]) * 3.6);
     if (cops.active) {
-      // line of sight: a ray from the cop to the car; any building hit means the cop cannot see you
+      // Line of sight: ray from lead patrol unit to player car; building hits break visual lock.
       const from = cops.world, to = pos;
       const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
       const len = Math.hypot(dx, dy, dz) || 1;
       const ray = new RAPIERLib.Ray({ x: from.x, y: from.y + 1.2, z: from.z }, { x: dx / len, y: dy / len, z: dz / len });
       const hit = pw.world.castRay(ray, len - 2, true);
       cops.see(!!hit, frame);
-      const on = Math.floor(performance.now() / 260) % 2 === 0;
-      if (copsLights) { copsLights.r.color.setHex(on ? 0xff2d55 : 0x2a0008); copsLights.b.color.setHex(on ? 0x001030 : 0x2a9dff); }
       audio.siren(cops.proximity);
-      copsEl.textContent = `🚨 POLICE · ${Math.round(cops.distance)} m`;
+      copsEl.textContent = `🚨 ${cops.tactic} · ${Math.round(cops.distance)} m`;
     } else {
       audio.siren(0);
-      if (copsLights) { copsLights.r.color.setHex(0x2a0008); copsLights.b.color.setHex(0x001030); }
       copsEl.textContent = performance.now() < copMsgUntil ? copMsg : '';
     }
     const tVis = performance.now();
@@ -1968,13 +2074,63 @@ async function main() {
     if (state === 'paused' && !menu.ctl?.calibrating) input.menuPoll();
     if (ranked && (state === 'race' || state === 'spectate' || state === 'results') && !myDnf) ranked.pos(now, car.body.translation(), Math.abs(car.out[OUT.speed]));
     if (state === 'race' && raceLaps() === 0) freeRoamM += Math.min(Math.abs(car.out[OUT.speed]), 90) * frame;
+    // Free Roam social sandbox: Spontaneous Headlight-Flash 1v1 Wagers + City-Wide Speed Traps & Drift Zones
+    {
+      const inFreeRoam = state === 'race' && raceLaps() === 0;
+      const kmhNow = Math.abs(car.out[OUT.speed]) * 3.6;
+      const candidates: NearbyCandidate[] = [];
+      if (inFreeRoam) {
+        if (remote && party) {
+          for (const id of remote.ids()) {
+            const r = remote.get(id);
+            if (!r) continue;
+            const d = Math.hypot(r.root.position.x - pos.x, r.root.position.z - pos.z);
+            const name = party.members.find((m) => m.id === id)?.name ?? 'Driver';
+            candidates.push({ id, name, kind: 'peer', aiIdx: -1, dist: d, pos: r.root.position });
+          }
+        }
+        if (ai.mode === 'cruise') {
+          for (let i = 0; i < ai.cars.length; i++) {
+            const c = ai.cars[i];
+            const d = Math.hypot(c.pos.x - pos.x, c.pos.z - pos.z);
+            candidates.push({ id: `ai_${i}`, name: c.name, kind: 'ai', aiIdx: i, dist: d, pos: c.pos });
+          }
+        }
+      }
+      const wasFlashing = wagers.flashTimer > 0;
+      wagers.update(frame, inFreeRoam, pos, kmhNow, candidates, now);
+      if (wagers.flashTimer > 0) {
+        visual.dim = wagers.flashMultiplier;
+        visual.applyHeadlights();
+      } else if (wasFlashing) {
+        visual.dim = driving() ? 1 : 0.008;
+        visual.applyHeadlights();
+      }
+      zones.update(frame, inFreeRoam, pos, kmhNow, car.out[OUT.sideslip] || 0, sel.name, sel.car, now);
+      const wh = inFreeRoam ? wagers.hudBanner() : '';
+      if (wh !== lastWagerHtml) { wagerHudEl.innerHTML = lastWagerHtml = wh; }
+      const zh = inFreeRoam ? zones.driftHudHtml() : '';
+      if (zh !== lastZoneHtml) { zoneHudEl.innerHTML = lastZoneHtml = zh; }
+      const bh = inFreeRoam ? zones.leaderboardHtml() : '';
+      if (bh !== lastBoardHtml) { zoneBoardEl.innerHTML = lastBoardHtml = bh; }
+    }
     drivingLine.update(assistSet.line, state === 'race' || state === 'countdown', pos, car.out[OUT.speed]);
     if (driving() && state !== 'paused' && state !== 'busy') {
       const watching = state === 'spectate';   // spectating: the map follows the watched car (no GPS directions)
       mmFwd.set(0, 0, 1).applyQuaternion(watching ? specQuat : quat);
       const blips: Blip[] = [];
       if (ai.mode === 'race') for (const c of ai.cars) blips.push({ x: c.pos.x, z: c.pos.z, color: '#ff4d6d' });
+      else if (ai.mode === 'cruise') for (const c of ai.cars) blips.push({ x: c.pos.x, z: c.pos.z, color: '#d0d8e8' });
       if (remote) for (const id of remote.ids()) { const r = remote.get(id); if (r) blips.push({ x: r.root.position.x, z: r.root.position.z, color: '#4dd2ff' }); }
+      if (raceLaps() === 0) {
+        for (const zb of zones.minimapBlips()) blips.push(zb);
+        const fin = wagers.finishWorld;
+        if (fin) blips.push({ x: fin.x, z: fin.z, color: '#ff2d6a' });
+      } else if (cops.active) {
+        for (const u of cops.unitPositions()) blips.push({ x: u.x, z: u.z, color: '#2a9dff' });
+        const rb = cops.roadblockWorld;
+        if (rb) blips.push({ x: rb.x, z: rb.z, color: '#ff9f1c' });
+      }
       const L = lap?.routeLength ?? route.length_m;
       if (watching) minimap.update(now, specPos, mmFwd, specOut[OUT.speed], null, blips);
       else minimap.update(now, pos, mmFwd, Math.abs(car.out[OUT.speed]), lap ? ((lap.distance % L) + L) % L : null, blips);
@@ -2015,8 +2171,8 @@ async function main() {
         car.body.setLinvel({ x: lv.x * (1 - drag), y: lv.y, z: lv.z * (1 - drag) }, true);
       }
       audio.impact(Math.max(12, impulse * 0.18), kind === 'shop' || kind === 'wall', kind);
-      // Wrecking the car is a player action too: +1 heat, but only for real hits and at most one per 20 s.
-      if (impulse > 5000 && Date.now() - heat.lastGain > 20_000) bumpHeat(1);
+      // Wrecking during a Cop Race Event raises Heat (never in Free Roam!).
+      if (copsActiveInRace() && impulse > 5000 && Date.now() - heat.lastGain > 20_000) bumpHeat(1);
     });
     const tCity = performance.now();
     city.update(camera);
@@ -2027,7 +2183,7 @@ async function main() {
     // 60/120/144 Hz display averages exactly the cap instead of rounding down.
     if (capInterval === 0 || tuning || bench.uncap || now - lastRenderAt >= capInterval - 2) {
       lastRenderAt = capInterval && !bench.uncap && now - lastRenderAt < capInterval * 1.5 ? lastRenderAt + capInterval : now;
-      const hasCasters = ai.mode === 'race' || remote !== null || damage.debrisCount > 0;
+      const hasCasters = ai.mode !== 'off' || remote !== null || cops.active || damage.debrisCount > 0;
       if (hasCasters && ++frameNo % (params.has('se') ? num('se', 2) : PRESETS[post.preset].shadowEvery) === 0) for (const sh of headShadows) sh.needsUpdate = true;
       const tPost = performance.now();
       if (!inGarage) {

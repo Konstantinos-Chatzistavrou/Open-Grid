@@ -332,3 +332,43 @@ body.touch #mirror { top: 6px; width: min(30vw, 300px); }
 #menu .city-chip b { font: italic 800 18px/1 var(--display); text-transform: uppercase; letter-spacing: .02em; }
 #menu .city-chip small { font: 600 11px var(--display); letter-spacing: .14em; opacity: .6; }
 #menu .city-blurb { flex-basis: 100%; font-size: 14px; }
+
+#heat[hidden] { display: none !important; }
+
+/* ---- Free Roam Spontaneous Wagers, Drift Zone pill & Global/Party Zone Leaderboards ---- */
+#wager-hud { position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%); z-index: 12; pointer-events: none; }
+#zone-hud { position: absolute; left: 50%; bottom: 102px; transform: translateX(-50%); z-index: 12; pointer-events: none; }
+.wager-pill, .drift-pill {
+  display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px;
+  background: rgba(7, 10, 18, 0.86); border: 1px solid rgba(255, 255, 255, 0.16);
+  border-left: 3px solid var(--hot); color: #f4f1ea;
+  font: 700 14px/1.2 var(--display); letter-spacing: .09em; text-transform: uppercase;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55); backdrop-filter: blur(8px);
+}
+.wager-pill.live { border-left-color: #00f0ff; background: rgba(6, 14, 24, 0.92); }
+.wager-pill.offer { border-left-color: #ffba08; animation: wagerPulse 0.9s ease-in-out infinite alternate; }
+.wager-pill b { color: #ffffff; letter-spacing: .08em; }
+.wager-pill span { color: #00f0ff; }
+.drift-pill { border-left-color: #ff9f1c; }
+.drift-pill span { color: #ffba08; font-size: 16px; }
+@keyframes wagerPulse { from { box-shadow: 0 0 10px rgba(255, 186, 8, 0.25); } to { box-shadow: 0 0 22px rgba(255, 186, 8, 0.65); } }
+
+#zone-board { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 25; pointer-events: none; width: min(860px, 92vw); }
+.zone-board {
+  background: rgba(6, 9, 16, 0.92); border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 18px 20px; box-shadow: 0 18px 48px rgba(0, 0, 0, 0.72); backdrop-filter: blur(12px);
+}
+.zb-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 10px; }
+.zb-top b { font: italic 900 22px/1 var(--display); letter-spacing: .08em; color: #f4f1ea; }
+.zb-top span { font: 600 12px var(--display); letter-spacing: .12em; color: rgba(244, 241, 234, 0.62); text-transform: uppercase; }
+.zb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.zb-card { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); padding: 10px 12px; }
+.zb-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.zb-head b { font: italic 800 16px/1.1 var(--display); color: #fff; letter-spacing: .04em; }
+.zb-tag { font: 700 10px/1 var(--display); letter-spacing: .16em; }
+.zb-tag.speed { color: #00e5ff; }
+.zb-tag.drift { color: #ff9f1c; }
+.zb-row { display: grid; grid-template-columns: 28px 1fr auto; gap: 6px; padding: 3px 6px; font: 600 13px/1.3 var(--display); color: rgba(244, 241, 234, 0.8); }
+.zb-row b { font-weight: 700; color: #f4f1ea; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zb-row.you { background: rgba(255, 45, 106, 0.24); border-left: 2px solid var(--hot); color: #fff; }
+.zb-row.party { background: rgba(0, 229, 255, 0.16); border-left: 2px solid #00e5ff; color: #fff; }

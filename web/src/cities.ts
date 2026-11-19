@@ -18,21 +18,30 @@ export interface CityInfo {
   map: string;
   /** a line for the city card */
   blurb: string;
+  /** High-patrol downtown districts always have tactical police active in Race Events (never in Free Roam). */
+  mandatoryCops: boolean;
+  /** Short patrol-density note shown on Race Event setup. */
+  patrolNote: string;
 }
 
 const OSM = 'OpenStreetMap contributors (ODbL)';
 
 export const CITIES: CityInfo[] = [
   { id: 'nyc', name: 'New York', district: 'Manhattan', country: 'US', base: '/assets/nyc/tiles/', route: '/data/tracks/nyc_route.json', grid: 29,
-    drive: 'right', map: `${OSM} & NYC Open Data`, blurb: 'All of Manhattan, river to river: Times Square, the avenues, Wall Street, Harlem.' },
+    drive: 'right', map: `${OSM} & NYC Open Data`, blurb: 'All of Manhattan, river to river: Times Square, the avenues, Wall Street, Harlem.',
+    mandatoryCops: true, patrolNote: 'High-patrol Midtown district · Tactical cops always active in Races' },
   { id: 'london', name: 'London', district: 'Westminster & the City', country: 'GB', base: '/assets/cities/london/tiles/', route: '/data/tracks/london_route.json', grid: 0,
-    drive: 'left', map: OSM, blurb: 'Trafalgar Square to the Tower: Piccadilly, the Strand, the Thames bridges.' },
+    drive: 'left', map: OSM, blurb: 'Trafalgar Square to the Tower: Piccadilly, the Strand, the Thames bridges.',
+    mandatoryCops: true, patrolNote: 'Central Westminster patrol zone · Tactical cops always active in Races' },
   { id: 'paris', name: 'Paris', district: 'Champs-Élysées to Notre-Dame', country: 'FR', base: '/assets/cities/paris/tiles/', route: '/data/tracks/paris_route.json', grid: 0,
-    drive: 'right', map: OSM, blurb: "Arc de Triomphe, Concorde, the Louvre and the Seine's quays." },
+    drive: 'right', map: OSM, blurb: "Arc de Triomphe, Concorde, the Louvre and the Seine's quays.",
+    mandatoryCops: false, patrolNote: 'Optional Cop Mode in Race Events' },
   { id: 'tokyo', name: 'Tokyo', district: 'Shibuya to Shinjuku', country: 'JP', base: '/assets/cities/tokyo/tiles/', route: '/data/tracks/tokyo_route.json', grid: 0,
-    drive: 'left', map: OSM, blurb: 'The Scramble, Omotesando, Harajuku and the Shinjuku towers.' },
+    drive: 'left', map: OSM, blurb: 'The Scramble, Omotesando, Harajuku and the Shinjuku towers.',
+    mandatoryCops: false, patrolNote: 'Optional Cop Mode in Race Events' },
   { id: 'losangeles', name: 'Los Angeles', district: 'Downtown', country: 'US', base: '/assets/cities/losangeles/tiles/', route: '/data/tracks/losangeles_route.json', grid: 38,
-    drive: 'right', map: OSM, blurb: 'Bunker Hill, Broadway and the Financial District grid.' },
+    drive: 'right', map: OSM, blurb: 'Bunker Hill, Broadway and the Financial District grid.',
+    mandatoryCops: false, patrolNote: 'Optional Cop Mode in Race Events' },
 ];
 
 const KEY = 'nr.city';

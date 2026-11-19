@@ -28,6 +28,8 @@ export interface Selection {
   name: string;
   /** races: true = full realism (no resets; wrecked / rolled / stuck = DNF, then spectate), false = R respawns */
   realism: boolean;
+  /** races: true = tactical physics police pursuit enabled (ignored in Free Roam; forced ON in mandatory-patrol districts) */
+  copMode: boolean;
   /** visual parts per car (garage tabs) */
   custom: Record<string, Custom>;
   /** the driver's skin (helmet, suit): also the multiplayer avatar */
@@ -190,7 +192,7 @@ export function loadSelection(cars: CatalogCar[], params: URLSearchParams): Sele
   const starter = cars.find((c) => c.id === 'vela_gt')?.id ?? cars[0].id;
   const side = (): Side => ({ car: starter, mods: {}, skin: 'classic' });
   const sel = { career: 'sp', sides: { sp: side(), mp: side() }, paint: {}, finish: 'gloss', mode: 'race', laps: 3,
-    name: `Driver ${Math.floor(1000 + Math.random() * 9000)}`, realism: true, custom: {} } as unknown as Selection;
+    name: `Driver ${Math.floor(1000 + Math.random() * 9000)}`, realism: true, copMode: true, custom: {} } as unknown as Selection;
   for (const k of ['car', 'mods', 'skin'] as const)
     Object.defineProperty(sel, k, { enumerable: false, get: () => sel.sides[sel.career][k], set: (v) => { (sel.sides[sel.career] as unknown as Record<string, unknown>)[k] = v; } });
   const cleanMods = (o: unknown) => {
@@ -221,6 +223,7 @@ export function loadSelection(cars: CatalogCar[], params: URLSearchParams): Sele
       if ([1, 3, 5, 10].includes(s.laps)) sel.laps = s.laps;
       if (typeof s.name === 'string' && s.name.trim()) sel.name = s.name.trim().slice(0, 18);
       if (typeof s.realism === 'boolean') sel.realism = s.realism;
+      if (typeof s.copMode === 'boolean') sel.copMode = s.copMode;
       if (s.custom && typeof s.custom === 'object') for (const [k, v] of Object.entries(s.custom)) if (cars.some((c) => c.id === k)) sel.custom[k] = cleanCustom(v);
     }
   } catch { /* storage blocked or corrupt: defaults */ }
