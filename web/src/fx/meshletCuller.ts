@@ -27,9 +27,17 @@ import {
   wgslFn,
 } from 'three/tsl';
 import { MeshoptClusterizer } from 'three/addons/libs/meshopt_clusterizer.module.js';
-import meshletCullWgslSource from './shaders/meshlet_cull.wgsl?raw';
+import {
+  MLET_MAGIC,
+  parseMletBuffer,
+  type MeshletBatchGpuStats,
+  type MletGroupMeta,
+  type MletMeta,
+  type ParsedMlet,
+} from '../gpu/meshlets/mletFormat';
+import meshletCullWgslSource from '../gpu/meshlets/meshlet_cull.wgsl?raw';
 
-const MAGIC_MLET = 0x54454c4d;
+export { parseMletBuffer, MLET_MAGIC, type MeshletBatchGpuStats, type MletGroupMeta, type MletMeta, type ParsedMlet };
 
 const cullMeshletTestWgsl = wgslFn(meshletCullWgslSource);
 
@@ -119,15 +127,6 @@ export function buildMeshletsFromGeometry(
   }
 
   return { meshletCount: count, indices: outIndices, spheres, cones, apices, slices };
-}
-
-export interface MeshletBatchGpuStats {
-  meshletCount: number;
-  visibleMeshlets: number;
-  frustumCulled: number;
-  coneCulled: number;
-  visibleIndices: number;
-  totalIndices: number;
 }
 
 const _vp = new THREE.Matrix4();
@@ -529,86 +528,7 @@ export class GpuMeshletCuller {
   }
 }
 
-// ---- Offline `.mlet` Binary Loader (output of web/tools/meshlet-cli.mjs) -----------------------------------------------
-export interface MletGroupMeta {
-  id: number;
-  materialName: string;
-  firstMeshlet: number;
-  meshletCount: number;
-  firstVertex: number;
-  vertexCount: number;
-  firstIndex: number;
-  indexCount: number;
-}
-
-export interface MletMeta {
-  version: number;
-  maxVerts: number;
-  maxTris: number;
-  coneWeight: number;
-  vertexCount: number;
-  indexCount: number;
-  triangleCount: number;
-  meshletCount: number;
-  coneCullableRatio: number;
-  avgTrisPerMeshlet: number;
-  groups: MletGroupMeta[];
-}
-
-export interface ParsedMlet {
-  meta: MletMeta;
-  positions: Float32Array;
-  normals: Float32Array;
-  uvs: Float32Array;
-  indices: Uint32Array;
-  meshletSpheres: Float32Array;
-  meshletCones: Float32Array;
-  meshletApices: Float32Array;
-  meshletSlices: Uint32Array;
-}
-
-/** Parse a binary `.mlet` buffer produced by `web/tools/meshlet-cli.mjs`. */
-export function parseMletBuffer(buffer: ArrayBuffer): ParsedMlet {
-  const dv = new DataView(buffer);
-  if (dv.getUint32(0, true) !== MAGIC_MLET) throw new Error('Invalid .mlet magic header');
-  const version = dv.getUint32(4, true);
-  if (version !== 1) throw new Error(`Unsupported .mlet version ${version}`);
-  const jsonPadded = dv.getUint32(8, true);
-
-  const jsonRaw = new Uint8Array(buffer, 16, jsonPadded);
-  let jsonLen = jsonPadded;
-  while (jsonLen > 0 && jsonRaw[jsonLen - 1] === 0) jsonLen--;
-  const meta = JSON.parse(new TextDecoder().decode(jsonRaw.subarray(0, jsonLen))) as MletMeta;
-
-  const align16 = (n: number) => (n + 15) & ~15;
-  let cursor = 16 + jsonPadded;
-  const takeF32 = (count: number) => {
-    const arr = new Float32Array(buffer, cursor, count);
-    cursor += align16(count * 4);
-    return arr;
-  };
-  const takeU32 = (count: number) => {
-    const arr = new Uint32Array(buffer, cursor, count);
-    cursor += align16(count * 4);
-    return arr;
-  };
-
-  const V = meta.vertexCount;
-  const I = meta.indexCount;
-  const M = meta.meshletCount;
-
-  const positions = takeF32(V * 3);
-  const normals = takeF32(V * 3);
-  const uvs = takeF32(V * 2);
-  const indices = takeU32(I);
-  const meshletSpheres = takeF32(M * 4);
-  const meshletCones = takeF32(M * 4);
-  const meshletApices = takeF32(M * 4);
-  const meshletSlices = takeU32(M * 4);
-
-  return { meta, positions, normals, uvs, indices, meshletSpheres, meshletCones, meshletApices, meshletSlices };
-}
-
+// ---- Offline `.mlet` Binary Loader (thin Three.js adapter over `gpu/meshlets/mletFormat`) ------------------------------
 export interface LoadedMeshletAsset {
   group: THREE.Group;
   meta: MletMeta;

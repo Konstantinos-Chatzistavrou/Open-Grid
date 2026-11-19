@@ -1,4 +1,4 @@
-// WebGPU Compute Meshlet Culling Shader ('Nanite' Pipeline, OpenGrid)
+// WebGPU Compute Meshlet Culling Kernel (Engine-Agnostic, OpenGrid).
 // Per-meshlet 6-plane frustum culling + meshoptimizer normal-cone backface culling + distance culling.
 // Return codes:
 //   0 = VISIBLE
@@ -39,9 +39,7 @@ fn cullMeshletTest(
     }
   }
 
-  // 3. Meshoptimizer normal-cone backface culling:
-  // Cull cluster when camera lies entirely inside the back-facing cone of all triangles in the meshlet.
-  // cone.w >= 0.999 marks degenerate/wide cones (> 180 deg) that cannot be backface-culled.
+  // 3. Meshoptimizer normal-cone backface culling
   if (cone.w < 0.999) {
     let viewVec = apex.xyz - camPos;
     let vLen = length(viewVec);

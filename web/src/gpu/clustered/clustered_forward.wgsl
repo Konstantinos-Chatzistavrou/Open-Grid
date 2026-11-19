@@ -1,8 +1,7 @@
-// Clustered Forward+ WGSL shader kernels for WebGPU (OpenGrid)
+// Clustered Forward+ WGSL core math & attenuation library (Engine-Agnostic, OpenGrid)
 // Evaluates view-space frustum cluster AABBs, sphere-AABB light culling, resolution-independent
 // cluster lookup, and unified PointLight (streetlights) + SpotLight (headlights) attenuation.
 
-// Compute the view-space minimum corner of cluster (cx, cy, cz) in a (nx, ny, nz) frustum grid.
 fn clusterAabbMin(
   cx: i32,
   cy: i32,
@@ -31,11 +30,9 @@ fn clusterAabbMin(
   let yMinNear = ndcYmin * zNear * invFocalY;
   let yMinFar = ndcYmin * zFar * invFocalY;
 
-  // View space looks down -Z so zFarCluster = -zFar is the minimum Z.
   return vec3<f32>(min(xMinNear, xMinFar), min(yMinNear, yMinFar), -zFar);
 }
 
-// Compute the view-space maximum corner of cluster (cx, cy, cz) in a (nx, ny, nz) frustum grid.
 fn clusterAabbMax(
   cx: i32,
   cy: i32,
@@ -67,7 +64,6 @@ fn clusterAabbMax(
   return vec3<f32>(max(xMaxNear, xMaxFar), max(yMaxNear, yMaxFar), -zNear);
 }
 
-// Exact view-space sphere vs cluster AABB intersection test (returns 1.0 on hit, 0.0 on miss).
 fn sphereIntersectsAabb(
   center: vec3<f32>,
   radius: f32,
@@ -80,7 +76,6 @@ fn sphereIntersectsAabb(
   return select(0.0, 1.0, distSq <= radius * radius);
 }
 
-// Resolution-independent fragment -> linear cluster index lookup (screenUV + exponential view depth).
 fn clusterIndexFromScreen(
   suv: vec2<f32>,
   viewDepth: f32,
@@ -108,8 +103,8 @@ fn clusterIndexFromScreen(
 
 // Unified clustered PointLight + SpotLight attenuation (physical inverse-square + smooth spot cone).
 // lightVec = lightViewPos - fragViewPos.
-// spotDir  = unit direction FROM light TOWARD its target in view space (lightTarget - lightPos).
-// coneCos  <= -1.5 indicates a PointLight (omnidirectional); otherwise a SpotLight.
+// spotDir  = unit direction FROM light TOWARD its target in view space.
+// coneCos <= -1.5 indicates a PointLight; otherwise a SpotLight.
 fn evalClusteredAttenuation(
   lightVec: vec3<f32>,
   cutoffDist: f32,
@@ -133,9 +128,7 @@ fn evalClusteredAttenuation(
     atten *= falloff * falloff;
   }
 
-  // SpotLight cone attenuation when coneCos > -1.5
   if (coneCos > -1.5) {
-    // Direction from light to fragment is -normalize(lightVec)
     let fromLight = -lightVec / dist;
     let angleCos = dot(fromLight, spotDir);
     let spot = smoothstep(coneCos, max(penumbraCos, coneCos + 1e-4), angleCos);
