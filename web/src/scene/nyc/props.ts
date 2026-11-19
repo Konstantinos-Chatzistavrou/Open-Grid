@@ -18,6 +18,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { barkMaterial, buildTree, leafMaterial } from './trees';
 import { InstanceSet, NycSigns, nycTime, writeMatrix, SIGN_LIGHT } from './signage';
 import { instanceSlots } from '../instancing';
+import { PROP_DETAIL_LAYER } from '../../fx/roadReflections';
 
 export interface PropsData {
   /** ground height of the tile (m); props are placed at z + this. Optional, default 0. */
@@ -667,6 +668,22 @@ export class NycProps {
 
     this.signs = new NycSigns(this.root);
     this.meshes.push(this.signs.set.mesh);
+    // Strip high-poly trees, small sidewalk clutter, pools, steam, shards & sparks out of planar road reflections
+    // and cubemap reflection probes (Layer 2: drawn in main view & rear-view mirror, skipped on Layer-0 reflection passes).
+    // Streetlamps, traffic signals, subway/bus/kiosk glow, and neon signs stay on Layer 0 so wet asphalt reflects them.
+    for (const sp of TREE_SPECIES) {
+      this.sets[`tree_${sp.id}`]?.mesh.layers.set(PROP_DETAIL_LAYER);
+      this.nearTrees[sp.id]?.bark.layers.set(PROP_DETAIL_LAYER);
+      this.nearTrees[sp.id]?.leaves.layers.set(PROP_DETAIL_LAYER);
+    }
+    for (const k of ['hydrant', 'bench', 'steam', 'scaffold', 'cone', 'waste']) {
+      this.sets[k]?.mesh.layers.set(PROP_DETAIL_LAYER);
+    }
+    this.pools.layers.set(PROP_DETAIL_LAYER);
+    this.steamSet.mesh.layers.set(PROP_DETAIL_LAYER);
+    this.shardMesh.layers.set(PROP_DETAIL_LAYER);
+    this.debrisMesh.layers.set(PROP_DETAIL_LAYER);
+    this.sparkMesh.layers.set(PROP_DETAIL_LAYER);
     scene.add(this.root);
 
     // Dynamic streetlight / traffic-signal / neon-sign pool fed into ClusteredForwardLighting (100+ active lights)

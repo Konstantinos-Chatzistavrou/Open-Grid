@@ -14,16 +14,20 @@ export {
 export { ClusteredForwardPass } from './clustered/clusteredPass';
 
 export {
+  CAR_DIRT_MASK_TEXTURE_PATH,
   CAR_PAINT_FINISHES,
   CAR_PAINT_UBO_BYTES,
   CAR_PAINT_UBO_FLOATS,
   advancePaintWear,
   carPaintWgslSource,
+  createPaintWearState,
   packCarPaintUniforms,
+  resetPaintWear,
   type CarPaintFinishName,
   type CarPaintFinishSpec,
   type CarPaintUniformData,
   type PaintWearAccumulator,
+  type PaintWearFrameInput,
 } from './materials/carPaint';
 
 export {

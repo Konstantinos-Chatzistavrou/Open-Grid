@@ -23,9 +23,10 @@ import * as SMAAModule from 'three/addons/tsl/display/SMAANode.js';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { CURVES, GRADE, LOOKS, applyLook, filmGrain, toneGrade, type CurveName } from './fx/grade';
 import { DepthFx } from './fx/depthFx';
-import { PlanarRoadReflector } from './fx/roadReflections';
+import { PROP_DETAIL_LAYER, PlanarRoadReflector } from './fx/roadReflections';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
 export { ClusteredForwardLighting, type ClusteredForwardStats } from './fx/clusteredForward';
+export { PROP_DETAIL_LAYER };
 
 export type PresetName = 'max' | 'ultra' | 'high' | 'medium' | 'low' | 'potato';
 export interface Preset {

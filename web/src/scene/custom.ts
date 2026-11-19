@@ -120,23 +120,27 @@ export class CarCustomizer {
   private bodyParts: Record<string, THREE.Object3D> = {};
   /** the model's own bumpers and hood, hidden when a generated one is fitted */
   private bodyStock: { front?: THREE.Object3D; rear?: THREE.Object3D; hood?: THREE.Object3D } = {};
-  /** 0 = showroom clean, 1 = heavy road grime; driven by driving time + distance (see setWear) */
+  /** Gameplay-driven paint wear uniforms: wear (road grime), scuff (scrapes/damage), wakeSpray (drafting mist). */
   private wear = 0;
-  private driveTimeSec = 0;
+  private scuff = 0;
+  private wakeSpray = 0;
   /** Update the WGSL dynamic dirt/wear mask uniforms (zero material mutations, zero shader recompiles). */
-  setWear(t: number, driveTimeSec = this.driveTimeSec) {
+  setWear(t: number, scuff = this.scuff, wakeSpray = this.wakeSpray) {
     const w = Math.max(0, Math.min(1, t));
-    const dt = Math.max(0, driveTimeSec);
-    if (Math.abs(w - this.wear) < 0.002 && Math.abs(dt - this.driveTimeSec) < 0.25) return;
+    const sc = Math.max(0, Math.min(1, scuff));
+    const ws = Math.max(0, Math.min(1, wakeSpray));
+    if (Math.abs(w - this.wear) < 0.002 && Math.abs(sc - this.scuff) < 0.002 && Math.abs(ws - this.wakeSpray) < 0.002) return;
     this.wear = w;
-    this.driveTimeSec = dt;
+    this.scuff = sc;
+    this.wakeSpray = ws;
     const lu = this.paint?.userData.livery as LiveryUniforms | undefined;
     if (lu) {
       lu.wear.value = w;
-      lu.driveTime.value = dt;
+      lu.scuff.value = sc;
+      lu.wakeSpray.value = ws;
     }
   }
-  getWear() { return { wear: this.wear, driveTimeSec: this.driveTimeSec }; }
+  getWear() { return { wear: this.wear, scuff: this.scuff, wakeSpray: this.wakeSpray }; }
   /** paint clone for imported parts: double-sided, so an inverted-winding export can never read as a black hole */
   private extraMat?: THREE.Material;
   /** fender flares, by id: four arch lips */

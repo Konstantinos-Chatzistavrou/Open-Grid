@@ -250,7 +250,11 @@ export class MaterialBatch {
       for (let j = 0; j < idxCount; j++) {
         localIdx[j] = srcIndex ? Number((srcIndex.array as ArrayLike<number>)[j]) : j;
       }
-      const ml = buildMeshletsFromGeometry(localPos, localIdx, 64, 124, 0.5);
+      // Higher coneWeight on building facades/roofs groups co-planar walls into tight normal cones for GPU backface culling.
+      const matName = this.material.name || '';
+      const isBuilding = /facade|roof|bld|wall/i.test(matName);
+      const coneWeight = isBuilding ? 0.92 : 0.65;
+      const ml = buildMeshletsFromGeometry(localPos, localIdx, 64, 124, coneWeight);
       const mRange = this.culler.append(ml, vertStart);
       alloc.meshletStart = mRange.meshletStart;
       alloc.meshletCount = mRange.meshletCount;

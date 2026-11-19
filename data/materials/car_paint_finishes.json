@@ -1,0 +1,30 @@
+{
+  "schema": "car_paint_finishes/1",
+  "notes": "Single source of truth for Dual-Layer PBR Clear-Coat automotive paint across WebGPU (web/src/gpu/materials/carPaint.ts) and Unreal Engine 5 (Substrate Dual-Layer Clear Coat + Material Parameter Collection).",
+  "dirt_mask_texture": {
+    "source_asset": "assets_source/textures/car_dirt_mask_rgba.png",
+    "web_asset": "web/public/assets/textures/car_dirt_mask_rgba.png",
+    "resolution": [512, 512],
+    "color_space": "linear",
+    "tiling": "seamless",
+    "channels": {
+      "r": "broad_road_film_fbm",
+      "g": "radial_mud_water_splatter",
+      "b": "aerodynamic_flank_streaks",
+      "a": "fine_dried_dust_grain"
+    }
+  },
+  "ue5_mpc_parameters": {
+    "collection_name": "MPC_CarPaintWear",
+    "scalars": ["Wear", "Scuff", "WakeSpray", "FlopStrength", "FlakeStrength", "BottomY_cm", "TopY_cm"],
+    "vectors": ["BaseColor", "LiveryColor", "UnderglowColor"]
+  },
+  "finishes": {
+    "gloss":    { "label": "Gloss",    "clearcoat": 1.00, "clearcoat_roughness": 0.020, "roughness": 0.22, "metalness": 0.45, "flake_strength": 0.18, "flop_strength": 0.32, "iridescence": 0.0 },
+    "satin":    { "label": "Satin",    "clearcoat": 0.35, "clearcoat_roughness": 0.120, "roughness": 0.42, "metalness": 0.32, "flake_strength": 0.08, "flop_strength": 0.18, "iridescence": 0.0 },
+    "metallic": { "label": "Metallic", "clearcoat": 1.00, "clearcoat_roughness": 0.028, "roughness": 0.18, "metalness": 0.88, "flake_strength": 0.48, "flop_strength": 0.58, "iridescence": 0.0 },
+    "pearl":    { "label": "Pearl",    "clearcoat": 1.00, "clearcoat_roughness": 0.020, "roughness": 0.20, "metalness": 0.65, "flake_strength": 0.36, "flop_strength": 0.85, "iridescence": 1.0 },
+    "candy":    { "label": "Candy",    "clearcoat": 1.00, "clearcoat_roughness": 0.012, "roughness": 0.14, "metalness": 0.94, "flake_strength": 0.55, "flop_strength": 0.72, "iridescence": 0.0 },
+    "matte":    { "label": "Matte",    "clearcoat": 0.04, "clearcoat_roughness": 0.500, "roughness": 0.72, "metalness": 0.15, "flake_strength": 0.00, "flop_strength": 0.06, "iridescence": 0.0 }
+  }
+}

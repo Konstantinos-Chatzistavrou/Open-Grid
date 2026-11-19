@@ -7,7 +7,8 @@
 // Flow: loading -> title (graphics tuned once behind a cover) -> Play -> game modes: Race (you + 5 AI rivals) / Free Roam (just you) /
 // Multiplayer (party lobby). The garage (title -> Garage) is cars, paint and upgrades only: back to the title, or Continue -> game modes.
 import * as THREE from 'three/webgpu';
-import { ClusteredForwardLighting, Post, PRESETS, PRESET_ORDER, usePotatoOnly, type PresetName } from './post';
+import { ClusteredForwardLighting, PROP_DETAIL_LAYER, Post, PRESETS, PRESET_ORDER, usePotatoOnly, type PresetName } from './post';
+import { advancePaintWear, createPaintWearState, resetPaintWear } from './gpu/materials/carPaint';
 import { CarProbe } from './fx/carProbe';
 import { nightEnvTexture } from './fx/nightEnv';
 import { Particles } from './scene/damage';
@@ -260,7 +261,8 @@ async function main() {
   scene.add(moon);
 
   const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 260);
-  camera.layers.enable(DEBRIS_LAYER);   // parts broken off the car (damage.ts): main view only, not the reflection probe
+  camera.layers.enable(DEBRIS_LAYER);       // detached crash parts: main view only
+  camera.layers.enable(PROP_DETAIL_LAYER);  // high-poly trees & street clutter: main view + mirror, skipped in planar reflections
   // Resize (window drag, fullscreen): at most once per frame, and never a preset change (that rebuilds pipelines =
   // seconds of shader compiles); the render scale keeps the pixel count the GPU was tuned for (syncToSize).
   let resizeQueued = false;
@@ -455,13 +457,25 @@ async function main() {
   };
   probe?.attach(visual.model, probeIntensity);
   let remote: RemoteCars | null = null;   // other players' cars, while a party session runs
-  let wearKm = 0;                         // odometer for the WGSL paint dirt/wear layer
-  let driveTimeSec = 0;                   // cumulative driving time (s) for dynamic paint dirt/wear
+  const paintWear = createPaintWearState();
+  let pendingScrapeImpulse = 0;
   const wearOverride = params.has('wear') ? Math.max(0, Math.min(1, Number(params.get('wear')))) : null;
-  if (wearOverride !== null) visual.custom.setWear(wearOverride, wearOverride * 240);
-  (globalThis as { __setWear?: (w: number, t?: number) => void }).__setWear = (w: number, t?: number) => {
-    visual.custom.setWear(w, t ?? w * 240);
+  if (wearOverride !== null) visual.custom.setWear(wearOverride, wearOverride * 0.4, wearOverride * 0.5);
+  (globalThis as {
+    __setWear?: (w: number, scuff?: number, wake?: number) => void;
+    __washCar?: () => void;
+    __wearState?: () => unknown;
+  }).__setWear = (w: number, scuff = w * 0.4, wake = w * 0.5) => {
+    paintWear.wear = Math.max(0, Math.min(1, w));
+    paintWear.scuff = Math.max(0, Math.min(1, scuff));
+    paintWear.wakeSpray = Math.max(0, Math.min(1, wake));
+    visual.custom.setWear(paintWear.wear, paintWear.scuff, paintWear.wakeSpray);
   };
+  (globalThis as { __washCar?: () => void }).__washCar = () => {
+    resetPaintWear(paintWear);
+    visual.custom.setWear(0, 0, 0);
+  };
+  (globalThis as { __wearState?: () => unknown }).__wearState = () => ({ ...paintWear, uniforms: visual.custom.getWear() });
   let party: Party | null = null;         // the multiplayer party we are in (lobby or driving)
   const remoteProg = new Map<string, Progress>();
   let shape = shapeOf(visualCfg);
@@ -777,6 +791,11 @@ async function main() {
       visual.model.position.set(0, 0, 0);
       garage.holder.add(visual.model);
       garage.holder.position.set(0, -visual.groundY, 0);
+      // Entering the garage washes the car back to showroom gloss (unless pinned by ?wear=).
+      if (wearOverride === null) {
+        resetPaintWear(paintWear);
+        visual.custom.setWear(0, 0, 0);
+      }
       if (garage.dirtyEnv) garage.captureEnv();
       probe?.fromCube(garage.cube.texture);
     } else {
@@ -798,6 +817,7 @@ async function main() {
     const sp = nyc?.streetProps;
     if (sp) { sp.nearR = NEAR_TREES[p]; sp.rangeScale = LIGHT_RANGE[p]; sp.lightCap = lightsOverride ?? LIGHT_CAP[p]; }
   };
+  post.mirrorCam.layers.enable(PROP_DETAIL_LAYER);
   post.onBeforeScenePass = (cam) => { nyc?.cullMeshlets(cam); };
   if (probe) probe.onBeforeFace = (cam) => { nyc?.cullMeshlets(cam); };
   (globalThis as { __meshlets?: () => unknown; __readMeshletStats?: () => Promise<unknown> }).__meshlets = () => nyc?.meshletReport() ?? null;
@@ -1899,14 +1919,36 @@ async function main() {
     {
       const lv = car.body.linvel();
       visual.velocity.set(lv.x, lv.y, lv.z);
-      // Dynamic WGSL paint dirt/wear accumulates with driving time (~4 min to full street grime) and distance
+      // Gameplay-driven WGSL paint wear: speed + drift sideslip + wet streets + wall scrapes + crash damage + rival wake spray
       const spd = Math.hypot(lv.x, lv.z);
-      if (live && spd > 1.5) {
-        driveTimeSec += frame;
-        wearKm += (spd * frame) / 1000;
+      if (live) {
+        let draftingFactor = 0;
+        if (ai.mode === 'race' && spd > 8) {
+          const fwdX = 2 * (quat.x * quat.z + quat.w * quat.y);
+          const fwdZ = 1 - 2 * (quat.x * quat.x + quat.y * quat.y);
+          for (const rival of ai.cars) {
+            const dx = rival.pos.x - pos.x, dz = rival.pos.z - pos.z;
+            const d = Math.hypot(dx, dz);
+            if (d > 2.5 && d < 24) {
+              const align = (dx * fwdX + dz * fwdZ) / d;
+              if (align > 0.85) draftingFactor = Math.max(draftingFactor, (1 - d / 24) * align);
+            }
+          }
+        }
+        const dmg = core.damage();
+        const damageLevel = Math.min(1, Math.max(dmg.severity ?? 0, (dmg.zone[0] + dmg.zone[1] + dmg.zone[2] + dmg.zone[3]) * 0.3));
+        advancePaintWear(paintWear, {
+          speedMs: spd,
+          dtSec: frame,
+          sideslipRad: Math.abs(car.out[OUT.sideslip] || 0),
+          wetRoad: 1.0,
+          scrapeImpulse: pendingScrapeImpulse,
+          damageLevel,
+          draftingFactor,
+        });
+        pendingScrapeImpulse = 0;
         if (wearOverride === null) {
-          const wearT = Math.min(1, Math.max(driveTimeSec / 240, wearKm / 40));
-          visual.custom.setWear(wearT, driveTimeSec);
+          visual.custom.setWear(paintWear.wear, paintWear.scuff, paintWear.wakeSpray);
         }
       }
       visual.update(pos, quat, car.out, prevPos, prevQuat);   // car.out was computed from the pose BEFORE the last step
@@ -1965,6 +2007,7 @@ async function main() {
       streetProps.carBox = driving() ? carBox : null;
     }
     nyc?.update(state === 'spectate' ? specPos : pos, frame, driving() && state !== 'spectate' ? visual.velocity : undefined, (impulse, kind) => {   // spectating: detail around the watched car
+      pendingScrapeImpulse += impulse;
       const lv = car.body.linvel();
       const s = Math.hypot(lv.x, lv.z);
       if (s > 1) {
