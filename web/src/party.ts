@@ -12,7 +12,9 @@ import Peer, { type DataConnection, type PeerOptions } from 'peerjs';
 import { cleanCustom, type Custom } from './scene/custom';
 import { skinOf } from './scene/driver';
 
-export const MAX_MEMBERS = 6;
+export const FREE_ROAM_MAX_PLAYERS = 16;
+export const RACE_MAX_PLAYERS = 12;
+export const MAX_MEMBERS = FREE_ROAM_MAX_PLAYERS;
 const PREFIX = 'opengrid-v1-';
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no 0/O, 1/I: easy to read out
 const LOAD_TIMEOUT_MS = 20000;
@@ -30,10 +32,36 @@ export interface Pose { x: number; y: number; z: number; qx: number; qy: number;
 /** Race progress: distance along the route (m), laps done, finish time (s, -1 still racing), out of the race (1 = DNF). */
 export interface Progress { d: number; lap: number; fin: number; best: number; dnf?: number }
 
+/** Spontaneous 1v1 drag wager payload broadcast over WebRTC in Free Roam. */
+export interface WagerNetMsg {
+  kind: 'offer' | 'accept' | 'decline' | 'finish';
+  wagerId: string;
+  to: string;
+  stake: 'cash' | 'pinkslip';
+  amount: number;
+  startX: number;
+  startZ: number;
+  dirX: number;
+  dirZ: number;
+  distM: number;
+  finishSec?: number;
+}
+
+/** Speed trap / drift zone leaderboard entry broadcast to the 16-player Free Roam lobby. */
+export interface ZoneScoreNetMsg {
+  zoneId: string;
+  zoneName: string;
+  kind: 'speed' | 'drift';
+  score: number;
+  stars: number;
+  car: string;
+  name: string;
+}
+
 type Msg =
   | { t: 'hello'; name: string; car: string; paint: number; skin?: string; look?: Custom; city?: string }
-  | { t: 'lobby'; members: Member[]; mode: PartyMode; laps: number; realism: boolean; phase: Phase }
-  | { t: 'start'; mode: PartyMode; laps: number; realism: boolean }
+  | { t: 'lobby'; members: Member[]; mode: PartyMode; laps: number; realism: boolean; copMode: boolean; phase: Phase }
+  | { t: 'start'; mode: PartyMode; laps: number; realism: boolean; copMode: boolean }
   | { t: 'loaded' }
   | { t: 'go' }
   | { t: 'lobbyback' }
@@ -42,6 +70,9 @@ type Msg =
   | { t: 'gone'; id?: string }
   | { t: 'pole'; id?: string; x: number; y: number; vx: number; vz: number }
   | { t: 'breach'; id?: string; b: { cx: number; cy: number; face: number; u: number; seed: number } }
+  | { t: 'flash'; id?: string }
+  | { t: 'wager'; id?: string; w: WagerNetMsg }
+  | { t: 'zone'; id?: string; z: ZoneScoreNetMsg }
   | { t: 'bye'; reason: string };
 
 export interface PartyHooks {
@@ -62,6 +93,12 @@ export interface PartyHooks {
   breach(spec: { cx: number; cy: number; face: number; u: number; seed: number }): void;
   /** a player knocked down the pole at (x, y) (game frame) driving at (vx, vz) */
   pole(x: number, y: number, vx: number, vz: number): void;
+  /** a player flashed headlights (spontaneous drag challenge signal) */
+  flash?(id: string): void;
+  /** spontaneous 1v1 drag wager signal */
+  wager?(fromId: string, w: WagerNetMsg): void;
+  /** speed trap / drift zone score posted by another player in Free Roam */
+  zoneScore?(fromId: string, z: ZoneScoreNetMsg): void;
   /** the party is over for us (leader left, kicked, network gone) */
   closed(reason: string): void;
 }
@@ -108,12 +145,17 @@ export class Party {
   laps = 3;
   /** race rules (the leader's): full realism (no resets, DNF + spectate) or respawns */
   realism = true;
+  /** race events only: toggle tactical physics police pursuit ON/OFF (always OFF in Free Roam) */
+  copMode = true;
   phase: Phase = 'lobby';
   hooks: PartyHooks = noop;
   private conns = new Map<string, DataConnection>();   // leader: every member's connection; member: the leader's
   private loaded = new Set<string>();
   private loadTimer = 0;
   private closed = false;
+
+  /** Mode-specific lobby player cap: 16 players in Free Roam, 12 in instanced Race Events. */
+  get maxMembers() { return this.mode === 'free' ? FREE_ROAM_MAX_PLAYERS : RACE_MAX_PLAYERS; }
 
   private constructor(private peer: Peer, readonly code: string, readonly isHost: boolean) {
     peer.on('disconnected', () => { if (!this.closed) peer.reconnect(); });   // broker link only: peers stay connected
@@ -207,15 +249,15 @@ export class Party {
     this.members = this.members.filter((m) => m.id !== id);
     this.loaded.delete(id);
     this.hooks.left(id);
-    this.broadcast({ t: 'lobby', members: this.members, mode: this.mode, laps: this.laps, realism: this.realism, phase: this.phase });
+    this.broadcast({ t: 'lobby', members: this.members, mode: this.mode, laps: this.laps, realism: this.realism, copMode: this.copMode, phase: this.phase });
     this.hooks.changed();
     this.checkLoaded();
   }
 
-  /** Leader: race or free roam, number of laps, realism (no resets) or respawns. */
-  setMode(mode: PartyMode, laps: number, realism = this.realism) {
+  /** Leader: race or free roam, number of laps, realism (no resets), and Cop Mode toggle (race events only). */
+  setMode(mode: PartyMode, laps: number, realism = this.realism, copMode = this.copMode) {
     if (!this.isHost || this.phase !== 'lobby') return;
-    this.mode = mode; this.laps = laps; this.realism = realism;
+    this.mode = mode; this.laps = laps; this.realism = realism; this.copMode = mode === 'free' ? false : copMode;
     this.pushLobby();
   }
 
@@ -225,7 +267,7 @@ export class Party {
     this.phase = 'loading';
     this.loaded.clear();
     for (const m of this.members) m.ready = false;
-    this.broadcast({ t: 'start', mode: this.mode, laps: this.laps, realism: this.realism });
+    this.broadcast({ t: 'start', mode: this.mode, laps: this.laps, realism: this.realism, copMode: this.copMode });
     this.pushLobby();
     this.hooks.start(this.mode, this.laps);
     clearTimeout(this.loadTimer);
@@ -255,7 +297,7 @@ export class Party {
   }
 
   private pushLobby() {
-    this.broadcast({ t: 'lobby', members: this.members, mode: this.mode, laps: this.laps, realism: this.realism, phase: this.phase });
+    this.broadcast({ t: 'lobby', members: this.members, mode: this.mode, laps: this.laps, realism: this.realism, copMode: this.copMode, phase: this.phase });
     this.hooks.changed();
   }
 
@@ -304,6 +346,26 @@ export class Party {
     else this.sendHost(m);
   }
 
+  /** We flashed our high-beams (spontaneous drag challenge cue in Free Roam). */
+  sendFlash() {
+    if (this.isHost) this.broadcast({ t: 'flash', id: this.selfId });
+    else this.sendHost({ t: 'flash' });
+  }
+
+  /** Send a spontaneous 1v1 drag wager signal (offer / accept / decline / finish). */
+  sendWager(w: WagerNetMsg) {
+    const m: Msg = { t: 'wager', w };
+    if (this.isHost) this.broadcast({ ...m, id: this.selfId });
+    else this.sendHost(m);
+  }
+
+  /** Broadcast a Speed Trap / Drift Zone score to everyone in the Free Roam lobby. */
+  sendZoneScore(z: ZoneScoreNetMsg) {
+    const m: Msg = { t: 'zone', z };
+    if (this.isHost) this.broadcast({ ...m, id: this.selfId });
+    else this.sendHost(m);
+  }
+
   /** We left the session (lobby, menu): the others take our car off the road. */
   sendGone() {
     if (this.isHost) this.broadcast({ t: 'gone', id: this.selfId });
@@ -322,8 +384,9 @@ export class Party {
         case 'hello': {
           let mem = this.members.find((x) => x.id === from);
           if (!mem) {
-            if (this.members.length >= MAX_MEMBERS) { c.send({ t: 'bye', reason: `That party is full (${MAX_MEMBERS} players).` } satisfies Msg); setTimeout(() => c.close(), 300); return; }
-            if (this.phase !== 'lobby') { c.send({ t: 'bye', reason: 'That party is mid-race. Try again when they are back in the lobby.' } satisfies Msg); setTimeout(() => c.close(), 300); return; }
+            const cap = this.maxMembers;
+            if (this.members.length >= cap) { c.send({ t: 'bye', reason: `That party is full (${cap} players).` } satisfies Msg); setTimeout(() => c.close(), 300); return; }
+            if (this.phase !== 'lobby' && this.mode !== 'free') { c.send({ t: 'bye', reason: 'That party is mid-race. Try again when they are back in the lobby.' } satisfies Msg); setTimeout(() => c.close(), 300); return; }
             mem = { id: from, name: '', car: '', paint: 0, host: false, ready: true };
             this.members.push(mem);
             this.conns.set(from, c);
@@ -379,6 +442,21 @@ export class Party {
           this.broadcast({ t: 'gone', id: from }, from);
           this.hooks.gone(from);
           break;
+        case 'flash':
+          if (!this.conns.has(from)) return;
+          this.broadcast({ t: 'flash', id: from }, from);
+          this.hooks.flash?.(from);
+          break;
+        case 'wager':
+          if (!this.conns.has(from) || !m.w || typeof m.w.wagerId !== 'string') return;
+          this.broadcast({ t: 'wager', id: from, w: m.w }, from);
+          this.hooks.wager?.(from, m.w);
+          break;
+        case 'zone':
+          if (!this.conns.has(from) || !m.z || typeof m.z.zoneId !== 'string' || !Number.isFinite(m.z.score)) return;
+          this.broadcast({ t: 'zone', id: from, z: m.z }, from);
+          this.hooks.zoneScore?.(from, m.z);
+          break;
       }
       return;
     }
@@ -390,10 +468,11 @@ export class Party {
         this.mode = m.mode === 'free' ? 'free' : 'race';
         this.laps = Number(m.laps) || 3;
         this.realism = m.realism !== false;
+        this.copMode = m.mode === 'free' ? false : m.copMode !== false;
         this.phase = m.phase;
         this.hooks.changed();
         break;
-      case 'start': this.mode = m.mode === 'free' ? 'free' : 'race'; this.laps = Number(m.laps) || 3; this.realism = m.realism !== false; this.phase = 'loading'; this.hooks.start(this.mode, this.laps); break;
+      case 'start': this.mode = m.mode === 'free' ? 'free' : 'race'; this.laps = Number(m.laps) || 3; this.realism = m.realism !== false; this.copMode = m.mode === 'free' ? false : m.copMode !== false; this.phase = 'loading'; this.hooks.start(this.mode, this.laps); break;
       case 'go': this.phase = 'driving'; this.hooks.go(); break;
       case 'lobbyback': this.phase = 'lobby'; this.hooks.lobby(); break;
       case 'pose': { const p = cleanPose(m.p); if (m.id && m.id !== this.selfId && p) this.hooks.pose(m.id, p, m.c); break; }
@@ -401,6 +480,9 @@ export class Party {
       case 'gone': if (m.id && m.id !== this.selfId) this.hooks.gone(m.id); break;
       case 'breach': if (m.id !== this.selfId && m.b && finite(m.b as unknown as Record<string, unknown>, ['cx', 'cy', 'face', 'u', 'seed'])) this.hooks.breach(m.b); break;
       case 'pole': if (m.id !== this.selfId && finite(m as unknown as Record<string, unknown>, ['x', 'y', 'vx', 'vz'])) this.hooks.pole(m.x, m.y, m.vx, m.vz); break;
+      case 'flash': if (m.id && m.id !== this.selfId) this.hooks.flash?.(m.id); break;
+      case 'wager': if (m.id && m.id !== this.selfId && m.w) this.hooks.wager?.(m.id, m.w); break;
+      case 'zone': if (m.id && m.id !== this.selfId && m.z) this.hooks.zoneScore?.(m.id, m.z); break;
       case 'bye': this.end(m.reason); break;
     }
   }

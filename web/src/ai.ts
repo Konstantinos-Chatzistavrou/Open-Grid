@@ -192,13 +192,17 @@ interface AiCar {
   pos: THREE.Vector3; quat: THREE.Quaternion;
 }
 
-export type AiMode = 'off' | 'race';
+export type AiMode = 'off' | 'race' | 'cruise';
 
 export class AiTraffic {
   readonly cars: AiCar[] = [];
   mode: AiMode = 'off';
   /** race: cars wait on the grid until go() */
   held = true;
+  /** Free Roam spontaneous 1v1 drag wager: index of the AI rival currently racing the player (-1 = none). */
+  dragCarIdx = -1;
+  /** Held during the 3-2-1 drag countdown right beside the player. */
+  dragHeld = false;
   readonly lane: Lane;
   private a = new THREE.Vector3();
   private b = new THREE.Vector3();
@@ -325,31 +329,56 @@ export class AiTraffic {
     return mine.lat;
   }
 
-  /** Race: on the grid, held (go() releases them). Off: parked out of sight, out of every query. */
+  /** Race: on the grid, held (go() releases them). Cruise: Free Roam AI traffic cruising the streets. Off: parked out of sight. */
   setMode(mode: AiMode) {
     this.mode = mode;
-    this.held = true;
+    this.held = mode === 'race';
+    this.dragCarIdx = -1;
+    this.dragHeld = false;
+    const on = mode !== 'off';
     for (const c of this.cars) {
-      c.model.visible = mode === 'race';
-      if (c.shadow) c.shadow.visible = mode === 'race';
-      if (c.light) c.light.intensity = mode === 'race' ? AI_BEAM : 0;
-      c.body.setEnabled(mode === 'race');
+      c.model.visible = on;
+      if (c.shadow) c.shadow.visible = on;
+      if (c.light) c.light.intensity = on ? AI_BEAM : 0;
+      c.body.setEnabled(on);
     }
     this.reset();
   }
 
   go() { this.held = false; }
 
-  /** Back to the grid (race) or out of sight (off). */
+  /** Engage AI rival `idx` in a Free Roam 1v1 spontaneous drag wager. */
+  startDrag(idx: number, held: boolean) {
+    this.dragCarIdx = idx;
+    this.dragHeld = held;
+    const c = this.cars[idx];
+    if (c && held) c.v = 0;
+  }
+  releaseDrag() { this.dragHeld = false; }
+  endDrag() { this.dragCarIdx = -1; this.dragHeld = false; }
+
+  /** Back to the grid (race), cruising offsets (cruise), or out of sight (off). */
   reset() {
-    this.held = true;
+    this.held = this.mode === 'race';
+    this.dragCarIdx = -1;
+    this.dragHeld = false;
     this.player.set(0, 0, 0); this.playerV = 0;
+    const cruiseOffsets = [20, 95, 220, 380, -70];
     for (const [i, c] of this.cars.entries()) {
       c.v = 0; c.parked = false; c.spin = 0;
       c.latV = c.yawOff = c.yawRate = c.dmg = 0; c.wrecked = false;
       if (this.mode === 'race') {
         const g = this.grid[i] ?? { s: 40 + 10 * i, lat: c.line };
         c.s = this.lane.wrap(g.s); c.lat = c.latTarget = g.lat;
+        this.lane.at(c.s, c.lat, c.pos);
+        c.y = this.ground(c.pos.x, c.pos.z, c.pos.y + 30) ?? c.pos.y;
+        c.pos.y = c.y;
+        this.orient(c, 0);
+      } else if (this.mode === 'cruise') {
+        const sOff = cruiseOffsets[i % cruiseOffsets.length] ?? 40 * (i + 1);
+        c.s = this.lane.wrap(this.playerS + sOff);
+        c.lat = c.latTarget = i % 2 === 0 ? 1.8 : -1.8;
+        c.v = i === 0 ? 0 : 12 + (i % 3) * 2.5; // car #0 waits near the first light for instant drag challenge
         this.lane.at(c.s, c.lat, c.pos);
         c.y = this.ground(c.pos.x, c.pos.z, c.pos.y + 30) ?? c.pos.y;
         c.pos.y = c.y;
@@ -434,7 +463,7 @@ export class AiTraffic {
     const L = this.lane.length;
     const others: { car: AiCar | null; p: THREE.Vector3; v: number; lat: number }[] =
       [{ car: null, p: this.player, v: this.playerV, lat: this.latOf(this.player, this.playerS) }, ...this.cars.map((o) => ({ car: o, p: o.pos, v: o.v, lat: o.lat }))];
-    for (const c of this.cars) {
+    for (const [carIdx, c] of this.cars.entries()) {
       c.prevPos.copy(c.pos); c.prevQuat.copy(c.quat);
       // headlight pool: fades out as the player's car comes under it (a rival close behind used to flood the car white)
       if (c.light) {
@@ -443,18 +472,27 @@ export class AiTraffic {
         const k = Math.min(1, Math.max(0, (Math.hypot(lx, lz) - 2.5) / 4.5));
         c.light.intensity = c.wrecked ? 0 : AI_BEAM * k * k * (3 - 2 * k);
       }
+      const isDragOpponent = this.mode === 'cruise' && carIdx === this.dragCarIdx;
       const still = c.v < 0.05 && Math.abs(c.latV) < 0.05 && Math.abs(c.yawRate) < 0.02;
-      if (this.held || ((c.parked || c.wrecked) && still)) { c.body.setNextKinematicTranslation(c.pos); c.body.setNextKinematicRotation(c.quat); continue; }
+      if (this.held || (isDragOpponent && this.dragHeld) || ((c.parked || c.wrecked) && still)) { c.body.setNextKinematicTranslation(c.pos); c.body.setNextKinematicRotation(c.quat); continue; }
       const i = this.lane.idx(c.s);
       // out of the race (parked for a test, or wrecked): no driver, it only rolls to a stop from whatever hit it
       const driven = !c.parked && !c.wrecked;
       // spun round (more than ~35 deg off the road): brake to a stop, gather it up, then go again
       const spun = Math.abs(c.yawOff) > 0.6;
       let target = driven && !spun ? c.vprof[(i + 1) % this.lane.n] * (1 - 0.3 * Math.min(1, c.dmg)) : 0;
-      // mild catch-up: a rival far ahead of the player eases off, one far behind pushes (up to 5 %)
-      let gap = c.s - this.playerS;
-      if (gap > L / 2) gap -= L; else if (gap < -L / 2) gap += L;
-      target *= 1 - 0.07 * Math.max(-1, Math.min(1, gap / 250));
+      if (this.mode === 'cruise' && !isDragOpponent) {
+        // Free Roam cruising traffic: chill 45-65 km/h street speed, pausing briefly when the player pulls up side-by-side
+        const cruiseV = 13.5 + (carIdx % 3) * 2.4;
+        const distPlayer = Math.hypot(c.pos.x - player.x, c.pos.z - player.z);
+        const sideBySide = distPlayer < 14 && this.playerV < 6.5;
+        target = driven && !spun ? (sideBySide ? 0 : Math.min(target, cruiseV)) : 0;
+      } else if (this.mode === 'race') {
+        // mild catch-up: a rival far ahead of the player eases off, one far behind pushes (up to 5 %)
+        let gap = c.s - this.playerS;
+        if (gap > L / 2) gap -= L; else if (gap < -L / 2) gap += L;
+        target *= 1 - 0.07 * Math.max(-1, Math.min(1, gap / 250));
+      }
       // traffic in front: the player or another rival, inside the car's own track
       const fwd = this.a.set(0, 0, 1).applyQuaternion(c.quat);
       const look = 14 + c.v * 0.9;

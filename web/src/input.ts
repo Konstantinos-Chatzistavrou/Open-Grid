@@ -35,7 +35,14 @@ export class Input {
   onCamera = () => {};
   onHud = () => {};
   onLights = () => {};
+  /** Headlight flash (KeyF or double-tap KeyL): triggers spontaneous 1v1 street drag wagers in Free Roam. */
+  onFlash = () => {};
+  /** Toggle spontaneous wager stake between Cash ($5,000) and Pink Slip (KeyV). */
+  onStakeToggle = () => {};
+  /** Toggle Speed Trap & Drift Zone Global Leaderboard overlay (KeyB). */
+  onBoard = () => {};
   onGarage = () => {};
+  private lastLightTap = 0;
   onPause = () => {};
   onMap = () => {};
   /** an assist quick key (1 2 3 5) changed input.assists */
@@ -58,7 +65,15 @@ export class Input {
         case 'KeyC': this.onCamera(); break;
         case 'KeyH': this.onHud(); break;
         case 'KeyM': this.onMap(); break;
-        case 'KeyL': this.onLights(); break;
+        case 'KeyL': {
+          const now = performance.now();
+          if (now - this.lastLightTap < 450) { this.lastLightTap = 0; this.onFlash(); }
+          else { this.lastLightTap = now; this.onLights(); }
+          break;
+        }
+        case 'KeyF': this.onFlash(); break;
+        case 'KeyV': this.onStakeToggle(); break;
+        case 'KeyB': this.onBoard(); break;
         case 'KeyG': this.onGarage(); break;
         case 'Digit1': this.assists.abs = !this.assists.abs; this.onAssistKey(); break;
         case 'Digit2': this.assists.tc = !this.assists.tc; this.onAssistKey(); break;

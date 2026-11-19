@@ -72,6 +72,12 @@ export interface RaceOutcome {
   assistsOff: number;     // 0..5: ABS, traction control, stability, countersteer, driving line switched off
   manual: boolean;
   realism: boolean;
+  /** High-stakes Race Event with Tactical Police enabled: massive Reputation & Credits multiplier. */
+  copsEnabled?: boolean;
+  /** Current Heat level (0..5) when finishing a Cop Race. */
+  heatLevel?: number;
+  /** True if the player actively broke away from a tactical pursuit during the race. */
+  escapedCops?: boolean;
 }
 export interface Reward { xp: number; cr: number; parts: { label: string; xp: number }[] }
 
@@ -87,9 +93,34 @@ export function raceReward(o: RaceOutcome, career: Career): Reward {
   // fewer aids pay more (Forza's difficulty bonus): +5 % per aid off, +10 % manual gears, +10 % full realism
   const mult = o.assistsOff * 0.05 + (o.manual ? 0.1 : 0) + (o.realism ? 0.1 : 0);
   if (mult > 0) parts.push({ label: `Driver bonus +${Math.round(mult * 100)} %`, xp: Math.round(sum * mult) });
+  // High-stakes Cop Mode payout: Heat & Reputation are tied exclusively to Race Events
+  let crMult = 1;
+  if (o.copsEnabled) {
+    const heat = Math.max(0, Math.min(5, Math.floor(o.heatLevel ?? 0)));
+    const copBonus = 0.5 + heat * 0.15 + (o.escapedCops ? 0.25 : 0);
+    const subTotal = parts.reduce((a, p) => a + p.xp, 0);
+    parts.push({ label: `Cop pursuit bonus (Heat ${heat}) +${Math.round(copBonus * 100)} %`, xp: Math.round(subTotal * copBonus) });
+    crMult = 1 + copBonus;
+  }
   const xp = parts.reduce((a, p) => a + p.xp, 0);
-  return { xp, cr: career === 'mp' ? Math.round(CR_BY_POS[i] * f) : 0, parts };
+  return { xp, cr: career === 'mp' ? Math.round(CR_BY_POS[i] * f * crMult) : 0, parts };
 }
+
+/** Heavy bust consequences in Cop Race Events (never applies in Free Roam). */
+export function copBustPenalty(heatLevel: number, pinkSlipStaked = false): { fineXp: number; fineCr: number; impoundCar: boolean } {
+  const h = Math.max(1, Math.min(5, Math.floor(heatLevel || 1)));
+  return {
+    fineXp: 600 + h * 450,
+    fineCr: 5_000 + h * 4_500,
+    impoundCar: pinkSlipStaked || h >= 5,
+  };
+}
+
+/** Free-roam spontaneous drag wager & exploration zone rewards (shared with UE5 economy spec). */
+export const WAGER_CASH_DEFAULT = 5_000;
+export const WAGER_CASH_XP = 1_500;
+export const WAGER_PINKSLIP_XP = 4_000;
+export const ZONE_STAR_XP = [0, 350, 750, 1_400] as const;
 /** Free roam: XP per km (both careers; online free roam pays no credits: they come from ranked races only). */
 export const FREE_ROAM_XP_PER_KM = 40;
 
