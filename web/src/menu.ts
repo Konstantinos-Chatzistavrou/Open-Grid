@@ -23,6 +23,9 @@ import { LANGS, getLang, setLang, t, type LangCode } from './i18n';
 import type { AccessibilitySettings, ColorblindMode, UiScale } from './accessibility';
 import type { AvatarGear } from './carMeet';
 import { INSURANCE_PREMIUM_CR, INSURANCE_PREMIUM_XP, conditionOf, repairCostOf, type MaintenanceStore, type ReportCategory } from './maintenance';
+import { AUCTION_LOTS, ENGINE_SWAPS, ENGINE_SWAP_THRESHOLD, MANIFOLDS, NOS_MAX_LITERS, NOS_PRICE_PER_LITER_XP, TURBOS, engineOf, stanceOf, type ManifoldId, type NightRunnersStore, type SwapId, type TurboId } from './nightRunners';
+import { PARTY_BONUS_MUL, type RetentionStore } from './retention';
+import { checkSplitScreen } from './splitScreen';
 
 /** Garage tabs: name, camera (azimuth, elevation, distance) that shows those parts. */
 const GTABS: { id: string; label: string; cam: string }[] = [
@@ -34,6 +37,8 @@ const GTABS: { id: string; label: string; cam: string }[] = [
   { id: 'lights', label: 'Lights', cam: '0.35,0.1,5.6' },
   { id: 'glass', label: 'Glass', cam: '2.85,0.14,5.2' },
   { id: 'driver', label: 'Driver', cam: '1.45,0.14,4.3' },
+  { id: 'stance', label: 'Stance', cam: '1.35,0.04,4.8' },
+  { id: 'engine', label: 'Engine', cam: '0.15,0.22,4.4' },
   { id: 'perf', label: 'Tune', cam: '0.8,0.17,6.5' },
 ];
 
@@ -102,6 +107,15 @@ export interface MenuHooks {
   repairCar?(): void;
   toggleInsurance?(on: boolean): void;
   reportPlayer?(player: string, category: ReportCategory): void;
+  garageIgnition?(): void;
+  garageRev?(): void;
+  garageWalk?(on: boolean): void;
+  nrChanged?(): void;
+  buyAuction?(lotId: string): void;
+  prestigeReset?(): void;
+  voiceToggle?(): void;
+  voiceMode?(m: 'ptt' | 'open'): void;
+  publicMatchmake?(): void;
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -169,6 +183,12 @@ export class Menu {
   /** console-cert accessibility (colorblind mode + HUD UI scale), telemetry & cloud save status */
   a11y: AccessibilitySettings = { colorblind: 'off', uiScale: 1 };
   maint: MaintenanceStore = { cars: {}, insured: false, reports: [] };
+  nr: NightRunnersStore = { engines: {}, stance: {}, walkableGarage: true, boughtLots: [] };
+  ret: RetentionStore = { dayKey: '', challenges: [], reputation: 0, prestige: 0, seasonYear: new Date().getUTCFullYear(), badges: [] };
+  voiceStatus = 'Voice Off';
+  voiceOn = false;
+  voiceMode: 'ptt' | 'open' = 'ptt';
+  garageWalkActive = false;
   private reportTarget = '';
   simhubOn = false;
   telemetrySamples = 0;
@@ -182,7 +202,7 @@ export class Menu {
   private garageTab = 'paint';
   /** the option under the pointer: the live panel previews its effect without applying it */
   private hover: { k: string; v: string | number } | null = null;
-  private shopTab: 'cars' | 'upgrades' | 'gear' = 'cars';
+  private shopTab: 'cars' | 'upgrades' | 'gear' | 'auction' = 'cars';
   private shopCar = '';
 
   constructor(readonly sel: Selection, private cars: CatalogCar[], private physics: Record<string, unknown>, private hooks: MenuHooks) {
@@ -234,18 +254,17 @@ export class Menu {
     // don't rebuild under the cursor while someone types a name or code
     const focused = document.activeElement as HTMLInputElement | null;
     const keep = focused && this.root.contains(focused) && focused.tagName === 'INPUT' ? { id: focused.id, a: focused.selectionStart, b: focused.selectionEnd } : null;
-    const leftScroll = this.root.querySelector('.g-left')?.scrollTop ?? 0;
-    const rightScroll = this.root.querySelector('.g-right')?.scrollTop ?? 0;
+    // Bug fix: preserve scroll position across ALL scrollable panels (Garage, Shop, Settings, Controls, Lobby)
+    const SCROLL_SELS = ['.g-stage-scroll', '.g-carlist', '.g-left', '.g-right', '.lobby-card', '.settings-card', '.controls-card', '.shop-card', '.modes-screen'];
+    const scrolls = SCROLL_SELS.map((sel) => [sel, this.root.querySelector(sel)?.scrollTop ?? 0] as const);
     const html = {
       none: () => '', title: () => this.title(), garage: () => this.garage(), modes: () => this.modes(), lobby: () => this.lobby(),
       pause: () => this.pause(), controls: () => this.ctl?.html() ?? '', settings: () => this.settings(), shop: () => this.shop(), profile: () => this.profile(), results: () => (this.lastResults ? this.results(this.lastResults) : ''),
       busy: () => '',   // the loading screen (loading.ts) covers it
     }[this.screen]();
     this.root.innerHTML = html;
-    if (this.screen === 'garage') {
-      const l = this.root.querySelector('.g-left'), r = this.root.querySelector('.g-right');
-      if (l && leftScroll) l.scrollTop = leftScroll;
-      if (r && rightScroll) r.scrollTop = rightScroll;
+    for (const [sel, top] of scrolls) {
+      if (top > 0) { const el = this.root.querySelector(sel); if (el) el.scrollTop = top; }
     }
     if (keep?.id) {
       const el = document.getElementById(keep.id) as HTMLInputElement | null;
@@ -300,6 +319,10 @@ export class Menu {
           ${me}
           <div class="careers">${this.careerCard('sp')}${this.careerCard('mp')}</div>
           ${earned}
+          ${this.ret.challenges.length ? `<div class="daily-box">
+            <h4>⚡ Daily Challenges · Rep ${this.ret.reputation.toLocaleString()}${this.ret.prestige ? ` · ★${this.ret.prestige}` : ''}</h4>
+            ${this.ret.challenges.map((c) => `<div class="drow ${c.claimed ? 'done' : ''}"><span>${esc(c.title)}</span><b>${c.claimed ? '✓ DONE' : `${c.progress}/${c.target} (+${c.xpReward} XP)`}</b></div>`).join('')}
+          </div>` : ''}
         </div>
         <div class="t-foot">
           <div class="dim note">${esc(this.gfxNote || 'WebGPU · 240 Hz physics')} · Assists: ${this.assists.preset[0].toUpperCase() + this.assists.preset.slice(1)}</div>
@@ -343,6 +366,8 @@ export class Menu {
       <div class="chips">${LANGS.map((l) => chip('lang', l.code, l.native, getLang() === l.code)).join('')}</div>
       <div class="dim note">String-table localization (UE5 Localization Dashboard ready) with automatic text-expansion layouts.</div>
       <h3>♿ ${t('settings.accessibility')}</h3>
+      ${row('WALKABLE GARAGE', chip('nr-walk', '1', 'On (Default)', this.nr.walkableGarage) + chip('nr-walk', '0', 'Orbit Only', !this.nr.walkableGarage), 'Walk around your car in the garage to inspect the hood, oil cap, and locker.')}
+      ${row('ANNUAL SEASON PRESTIGE', `<button class="chip" data-act="prestige">★ Prestige Reset (Season ${this.ret.seasonYear} · ★${this.ret.prestige})</button>`, 'Resets rank/XP for a permanent Prestige badge while keeping 100% of your owned cars & garage builds.')}
       ${row(t('settings.colorblind').toUpperCase(),
         (['off', 'protanopia', 'deuteranopia', 'tritanopia'] as ColorblindMode[]).map((m) => chip('a11y-cb', m, m[0].toUpperCase() + m.slice(1), this.a11y.colorblind === m)).join(''),
         'Remaps Driving Line and Minimap icons (player, rivals, police, roadblocks, speed/drift zones) to high-contrast colorblind-safe palettes.')}
@@ -422,15 +447,26 @@ export class Menu {
         <span class="suit-dot" style="background:${k.suit}"></span>${btn}</div>`;
     }).join('');
     const tab = (id: typeof this.shopTab, label: string) => `<button class="gtab ${this.shopTab === id ? 'on' : ''}" data-act="stab" data-v="${id}">${label}</button>`;
+    const auctionCards = AUCTION_LOTS.map((lot) => {
+      const sold = this.nr.boughtLots.includes(lot.id);
+      const tags = lot.tags.map((tg) => `<span class="tag-chip">${esc(tg)}</span>`).join('');
+      return `<div class="scard ${sold ? 'owned' : ''}">
+        <div class="car-head"><b>${esc(lot.title)}</b><i class="car-badge">-${lot.discountPct}% LOT</i></div>
+        <div class="dim small-note">${lot.mileageKm.toLocaleString()} km · Engine ${lot.startHealth}% · Damage ${Math.round(lot.startDamage * 100)}%</div>
+        <div>${tags}</div>
+        <button class="small ${sold ? '' : 'primary'}" data-act="buy-auction" data-v="${lot.id}" ${sold ? 'disabled' : ''}>${sold ? '✓ Won Auction' : `🔨 Buy Lot · ${lot.priceXp} XP`}</button>
+      </div>`;
+    }).join('');
     const content = this.shopTab === 'cars' ? `<div class="shop-cars">${cars}</div>`
       : this.shopTab === 'upgrades' ? `<p class="dim small-note">Fit and remove stages in the Garage → Tune.</p><div class="chips">${carChips}</div>${ups}`
+      : this.shopTab === 'auction' ? `<p class="dim small-note">Night Runners Used-Car Auction House: opaque condition tags &amp; high mileage carry real mechanical wear at steep discounts.</p><div class="shop-cars">${auctionCards}</div>`
       : `<p class="dim small-note">Helmet and suit: worn by your driver and shown as your avatar to everyone in a party.</p><div class="shop-cars">${gear}</div>`;
     const how = sp ? 'Single player: everything unlocks as you level up (XP from races and free roam). Nothing to buy.'
       : 'Online: credits and XP come only from ranked party races (6+ players who race; at most 2 per network). Each item needs an online level and credits.';
     return `<div class="lobby-screen"><div class="card lobby-card shop-card">
       <div class="lobby-head"><button data-act="home" class="back-btn">← Main Menu</button><div><div class="kicker">${sp ? 'UNLOCKS' : 'SPEND YOUR CREDITS'}</div><h2>Shop</h2></div>${sp ? '' : `<div class="wallet-pill">${this.mp.ready ? fmt(w.credits) : '—'}</div>`}</div>
       ${this.careerBar()}
-      <div class="gtabs">${tab('cars', 'Cars')}${tab('upgrades', 'Upgrades')}${tab('gear', 'Driver gear')}</div>
+      <div class="gtabs">${tab('cars', 'Cars')}${tab('upgrades', 'Upgrades')}${tab('gear', 'Driver gear')}${tab('auction', '🏷 Auction House')}</div>
       ${this.shopNote ? `<div class="pnote ${this.shopNote.startsWith('✓') ? '' : 'bad'}">${esc(this.shopNote)}</div>` : ''}
       ${content}
       <div class="dim note">${how}</div>
@@ -454,8 +490,8 @@ export class Menu {
     const stages = MOD_KEYS.reduce((a, k) => a + mods[k], 0);
     const tabs = GTABS.map((t) => `<button class="gtab ${this.garageTab === t.id ? 'on' : ''}" data-act="gtab" data-v="${t.id}">${t.label}</button>`).join('');
     const body = ({ paint: () => this.gPaint(), body: () => this.gBody(), aero: () => this.gAero(), fenders: () => this.gFenders(), wheels: () => this.gWheels(), lights: () => this.gLights(),
-      glass: () => this.gGlass(), driver: () => this.gDriver(), perf: () => this.gPerf() } as Record<string, () => string>)[this.garageTab]?.() ?? '';
-    const rail = GTABS.map((t, i) => `<button class="rail ${this.garageTab === t.id ? 'on' : ''}" data-act="gtab" data-v="${t.id}"><i>0${i + 1}</i><b>${t.label}</b></button>`).join('');
+      glass: () => this.gGlass(), driver: () => this.gDriver(), stance: () => this.gStance(), engine: () => this.gEngine(), perf: () => this.gPerf() } as Record<string, () => string>)[this.garageTab]?.() ?? '';
+    const rail = GTABS.map((t, i) => `<button class="rail ${this.garageTab === t.id ? 'on' : ''}" data-act="gtab" data-v="${t.id}"><i>${String(i + 1).padStart(2, '0')}</i><b>${t.label}</b></button>`).join('');
     const cls = now.power > 420 ? 'S' : now.power > 330 ? 'A' : now.power > 250 ? 'B' : 'C';
     const cond = conditionOf(this.maint, sel.car);
     const rep = repairCostOf(cond, this.maint.insured);
@@ -485,6 +521,9 @@ export class Menu {
           <button class="chip" data-act="cam" data-v="1.5,0.05,3.4">Wheel</button>
           <button class="chip" data-act="cam" data-v="0.9,0.55,6.8">Top</button>
           <button class="chip" data-act="cam" data-v="orbit">Orbit</button>
+          <button class="chip on" data-act="g-ignition" title="Crank starter &amp; cold-start exhaust bark">🔑 Ignition</button>
+          <button class="chip on" data-act="g-rev" title="Rev engine &amp; trigger flamethrower exhaust pops">🔥 Rev</button>
+          ${this.nr.walkableGarage ? `<button class="chip ${this.garageWalkActive ? 'on' : ''}" data-act="g-walk">🚶 ${this.garageWalkActive ? 'Stop Walk' : 'Walk Garage'}</button>` : ''}
         </div>
       </header>
       <aside class="g-carlist panel"><h3>Your cars (${this.cars.filter((c) => w.owns(c.id)).length}/${this.cars.length})</h3>${cards}
@@ -641,6 +680,41 @@ export class Menu {
     return `<h3>Fender flares <small class="dim">wide body, more drag</small></h3><div class="chips">${Object.keys(FENDERS).map((id) => this.cu('fenders', id, FENDERS[id], c.fenders === id, bodyHint('fender', id, FENDERS[id]))).join('')}</div>`;
   }
 
+  private gStance() {
+    const st = stanceOf(this.nr, this.sel.car);
+    const pick = (k: string, vals: number[], cur: number, fmtV: (n: number) => string) =>
+      `<div class="chips">${vals.map((v) => `<button class="chip ${Math.abs(cur - v) < 0.05 ? 'on' : ''}" data-act="nr-stance" data-k="${k}" data-v="${v}">${fmtV(v)}</button>`).join('')}</div>`;
+    return `<h3>Stance &amp; Suspension <small class="dim">(visuals &amp; physics hitboxes stay 1:1)</small></h3>
+      <h3>Front Camber</h3>${pick('camberFront', [-7, -5, -3.5, -1.8, 0], st.camberFront, (v) => `${v}°`)}
+      <h3>Rear Camber</h3>${pick('camberRear', [-7, -5, -3.5, -1.5, 0], st.camberRear, (v) => `${v}°`)}
+      <h3>Ride Height</h3>${pick('rideHeightMm', [-40, -25, -10, 0, 15], st.rideHeightMm, (v) => `${v > 0 ? '+' : ''}${v} mm`)}
+      <h3>Spring Stiffness</h3>${pick('springMul', [0.75, 1.0, 1.25, 1.5], st.springMul, (v) => `${Math.round(v * 100)}%`)}`;
+  }
+
+  private gEngine() {
+    const eng = engineOf(this.nr, this.sel.car);
+    const canSwap = eng.health <= ENGINE_SWAP_THRESHOLD;
+    const tagsHtml = eng.tags.length ? `<div style="margin:6px 0">${eng.tags.map((tg) => `<span class="tag-chip">${esc(tg)}</span>`).join('')}</div>` : '';
+    const turboBtns = (Object.keys(TURBOS) as TurboId[]).map((id) =>
+      `<button class="chip ${eng.turbo === id ? 'on' : ''}" data-act="nr-turbo" data-v="${id}">${TURBOS[id].label} (${Math.round((TURBOS[id].powerMul - 1) * 100)}% pwr)</button>`).join('');
+    const manBtns = (Object.keys(MANIFOLDS) as ManifoldId[]).map((id) =>
+      `<button class="chip ${eng.manifold === id ? 'on' : ''}" data-act="nr-man" data-v="${id}">${MANIFOLDS[id].label}</button>`).join('');
+    const swapBtns = (Object.keys(ENGINE_SWAPS) as SwapId[]).map((id) =>
+      `<button class="chip ${eng.swap === id ? 'on' : ''}" data-act="nr-swap" data-v="${id}" ${!canSwap && id !== 'stock' && id !== eng.swap ? 'disabled title="Wear current engine to <= 20% health to unlock swaps"' : ''}>${ENGINE_SWAPS[id].label}</button>`).join('');
+    return `<h3>Maintenance &amp; Health</h3>
+      <div class="dim small-note">Engine Health: <b>${Math.round(eng.health)}%</b> · Oil Life: <b>${Math.round(eng.oilLife)}%</b> · Odometer: <b>${Math.round(eng.mileageKm).toLocaleString()} km</b></div>
+      ${tagsHtml}
+      <div class="chips" style="margin:8px 0">
+        <button class="chip" data-act="nr-oil">🛢 Change Oil (50 XP)</button>
+        <button class="chip" data-act="nr-rebuild">🔧 Engine Overhaul (350 XP)</button>
+      </div>
+      <h3>💨 Nitrous Oxide <small class="dim">(${eng.nosLiters.toFixed(1)} / ${NOS_MAX_LITERS} L · [X] in race · overuse fries engine!)</small></h3>
+      <div class="chips"><button class="chip on" data-act="nr-nos" data-v="5">+5 L Refill (${5 * NOS_PRICE_PER_LITER_XP} XP)</button><button class="chip" data-act="nr-nos" data-v="15">Fill Full Bottle</button></div>
+      <h3>Turbocharger <small class="dim">(trades reliability for boost)</small></h3><div class="chips">${turboBtns}</div>
+      <h3>Exhaust Manifold <small class="dim">(more backfire flames &amp; flow)</small></h3><div class="chips">${manBtns}</div>
+      <h3>Under-the-Hood Engine Swap <small class="dim">${canSwap ? '✓ UNLOCKED (engine worn <= 20%)' : `🔒 Locked until engine health <= ${ENGINE_SWAP_THRESHOLD}%`}</small></h3><div class="chips">${swapBtns}</div>`;
+  }
+
   private gPerf() {
     const sel = this.sel, w = this.career, mods = modsOf(sel);
     const rows = MOD_KEYS.map((k) => {
@@ -720,12 +794,15 @@ export class Menu {
         <div class="lobby-head"><button data-act="modes" class="back-btn">← Game Modes</button><div><div class="kicker">MULTIPLAYER</div><h2>Party</h2></div></div>
         ${nameRow}
         <div class="lobby-cols">
-          <div class="lcol"><h3>Host</h3><p class="dim">Start a party and invite friends with a link or a 5-letter code.</p>
+          <div class="lcol"><h3>Host</h3><p class="dim">Start a party and invite friends with a link or a 5-letter code (+${Math.round((PARTY_BONUS_MUL - 1) * 100)}% Party XP/CR Bonus).</p>
             <button class="primary huge" data-act="pcreate" ${this.partyBusy ? 'disabled' : ''}>＋ Create Party</button></div>
-          <div class="lcol"><h3>Join</h3><p class="dim">Got a code from a friend? Type it here.</p>
+          <div class="lcol"><h3>Public Matchmaking</h3><p class="dim">Jump straight into an open public lobby with strangers — even solo or with your party.</p>
+            <button class="primary huge" data-act="pmatch" ${this.partyBusy ? 'disabled' : ''}>🌐 Quick Public Lobby</button></div>
+          <div class="lcol"><h3>Join by Code</h3><p class="dim">Got a code from a friend? Type it here.</p>
             <div class="joinrow"><input id="joincode" type="text" maxlength="8" value="${esc(this.joinCode)}" placeholder="CODE" spellcheck="false" autocomplete="off" />
             <button class="primary" data-act="pjoin" ${this.partyBusy ? 'disabled' : ''}>Join</button></div></div>
         </div>
+        ${(() => { const ss = checkSplitScreen(); return `<div class="opts" style="margin-top:12px"><span class="dim">SPLIT-SCREEN</span><span class="pill ${ss.eligible ? 'gold' : ''}">${ss.eligible ? '✓ READY' : 'LOCKED'}</span><span class="dim small-note">${esc(ss.reason)}</span></div>`; })()}
         ${this.partyBusy ? '<div class="pnote"><span class="spin inline"></span> Connecting…</div>' : note}
       </div></div>`;
     }
@@ -767,7 +844,8 @@ export class Menu {
       <div class="invite-box"><span class="dim">INVITE</span><input id="plink" type="text" readonly value="${esc(p.link)}" />
         <button class="small" data-act="pcopy">Copy link</button>${share}</div>
       ${nameRow}
-      <h3>Drivers</h3><div class="members">${members}${empty}</div>
+      <h3>Drivers <span class="pill gold">+${Math.round((PARTY_BONUS_MUL - 1) * 100)}% PARTY BONUS</span></h3><div class="members">${members}${empty}</div>
+      <div class="opts"><span class="dim">VOICE CHAT</span><button class="chip ${this.voiceOn ? 'on' : ''}" data-act="voice-toggle">🎙 ${esc(this.voiceStatus)}</button><button class="chip ${this.voiceMode === 'ptt' ? 'on' : ''}" data-act="voice-mode" data-v="ptt">[Z] Walkie-Talkie PTT</button><button class="chip ${this.voiceMode === 'open' ? 'on' : ''}" data-act="voice-mode" data-v="open">Open Mic</button></div>
       <h3>Event ${p.isHost ? '' : '<small class="dim">(the leader chooses)</small>'}</h3>${rules}
       ${note}
       <div class="lobby-foot"><button data-act="pleave" class="back-btn">${p.isHost ? 'Close Party' : 'Leave Party'}</button>${action}</div>
@@ -954,6 +1032,62 @@ export class Menu {
         this.render();
         break;
       }
+      case 'g-ignition': this.hooks.garageIgnition?.(); break;
+      case 'g-rev': this.hooks.garageRev?.(); break;
+      case 'g-walk': this.garageWalkActive = !this.garageWalkActive; this.hooks.garageWalk?.(this.garageWalkActive); this.render(); break;
+      case 'nr-walk': this.nr.walkableGarage = v === '1'; if (!this.nr.walkableGarage) this.garageWalkActive = false; this.hooks.nrChanged?.(); this.render(); break;
+      case 'nr-stance': {
+        const st = stanceOf(this.nr, sel.car);
+        const k = b.dataset.k as 'camberFront' | 'camberRear' | 'rideHeightMm' | 'springMul';
+        if (k) { st[k] = Number(v); this.hooks.nrChanged?.(); this.render(); }
+        break;
+      }
+      case 'nr-turbo': engineOf(this.nr, sel.car).turbo = v as TurboId; this.hooks.nrChanged?.(); this.render(); break;
+      case 'nr-man': engineOf(this.nr, sel.car).manifold = v as ManifoldId; this.hooks.nrChanged?.(); this.render(); break;
+      case 'nr-swap': {
+        const eng = engineOf(this.nr, sel.car);
+        if (eng.health <= ENGINE_SWAP_THRESHOLD || v === 'stock') {
+          eng.swap = v as SwapId;
+          eng.health = 100;
+          eng.oilLife = 100;
+          this.hooks.nrChanged?.();
+          this.render();
+        }
+        break;
+      }
+      case 'nr-oil': {
+        const eng = engineOf(this.nr, sel.car);
+        eng.oilLife = 100;
+        if (this.sp.kind === 'sp') this.sp.penalty(50);
+        this.hooks.nrChanged?.();
+        this.render();
+        break;
+      }
+      case 'nr-rebuild': {
+        const eng = engineOf(this.nr, sel.car);
+        eng.health = 100;
+        eng.oilLife = 100;
+        if (this.sp.kind === 'sp') this.sp.penalty(350);
+        this.hooks.nrChanged?.();
+        this.render();
+        break;
+      }
+      case 'nr-nos': {
+        const eng = engineOf(this.nr, sel.car);
+        const add = Math.min(NOS_MAX_LITERS - eng.nosLiters, Number(v) || 5);
+        if (add > 0.1) {
+          eng.nosLiters = Math.min(NOS_MAX_LITERS, eng.nosLiters + add);
+          if (this.sp.kind === 'sp') this.sp.penalty(Math.round(add * NOS_PRICE_PER_LITER_XP));
+          this.hooks.nrChanged?.();
+          this.render();
+        }
+        break;
+      }
+      case 'buy-auction': this.hooks.buyAuction?.(v); this.render(); break;
+      case 'prestige': this.hooks.prestigeReset?.(); this.render(); break;
+      case 'voice-toggle': this.hooks.voiceToggle?.(); break;
+      case 'voice-mode': this.hooks.voiceMode?.(v as 'ptt' | 'open'); this.render(); break;
+      case 'pmatch': this.hooks.publicMatchmake?.(); break;
       case 'wear-skin': if (this.career.ownsSkin(v)) { sel.skin = v; this.save(); this.hooks.look(); this.hooks.partyMe(); this.render(); } break;
       case 'shop-car': this.shopCar = v; this.render(); break;
       case 'shop-drive': sel.car = v; this.shopCar = v; this.save(); this.render(); this.hooks.preview(); break;

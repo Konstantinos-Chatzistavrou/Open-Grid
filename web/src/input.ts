@@ -116,6 +116,10 @@ export class Input {
   onStepOut = () => {};
   /** Interact with nearby Free Roam Race Node to enter Matchmaking Lobby (Enter). */
   onInteract = () => {};
+  /** Expand / collapse full-screen interactive map for GPS waypoints (Tab). */
+  onFullMap = () => {};
+  /** Walkie-talkie voice Push-to-Talk down/up (KeyZ). */
+  onVoicePtt: (down: boolean) => void = () => {};
   onGarage = () => {};
   private lastLightTap = 0;
   onPause = () => {};
@@ -162,6 +166,8 @@ export class Input {
       else if (e.code === b.carMeet) this.onCarMeet();
       else if (e.code === b.stepOut) this.onStepOut();
       else if (e.code === b.interact) this.onInteract();
+      else if (e.code === 'Tab') { e.preventDefault(); this.onFullMap(); }
+      else if (e.code === 'KeyZ') this.onVoicePtt(true);
       else if (e.code === b.garage) this.onGarage();
       else if (e.code === 'Digit1') { this.assists.abs = !this.assists.abs; this.onAssistKey(); }
       else if (e.code === 'Digit2') { this.assists.tc = !this.assists.tc; this.onAssistKey(); }
@@ -169,7 +175,10 @@ export class Input {
       else if (e.code === 'Digit5') { this.assists.autoGearbox = !this.assists.autoGearbox; this.onAssistKey(); }
       if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
     });
-    addEventListener('keyup', (e) => this.keys.delete(e.code));
+    addEventListener('keyup', (e) => {
+      this.keys.delete(e.code);
+      if (e.code === 'KeyZ') this.onVoicePtt(false);
+    });
     addEventListener('blur', () => this.keys.clear());
     addEventListener('gamepadconnected', () => this.onDevice());
     addEventListener('gamepaddisconnected', (e) => { if ((e as GamepadEvent).gamepad.index === this.activeIndex) { this.activeIndex = -1; this.setSource('keys'); } });

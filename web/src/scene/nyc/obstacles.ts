@@ -41,8 +41,16 @@ export class StreetObstacles {
     this.t = 0;
     this.props.near(car.x, -car.z, RANGE, this.poles, this.trees);
     this.keep.clear();
-    for (const p of this.poles) { this.keep.add(p); if (!this.cols.has(p)) this.add(p); }
-    for (const tr of this.trees) { this.keep.add(tr); if (!this.cols.has(tr)) this.addTree(tr); }
+    for (const p of this.poles) {
+      if (p.broken || !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) continue;
+      this.keep.add(p);
+      if (!this.cols.has(p)) this.add(p);
+    }
+    for (const tr of this.trees) {
+      if (!Number.isFinite(tr.x) || !Number.isFinite(tr.y) || !Number.isFinite(tr.z)) continue;
+      this.keep.add(tr);
+      if (!this.cols.has(tr)) this.addTree(tr);
+    }
     for (const [o, c] of this.cols) if (!this.keep.has(o) || (o as BreakablePole).broken) this.drop(o, c);
   }
 

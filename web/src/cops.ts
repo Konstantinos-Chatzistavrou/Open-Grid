@@ -335,16 +335,28 @@ export class Cops {
       // Tactical positioning:
       //  - PIT specialist aims 2.1 m behind the player's rear axle, offset 1.9 m to one side, then swings in for a PIT!
       //  - Flanker mirrors the opposite side to box in lateral movement.
+      // Physics-obeying corner grip limit: cops cannot rubber-band through sharp 90° turns.
+      // Compute local route curvature; exceeding v_max = sqrt(mu*g/k) causes real lateral understeer & speed scrub!
+      const ci = this.lane.idx(u.s);
+      const nPts = this.lane.n;
+      const rA = this.lane.right[(ci - 2 + nPts) % nPts];
+      const rB = this.lane.right[(ci + 2) % nPts];
+      const dAng = Math.acos(Math.max(-1, Math.min(1, rA.x * rB.x + rA.z * rB.z)));
+      const curv = dAng / 16; // rad / m (4 steps * ~4 m)
+      const cornerLimit = curv > 0.008 ? Math.sqrt((1.05 * 9.81) / curv) : topSpeed;
+
       const wantOffsetS = u.role === 'pit' ? (this.pitCd <= 0.3 && kmh > 38 ? -2.0 : -4.5) : -1.5;
       const targetS = playerS + wantOffsetS;
       const d = signedDelta(targetS, u.s);
-      const wantSpeed = Math.max(-4, Math.min(topSpeed, kmh / 3.6 + d * 1.55));
-      u.speed += (wantSpeed - u.speed) * Math.min(1, dt * 3.2);
+      const rawWant = Math.max(-4, Math.min(topSpeed, kmh / 3.6 + d * 1.55));
+      const wantSpeed = Math.min(rawWant, cornerLimit * 1.08);
+      const understeerPush = u.speed > cornerLimit * 1.06 ? (u.speed - cornerLimit) * 0.45 : 0;
+      u.speed += (wantSpeed - u.speed) * Math.min(1, dt * (understeerPush > 0 ? 4.2 : 3.2));
       u.s = this.lane.wrap(u.s + u.speed * dt);
 
       const latBias = u.role === 'pit' ? (playerLat > 0 ? -1.85 : 1.85) : (playerLat > 0 ? 2.1 : -2.1);
       const engagedPit = u.role === 'pit' && Math.abs(gapAhead - 2.1) < 2.2 && this.pitCd <= 0 && kmh > 40;
-      const wantLat = Math.max(-room.left, Math.min(room.right, playerLat + (engagedPit ? latBias * 0.48 : latBias)));
+      const wantLat = Math.max(-room.left, Math.min(room.right, playerLat + (engagedPit ? latBias * 0.48 : latBias) + understeerPush * u.side));
       u.lat += (wantLat - u.lat) * Math.min(1, dt * (engagedPit ? 5.5 : 2.6));
 
       this.lane.at(u.s, u.lat, u.world);

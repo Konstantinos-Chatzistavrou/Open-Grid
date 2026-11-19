@@ -66,6 +66,10 @@ import { CinematicReplay } from './replay';
 import { RaceNodes } from './raceNodes';
 import { CarMeetHub } from './carMeet';
 import { INSURANCE_PREMIUM_XP, conditionOf, loadMaintenance, recordRaceDamage, repairCarCondition, repairCostOf, saveMaintenance, submitModerationReport, towFeeOf } from './maintenance';
+import { WorldClock } from './worldClock';
+import { AUCTION_LOTS, applyNightRunnersToPhysics, engineOf, loadNightRunners, saveNightRunners, stanceOf, tickEngineAndNos } from './nightRunners';
+import { PARTY_BONUS_MUL, advanceChallenge, loadRetention, saveRetention, triggerPrestigeReset } from './retention';
+import { VoiceChat } from './voice';
 import { assetUrl, loadGLTF } from './scene/loaders';
 import { Identity } from './identity';
 import { usernameError } from './username';
@@ -321,6 +325,10 @@ async function main() {
   const a11y = loadAccessibility();
   applyAccessibility(a11y);
   const maint = loadMaintenance();
+  const nr = loadNightRunners();
+  const ret = loadRetention();
+  const worldClock = new WorldClock();
+  const voice = new VoiceChat();
   // credits, owned cars and upgrades. Dev server tests (?car=..., ?unlockall=1) own everything.
   // careers: single player (XP levels, this device) and online (the server's profile). Dev tests (?car=, ?unlockall=1)
   // unlock the whole single-player career.
@@ -344,8 +352,8 @@ async function main() {
   // Start downloading the player's car GLTF in parallel with the city tiles!
   const carLoadP = (visualPath === DEFAULT_VISUAL ? Promise.resolve(defaultCfg) : fetchVisualCfg(visualPath))
     .then(async (cfg) => ({ cfg, vis: await CarVisual.load(cfg) }));
-  const coreJson = () => JSON.stringify(applyMods(physics[sel.car], modsOf(sel)));
-  const carKey = () => `${sel.car}|${JSON.stringify(modsOf(sel))}`;
+  const coreJson = () => JSON.stringify(applyNightRunnersToPhysics(applyMods(physics[sel.car], modsOf(sel)), engineOf(nr, sel.car), stanceOf(nr, sel.car)));
+  const carKey = () => `${sel.car}|${JSON.stringify(modsOf(sel))}|${JSON.stringify(stanceOf(nr, sel.car))}|${engineOf(nr, sel.car).turbo}|${engineOf(nr, sel.car).manifold}|${engineOf(nr, sel.car).swap}`;
   let builtKey = carKey();
   let core = new CoreCar(coreJson());
   const pw = new PhysicsWorld();
@@ -628,9 +636,23 @@ async function main() {
     },
     onAlert: (msg) => copNote(msg, 3500),
   });
-  // Patrol cruiser prototype: cloned into interceptor + flanker + 2-cruiser tactical roadblock with Rapier colliders.
+  // Patrol cruiser prototype: cloned into interceptor + flanker + 2-cruiser tactical roadblock with Rapier colliders,
+  // AND 2 parked Friends' Cars in the background bays of the Garage showroom.
   void loadGLTF('/assets/cars/v3/vela_gt_traffic.glb').then((g) => {
     cops.setupVisuals(g.scene, scene, pw);
+    if (garage) {
+      const baySpecs = [
+        { x: -6.2, z: -5.4, yaw: 0.42 },
+        { x: 6.4, z: -5.8, yaw: -0.48 },
+      ];
+      for (const b of baySpecs) {
+        const fc = g.scene.clone(true);
+        fc.position.set(b.x, 0, b.z);
+        fc.rotation.y = b.yaw;
+        fc.scale.setScalar(0.98);
+        garage.scene.add(fc);
+      }
+    }
   }).catch(() => { /* pursuit & roadblock logic still runs even without cruiser mesh */ });
   let playerS = 0, copSpawned = false;
   /** test/dev hook: the headless probes set the dial directly */
@@ -1171,6 +1193,9 @@ async function main() {
   const applyLook = () => {
     visual.custom.apply(customOf(sel), paintOf(sel, catalog));
     visual.driver.setSkin(skinOf(sel.skin), sel.avatarGear);
+    const st = stanceOf(nr, sel.car);
+    visual.setStance(st.camberFront, st.camberRear);
+    audio.setCarProfile(sel.car);
     carMeetRef?.setAvatarGear(sel.avatarGear);
   };
   /** The online account keeps each car's look; a garage click pushes once (debounced) once the profile is known. */
@@ -1297,9 +1322,67 @@ async function main() {
       const rid = party?.code ?? `${cityInfo.id}_${Math.floor(Date.now() / 1000)}`;
       void submitModerationReport(cloud, maint, rid, player, category).then((r) => hud.toast('🚩 REPORT SUBMITTED', r.message));
     },
+    garageIgnition: () => {
+      audio.setCarProfile(sel.car);
+      audio.triggerIgnition();
+      visual.setExhaustFlame(0.65, false);
+    },
+    garageRev: () => {
+      audio.setCarProfile(sel.car);
+      audio.triggerGarageRev();
+      visual.setExhaustFlame(1.2, false);
+    },
+    garageWalk: (on) => {
+      garageWalk.active = on;
+      if (on) { garageWalk.pos.set(2.4, 1.55, 3.6); garageWalk.yaw = -2.45; }
+    },
+    nrChanged: () => {
+      saveNightRunners(nr);
+      const st = stanceOf(nr, sel.car);
+      visual.setStance(st.camberFront, st.camberRear);
+      if (carKey() !== builtKey) { rebuildPlayer(); spawn(); syncPose(); }
+    },
+    buyAuction: (lotId) => {
+      const lot = AUCTION_LOTS.find((x) => x.id === lotId);
+      if (!lot || nr.boughtLots.includes(lot.id)) return;
+      if (sp.kind === 'sp') sp.penalty(lot.priceXp);
+      nr.boughtLots.push(lot.id);
+      const eng = engineOf(nr, lot.carId);
+      eng.health = lot.startHealth;
+      eng.mileageKm = lot.mileageKm;
+      eng.tags = [...lot.tags];
+      saveNightRunners(nr);
+      recordRaceDamage(maint, lot.carId, lot.startDamage, false);
+      sel.car = lot.carId;
+      saveSelection(sel);
+      hud.toast('🔨 AUCTION WON!', `${lot.title} · ${lot.tags[0]}`);
+      void showCar();
+    },
+    prestigeReset: () => {
+      const res = triggerPrestigeReset(ret);
+      // Annual Season Prestige Reset: resets rank XP while keeping 100% of cars, liveries & garage builds!
+      if (sp.kind === 'sp') sp.penalty(sp.xp);
+      hud.toast('★ PRESTIGE ACHIEVED', `${res.badge} · Garage & Cars Kept!`);
+      menu.render();
+    },
+    voiceToggle: () => {
+      if (voice.enabled) { voice.disable(); menu.voiceOn = false; menu.voiceStatus = voice.status; menu.render(); return; }
+      void voice.enable().then((ok) => { menu.voiceOn = ok; menu.voiceStatus = voice.status; menu.render(); });
+    },
+    voiceMode: (m) => { voice.setMode(m); menu.voiceMode = m; menu.voiceStatus = voice.status; menu.render(); },
+    publicMatchmake: () => {
+      if (menu.partyBusy) return;
+      const pubCode = `PUB${String(new Date().getUTCHours()).padStart(2, '0')}`;
+      menu.partyBusy = true; menu.partyNote = `Matching into public lobby ${pubCode}…`; menu.render();
+      Party.join(pubCode, meForParty()).then(attachParty, () => Party.create(meForParty()).then(attachParty))
+        .catch((e: Error) => { menu.partyNote = e.message; })
+        .finally(() => { menu.partyBusy = false; if (menu.screen === 'lobby') menu.render(); });
+    },
   });
   menu.a11y = a11y;
   menu.maint = maint;
+  menu.nr = nr;
+  menu.ret = ret;
   menu.gfx = gfx;
   const loader = new Loader();
   menu.loader = loader;
@@ -1349,6 +1432,34 @@ async function main() {
   const minimap = new Minimap(document.getElementById('hud')!);
   minimap.setRoute(route.samples);
   input.onMap = () => minimap.show(!minimap.visible);
+  input.onFullMap = () => { if (driving()) minimap.toggleExpand(); };
+  input.onVoicePtt = (down) => voice.setPushToTalk(down);
+  // 3D glowing gold GPS Waypoint beacon synced with clicks on the expanded full map
+  const waypointBeacon = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.45, 0.85, 42, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xffc400, transparent: true, opacity: 0.34, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  waypointBeacon.visible = false;
+  scene.add(waypointBeacon);
+  minimap.onWaypoint = (wp) => {
+    if (!wp) { waypointBeacon.visible = false; return; }
+    waypointBeacon.position.set(wp.x, 21, wp.z);
+    waypointBeacon.visible = true;
+    hud.toast('📍 GPS WAYPOINT SET', `${Math.round(Math.hypot(wp.x - pos.x, wp.z - pos.z))} m away`);
+  };
+  const worldClockEl = document.getElementById('world-clock')!;
+  const nosBarEl = document.getElementById('nos-bar')!;
+  let lastClockText = '', lastNosText = '', lastDensityAt = 0;
+  const garageWalk = { active: false, pos: new THREE.Vector3(2.4, 1.55, 3.6), yaw: -2.45 };
+  let crashCineT = 0;
+  let crashCineWhy = '';
+  const completeDaily = (id: string, delta = 1) => {
+    const done = advanceChallenge(ret, id, delta);
+    if (done) {
+      sp.earn(done.xpReward, `daily · ${done.title}`);
+      hud.toast(`⚡ DAILY COMPLETE · +${done.xpReward} XP`, `${done.title} · +${done.repReward} REP`);
+    }
+  };
   if (nyc) void (async () => {
     // one merged street map per city (tools/nyc/build_index.py map.json)
     try {
@@ -1371,6 +1482,7 @@ async function main() {
     onComplete: (res) => {
       if (res.won) {
         if (res.xpReward > 0) sp.earn(res.xpReward, res.stake === 'pinkslip' ? `pink slip drag vs ${res.opponentName}` : `street drag vs ${res.opponentName}`);
+        completeDaily('wager_win', 1);
         hud.toast(
           res.stake === 'pinkslip' ? `🏆 PINK SLIP WON · ${res.timeSec.toFixed(2)}s` : `🏆 $${res.amount.toLocaleString()} WON · ${res.timeSec.toFixed(2)}s`,
           `+${res.xpReward} XP vs ${res.opponentName}`,
@@ -1386,6 +1498,8 @@ async function main() {
   const zones = new CityZones(scene, cityInfo.id, route.samples, {
     onScore: (z, score, stars, isPB, xp) => {
       if (xp > 0) sp.earn(xp, `${z.kind === 'speed' ? 'speed trap' : 'drift zone'} · ${z.name}`);
+      if (z.kind === 'speed' && score >= 180) completeDaily('speed_trap', 1);
+      if (z.kind === 'drift' && score >= 3500) completeDaily('drift_pts', 1);
       const unit = z.kind === 'speed' ? 'km/h' : 'PTS';
       const st = '★'.repeat(stars) + '☆'.repeat(3 - stars);
       hud.toast(
@@ -1507,6 +1621,10 @@ async function main() {
   (g.__game as Record<string, unknown>).carMeet = carMeet;
   (g.__game as Record<string, unknown>).a11y = a11y;
   (g.__game as Record<string, unknown>).maint = maint;
+  (g.__game as Record<string, unknown>).worldClock = worldClock;
+  (g.__game as Record<string, unknown>).nr = nr;
+  (g.__game as Record<string, unknown>).ret = ret;
+  (g.__game as Record<string, unknown>).voice = voice;
   {
     const inv = cleanCode(params.get('party') ?? '');
     if (inv.length >= 4) menu.invite = inv;
@@ -1593,6 +1711,13 @@ async function main() {
     hud.outWarn = '';
     ranked?.dnf(why);
     party?.sendProgress({ d: lap?.distance ?? 0, lap: lap?.laps ?? 0, fin: -1, best: lap?.best ?? 0, dnf: 1 });
+    if (why === 'wrecked') {
+      // Dramatic 2.4-second slow-motion crash wreckage orbit before transitioning to Spectate
+      crashCineT = 2.4;
+      crashCineWhy = `OUT · ${why.toUpperCase()}`;
+      hud.toast('💥 VEHICLE TOTALED', 'Slow-motion wreckage cam…');
+      return;
+    }
     enterSpectate(`OUT · ${why.toUpperCase()}`);
   }
 
@@ -1758,8 +1883,11 @@ async function main() {
     // grid: single-player race = P4 of 6 between the rivals; Free Roam = live cruising AI traffic + Speed Traps / Drift Zones (NO COPS);
     // online race = party grid slots (8-12 max).
     const isFreeSession = mode === 'free' || (mode === 'online' && party?.mode === 'free');
+    worldClock.rollWeather(!isFreeSession);
     zones.setVisible(isFreeSession);
     raceNodes.setVisible(isFreeSession);
+    crashCineT = 0;
+    garageWalk.active = false; menu.garageWalkActive = false;
     telemetry.reset(sel.name, catalog.find((c) => c.id === sel.car)?.name ?? sel.car, cityInfo.name);
     replay.clear();
     if (mode === 'race' && ai.cars.length) {
@@ -1916,7 +2044,12 @@ async function main() {
   function finishRace() {
     const copsOn = copsActiveInRace();
     cops.breakOff();
-    if (copsOn) bumpHeat(1);   // Heat lives strictly in Cop Race Events (never Free Roam)
+    if (copsOn) {
+      bumpHeat(1);   // Heat lives strictly in Cop Race Events (never Free Roam)
+      completeDaily('cop_race', 1);
+      ret.reputation += 120 + heat.level * 40;
+      saveRetention(ret);
+    }
     // Persistent Multiplayer / Race Damage + Tow Truck Fee + In-Game Insurance (-50% repairs & tow)
     const finalDmg = core.damage();
     const totaled = !!finalDmg.totaled || myDnf === 'wrecked';
@@ -1953,9 +2086,11 @@ async function main() {
         assistsOff: +(a.abs === 'off') + +(a.tc === 0) + +!a.stability + +(a.countersteer === 'off') + +(a.line === 'off'),
         manual: a.gearbox === 'manual', realism: sel.realism,
         copsEnabled: copsOn, heatLevel: heat.level, escapedCops: escapedCopsThisRace }, 'sp');
-      const netXp = Math.max(0, reward.xp - towFeeXp);
-      if (towFeeXp > reward.xp) sp.penalty(towFeeXp - reward.xp);
-      earned = sp.earn(netXp, myDnf ? 'race · DNF' : `race · P${pos} of ${order.length}${copsOn ? ` · COPS H${Math.max(1, heat.level)}` : ''}`, reward.parts).xp;
+      const partyMul = party && party.members.length > 1 ? PARTY_BONUS_MUL : 1;
+      const grossXp = Math.round(reward.xp * partyMul);
+      const netXp = Math.max(0, grossXp - towFeeXp);
+      if (towFeeXp > grossXp) sp.penalty(towFeeXp - grossXp);
+      earned = sp.earn(netXp, myDnf ? 'race · DNF' : `race · P${pos} of ${order.length}${copsOn ? ` · COPS H${Math.max(1, heat.level)}` : ''}${partyMul > 1 ? ' · PARTY +25%' : ''}`, reward.parts).xp;
     } else if (towFeeXp > 0 && sp.kind === 'sp') {
       sp.penalty(towFeeXp);
     }
@@ -2119,7 +2254,9 @@ async function main() {
     const frozenByCreator = photoMode.active || replay.active || raceNodes.matchmaking || carMeet.walking;
     const live = state !== 'paused' && !frozenByCreator && (!inShowroom || settledShowroom < 24 || bench.active);
     if (bench.active) benchStep(frame);
-    if (live) acc += frame; else acc = 0;
+    // Slow-motion 0.22x time scale during totaled Crash Cinematic before entering Spectate
+    const simDt = crashCineT > 0 ? frame * 0.22 : frame;
+    if (live) acc += simDt; else acc = 0;
     // The street under the car is not built yet (a slow phone or network was outrun by the car, or a reset landed on an
     // unloaded tile): hold the simulation until its colliders exist, instead of letting the car fall through the map.
     if (nyc && live && driving() && state !== 'spectate' && !bench.active) {
@@ -2304,9 +2441,35 @@ async function main() {
       raceNodes.update(frame, inFreeRoam && !photoMode.active && !replay.active, pos);
       carMeet.syncCarPose(pos, quat, kmhNow);
       carMeet.update(frame, inFreeRoam && !photoMode.active && !replay.active, pos, (c) => input.isKeyDown(c));
+
+      // World 1:4 Time-of-Day Clock, Real-Life Season, 1-in-5 Rain & Realistic Traffic Density Curve
+      worldClock.update(frame, scene, moon);
+      if (driving() && now - lastDensityAt > 2000) {
+        lastDensityAt = now;
+        const ct = worldClock.hudText();
+        if (ct !== lastClockText) { worldClockEl.textContent = lastClockText = ct; }
+        if (ai.mode === 'cruise') ai.setCruiseDensity(worldClock.trafficDensity);
+      }
+
+      // Engine Health, Temperature, Nitrous Oxide ([X] purge) & Flamethrower Exhaust VFX
       if (live && state === 'race') {
+        const eng = engineOf(nr, sel.car);
+        const nosKey = input.isKeyDown('KeyX');
+        const nrTick = tickEngineAndNos(eng, frame, car.out[OUT.rpm] || 800, core.info.redline, Math.abs(car.out[OUT.speed]), nosKey);
+        car.nosThrustN = nrTick.nosThrustN;
+        if (nrTick.flameBurst) visual.setExhaustFlame(nrTick.nosActive ? 1.3 : 0.9, nrTick.nosActive);
+        else visual.setExhaustFlame(0, false);
+        const nt = `NOS ${eng.nosLiters.toFixed(1)}L [X] · ${Math.round(eng.tempC)}°C · ENG ${Math.round(eng.health)}%`;
+        if (nt !== lastNosText) {
+          nosBarEl.textContent = lastNosText = nt;
+          nosBarEl.classList.toggle('hot', nrTick.overheated || eng.health <= 20);
+        }
         telemetry.tick(frame, true, car.out, core.info, input.raw.throttle, input.raw.brake, input.raw.steer, lap);
         replay.record(frame, pos, quat, car.out[OUT.speed], car.out[OUT.rpm], input.raw.steer, input.raw.brake, ai.cars.map((c) => ({ pos: c.pos, yaw: c.root.rotation.y })));
+      } else {
+        car.nosThrustN = 0;
+        if (inGarage && audio.revvingInGarage) visual.setExhaustFlame(0.95, false);
+        else visual.setExhaustFlame(0, false);
       }
       const wh = inFreeRoam ? (wagers.hudBanner() || raceNodes.promptHtml()) : '';
       if (wh !== lastWagerHtml) { wagerHudEl.innerHTML = lastWagerHtml = wh; }
@@ -2352,7 +2515,28 @@ async function main() {
       visual.custom.sync(garage!.holder.position, IDENT_Q);   // livery mask: the model sits on the turntable, not at the body
       if (garage!.dirtyEnv) { garage!.captureEnv(); probe?.fromCube(garage!.cube.texture); }
     }
-    if (!driving() || state === 'busy') { placeShowroom(frame, pos); }
+    if (!driving() || state === 'busy') {
+      if (inGarage && garageWalk.active) {
+        // Walkable Garage: WASD walks around the car to inspect Hood, Oil Cap & Storage Locker
+        const mf = (input.isKeyDown('KeyW') || input.isKeyDown('ArrowUp') ? 1 : 0) - (input.isKeyDown('KeyS') || input.isKeyDown('ArrowDown') ? 1 : 0);
+        const turn = (input.isKeyDown('KeyA') || input.isKeyDown('ArrowLeft') ? 1 : 0) - (input.isKeyDown('KeyD') || input.isKeyDown('ArrowRight') ? 1 : 0);
+        garageWalk.yaw += turn * frame * 2.0;
+        garageWalk.pos.x = Math.max(-7.5, Math.min(7.5, garageWalk.pos.x + Math.sin(garageWalk.yaw) * mf * frame * 3.0));
+        garageWalk.pos.z = Math.max(-7.5, Math.min(7.5, garageWalk.pos.z + Math.cos(garageWalk.yaw) * mf * frame * 3.0));
+        camera.position.copy(garageWalk.pos);
+        camera.lookAt(0, 0.72, 0);
+      } else {
+        placeShowroom(frame, pos);
+      }
+    }
+    else if (crashCineT > 0) {
+      // Dramatic slow-motion low-angle orbit around totaled wreckage before transitioning to Spectate
+      crashCineT -= frame;
+      const ang = (2.4 - crashCineT) * 1.15;
+      camera.position.set(pos.x + Math.cos(ang) * 5.2, pos.y + 1.45, pos.z + Math.sin(ang) * 5.2);
+      camera.lookAt(pos.x, pos.y + 0.45, pos.z);
+      if (crashCineT <= 0) { crashCineT = 0; enterSpectate(crashCineWhy || 'OUT · WRECKED'); }
+    }
     else if (photoMode.active) { photoMode.update(frame, (c) => input.isKeyDown(c)); }
     else if (replay.active) { replay.update(frame); }
     else if (carMeet.walking) { /* CarMeetHub updates smooth third-person walk camera */ }

@@ -105,6 +105,10 @@ DriverInput Controls::update(const RawInput& raw, const VehicleOutput& last, dou
     }
     const auto& ratios = cfg_.drivetrain.gear_ratios;
     int top = (int)ratios.size() - 1;
+    // Bug fix: engage 1st immediately when auto-gearbox is enabled and the car starts in Neutral (gear 1).
+    if (s.auto_gearbox && gear_ == 1 && raw.direct_gear == -99 && !raw.shift_up && !raw.shift_down && throttle_ > 0.05 && brake_ < 0.1) {
+        set_gear(2);
+    }
     if (s.auto_gearbox && gear_ >= 2 && shift_cooldown_ <= 0) {
         double rpm = last.engine_rpm;
         if (rpm > s.upshift_rpm_fraction * cfg_.engine.redline_rpm && gear_ < top && throttle_ > 0.1) {
