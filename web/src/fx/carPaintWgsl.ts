@@ -20,7 +20,15 @@ import {
   vec4,
   wgslFn,
 } from 'three/tsl';
-import carPaintWgslSource from './shaders/car_paint.wgsl?raw';
+import {
+  CAR_PAINT_FINISHES,
+  advancePaintWear,
+  carPaintWgslSource,
+  type CarPaintFinishName,
+  type PaintWearAccumulator,
+} from '../gpu/materials/carPaint';
+
+export { CAR_PAINT_FINISHES, advancePaintWear, type CarPaintFinishName, type PaintWearAccumulator };
 
 function extractFn(source: string, name: string): string {
   const re = new RegExp(`fn\\s+${name}\\b[\\s\\S]*?\\n\\}`, 'm');

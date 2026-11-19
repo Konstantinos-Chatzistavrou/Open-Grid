@@ -1,14 +1,5 @@
-// Clustered Forward+ WebGPU lighting pass (WGSL compute culling + unified PointLight & SpotLight shading).
-//
-// Why this replaces stock Three.js ClusteredLighting:
-//  1. Stock ClusteredLightsNode runs 60x34x24 = 48,960 clusters (12.5 MB cleared every frame) and ONLY clusters
-//     non-shadow PointLights — SpotLights (headlights) still fall back to standard forward shading on every pixel.
-//  2. Here we use a compact iGPU-friendly 3D frustum grid (default 24x14x16 = 5,376 clusters, ~9x fewer compute
-//     threads and ~18x less cluster-buffer bandwidth), pre-transform active lights to view space once on CPU,
-//     compute tight bounding spheres for SpotLight headlight cones, and cull BOTH 100+ dynamic streetlights AND
-//     dynamic car headlights in a single WGSL compute pass (`wgslFn` kernels from shaders/clustered_forward.wgsl).
-//  3. Fragment cluster lookup uses resolution-independent `screenUV`, so render-scale changes or window resizes
-//     NEVER recompile lit materials.
+// Thin Three.js WebGPU adapter for the engine-agnostic Clustered Forward+ core (`web/src/gpu/clustered/`).
+// Bridges `THREE.Light` / `THREE.WebGPURenderer` / TSL to `ClusteredLightPacker` and `clustered_forward.wgsl`.
 import * as THREE from 'three/webgpu';
 import {
   Break,
@@ -29,9 +20,16 @@ import {
   wgslFn,
 } from 'three/tsl';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
-import clusteredWgslSource from './shaders/clustered_forward.wgsl?raw';
+import {
+  ClusteredLightPacker,
+  type ClusterCameraInput,
+  type ClusterLightInput,
+  type ClusteredForwardStats,
+} from '../gpu/clustered/clusteredCpu';
+import clusteredWgslSource from '../gpu/clustered/clustered_forward.wgsl?raw';
 
-/** Extract a single `fn name(...)` block from the shared `.wgsl` shader source for `wgslFn`. */
+export type { ClusteredForwardStats };
+
 function extractWgslFn(source: string, fnName: string): string {
   const re = new RegExp(`fn\\s+${fnName}\\b[\\s\\S]*?\\n\\}`, 'm');
   const m = source.match(re);
@@ -45,47 +43,17 @@ const sphereIntersectsAabbWgsl = wgslFn(extractWgslFn(clusteredWgslSource, 'sphe
 const clusterIndexFromScreenWgsl = wgslFn(extractWgslFn(clusteredWgslSource, 'clusterIndexFromScreen'));
 const evalClusteredAttenuationWgsl = wgslFn(extractWgslFn(clusteredWgslSource, 'evalClusteredAttenuation'));
 
-export interface ClusteredForwardStats {
-  tilesX: number;
-  tilesY: number;
-  zSlices: number;
-  totalClusters: number;
-  maxLights: number;
-  maxLightsPerCluster: number;
-  activePointLights: number;
-  activeSpotLights: number;
-  totalActiveClustered: number;
-  materialForwardLights: number;
-  lastUploadMs: number;
-}
-
 const _pos = new THREE.Vector3();
 const _target = new THREE.Vector3();
-const _dir = new THREE.Vector3();
-const _cullCenter = new THREE.Vector3();
 
 class ClusteredForwardLightsNode extends THREE.LightsNode {
   static get type() {
     return 'ClusteredForwardLightsNode';
   }
 
+  private readonly packer: ClusteredLightPacker;
   private materialLights: THREE.Light[] = [];
   private clusteredLights: THREE.Light[] = [];
-
-  readonly maxLights: number;
-  readonly tilesX: number;
-  readonly tilesY: number;
-  readonly zSlices: number;
-  readonly maxLightsPerCluster: number;
-  private readonly chunksPerCluster: number;
-
-  // Packed SoA storage buffers (16-byte aligned vec4s, uploaded once per frame)
-  private readonly posRangeArr: Float32Array;
-  private readonly colorDecayArr: Float32Array;
-  private readonly spotDirCosArr: Float32Array;
-  private readonly cullSphereArr: Float32Array;
-  private readonly spotPenumbraArr: Float32Array;
-  private readonly zSliceRangeArr: Int32Array;
 
   private readonly posRangeAttr: THREE.StorageBufferAttribute;
   private readonly colorDecayAttr: THREE.StorageBufferAttribute;
@@ -105,56 +73,28 @@ class ClusteredForwardLightsNode extends THREE.LightsNode {
   private computeNode: THREE.ComputeNode | null = null;
   private built = false;
 
-  // Scratch buffers for CPU view-space sorting (zero per-frame GC)
-  private readonly scratchViewZ: Float32Array;
-  private readonly scratchCullX: Float32Array;
-  private readonly scratchCullY: Float32Array;
-  private readonly scratchCullZ: Float32Array;
-  private readonly scratchCullR: Float32Array;
-  private readonly scratchPosX: Float32Array;
-  private readonly scratchPosY: Float32Array;
-  private readonly scratchPosZ: Float32Array;
-  private readonly scratchRange: Float32Array;
-  private readonly scratchColR: Float32Array;
-  private readonly scratchColG: Float32Array;
-  private readonly scratchColB: Float32Array;
-  private readonly scratchDecay: Float32Array;
-  private readonly scratchDirX: Float32Array;
-  private readonly scratchDirY: Float32Array;
-  private readonly scratchDirZ: Float32Array;
-  private readonly scratchConeCos: Float32Array;
-  private readonly scratchPenCos: Float32Array;
-  private readonly sortOrder: number[] = [];
-
   private readonly cameraNear = uniform(0.1).setName('cfCameraNear').setGroup(renderGroup);
   private readonly cameraFar = uniform(1000).setName('cfCameraFar').setGroup(renderGroup);
   private readonly invFocalX = uniform(1).setName('cfInvFocalX').setGroup(renderGroup);
   private readonly invFocalY = uniform(1).setName('cfInvFocalY').setGroup(renderGroup);
 
-  readonly stats: ClusteredForwardStats;
+  private readonly camInput: ClusterCameraInput = {
+    viewMatrix: new Float32Array(16),
+    projectionMatrix: new Float32Array(16),
+    near: 0.1,
+    far: 1000,
+  };
 
   constructor(maxLights = 512, tilesX = 24, tilesY = 14, zSlices = 16, maxLightsPerCluster = 32) {
     super();
-    this.maxLights = maxLights;
-    this.tilesX = tilesX;
-    this.tilesY = tilesY;
-    this.zSlices = zSlices;
-    this.maxLightsPerCluster = maxLightsPerCluster;
-    this.chunksPerCluster = Math.ceil(maxLightsPerCluster / 4);
+    this.packer = new ClusteredLightPacker({ maxLights, tilesX, tilesY, zSlices, maxLightsPerCluster });
 
-    this.posRangeArr = new Float32Array(maxLights * 4);
-    this.colorDecayArr = new Float32Array(maxLights * 4);
-    this.spotDirCosArr = new Float32Array(maxLights * 4);
-    this.cullSphereArr = new Float32Array(maxLights * 4);
-    this.spotPenumbraArr = new Float32Array(maxLights);
-    this.zSliceRangeArr = new Int32Array(zSlices * 4);
-
-    this.posRangeAttr = new THREE.StorageBufferAttribute(this.posRangeArr, 4);
-    this.colorDecayAttr = new THREE.StorageBufferAttribute(this.colorDecayArr, 4);
-    this.spotDirCosAttr = new THREE.StorageBufferAttribute(this.spotDirCosArr, 4);
-    this.cullSphereAttr = new THREE.StorageBufferAttribute(this.cullSphereArr, 4);
-    this.spotPenumbraAttr = new THREE.StorageBufferAttribute(this.spotPenumbraArr, 1);
-    this.zSliceRangeAttr = new THREE.StorageBufferAttribute(this.zSliceRangeArr, 4);
+    this.posRangeAttr = new THREE.StorageBufferAttribute(this.packer.posRange, 4);
+    this.colorDecayAttr = new THREE.StorageBufferAttribute(this.packer.colorDecay, 4);
+    this.spotDirCosAttr = new THREE.StorageBufferAttribute(this.packer.spotDirCos, 4);
+    this.cullSphereAttr = new THREE.StorageBufferAttribute(this.packer.cullSpheres, 4);
+    this.spotPenumbraAttr = new THREE.StorageBufferAttribute(this.packer.spotPenumbra, 1);
+    this.zSliceRangeAttr = new THREE.StorageBufferAttribute(this.packer.zSliceRanges, 4);
 
     this.posRangeBuf = storage(this.posRangeAttr, 'vec4', maxLights).toReadOnly() as THREE.StorageBufferNode<'vec4'>;
     this.colorDecayBuf = storage(this.colorDecayAttr, 'vec4', maxLights).toReadOnly() as THREE.StorageBufferNode<'vec4'>;
@@ -163,53 +103,21 @@ class ClusteredForwardLightsNode extends THREE.LightsNode {
     this.spotPenumbraBuf = storage(this.spotPenumbraAttr, 'float', maxLights).toReadOnly() as THREE.StorageBufferNode<'float'>;
     this.zSliceRangeBuf = storage(this.zSliceRangeAttr, 'ivec4', zSlices).toReadOnly() as THREE.StorageBufferNode<'ivec4'>;
 
-    this.scratchViewZ = new Float32Array(maxLights);
-    this.scratchCullX = new Float32Array(maxLights);
-    this.scratchCullY = new Float32Array(maxLights);
-    this.scratchCullZ = new Float32Array(maxLights);
-    this.scratchCullR = new Float32Array(maxLights);
-    this.scratchPosX = new Float32Array(maxLights);
-    this.scratchPosY = new Float32Array(maxLights);
-    this.scratchPosZ = new Float32Array(maxLights);
-    this.scratchRange = new Float32Array(maxLights);
-    this.scratchColR = new Float32Array(maxLights);
-    this.scratchColG = new Float32Array(maxLights);
-    this.scratchColB = new Float32Array(maxLights);
-    this.scratchDecay = new Float32Array(maxLights);
-    this.scratchDirX = new Float32Array(maxLights);
-    this.scratchDirY = new Float32Array(maxLights);
-    this.scratchDirZ = new Float32Array(maxLights);
-    this.scratchConeCos = new Float32Array(maxLights);
-    this.scratchPenCos = new Float32Array(maxLights);
-
-    this.stats = {
-      tilesX,
-      tilesY,
-      zSlices,
-      totalClusters: tilesX * tilesY * zSlices,
-      maxLights,
-      maxLightsPerCluster,
-      activePointLights: 0,
-      activeSpotLights: 0,
-      totalActiveClustered: 0,
-      materialForwardLights: 0,
-      lastUploadMs: 0,
-    };
-
     this.updateBeforeType = THREE.NodeUpdateType.RENDER;
     this.buildComputePass();
+  }
+
+  get stats(): ClusteredForwardStats {
+    return this.packer.stats;
   }
 
   private buildComputePass() {
     if (this.built) return;
     this.built = true;
 
-    const NX = this.tilesX;
-    const NY = this.tilesY;
-    const NZ = this.zSlices;
+    const { tilesX: NX, tilesY: NY, zSlices: NZ, maxLightsPerCluster: maxPerCluster } = this.packer.cfg;
     const clusterCount = NX * NY * NZ;
-    const chunks = this.chunksPerCluster;
-    const maxPerCluster = this.maxLightsPerCluster;
+    const chunks = this.packer.chunksPerCluster;
 
     const clusterData = new Int32Array(clusterCount * chunks * 4);
     const lightIndexes = attributeArray(clusterData, 'ivec4').setName('cfLightIndexes') as unknown as THREE.StorageBufferNode<'ivec4'>;
@@ -232,56 +140,36 @@ class ClusteredForwardLightsNode extends THREE.LightsNode {
       const cz = clusterId.div(int(NX * NY));
 
       const aabbMin = (clusterAabbMinWgsl({
-        cx,
-        cy,
-        cz,
-        nx: float(NX),
-        ny: float(NY),
-        nz: float(NZ),
-        nearZ: this.cameraNear,
-        farZ: this.cameraFar,
-        invFocalX: this.invFocalX,
-        invFocalY: this.invFocalY,
+        cx, cy, cz,
+        nx: float(NX), ny: float(NY), nz: float(NZ),
+        nearZ: this.cameraNear, farZ: this.cameraFar,
+        invFocalX: this.invFocalX, invFocalY: this.invFocalY,
       }) as unknown as THREE.Node<'vec3'>).toConst();
 
       const aabbMax = (clusterAabbMaxWgsl({
-        cx,
-        cy,
-        cz,
-        nx: float(NX),
-        ny: float(NY),
-        nz: float(NZ),
-        nearZ: this.cameraNear,
-        farZ: this.cameraFar,
-        invFocalX: this.invFocalX,
-        invFocalY: this.invFocalY,
+        cx, cy, cz,
+        nx: float(NX), ny: float(NY), nz: float(NZ),
+        nearZ: this.cameraNear, farZ: this.cameraFar,
+        invFocalX: this.invFocalX, invFocalY: this.invFocalY,
       }) as unknown as THREE.Node<'vec3'>).toConst();
 
-      // Clear previous frame's cluster list (8 ivec4 writes = 128 bytes/cluster)
       Loop(chunks, ({ i }) => {
         getChunk(i as unknown as THREE.Node<'int'>).assign(ivec4(0));
       });
 
       const zRange = this.zSliceRangeBuf.element(cz);
       const rangeStart = zRange.x;
-      const rangeEnd = zRange.y;
-
+      const countInSlice = zRange.y.sub(rangeStart);
       const writeIdx = int(0).toVar();
-      const countInSlice = rangeEnd.sub(rangeStart);
 
       Loop({ start: int(0), end: countInSlice, type: 'int', condition: '<' }, ({ i }) => {
         If(writeIdx.greaterThanEqual(int(maxPerCluster)), () => {
           Return();
         });
-
         const lightIdx = rangeStart.add(i);
         const sphere = this.cullSphereBuf.element(lightIdx);
-
         const hit = sphereIntersectsAabbWgsl({
-          center: sphere.xyz,
-          radius: sphere.w,
-          aabbMin,
-          aabbMax,
+          center: sphere.xyz, radius: sphere.w, aabbMin, aabbMax,
         }) as unknown as THREE.Node<'float'>;
 
         If(hit.greaterThan(float(0.5)), () => {
@@ -305,7 +193,6 @@ class ClusteredForwardLightsNode extends THREE.LightsNode {
 
     for (let i = 0; i < lights.length; i++) {
       const l = lights[i] as THREE.Light & { isPointLight?: boolean; isSpotLight?: boolean };
-      // Cluster BOTH non-shadow PointLights (streetlights/signals/neon) AND non-shadow SpotLights (headlights)
       if ((l.isPointLight === true || l.isSpotLight === true) && l.castShadow !== true) {
         clusteredLights[ci++] = l;
       } else {
@@ -315,7 +202,7 @@ class ClusteredForwardLightsNode extends THREE.LightsNode {
 
     materialLights.length = mi;
     clusteredLights.length = ci;
-    this.stats.materialForwardLights = mi;
+    this.packer.stats.materialForwardLights = mi;
     return super.setLights(lights);
   }
 
@@ -323,167 +210,36 @@ class ClusteredForwardLightsNode extends THREE.LightsNode {
     return this.materialLights;
   }
 
-  private uploadLights(camera: THREE.Camera) {
-    const t0 = performance.now();
-    const viewMatrix = camera.matrixWorldInverse;
-    const near = (camera as THREE.PerspectiveCamera).near ?? 0.1;
-    const far = (camera as THREE.PerspectiveCamera).far ?? 1000;
-    const NZ = this.zSlices;
-
-    let activeCount = 0;
-    let pointCount = 0;
-    let spotCount = 0;
-
-    for (let i = 0; i < this.clusteredLights.length && activeCount < this.maxLights; i++) {
-      const raw = this.clusteredLights[i] as (THREE.PointLight | THREE.SpotLight) & {
-        isSpotLight?: boolean;
-        target?: THREE.Object3D;
-      };
-      if (!raw.visible || raw.intensity <= 0.001) continue;
-      const range = raw.distance > 0 ? raw.distance : far;
-      if (range <= 0.05) continue;
-
-      _pos.setFromMatrixPosition(raw.matrixWorld);
-      _pos.applyMatrix4(viewMatrix);
-
-      let cullX = _pos.x;
-      let cullY = _pos.y;
-      let cullZ = _pos.z;
-      let cullR = range;
-      let dirX = 0;
-      let dirY = 0;
-      let dirZ = -1;
-      let coneCos = -2.0; // sentinel: PointLight
-      let penCos = -2.0;
-
-      if (raw.isSpotLight === true) {
-        const spot = raw as THREE.SpotLight;
-        _target.setFromMatrixPosition(spot.target.matrixWorld);
-        _target.applyMatrix4(viewMatrix);
-        _dir.subVectors(_target, _pos);
-        const len = _dir.length();
-        if (len > 1e-5) _dir.divideScalar(len);
-        else _dir.set(0, 0, -1);
-
-        dirX = _dir.x;
-        dirY = _dir.y;
-        dirZ = _dir.z;
-
-        const angle = Math.max(0.01, Math.min(Math.PI * 0.49, spot.angle));
-        const cosA = Math.cos(angle);
-        coneCos = cosA;
-        penCos = Math.cos(angle * (1 - Math.max(0, Math.min(0.999, spot.penumbra))));
-
-        // Minimal bounding sphere for a finite spotlight cone: keeps headlight culling tight in front of the car.
-        if (angle > Math.PI * 0.25) {
-          _cullCenter.copy(_pos).addScaledVector(_dir, range * cosA);
-          cullR = range * Math.sin(angle);
-        } else {
-          const d = range / (2.0 * cosA);
-          _cullCenter.copy(_pos).addScaledVector(_dir, d);
-          cullR = d;
-        }
-        cullX = _cullCenter.x;
-        cullY = _cullCenter.y;
-        cullZ = _cullCenter.z;
-        spotCount++;
-      } else {
-        pointCount++;
-      }
-
-      // Quick view-Z frustum reject before uploading
-      if (cullZ - cullR > -near || cullZ + cullR < -far) continue;
-
-      const idx = activeCount++;
-      this.scratchViewZ[idx] = cullZ;
-      this.scratchCullX[idx] = cullX;
-      this.scratchCullY[idx] = cullY;
-      this.scratchCullZ[idx] = cullZ;
-      this.scratchCullR[idx] = cullR;
-      this.scratchPosX[idx] = _pos.x;
-      this.scratchPosY[idx] = _pos.y;
-      this.scratchPosZ[idx] = _pos.z;
-      this.scratchRange[idx] = range;
-      this.scratchColR[idx] = raw.color.r * raw.intensity;
-      this.scratchColG[idx] = raw.color.g * raw.intensity;
-      this.scratchColB[idx] = raw.color.b * raw.intensity;
-      this.scratchDecay[idx] = raw.decay;
-      this.scratchDirX[idx] = dirX;
-      this.scratchDirY[idx] = dirY;
-      this.scratchDirZ[idx] = dirZ;
-      this.scratchConeCos[idx] = coneCos;
-      this.scratchPenCos[idx] = penCos;
-      this.sortOrder[idx] = idx;
+  private readonly readThreeLight = (index: number, out: ClusterLightInput): boolean => {
+    const raw = this.clusteredLights[index] as (THREE.PointLight | THREE.SpotLight) & {
+      isSpotLight?: boolean;
+      target?: THREE.Object3D;
+    };
+    if (!raw.visible || raw.intensity <= 0.001) return false;
+    _pos.setFromMatrixPosition(raw.matrixWorld);
+    out.posX = _pos.x;
+    out.posY = _pos.y;
+    out.posZ = _pos.z;
+    out.r = raw.color.r;
+    out.g = raw.color.g;
+    out.b = raw.color.b;
+    out.intensity = raw.intensity;
+    out.range = raw.distance;
+    out.decay = raw.decay;
+    if (raw.isSpotLight === true) {
+      const spot = raw as THREE.SpotLight;
+      _target.setFromMatrixPosition(spot.target.matrixWorld);
+      out.kind = 'spot';
+      out.targetX = _target.x;
+      out.targetY = _target.y;
+      out.targetZ = _target.z;
+      out.angle = spot.angle;
+      out.penumbra = spot.penumbra;
+    } else {
+      out.kind = 'point';
     }
-
-    this.sortOrder.length = activeCount;
-    const vz = this.scratchViewZ;
-    this.sortOrder.sort((a, b) => vz[a] - vz[b]);
-
-    for (let i = 0; i < activeCount; i++) {
-      const s = this.sortOrder[i];
-      const o = i * 4;
-      this.posRangeArr[o] = this.scratchPosX[s];
-      this.posRangeArr[o + 1] = this.scratchPosY[s];
-      this.posRangeArr[o + 2] = this.scratchPosZ[s];
-      this.posRangeArr[o + 3] = this.scratchRange[s];
-
-      this.colorDecayArr[o] = this.scratchColR[s];
-      this.colorDecayArr[o + 1] = this.scratchColG[s];
-      this.colorDecayArr[o + 2] = this.scratchColB[s];
-      this.colorDecayArr[o + 3] = this.scratchDecay[s];
-
-      this.spotDirCosArr[o] = this.scratchDirX[s];
-      this.spotDirCosArr[o + 1] = this.scratchDirY[s];
-      this.spotDirCosArr[o + 2] = this.scratchDirZ[s];
-      this.spotDirCosArr[o + 3] = this.scratchConeCos[s];
-
-      this.cullSphereArr[o] = this.scratchCullX[s];
-      this.cullSphereArr[o + 1] = this.scratchCullY[s];
-      this.cullSphereArr[o + 2] = this.scratchCullZ[s];
-      this.cullSphereArr[o + 3] = this.scratchCullR[s];
-
-      this.spotPenumbraArr[i] = this.scratchPenCos[s];
-    }
-
-    // Per Z-slice [start, end) ranges for fast compute-shader early rejection
-    const ratio = far / Math.max(near, 0.001);
-    for (let z = 0; z < NZ; z++) {
-      const sliceNear = -(near * Math.pow(ratio, z / NZ));
-      const sliceFar = -(near * Math.pow(ratio, (z + 1) / NZ));
-      let start = activeCount;
-      let end = 0;
-      for (let i = 0; i < activeCount; i++) {
-        const s = this.sortOrder[i];
-        const cz = this.scratchCullZ[s];
-        const r = this.scratchCullR[s];
-        if (cz + r >= sliceFar && cz - r <= sliceNear) {
-          if (i < start) start = i;
-          if (i + 1 > end) end = i + 1;
-        }
-      }
-      if (start >= activeCount) {
-        start = 0;
-        end = 0;
-      }
-      this.zSliceRangeArr[z * 4] = start;
-      this.zSliceRangeArr[z * 4 + 1] = end;
-      this.zSliceRangeArr[z * 4 + 2] = 0;
-      this.zSliceRangeArr[z * 4 + 3] = 0;
-    }
-
-    this.posRangeAttr.needsUpdate = true;
-    this.colorDecayAttr.needsUpdate = true;
-    this.spotDirCosAttr.needsUpdate = true;
-    this.cullSphereAttr.needsUpdate = true;
-    this.spotPenumbraAttr.needsUpdate = true;
-    this.zSliceRangeAttr.needsUpdate = true;
-
-    this.stats.activePointLights = pointCount;
-    this.stats.activeSpotLights = spotCount;
-    this.stats.totalActiveClustered = activeCount;
-    this.stats.lastUploadMs = Math.round((performance.now() - t0) * 100) / 100;
-  }
+    return true;
+  };
 
   updateBefore(frame: THREE.NodeFrame) {
     const renderer = frame.renderer as unknown as THREE.WebGPURenderer | null;
@@ -501,7 +257,19 @@ class ClusteredForwardLightsNode extends THREE.LightsNode {
     this.invFocalX.value = proj[0] !== 0 ? 1.0 / proj[0] : 1.0;
     this.invFocalY.value = proj[5] !== 0 ? 1.0 / proj[5] : 1.0;
 
-    this.uploadLights(camera);
+    this.camInput.viewMatrix = camera.matrixWorldInverse.elements;
+    this.camInput.projectionMatrix = proj;
+    this.camInput.near = near;
+    this.camInput.far = far;
+    this.packer.pack(this.camInput, this.clusteredLights.length, this.readThreeLight);
+
+    this.posRangeAttr.needsUpdate = true;
+    this.colorDecayAttr.needsUpdate = true;
+    this.spotDirCosAttr.needsUpdate = true;
+    this.cullSphereAttr.needsUpdate = true;
+    this.spotPenumbraAttr.needsUpdate = true;
+    this.zSliceRangeAttr.needsUpdate = true;
+
     if (this.computeNode) renderer.compute(this.computeNode);
     return undefined;
   }
@@ -514,15 +282,11 @@ class ClusteredForwardLightsNode extends THREE.LightsNode {
     lightingModel.directDiffuse.toStack();
     lightingModel.directSpecular.toStack();
 
-    // Standard forward path for DirectionalLight, HemisphereLight, and shadow-casting SpotLight
     super.setupLights(builder, lightNodes);
 
     const lightIndexes = this.lightIndexes!;
-    const NX = this.tilesX;
-    const NY = this.tilesY;
-    const NZ = this.zSlices;
-    const chunks = this.chunksPerCluster;
-    const maxPerCluster = this.maxLightsPerCluster;
+    const { tilesX: NX, tilesY: NY, zSlices: NZ, maxLightsPerCluster: maxPerCluster } = this.packer.cfg;
+    const chunks = this.packer.chunksPerCluster;
 
     Fn(() => {
       const clusterIdx = (clusterIndexFromScreenWgsl({
@@ -588,11 +352,6 @@ class ClusteredForwardLightsNode extends THREE.LightsNode {
   }
 }
 
-/**
- * Drop-in Clustered Forward+ lighting provider for `THREE.WebGPURenderer.lighting`.
- * Clusters both 100+ dynamic streetlights (PointLight) and dynamic car headlights (SpotLight)
- * in a compact WGSL compute pass. Scenes flagged `userData.plainLights` (e.g. Garage) stay plain forward.
- */
 export class ClusteredForwardLighting extends ClusteredLighting {
   private plain = new WeakMap<object, THREE.LightsNode>();
   private lastNode: ClusteredForwardLightsNode | null = null;
