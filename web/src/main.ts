@@ -43,7 +43,7 @@ import { RankedLink } from './ranked';
 import { FREE_ROAM_XP_PER_KM, STARTER_CAR, copBustPenalty, raceReward } from './progression';
 import { DrivingLine } from './driving-line';
 import { Minimap, type Blip } from './minimap';
-import { Loader, steadyFrames } from './loading';
+import { LOAD_TIPS, Loader, steadyFrames } from './loading';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { RemoteCars } from './net';
 import { Party, cleanCode, type Progress } from './party';
@@ -123,9 +123,23 @@ const auto = navigator.webdriver || /HeadlessChrome/i.test(navigator.userAgent) 
 if (auto && params.get('gate') !== '1') enter();
 const loadFill = document.getElementById('load-fill');
 const loadMsg = document.getElementById('load-msg');
+const loadPct = document.getElementById('load-pct');
+const loadTip = document.getElementById('load-tip');
+let bootTipIdx = Math.floor(Math.random() * LOAD_TIPS.length);
+const rotateBootTip = () => {
+  if (!loadTip) return;
+  bootTipIdx = (bootTipIdx + 1) % LOAD_TIPS.length;
+  loadTip.textContent = 'Tip · ' + LOAD_TIPS[bootTipIdx];
+};
+rotateBootTip();
+const bootTipTimer = window.setInterval(rotateBootTip, 4200);
 const say = (s: string, pct?: number) => {
   if (loadMsg) loadMsg.textContent = s; else loading.textContent = s;
-  if (loadFill && pct !== undefined) loadFill.style.width = `${Math.round(Math.max(5, Math.min(100, pct)))}%`;
+  if (pct !== undefined) {
+    const p = Math.round(Math.max(4, Math.min(100, pct)));
+    if (loadFill) loadFill.style.width = `${p}%`;
+    if (loadPct) loadPct.textContent = `${p}%`;
+  }
 };
 
 /**
@@ -311,17 +325,22 @@ async function main() {
   });
   const useNyc = params.get('city') !== 'old';
   // the real-scale city of this session (cities.ts: New York, London, Paris, Tokyo, Los Angeles); `useNyc` = streamed city tiles
-  const cityInfo = currentCity(params);
+  let cityInfo = currentCity(params);
   setGroundGrid(cityInfo.grid);
   setSignCity(cityInfo.id);
-  { const cr = document.getElementById('credits'); if (cr) cr.innerHTML = cr.innerHTML.replace(/OpenStreetMap contributors<\/a> \(ODbL\)( &amp; NYC Open Data)?/, `OpenStreetMap contributors</a> (ODbL)${cityInfo.id === 'nyc' ? ' &amp; NYC Open Data' : ''}`); }
-  const [catalog, defaultCfg, route] = await Promise.all([
+  const updateCreditsLine = () => {
+    const cr = document.getElementById('credits');
+    if (cr) cr.innerHTML = cr.innerHTML.replace(/OpenStreetMap contributors<\/a> \(ODbL\)( &amp; NYC Open Data)?/, `OpenStreetMap contributors</a> (ODbL)${cityInfo.id === 'nyc' ? ' &amp; NYC Open Data' : ''}`);
+  };
+  updateCreditsLine();
+  const [catalog, defaultCfg, initRoute] = await Promise.all([
     catalogP,
     fetchVisualCfg(DEFAULT_VISUAL),
     fetch(useNyc ? cityInfo.route : '/data/tracks/city_route.json').then((r) => r.json()),
     loadCore(),
     loadRapier(),
   ]);
+  let route = initRoute;
   const sel = loadSelection(catalog, params);
   initLang();
   const a11y = loadAccessibility();
@@ -375,7 +394,7 @@ async function main() {
   core.setTurboStage(turboStageOf());
   const pw = new PhysicsWorld();
   if (potato) setMobileFacadeMode(true);
-  const nyc = useNyc ? new NycStreamer(scene, renderer, pw, camera, {
+  let nyc = useNyc ? new NycStreamer(scene, renderer, pw, camera, {
     base: cityInfo.base,
     surfaces: core.info.surfaces,
     debug: params.get('nycdebug') === '1',
@@ -388,7 +407,7 @@ async function main() {
     farLoad: num('far', potato ? 420 : isTouch ? 560 : 1000),
     farKeep: num('farkeep', potato ? 500 : isTouch ? 660 : 1150),
     ...(potato ? { nearLoad: num('near', 300), nearKeep: num('nearkeep', 380), treeDensity: num('trees', 0.4) } : {}),
-    onProgress: (f) => say(`Loading the city… ${Math.round(f * 100)}%`, 20 + f * 55),
+    onProgress: (f) => say(`Streaming ${cityInfo.name}… ${Math.round(f * 100)}%`, 20 + f * 55),
   }) : null;
   if (nyc) {
     await nyc.ready();
@@ -396,10 +415,10 @@ async function main() {
     camera.far = potato ? 560 : 1600;
     camera.updateProjectionMatrix();
   }
-  const nycS0 = nyc ? nyc.spawnPoint() : null;
+  let nycS0 = nyc ? nyc.spawnPoint() : null;
   // Poles, hydrants, bins, shelters, kiosks and tree trunks near the car are solid (obstacles.ts)
-  const streetProps = nyc?.streetProps ?? null;
-  const obstacles = streetProps && params.get('solidprops') !== '0' ? new StreetObstacles(pw, streetProps) : null;
+  let streetProps = nyc?.streetProps ?? null;
+  let obstacles = streetProps && params.get('solidprops') !== '0' ? new StreetObstacles(pw, streetProps) : null;
   const city = nyc ? nycCityShim() : await loadCity(scene, pw, core.info.surfaces, (f) => say(`Loading city… ${Math.round(f * 100)}%`, 20 + f * 55), webgpu && num('bundle', 1) === 1);
   const cityLights = new CityLighting(scene, city.lights, webgpu, num('lights', 12));
   // Reflections: capture the lit city once from street level (the car isn't in the scene yet).
@@ -430,13 +449,11 @@ async function main() {
   drawEarly(visual.model);   // cars stay visible inside a wall breach (breach.ts portal)
   scene.add(visual.root);
   visual.setPaint(paintOf(sel, catalog), sel.finish);
-  // Live car reflection probe (src/fx/carProbe.ts): renders one 128 px cube face every Nth drawn frame so streetlamps,
-  // neon signs, and skyscrapers glide across clearcoat paint & glass in real time (?probe=0 disables).
-  // Off on phones: one cube face is a whole extra scene render (the full draw list), so even one every 30 frames landed
-  // as a visible hitch about once a second while driving. ?probe=N turns it on for an experiment.
-  const probeEvery = num('probe', isTouch || potato ? 0 : 4);
+  // Live car reflection probe (src/fx/carProbe.ts): 128 px cube face every 6th drawn frame (motion-gated when parked)
+  // gives razor-crisp real-time neon & skyscraper reflections on clearcoat paint with 4x lower pixel/PMREM cost!
+  const probeEvery = num('probe', isTouch || potato ? 0 : 6);
   const probeIntensity = num('probei', 1.25);
-  const probeSize = num('probesize', isTouch ? 48 : 256);
+  const probeSize = num('probesize', isTouch ? 48 : 128);
   const probe = webgpu && probeEvery > 0 ? new CarProbe(renderer, scene, pmrem, probeSize, probeEvery) : null;
   // The garage: its own scene (scene/garage). Built while the car loads; its cube matches the probe's so the probe
   // can prefilter the room into the texture the car's materials already sample (no material ever changes).
@@ -553,8 +570,8 @@ async function main() {
   } catch { /* no parked cars */ }
 
   // Start line = first route sample (core coords: Z-up) -> three (x, z, -y).
-  const s0 = nycS0 ?? route.samples[0];
-  const startYaw = Math.atan2(Math.cos(s0.heading), -Math.sin(s0.heading));
+  let s0 = nycS0 ?? route.samples[0];
+  let startYaw = Math.atan2(Math.cos(s0.heading), -Math.sin(s0.heading));
   /** Grid slot: metres ahead of the start point (ds) and to its right (lat). Free roam: 0, 0. */
   let grid = { ds: 0, lat: 0 };
   const spawn = () => {
@@ -570,7 +587,7 @@ async function main() {
   spawn();
 
   // Laps: the core's RaceTracker on the city route (free run: laps counted forever).
-  const routeJson = JSON.stringify(route);
+  let routeJson = JSON.stringify(route);
   let race = new CoreRace(routeJson, 0);
   let raceCar = race.addCar(car.body.translation());
   let raceT0 = 0, lap: LapInfo | null = null;
@@ -1233,25 +1250,25 @@ async function main() {
   const isShowroom = (st: State) => st === 'title' || st === 'garage' || st === 'modes' || st === 'lobby' || st === 'busy';
   const menu: Menu = new Menu(sel, catalog, physics, {
     preview: () => { void (async () => {
-      // a different model: the loading screen covers the download and the first frames with the new car (shader
-      // compiles), and lifts once the garage renders steadily again
+      // Seamless car swap (stays in fullscreen, never reloads): sleek determinate loader covers the GLB/shader settle
       const swap = visualPathOf(sel.car) !== visualPath;
-      if (swap) await loader.show(`Loading ${catalog.find((c) => c.id === sel.car)?.name ?? 'car'}…`);
+      const carLabel = catalog.find((c) => c.id === sel.car)?.name ?? 'Vehicle';
+      if (swap) await loader.show(`Loading ${carLabel}…`, carLabel.toUpperCase(), 28);
       await showCar();
+      if (swap) loader.text('Applying paint & telemetry…', 82);
       visual.setPaint(paintOf(sel, catalog), sel.finish);
       applyLook();
       party?.updateMe(meForParty());
-      if (swap) { await steadyFrames(5, 70, 6000); loader.hide(); }
+      if (swap) {
+        await steadyFrames(3, 68, 2200);
+        loader.text('Ready!', 100);
+        loader.hide();
+      }
     })(); },
     play: (mode) => void startSession(mode),
-    // another city: every tile, collider and route belongs to one city, so the game reloads into it (the choice is kept)
-    city: (id) => {
-      if (id === cityInfo.id) return;
-      saveCity(id);
-      const u = new URL(location.href); u.searchParams.delete('city');
-      if (party) u.searchParams.set('party', party.code);   // a party follows its leader's city: the invite is waiting after the reload
-      void loader.show(`Loading ${CITIES.find((c) => c.id === id)?.name ?? 'the city'}…`).then(() => location.replace(u.toString()));
-    },
+    // Seamless in-place city switching: disposes the previous city streamer & swaps tiles/roads/minimap/landmarks
+    // right behind the loading overlay — ZERO page reload, stays in Fullscreen!
+    city: (id) => { void switchCity(id); },
     cities: () => ({ list: CITIES, current: cityInfo.id }),
     gfx: (g2) => applyGfx(g2),
     resume: () => resume(),
@@ -1473,9 +1490,10 @@ async function main() {
   menu.assists = assistSet;
   applyLook();
   const drivingLine = new DrivingLine(scene, ai);
-  // GPS minimap: the tiles' road graphs (loaded in the background), the race route, rivals / players
+  // GPS minimap: the tiles' road graphs (loaded in the background), the race route, rivals / players & 1:1 city landmarks
   const minimap = new Minimap(document.getElementById('hud')!);
   minimap.setRoute(route.samples);
+  minimap.setLandmarks(cityInfo.landmarks);
   input.onMap = () => minimap.show(!minimap.visible);
   input.onFullMap = () => { if (driving()) minimap.toggleExpand(); };
   input.onVoicePtt = (down) => voice.setPushToTalk(down);
@@ -1540,7 +1558,7 @@ async function main() {
       }
     },
   });
-  const zones = new CityZones(scene, cityInfo.id, route.samples, {
+  let zones = new CityZones(scene, cityInfo.id, route.samples, {
     onScore: (z, score, stars, isPB, xp) => {
       if (xp > 0) sp.earn(xp, `${z.kind === 'speed' ? 'speed trap' : 'drift zone'} · ${z.name}`);
       if (z.kind === 'speed' && score >= 180) completeDaily('speed_trap', 1);
@@ -1593,7 +1611,7 @@ async function main() {
     },
     onToast: (title, detail) => hud.toast(title, detail),
   });
-  const raceNodes = new RaceNodes(scene, cityInfo.id, route.samples, cityInfo.mandatoryCops, {
+  let raceNodes = new RaceNodes(scene, cityInfo.id, route.samples, cityInfo.mandatoryCops, {
     onLaunchRace: (node) => {
       sel.laps = node.laps;
       sel.copMode = node.copMode;
@@ -1925,6 +1943,135 @@ async function main() {
     Object.assign(g.__game, { visual, damage });   // `car` / `core` are live getters on __game
   }).catch((e) => console.error('car swap failed', e)));
 
+  /** Seamless in-place city transition: swaps streamed tiles, colliders, routes, landmarks, zones & reflections with ZERO page reload and NEVER drops Fullscreen! */
+  let citySwitching = false;
+  async function switchCity(nextId: string) {
+    if (citySwitching || !useNyc) return;
+    const nextCity = CITIES.find((c) => c.id === nextId);
+    if (!nextCity || nextCity.id === cityInfo.id) return;
+    citySwitching = true;
+    const wasInGarage = inGarage;
+    try {
+      await loader.show(`Switching to ${nextCity.name}…`, `${nextCity.name.toUpperCase()} · ${nextCity.district.toUpperCase()}`, 8);
+      saveCity(nextCity.id);
+      try {
+        const u = new URL(location.href);
+        u.searchParams.delete('city');
+        history.replaceState(null, '', u.pathname + u.search + u.hash);
+      } catch { /* ignore history errors */ }
+
+      // Tear down old city cleanly so VRAM & Rapier colliders never leak
+      cops.breakOff();
+      wagers.cancel();
+      waypointBeacon.visible = false;
+      obstacles?.dispose();
+      obstacles = null;
+      nyc?.dispose();
+      nyc = null;
+      streetProps = null;
+      zones.dispose();
+      raceNodes.dispose();
+      minimap.clear();
+
+      cityInfo = nextCity;
+      setGroundGrid(cityInfo.grid);
+      setSignCity(cityInfo.id);
+      updateCreditsLine();
+      minimap.setLandmarks(cityInfo.landmarks);
+
+      loader.text(`Loading ${cityInfo.name} street network…`, 22);
+      const [newRoute, newMap] = await Promise.all([
+        fetch(cityInfo.route).then((r) => r.json()),
+        fetch(cityInfo.base + 'map.json').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]);
+      route = newRoute;
+      routeJson = JSON.stringify(route);
+      minimap.setRoute(route.samples);
+      if (newMap) minimap.addGraph(newMap);
+
+      loader.text(`Streaming ${cityInfo.name} 1:1 tiles…`, 32);
+      const nextStreamer = new NycStreamer(scene, renderer, pw, camera, {
+        base: cityInfo.base,
+        surfaces: core.info.surfaces,
+        debug: params.get('nycdebug') === '1',
+        fogDensity: num('fog', potato ? 0.0045 : 0.0024),
+        farLoad: num('far', potato ? 420 : isTouch ? 560 : 1000),
+        farKeep: num('farkeep', potato ? 500 : isTouch ? 660 : 1150),
+        ...(potato ? { nearLoad: num('near', 300), nearKeep: num('nearkeep', 380), treeDensity: num('trees', 0.4) } : {}),
+        onProgress: (f) => loader.text(`Streaming ${cityInfo.name}… ${Math.round(f * 100)}%`, 32 + f * 48),
+      });
+      nyc = nextStreamer;
+      await nextStreamer.ready();
+      streetProps = nextStreamer.streetProps;
+      obstacles = streetProps && params.get('solidprops') !== '0' ? new StreetObstacles(pw, streetProps) : null;
+      post.onPreset?.(post.preset);
+
+      nycS0 = nextStreamer.spawnPoint();
+      s0 = nycS0 ?? route.samples[0];
+      startYaw = Math.atan2(Math.cos(s0.heading), -Math.sin(s0.heading));
+      grid = { ds: 0, lat: 0 };
+
+      // Rebind AI, cops, driving line, zones & race nodes to the new city's roads
+      loader.text('Syncing traffic, zones & reflections…', 84);
+      ai.setRoute(route.samples);
+      cops.setLane(new Lane(route.samples));
+      drivingLine.setCar(applyMods(physics[sel.car], modsOf(sel)));
+      zones = new CityZones(scene, cityInfo.id, route.samples, {
+        onScore: (z, score, stars, isPB, xp) => {
+          if (xp > 0) sp.earn(xp, `${z.kind === 'speed' ? 'speed trap' : 'drift zone'} · ${z.name}`);
+          if (z.kind === 'speed' && score >= 180) completeDaily('speed_trap', 1);
+          if (z.kind === 'drift' && score >= 3500) completeDaily('drift_pts', 1);
+          const unit = z.kind === 'speed' ? 'km/h' : 'PTS';
+          const st = '★'.repeat(stars) + '☆'.repeat(3 - stars);
+          hud.toast(
+            `${z.kind === 'speed' ? '⚡' : '🔥'} ${z.name}${isPB ? ' · NEW PB!' : ''}`,
+            `${score.toLocaleString()} ${unit} · ${st}${xp > 0 ? ` · +${xp} XP` : ''}`,
+          );
+        },
+        sendNet: (msg) => party?.sendZoneScore(msg),
+      });
+      zones.setVisible(false);
+      raceNodes = new RaceNodes(scene, cityInfo.id, route.samples, cityInfo.mandatoryCops, {
+        onLaunchRace: (node) => {
+          sel.laps = node.laps;
+          sel.copMode = node.copMode;
+          saveSelection(sel);
+          void startSession('race');
+        },
+      });
+      raceNodes.setVisible(false);
+
+      // Index new road colliders and place the car cleanly on the new city's spawn
+      pw.world.step();
+      resetCar();
+
+      // Re-capture city environment reflection map without leaving fullscreen
+      if (!potato) {
+        const oldEnv = scene.environment;
+        const envPos = new THREE.Vector3(s0.x, s0.z + 2, -s0.y);
+        scene.environment = pmrem.fromScene(scene, 0.02, 0.5, 400, { size: 256, position: envPos }).texture;
+        oldEnv?.dispose();
+      }
+      probe?.invalidate();
+      if (!wasInGarage) probe?.captureAll(pos, visual.root);
+
+      Object.assign(g.__game, { nyc, streetProps, obstacles, zones, raceNodes, routeSamples: route.samples });
+      party?.updateMe(meForParty());
+      menu.render();
+      loader.text(`Welcome to ${cityInfo.name}!`, 96);
+      citySwitching = false;
+      await steadyFrames(3, 68, 2200);
+      loader.text('Ready!', 100);
+      loader.hide();
+      hud.toast(`🌍 ${cityInfo.name.toUpperCase()}`, `${cityInfo.district} · 1:1 Open World`);
+    } catch (e) {
+      console.error('Seamless city switch failed', e);
+      citySwitching = false;
+      loader.hide();
+      hud.toast('CITY SWITCH FAILED', e instanceof Error ? e.message : String(e));
+    }
+  }
+
   /**
    * Load a session: race (you + AI rivals on a grid), free roam (just you) or a party session
    * (online: the party's rules, other players' cars). A party session waits for the leader's GO
@@ -1932,16 +2079,19 @@ async function main() {
    */
   let rivalsCompiled = false;
   async function startSession(mode: Mode, rejoin = false) {
-    if (loadingSession) return;
+    if (loadingSession || citySwitching) return;
     loadingSession = true;
     sel.mode = mode;
     setState('busy');
-    menu.show('busy', mode === 'online' ? 'Loading the party session…' : 'Getting ready…');
+    const modeTitle = mode === 'online' ? 'MULTIPLAYER SESSION' : mode === 'race' ? `RACE · ${sel.laps} LAPS` : sp.testingMode ? 'TESTING FREE ROAM' : 'FREE ROAM';
+    await loader.show(mode === 'online' ? 'Syncing party session…' : `Preparing ${cityInfo.name}…`, `${cityInfo.name.toUpperCase()} · ${modeTitle}`, 22);
+    menu.show('none');
     if (mode === 'online' && cloud.available) {
       // online: drive only what the online account owns (the race room checks it), from a fresh profile
       await mp.refresh();
       mp.fit(sel);
     }
+    loader.text('Staging vehicle & physics…', 48);
     await showCar();
     visual.setPaint(paintOf(sel, catalog), sel.finish);
     if (carKey() !== builtKey) rebuildPlayer();
@@ -2009,7 +2159,7 @@ async function main() {
     if (mode === 'online' && !rejoin) {
       if (!party) { quitSession('lobby'); return; }
       resetCar();
-      menu.show('busy', 'Waiting for the other drivers…');
+      loader.text('Waiting for the other drivers…', 82);
       party.ready();
       if (partyGo || party.phase === 'driving') { partyGo = false; await beginRace(); }
       return;
@@ -2046,11 +2196,12 @@ async function main() {
     prev = performance.now(); acc = 0; lastRenderAt = 0;
     setState('countdown');           // parked on the grid (no input) while the view warms up
     if (loader.hold) {
-      loader.text('Almost there…');
-      await steadyFrames(6, 70, 8000);   // tiles around the start stream in, shaders compile: behind the screen
+      loader.text('Streaming street ahead…', 90);
+      await steadyFrames(4, 68, 3500);   // tiles around the start stream in, shaders compile: behind the screen
+      loader.text('Ready!', 100);
       loader.hold = false;
       loader.hide();
-      await sleep(250);
+      await sleep(220);
       if (state !== 'countdown') return;
     }
     if (raceLaps() === 0) { ai.go(); setState('race'); setExtra(); return; }
@@ -2075,6 +2226,8 @@ async function main() {
 
   /** End the session: back to the title, the game modes, or (party) the lobby. */
   function quitSession(to: 'title' | 'modes' | 'lobby') {
+    loader.hold = false;
+    loader.hide();
     if (freeRoamM > 50 && sel.mode === 'free') sp.earn(freeRoamM / 1000 * FREE_ROAM_XP_PER_KM, `free roam · ${(freeRoamM / 1000).toFixed(1)} km`);
     freeRoamM = 0;
     ranked?.close(); ranked = null;
@@ -2322,6 +2475,8 @@ async function main() {
 
   // Boot into the title (or, for the test tools with ?menu=0, straight into a free run).
   gameReady = true;
+  clearInterval(bootTipTimer);
+  say('Ready!', 100);
   { const l = document.getElementById('loading'); if (l) { l.classList.add('out'); setTimeout(() => l.remove(), 450); } }   // fade, not a cut
   if (params.get('menu') === '0') {
     sel.mode = 'free';
@@ -2343,11 +2498,14 @@ async function main() {
   }
   setExtra();
 
-  let lastRenderAt = 0, statsAt = 0, statsLogAt = 0;
+  let lastRenderAt = 0, statsAt = 0, statsLogAt = 0, lastBlipAt = 0;
+  const candidatesBuf: NearbyCandidate[] = [];
+  const blipsBuf: Blip[] = [];
   /** CPU time per frame section (ms, accumulated): window.__prof. Sections sum to `total`, the whole callback. */
   const prof = { n: 0, total: 0, sim: 0, vis: 0, city: 0, post: 0, hud: 0, audio: 0 };
   (globalThis as { __prof?: unknown }).__prof = prof;
   renderer.setAnimationLoop(() => {
+    if (citySwitching) return;
     const now = performance.now();
     const p0 = now;
     const cb0 = bench.active ? now : 0;
@@ -2533,7 +2691,7 @@ async function main() {
     {
       const inFreeRoam = state === 'race' && raceLaps() === 0;
       const kmhNow = Math.abs(car.out[OUT.speed]) * 3.6;
-      const candidates: NearbyCandidate[] = [];
+      candidatesBuf.length = 0;
       if (inFreeRoam) {
         if (remote && party) {
           for (const id of remote.ids()) {
@@ -2541,19 +2699,19 @@ async function main() {
             if (!r) continue;
             const d = Math.hypot(r.root.position.x - pos.x, r.root.position.z - pos.z);
             const name = party.members.find((m) => m.id === id)?.name ?? 'Driver';
-            candidates.push({ id, name, kind: 'peer', aiIdx: -1, dist: d, pos: r.root.position });
+            candidatesBuf.push({ id, name, kind: 'peer', aiIdx: -1, dist: d, pos: r.root.position });
           }
         }
         if (ai.mode === 'cruise') {
           for (let i = 0; i < ai.cars.length; i++) {
             const c = ai.cars[i];
             const d = Math.hypot(c.pos.x - pos.x, c.pos.z - pos.z);
-            candidates.push({ id: `ai_${i}`, name: c.name, kind: 'ai', aiIdx: i, dist: d, pos: c.pos });
+            candidatesBuf.push({ id: `ai_${i}`, name: c.name, kind: 'ai', aiIdx: i, dist: d, pos: c.pos });
           }
         }
       }
       const wasFlashing = wagers.flashTimer > 0;
-      wagers.update(frame, inFreeRoam, pos, kmhNow, candidates, now);
+      wagers.update(frame, inFreeRoam, pos, kmhNow, candidatesBuf, now);
       if (wagers.flashTimer > 0) {
         visual.dim = wagers.flashMultiplier;
         visual.applyHeadlights();
@@ -2613,27 +2771,28 @@ async function main() {
       if (bh !== lastBoardHtml) { zoneBoardEl.innerHTML = lastBoardHtml = bh; }
     }
     drivingLine.update(assistSet.line, (state === 'race' || state === 'countdown') && !photoMode.active && !replay.active, pos, car.out[OUT.speed]);
-    if (driving() && state !== 'paused' && state !== 'busy' && !photoMode.active && !replay.active) {
+    if (driving() && state !== 'paused' && state !== 'busy' && !photoMode.active && !replay.active && now - lastBlipAt >= 62) {
+      lastBlipAt = now;
       const watching = state === 'spectate';   // spectating: the map follows the watched car (no GPS directions)
       mmFwd.set(0, 0, 1).applyQuaternion(watching ? specQuat : quat);
       const pal = paletteOf(a11y);
-      const blips: Blip[] = [];
-      if (ai.mode === 'race') for (const c of ai.cars) blips.push({ x: c.pos.x, z: c.pos.z, color: pal.rival });
-      else if (ai.mode === 'cruise') for (const c of ai.cars) blips.push({ x: c.pos.x, z: c.pos.z, color: pal.traffic });
-      if (remote) for (const id of remote.ids()) { const r = remote.get(id); if (r) blips.push({ x: r.root.position.x, z: r.root.position.z, color: pal.peer }); }
+      blipsBuf.length = 0;
+      if (ai.mode === 'race') for (const c of ai.cars) blipsBuf.push({ x: c.pos.x, z: c.pos.z, color: pal.rival });
+      else if (ai.mode === 'cruise') for (const c of ai.cars) blipsBuf.push({ x: c.pos.x, z: c.pos.z, color: pal.traffic });
+      if (remote) for (const id of remote.ids()) { const r = remote.get(id); if (r) blipsBuf.push({ x: r.root.position.x, z: r.root.position.z, color: pal.peer }); }
       if (raceLaps() === 0) {
-        for (const zb of zones.minimapBlips()) blips.push({ x: zb.x, z: zb.z, color: zb.color === '#00e5ff' ? pal.speedTrap : pal.driftZone });
-        for (const rb of raceNodes.minimapBlips(pal.raceNode)) blips.push(rb);
+        for (const zb of zones.minimapBlips()) blipsBuf.push({ x: zb.x, z: zb.z, color: zb.color === '#00e5ff' ? pal.speedTrap : pal.driftZone });
+        for (const rb of raceNodes.minimapBlips(pal.raceNode)) blipsBuf.push(rb);
         const fin = wagers.finishWorld;
-        if (fin) blips.push({ x: fin.x, z: fin.z, color: pal.dragFinish });
+        if (fin) blipsBuf.push({ x: fin.x, z: fin.z, color: pal.dragFinish });
       } else if (cops.active) {
-        for (const u of cops.unitPositions()) blips.push({ x: u.x, z: u.z, color: pal.cop });
+        for (const u of cops.unitPositions()) blipsBuf.push({ x: u.x, z: u.z, color: pal.cop });
         const rb = cops.roadblockWorld;
-        if (rb) blips.push({ x: rb.x, z: rb.z, color: pal.roadblock });
+        if (rb) blipsBuf.push({ x: rb.x, z: rb.z, color: pal.roadblock });
       }
       const L = lap?.routeLength ?? route.length_m;
-      if (watching) minimap.update(now, specPos, mmFwd, specOut[OUT.speed], null, blips);
-      else minimap.update(now, pos, mmFwd, Math.abs(car.out[OUT.speed]), lap ? ((lap.distance % L) + L) % L : null, blips);
+      if (watching) minimap.update(now, specPos, mmFwd, specOut[OUT.speed], null, blipsBuf);
+      else minimap.update(now, pos, mmFwd, Math.abs(car.out[OUT.speed]), lap ? ((lap.distance % L) + L) % L : null, blipsBuf);
     }
     menuNav.paused = !!menu.ctl?.calibrating;
     menuNav.update(now);
@@ -2678,28 +2837,30 @@ async function main() {
       if (state === 'spectate') specCamera(frame);
       else if (live) rig.update(frame, pos, quat, carAcc, car.out);
     }
-    cityLights.update(frame, camera);   // WebGL 2 pool only (5 Hz); a no-op with clustered lighting
-    if (obstacles) obstacles.sync(frame, pos);
-    if (streetProps) {
-      carBox.pos.copy(physPos); carBox.quat.copy(physQuat);
-      carBox.half = [shape.boxSize[0] / 2, shape.boxSize[1] / 2, shape.boxSize[2] / 2];
-      carBox.centre = [shape.boxCentre[0] - visual.cg.x, shape.boxCentre[1] - visual.cg.y, shape.boxCentre[2] - visual.cg.z];
-      streetProps.carBox = driving() ? carBox : null;
-    }
-    nyc?.update(state === 'spectate' ? specPos : pos, frame, driving() && state !== 'spectate' ? visual.velocity : undefined, (impulse, kind) => {   // spectating: detail around the watched car
-      pendingScrapeImpulse += impulse;
-      const lv = car.body.linvel();
-      const s = Math.hypot(lv.x, lv.z);
-      if (s > 1) {
-        const drag = Math.min(0.28, (impulse / 1800) / Math.max(4, s));
-        car.body.setLinvel({ x: lv.x * (1 - drag), y: lv.y, z: lv.z * (1 - drag) }, true);
-      }
-      audio.impact(Math.max(12, impulse * 0.18), kind === 'shop' || kind === 'wall', kind);
-      // Wrecking during a Cop Race Event raises Heat (never in Free Roam!).
-      if (copsActiveInRace() && impulse > 5000 && Date.now() - heat.lastGain > 20_000) bumpHeat(1);
-    });
     const tCity = performance.now();
-    city.update(camera);
+    if (!inGarage) {
+      cityLights.update(frame, camera);   // WebGL 2 pool only (5 Hz); a no-op with clustered lighting
+      if (obstacles) obstacles.sync(frame, pos);
+      if (streetProps) {
+        carBox.pos.copy(physPos); carBox.quat.copy(physQuat);
+        carBox.half = [shape.boxSize[0] / 2, shape.boxSize[1] / 2, shape.boxSize[2] / 2];
+        carBox.centre = [shape.boxCentre[0] - visual.cg.x, shape.boxCentre[1] - visual.cg.y, shape.boxCentre[2] - visual.cg.z];
+        streetProps.carBox = driving() ? carBox : null;
+      }
+      nyc?.update(state === 'spectate' ? specPos : pos, frame, driving() && state !== 'spectate' ? visual.velocity : undefined, (impulse, kind) => {   // spectating: detail around the watched car
+        pendingScrapeImpulse += impulse;
+        const lv = car.body.linvel();
+        const s = Math.hypot(lv.x, lv.z);
+        if (s > 1) {
+          const drag = Math.min(0.28, (impulse / 1800) / Math.max(4, s));
+          car.body.setLinvel({ x: lv.x * (1 - drag), y: lv.y, z: lv.z * (1 - drag) }, true);
+        }
+        audio.impact(Math.max(12, impulse * 0.18), kind === 'shop' || kind === 'wall', kind);
+        // Wrecking during a Cop Race Event raises Heat (never in Free Roam!).
+        if (copsActiveInRace() && impulse > 5000 && Date.now() - heat.lastGain > 20_000) bumpHeat(1);
+      });
+      city.update(camera);
+    }
     prof.city += performance.now() - tCity;
     // Frame cap (default 30 fps: the quality target; ?cap=0 uncapped, ?cap=45 etc.). Simulation, camera and HUD run every
     // display refresh; only the draw is skipped, so the picture holds still between rendered frames. The cap is off while

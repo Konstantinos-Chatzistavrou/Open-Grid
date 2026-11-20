@@ -20,7 +20,8 @@ fn cullMeshletTest(
   maxDist: f32
 ) -> i32 {
   let center = sphere.xyz;
-  let radius = sphere.w;
+  // Pad bounding radius slightly so wide/tall building walls at frustum edges never pop invisible
+  let radius = sphere.w + 4.0;
 
   // 1. 6-plane frustum sphere test (planes point inward; signed distance < -radius is outside)
   if (dot(p0.xyz, center) + p0.w < -radius) { return 1; }
@@ -30,21 +31,20 @@ fn cullMeshletTest(
   if (dot(p4.xyz, center) + p4.w < -radius) { return 1; }
   if (dot(p5.xyz, center) + p5.w < -radius) { return 1; }
 
+  let toCenter = center - camPos;
+  let dist = length(toCenter);
+
   // 2. Distance cull (optional; maxDist <= 0 disables)
-  if (maxDist > 0.0) {
-    let toCenter = center - camPos;
-    let dist = length(toCenter);
-    if (dist - radius > maxDist) {
-      return 3;
-    }
+  if (maxDist > 0.0 && dist - radius > maxDist) {
+    return 3;
   }
 
-  // 3. Meshoptimizer normal-cone backface culling
-  if (cone.w < 0.999) {
+  // 3. Meshoptimizer normal-cone backface culling (disabled within 55 m / 2.2x radius so close walls/corners NEVER vanish!)
+  if (cone.w < 0.999 && dist > max(55.0, radius * 2.2)) {
     let viewVec = apex.xyz - camPos;
     let vLen = length(viewVec);
     if (vLen > 1e-4) {
-      if (dot(viewVec / vLen, cone.xyz) >= cone.w) {
+      if (dot(viewVec / vLen, cone.xyz) >= cone.w + 0.08) {
         return 2;
       }
     }

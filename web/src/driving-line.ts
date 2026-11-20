@@ -48,11 +48,14 @@ export class DrivingLine {
     scene.add(this.mesh);
   }
 
-  /** The player's car (its grip sets the target speeds). */
+  /** The player's car (its grip sets the target speeds). Also refreshes ground cache after a city switch. */
   setCar(phys: unknown) {
     const lim = limitsOf(phys);
     this.aBrake = 0.85 * lim.muX * G;
     this.prof = this.ai.lane.profile(0.8 * lim.mu * G, this.aBrake, 75);
+    if (this.groundY.length !== this.ai.lane.n) this.groundY = new Float32Array(this.ai.lane.n).fill(NaN);
+    else this.groundY.fill(NaN);
+    this.s = -1;
   }
 
   private y(i: number) {

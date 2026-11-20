@@ -4,8 +4,9 @@
 // spatial grid of road segments (a few hundred lines per frame).
 // Frames: road graph and route = game frame (x east, y north); three.js = (x, y up, z = -y_game).
 
-interface Seg { x0: number; y0: number; x1: number; y1: number; w: number; major: boolean }
+interface Seg { x0: number; y0: number; x1: number; y1: number; w: number; major: boolean; stamp: number }
 interface Turn { s: number; dir: -1 | 1; sharp: boolean; name: string }
+interface Landmark { x: number; y: number; name: string }
 export interface Blip { x: number; z: number; color: string }
 
 const CELL = 100;
@@ -16,7 +17,9 @@ export class Minimap {
   private ctx: CanvasRenderingContext2D;
   private banner = document.createElement('div');
   private grid = new Map<string, Seg[]>();
+  private drawStamp = 0;
   private named: { x: number; y: number; name: string }[] = [];
+  private landmarks: Landmark[] = [];
   private route: { x: number; y: number }[] = [];
   private routeS: number[] = [];
   private routeLen = 0;
@@ -67,22 +70,53 @@ export class Minimap {
     this.last = 0; // force immediate redraw
   }
 
-  /** Road edges of one tile's graph (game frame). */
+  /** Road edges of one tile's graph (game frame). Note: `e.pts` in map.json are INTERIOR shape points between nodes[a] and nodes[b]! */
   addGraph(g: { nodes: number[][]; edges: { a: number; b: number; w: number; hw: string; name?: string; pts?: number[][] }[] }) {
     for (const e of g.edges) {
-      const pts = e.pts ?? [g.nodes[e.a], g.nodes[e.b]];
-      if (!pts || pts.length < 2) continue;
-      const major = ['primary', 'secondary', 'trunk', 'motorway'].includes(e.hw);
+      const na = g.nodes[e.a], nb = g.nodes[e.b];
+      if (!na || !nb) continue;
+      // Fix: always include both endpoint nodes[a] & nodes[b] around interior shape points `e.pts` so zero streets or intersections drop out!
+      const pts = e.pts && e.pts.length > 0 ? [na, ...e.pts, nb] : [na, nb];
+      const major = ['primary', 'secondary', 'trunk', 'motorway', 'primary_link', 'trunk_link', 'motorway_link'].includes(e.hw);
       for (let i = 0; i + 1 < pts.length; i++) {
         const a = pts[i], b = pts[i + 1];
         if (!a || !b || !Number.isFinite(a[0]) || !Number.isFinite(a[1]) || !Number.isFinite(b[0]) || !Number.isFinite(b[1])) continue;
-        const s: Seg = { x0: a[0], y0: a[1], x1: b[0], y1: b[1], w: e.w || 6, major };
-        const k = `${Math.floor((s.x0 + s.x1) / 2 / CELL)}_${Math.floor((s.y0 + s.y1) / 2 / CELL)}`;
-        (this.grid.get(k) ?? this.grid.set(k, []).get(k)!).push(s);
-        if (e.name) this.named.push({ x: (s.x0 + s.x1) / 2, y: (s.y0 + s.y1) / 2, name: e.name });
+        if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.25) continue;
+        const s: Seg = { x0: a[0], y0: a[1], x1: b[0], y1: b[1], w: e.w || 6, major, stamp: 0 };
+        // Insert into EVERY grid cell overlapped by the segment's bounding box so long highways/bridges never vanish!
+        const gx0 = Math.floor(Math.min(s.x0, s.x1) / CELL), gx1 = Math.floor(Math.max(s.x0, s.x1) / CELL);
+        const gy0 = Math.floor(Math.min(s.y0, s.y1) / CELL), gy1 = Math.floor(Math.max(s.y0, s.y1) / CELL);
+        for (let gx = gx0; gx <= gx1; gx++) {
+          for (let gy = gy0; gy <= gy1; gy++) {
+            const k = `${gx}_${gy}`;
+            (this.grid.get(k) ?? this.grid.set(k, []).get(k)!).push(s);
+          }
+        }
+        if (e.name && i === Math.floor((pts.length - 1) / 2)) {
+          this.named.push({ x: (s.x0 + s.x1) / 2, y: (s.y0 + s.y1) / 2, name: e.name });
+        }
       }
     }
     this.turns = [];   // street names may now be known: recompute
+  }
+
+  /** Clear all loaded roads, route, waypoint and landmarks (used during seamless city switches). */
+  clear() {
+    this.grid.clear();
+    this.named = [];
+    this.landmarks = [];
+    this.route = [];
+    this.routeS = [];
+    this.routeLen = 0;
+    this.turns = [];
+    this.waypoint = null;
+    this.banner.textContent = '';
+    this.last = 0;
+  }
+
+  /** Set real-life city landmark labels (game frame x east, y north) shown on the expanded interactive map. */
+  setLandmarks(list: Landmark[]) {
+    this.landmarks = list;
   }
 
   /** The race route (game frame samples; closed loop). */
@@ -179,13 +213,15 @@ export class Minimap {
     const c0y = Math.floor((cy - reach) / CELL), c1y = Math.floor((cy + reach) / CELL);
     c.lineCap = 'round'; c.lineJoin = 'round';
     for (const major of [false, true]) {
-      c.strokeStyle = major ? 'rgba(150, 160, 180, 0.55)' : 'rgba(120, 130, 150, 0.38)';
+      const stamp = ++this.drawStamp;
+      c.strokeStyle = major ? 'rgba(180, 195, 220, 0.72)' : 'rgba(128, 140, 165, 0.44)';
       for (let gx = c0x; gx <= c1x; gx++) for (let gy = c0y; gy <= c1y; gy++) {
         const list = this.grid.get(`${gx}_${gy}`);
         if (!list) continue;
         for (const s of list) {
-          if (s.major !== major) continue;
-          c.lineWidth = Math.max(s.w * 0.8, 3 * this.zoom);
+          if (s.major !== major || s.stamp === stamp) continue;
+          s.stamp = stamp;
+          c.lineWidth = Math.max(s.w * 0.85, (major ? 3.2 : 2.2) * this.zoom);
           c.beginPath(); c.moveTo(s.x0, s.y0); c.lineTo(s.x1, s.y1); c.stroke();
         }
       }
@@ -231,15 +267,32 @@ export class Minimap {
     c.fillStyle = '#fff'; c.strokeStyle = 'rgba(0,0,0,0.8)'; c.lineWidth = 1.5;
     c.beginPath(); c.moveTo(0, -9); c.lineTo(6.5, 7); c.lineTo(0, 3.5); c.lineTo(-6.5, 7); c.closePath(); c.fill(); c.stroke();
     c.restore();
-    // north tick
+    // north tick + real-life landmark labels on expanded map
     if (this.expanded) {
-      c.fillStyle = 'rgba(255,255,255,0.85)'; c.font = '700 12px Inter, system-ui, sans-serif';
-      c.textAlign = 'center'; c.fillText('N · CLICK TO SET GPS WAYPOINT · RIGHT-CLICK CLEAR · [TAB] CLOSE', r, 18);
+      if (this.landmarks.length) {
+        c.font = '700 10px Inter, system-ui, sans-serif';
+        c.textAlign = 'center';
+        for (const lm of this.landmarks) {
+          const sx = r + (lm.x - cx) * k;
+          const sy = r - (lm.y - cy) * k;
+          if (sx < 24 || sx > size - 24 || sy < 28 || sy > size - 16) continue;
+          c.fillStyle = 'rgba(0, 229, 255, 0.9)';
+          c.beginPath(); c.arc(sx, sy, 3.2, 0, Math.PI * 2); c.fill();
+          c.fillStyle = 'rgba(6, 9, 16, 0.75)';
+          const tw = c.measureText(lm.name).width + 8;
+          c.fillRect(sx - tw / 2, sy - 18, tw, 13);
+          c.fillStyle = '#e0f7ff';
+          c.fillText(lm.name, sx, sy - 8);
+        }
+      }
+      c.fillStyle = 'rgba(255,255,255,0.88)'; c.font = '700 11px Inter, system-ui, sans-serif';
+      c.textAlign = 'center'; c.fillText('N · CLICK TO SET GPS WAYPOINT · RIGHT-CLICK CLEAR · [TAB] CLOSE', r, 16);
     } else {
       c.save(); c.translate(r, r); c.rotate(-(Math.PI / 2 - theta)); c.fillStyle = 'rgba(255,255,255,0.7)'; c.font = '700 10px Inter, system-ui, sans-serif';
       c.textAlign = 'center'; c.fillText('N', 0, -r + 13); c.restore();
     }
-    // turn-by-turn or active GPS Waypoint banner
+    // turn-by-turn, active GPS Waypoint, or live current street name banner
+    const esc = (v: string) => v.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
     let txt = '';
     if (this.waypoint) {
       const wd = Math.round(Math.hypot(this.waypoint.x - car.x, this.waypoint.z - car.z));
@@ -250,9 +303,12 @@ export class Minimap {
       for (const t of this.turns) { let d = t.s - s; if (d < -5) d += this.routeLen; if (d >= -5 && d < dist) { dist = d; next = t; } }
       if (next && dist < 900) {
         const arrow = next.sharp ? (next.dir < 0 ? '↶' : '↷') : (next.dir < 0 ? '↰' : '↱');
-        const esc = (v: string) => v.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
         txt = `<b>${arrow}</b> ${next.name ? `<span>${esc(next.name)}</span>` : (next.dir < 0 ? 'Turn left' : 'Turn right')} <i>${dist < 30 ? 'now' : `${Math.round(dist / 10) * 10} m`}</i>`;
       }
+    }
+    if (!txt) {
+      const curStreet = this.streetAt(cx, cy);
+      if (curStreet) txt = `<span>${esc(curStreet)}</span>`;
     }
     if (this.banner.innerHTML !== txt) { this.banner.innerHTML = txt; this.banner.hidden = !txt; }
   }

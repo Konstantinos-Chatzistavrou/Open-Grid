@@ -31,8 +31,8 @@ const ATTRS: AttrSpec[] = [
   { name: 'position', size: 3, def: [0, 0, 0] },
   { name: 'normal', size: 3, def: [0, 1, 0] },
   { name: 'uv', size: 2, def: [0, 0] },
-  { name: 'color', size: 3, def: [1, 1, 1] },
-  { name: '_bld', size: 1, def: [0] },   // building id; dequantized like the GPU would (normalized storage)
+  { name: 'color', size: 4, def: [1, 1, 1, 1] },   // vec4: RGB tint + alpha baked AO (required by facade.ts & groundMaterials.ts)
+  { name: '_bld', size: 4, def: [0, 1, 0, 0] },    // vec4: seed, floors, kind, era (required by facade.ts)
 ];
 const ATTR_BY_NAME = new Map(ATTRS.map((a) => [a.name, a]));
 const ALLOWED = new Set(ATTRS.map((a) => a.name));
@@ -236,11 +236,16 @@ export class MaterialBatch {
       uvOut[u] = component(su, i, 0, false, 0);
       uvOut[u + 1] = component(su, i, 1, false, 0);
 
-      colOut[o] = component(sc, i, 0, false, 1);
-      colOut[o + 1] = component(sc, i, 1, false, 1);
-      colOut[o + 2] = component(sc, i, 2, false, 1);
+      const c4 = (vertStart + i) * 4;
+      colOut[c4] = component(sc, i, 0, false, 1);
+      colOut[c4 + 1] = component(sc, i, 1, false, 1);
+      colOut[c4 + 2] = component(sc, i, 2, false, 1);
+      colOut[c4 + 3] = sc && sc.itemSize >= 4 ? component(sc, i, 3, false, 1) : 1;
 
-      bldOut[vertStart + i] = component(sb, i, 0, false, 0);
+      bldOut[c4] = component(sb, i, 0, false, 0);
+      bldOut[c4 + 1] = sb && sb.itemSize >= 2 ? component(sb, i, 1, false, 1) : 1;
+      bldOut[c4 + 2] = sb && sb.itemSize >= 3 ? component(sb, i, 2, false, 0) : 0;
+      bldOut[c4 + 3] = sb && sb.itemSize >= 4 ? component(sb, i, 3, false, 0) : 0;
     }
     const alloc: Alloc = { vertStart, vertCount: count, idxStart, idxCount };
 
@@ -405,6 +410,11 @@ export class CityBatcher {
     }
     const culledPct = acc.meshletCount > 0 ? Math.round((1 - acc.visibleMeshlets / acc.meshletCount) * 1000) / 10 : 0;
     return { ...acc, culledPct };
+  }
+
+  /** Expose batched meshes for one material (used by breach.ts facadeDepth raycast when city batching is active). */
+  meshFor(material: THREE.Material): THREE.Mesh | null {
+    return this.batches.get(material)?.mesh ?? null;
   }
 
   /** Free every slot this tile owned; empty material batches are disposed. */

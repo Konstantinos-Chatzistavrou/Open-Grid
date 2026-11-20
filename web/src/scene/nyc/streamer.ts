@@ -183,6 +183,9 @@ export class NycStreamer {
           if (!t.nearGroup || this.dist(t, from.x, from.z) > 260) continue;
           t.nearGroup.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.material === this.mats.facade) meshes.push(m); });
         }
+        // When city batching is active, near facade meshes live in the batcher's combined mesh
+        const batchedFacade = this.batcher?.meshFor(this.mats.facade);
+        if (batchedFacade) meshes.push(batchedFacade);
         const hit = rc.intersectObjects(meshes, false)[0];
         return hit ? hit.distance : null;
       },
@@ -714,9 +717,16 @@ export class NycStreamer {
     this.dtAvg += (Math.min(dt, 0.25) - this.dtAvg) * 0.1;
     // Colliders first, every frame, never paused: they are cheap (boxes) and missing ones are the worst failure.
     let used = this.drainCol(4);
-    // The rest gets a share of the frame, not a fixed 2.5 ms: at 12 fps that is 8 ms a frame, the same loading per
-    // second of driving as a fast machine gets.
-    if (this.pause > 0) this.pause--; else used += this.drain(Math.max(this.o.budgetMs, Math.min(12, dt * 100)));
+    // Never let nearby visual buildings lag behind their colliders (prevents invisible walls when driving fast!)
+    let urgentNear = false;
+    for (const j of this.queue) if (j.kind === 'near' && j.tile.d < 160) { urgentNear = true; break; }
+    if (urgentNear) {
+      used += this.drain(10);
+    } else if (this.pause > 0) {
+      this.pause--;
+    } else {
+      used += this.drain(Math.max(this.o.budgetMs, Math.min(12, dt * 100)));
+    }
     this.updateVisibility();
     this.props?.update(dt, carPos, carVel, onImpact);
     this.breaches.update(dt, this.camera);
@@ -826,6 +836,7 @@ export class NycStreamer {
   // ---- teardown -----------------------------------------------------------------------------------------------------------------------
   dispose() {
     this.disposed = true;
+    this.breaches.clear();
     this.batcher?.dispose();
     this.batcher = null;
     for (const t of this.tiles.values()) {
@@ -835,6 +846,7 @@ export class NycStreamer {
       t.group.removeFromParent();
       if (t.propsSet) this.props?.removeTile(t.key);
     }
+    this.tiles.clear();
     this.queue.length = 0;
     this.endWarm();
     this.props?.dispose();

@@ -118,6 +118,13 @@ export class Cops {
     ];
   }
 
+  /** Rebind police pursuit path to a new city's route during seamless city switching. */
+  setLane(lane: Lane) {
+    this.breakOff();
+    this.lane = lane;
+    this.s = 0;
+  }
+
   /** Provide the unmarked cruiser template, scene, and Rapier world for multi-unit pursuits + physical roadblocks. */
   setupVisuals(proto: THREE.Object3D, scene: THREE.Scene, pw: PhysicsWorld) {
     this.proto = proto;
