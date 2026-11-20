@@ -68,6 +68,9 @@ try {
   await send('Page.enable');
   await send('Page.bringToFront');
   await send('Runtime.enable');
+  // SEED=n: a seeded Math.random (mulberry32) in every document, so A/B runs get the same weather and random picks
+  if (process.env.SEED) await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { let s = ${Number(process.env.SEED)} >>> 0;
+    Math.random = () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })()` });
   await send('Page.navigate', { url });
   for (let i = 0; i < 240; i++) {
     await sleep(500);

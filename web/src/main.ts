@@ -467,6 +467,8 @@ async function main() {
   }) : null;
   if (nyc) {
     await nyc.ready();
+    // WebGL 2 has no clustered lighting: every light in the scene costs every lit pixel, dark ones too (props.ts limitLights)
+    if (!webgpu) nyc.streetProps?.limitLights(num('lights', 12));
     mark('city first ring');
     camera.far = potato ? 560 : 1600;
     camera.updateProjectionMatrix();
@@ -2074,6 +2076,7 @@ async function main() {
       });
       nyc = nextStreamer;
       await nextStreamer.ready();
+      if (!webgpu) nextStreamer.streetProps?.limitLights(num('lights', 12));   // WebGL 2: see the first city load
       streetProps = nextStreamer.streetProps;
       obstacles = streetProps && params.get('solidprops') !== '0' ? new StreetObstacles(pw, streetProps) : null;
       wireCityImpactCallbacks();

@@ -8,7 +8,7 @@
 // The physical consequences (bent steering, weaker springs, lost power, drag, brake fade) are in the core.
 import * as THREE from 'three/webgpu';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { instancedDynamicBufferAttribute, uv, vec2, vec3, vec4, smoothstep, float, mix, sin, time, uniform } from 'three/tsl';
+import { instancedBufferAttribute, uv, vec2, vec3, vec4, smoothstep, float, mix, sin, time, uniform } from 'three/tsl';
 import { noise01 } from '../fx/noiseTex';
 import type { Damage } from '../physics/core';
 import { GROUP_DEBRIS, type PhysicsWorld } from '../physics/world';
@@ -82,10 +82,13 @@ export class Particles {
     this.maxLife = new Float32Array(max).fill(1);
     const m = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false });
     m.blending = opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending;
-    m.positionNode = instancedDynamicBufferAttribute(this.pos);
-    const sz = instancedDynamicBufferAttribute(this.size) as unknown as THREE.Node<'float'>;
-    const c = instancedDynamicBufferAttribute(this.col, 'vec4') as unknown as THREE.Node<'vec4'>;
-    const ls = instancedDynamicBufferAttribute(this.ls, 'vec2') as unknown as THREE.Node<'vec2'>;
+    // StaticDrawUsage + needsUpdate: three r186 re-uploads a DynamicDrawUsage attribute WHOLE at every draw that uses it
+    // (scene/instancing.ts); static ones upload once, on the frame they changed. The node uses these attributes directly
+    // (itemSize <= 4), so needsUpdate on them is what bumps the uploaded version.
+    m.positionNode = instancedBufferAttribute(this.pos);
+    const sz = instancedBufferAttribute(this.size) as unknown as THREE.Node<'float'>;
+    const c = instancedBufferAttribute(this.col, 'vec4') as unknown as THREE.Node<'vec4'>;
+    const ls = instancedBufferAttribute(this.ls, 'vec2') as unknown as THREE.Node<'vec2'>;
     const age = ls.x, seed = ls.y;
     const style = opts.style ?? 'soft';
     const p = uv().sub(0.5);
@@ -143,6 +146,7 @@ export class Particles {
     this.maxLife[i] = life;
     this.size.setX(i, size);
     this.ls.setXY(i, 0, Math.random());
+    this.pos.needsUpdate = this.size.needsUpdate = this.ls.needsUpdate = true;
     this.sprite.count = this.max;
     this.sprite.visible = true;
   }
@@ -214,6 +218,11 @@ export class DamageVisuals {
   /** Detachable parts' rest pose (parent space) and the point they hang from, for sagging before they tear off. */
   private hang = new Map<string, { node: THREE.Object3D; pos: THREE.Vector3; quat: THREE.Quaternion; pivot: THREE.Vector3; amount: number; side: number }>();
   private crushShown = [0, 0, 0, 0];
+  /** per-frame scratch (smoke, fire, hub sparks, debris poses): no allocation while a wreck burns */
+  private sOrigin = new THREE.Vector3();
+  private sV = new THREE.Vector3();
+  private sP = new THREE.Vector3();
+  private sQ = new THREE.Quaternion();
 
   constructor(private car: CarVisual, private cfg: DamageVisualConfig, private pw: PhysicsWorld, private scene: THREE.Scene) {
     this.dents.setWheels(car.wheelWells());
@@ -375,8 +384,9 @@ export class DamageVisuals {
     this.smokeAcc += dt * rate;
     const grey = burning ? 0.065 : Math.min(0.62 - 0.4 * d.engine, 0.58 - 0.35 * d.smoulder);   // charcoal: still reads against a night sky
     this.smoke.color.setRGB(grey, grey * 0.98, grey * 0.96);
-    const origin = new THREE.Vector3(...this.cfg.engine_smoke_in_model_m).sub(this.car.cg).applyMatrix4(this.car.root.matrixWorld);
-    const v = new THREE.Vector3(), p = new THREE.Vector3();
+    const e = this.cfg.engine_smoke_in_model_m;
+    const origin = this.sOrigin.set(e[0], e[1], e[2]).sub(this.car.cg).applyMatrix4(this.car.root.matrixWorld);
+    const v = this.sV, p = this.sP;
     while (this.smokeAcc >= 1) {
       this.smokeAcc -= 1;
       p.set((Math.random() - 0.5) * 0.55, 0.15, (Math.random() - 0.5) * 0.55).add(origin);
@@ -403,11 +413,12 @@ export class DamageVisuals {
     const flick = 0.7 + 0.18 * Math.sin(time * 23) + 0.12 * Math.sin(time * 37.7) + 0.15 * (Math.random() - 0.5);
     this.fireLight.intensity = 55 * g * flick;
     this.fireLight.distance = 4.8 + 4.2 * g;
-    const origin = new THREE.Vector3(...this.cfg.engine_smoke_in_model_m).sub(this.car.cg).applyMatrix4(this.car.root.matrixWorld);
+    const e = this.cfg.engine_smoke_in_model_m;
+    const origin = this.sOrigin.set(e[0], e[1], e[2]).sub(this.car.cg).applyMatrix4(this.car.root.matrixWorld);
     fireGlow.value.setRGB(1.0, 0.38, 0.09).multiplyScalar(0.32 * g * flick);
     this.fireAcc += dt * (11 + 22 * f);
     this.emberAcc += dt * (4 + 12 * f);
-    const v = new THREE.Vector3(), p = new THREE.Vector3();
+    const v = this.sV, p = this.sP;
     while (this.fireAcc >= 1) {
       this.fireAcc -= 1;
       // flames lick out across the engine bay (wider as it spreads) and from the gaps under the bonnet
@@ -515,7 +526,7 @@ export class DamageVisuals {
     const speed = this.car.velocity.length();
     if (speed < 2) return;
     this.hubAcc += dt * Math.min(70, 8 + speed * 2.2);
-    const p = new THREE.Vector3(), v = new THREE.Vector3();
+    const p = this.sP, v = this.sV;
     while (this.hubAcc >= 1) {
       this.hubAcc -= 1;
       const w = this.car.wheel(this.wheelsOff[Math.floor(Math.random() * this.wheelsOff.length)]);
@@ -557,7 +568,7 @@ export class DamageVisuals {
       if (!d.body.isValid()) continue;
       d.age += dt;
       const t = d.body.translation(), r = d.body.rotation();
-      d.node.matrix.compose(new THREE.Vector3(t.x, t.y, t.z), new THREE.Quaternion(r.x, r.y, r.z, r.w), d.scale ?? UNIT);
+      d.node.matrix.compose(this.sP.set(t.x, t.y, t.z), this.sQ.set(r.x, r.y, r.z, r.w), d.scale ?? UNIT);
       d.node.matrixWorldNeedsUpdate = true;
       if (d.age > 30) { this.pw.world.removeRigidBody(d.body); d.node.visible = false; }
     }

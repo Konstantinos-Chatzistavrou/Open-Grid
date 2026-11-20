@@ -449,6 +449,7 @@ function signalColor(t: number, group: number, phase: number, out: THREE.Color) 
   if (u < 26) out.setRGB(0.1, 1, 0.45); else if (u < 29) out.setRGB(1, 0.7, 0.05); else out.setRGB(1, 0.08, 0.05);
 }
 
+interface LightCand { id: number; score: number; kind: number; tl: TileLights; i: number }
 interface TileLights { serial: number; x0: number; y0: number; z: number; lamps: number[][]; signals: number[][]; signs: number[][]; brokenLamps: Set<number>; brokenSignals: Set<number> }
 
 export type BreakableKind = 'lamp' | 'signalR' | 'signalL' | 'hydrant' | 'bus' | 'kiosk' | 'waste';
@@ -574,11 +575,16 @@ export class NycProps {
   private time = 0;
   private fwd = new THREE.Vector3();
   private selected = new Set<number>();
-  private cand: { id: number; score: number; kind: number; tl: TileLights; i: number }[] = [];
+  private cand: LightCand[] = [];
+  /** assignLights() scratch, reused every 200 ms (it ranks hundreds of lamps, signals and signs) */
+  private candPool: LightCand[] = [];
+  private byId = new Map<number, LightCand>();
+  private taken = new Set<number>();
   private lampIntensity: number;
 
   constructor(private scene: THREE.Scene, private camera: THREE.Camera, opts: NycPropsOptions = {}) {
     this.root.name = 'nyc_props';
+    this.root.matrixAutoUpdate = false;   // it and every instanced mesh below sit at identity and never move
     this.lampIntensity = opts.lampLightIntensity ?? 55;
     const mk = (name: string, geo: THREE.BufferGeometry, mat: THREE.Material, cap: number, stride = 0, attr?: THREE.InstancedBufferAttribute) => {
       const s = new InstanceSet(geo, mat, cap, stride, 'nyc_' + name, attr);
@@ -594,7 +600,7 @@ export class NycProps {
       const g = buildTree(sp.id);
       const mkNear = (geo: THREE.BufferGeometry, mat: THREE.Material, nm: string) => {
         const m = new THREE.InstancedMesh(geo, mat, instanceSlots(NEAR_CAP));
-        m.name = nm; m.frustumCulled = false; m.castShadow = false; m.receiveShadow = true;
+        m.name = nm; m.frustumCulled = false; m.castShadow = false; m.receiveShadow = true; m.matrixAutoUpdate = false;
         m.instanceMatrix.array.fill(0);
         m.count = 1;   // one degenerate instance: the pipeline compiles with the rest (warm), not at the first near tree
         this.root.add(m); this.meshes.push(m);
@@ -619,7 +625,7 @@ export class NycProps {
     // Lamp light pools: own matrix buffer so broken lamps can extinguish their light pool on the street
     const disc = new THREE.PlaneGeometry(15, 15).rotateX(-Math.PI / 2).translate(2.2, 0.06, 0);
     this.pools = new THREE.InstancedMesh(disc, lampPoolMaterial(), 6000);
-    this.pools.frustumCulled = false; this.pools.renderOrder = 5; this.pools.name = 'nyc_lamp_pools';
+    this.pools.frustumCulled = false; this.pools.renderOrder = 5; this.pools.name = 'nyc_lamp_pools'; this.pools.matrixAutoUpdate = false;
     this.root.add(this.pools); this.meshes.push(this.pools);
 
     // Steam puffs
@@ -636,6 +642,7 @@ export class NycProps {
     this.shardMesh.instanceMatrix.array.fill(0);
     this.shardMesh.count = 1;
     this.shardMesh.frustumCulled = false;
+    this.shardMesh.matrixAutoUpdate = false;
     this.shardMesh.name = 'nyc_glass_shards';
     this.root.add(this.shardMesh); this.meshes.push(this.shardMesh);
     for (let i = 0; i < SHARD_CAP; i++) {
@@ -648,6 +655,7 @@ export class NycProps {
     this.debrisMesh.instanceMatrix.array.fill(0);
     this.debrisMesh.count = 1;
     this.debrisMesh.frustumCulled = false;
+    this.debrisMesh.matrixAutoUpdate = false;
     this.debrisMesh.name = 'nyc_wall_debris';
     this.root.add(this.debrisMesh); this.meshes.push(this.debrisMesh);
     for (let i = 0; i < DEBRIS_CAP; i++) {
@@ -660,6 +668,7 @@ export class NycProps {
     this.sparkMesh.instanceMatrix.array.fill(0);
     this.sparkMesh.count = 1;
     this.sparkMesh.frustumCulled = false;
+    this.sparkMesh.matrixAutoUpdate = false;
     this.sparkMesh.name = 'nyc_pole_sparks';
     this.root.add(this.sparkMesh); this.meshes.push(this.sparkMesh);
     for (let i = 0; i < SPARK_CAP; i++) {
@@ -690,6 +699,7 @@ export class NycProps {
     const n = opts.lights ?? 128;
     for (let i = 0; i < n; i++) {
       const light = new THREE.PointLight(0xffffff, 0, 20, 2);
+      light.matrixAutoUpdate = false;   // updateMatrix() when a slot moves to another lamp (update / primeLights)
       scene.add(light);
       this.lights.push({ light, id: -1, cur: 0, target: 0, base: 0, pend: -1, pc: new THREE.Color(), pbase: 0, prange: 20, px: 0, py: 0, pz: 0 });
     }
@@ -702,7 +712,7 @@ export class NycProps {
     for (const s of this.lights) {
       if (s.pend >= 0) {
         s.id = s.pend; s.pend = -1; s.base = s.pbase;
-        s.light.position.set(s.px, s.pz, -s.py); s.light.color.copy(s.pc); s.light.distance = s.prange;
+        s.light.position.set(s.px, s.pz, -s.py); s.light.updateMatrix(); s.light.color.copy(s.pc); s.light.distance = s.prange;
         s.target = 1; s.cur = 1; s.light.intensity = s.base;
       }
     }
@@ -809,10 +819,7 @@ export class NycProps {
       }
     };
 
-    registerBreakable('lamp', d.lamp, 0.55);
-    // Sync lamp light pool matrices
-    (this.pools.instanceMatrix.array as Float32Array).set(S.lamp.mesh.instanceMatrix.array as Float32Array);
-    this.pools.instanceMatrix.needsUpdate = true;
+    registerBreakable('lamp', d.lamp, 0.55);   // the lamp light pools follow in flush() (only the written slots)
 
     // trees come from the tile data only (OSM street trees + the generator's), each drawn as its census species
     // Also deduplicate across neighboring tile seams (< 9.5 m) so tile borders never stack trees side by side.
@@ -899,19 +906,23 @@ export class NycProps {
   }
 
   private flush() {
-    const lampDirty = (this.sets.lamp as unknown as { dirty: boolean }).dirty;
+    const lamp = this.sets.lamp, lampDirty = lamp.isDirty, lo = lamp.dirtyLo, hi = lamp.dirtyHi;
     for (const s of Object.values(this.sets)) s.flush();
     this.steamSet.flush();
     this.signs.flush();
-    if (lampDirty) {
-      (this.pools.instanceMatrix.array as Float32Array).set(this.sets.lamp.mesh.instanceMatrix.array as Float32Array);
+    if (lampDirty && hi >= lo) {
+      // the pools mirror the lamp slots: copy and upload only the slots written since the last flush (the whole 6,000-slot
+      // buffer was 384 KB per tile load, and per frame while a knocked-down lamp post falls)
+      const pm = this.pools.instanceMatrix, dst = pm.array as Float32Array;
+      dst.set((lamp.mesh.instanceMatrix.array as Float32Array).subarray(lo * 16, (hi + 1) * 16), lo * 16);
       // knocked-down lamps (flying or lying) stay dark
       for (const poles of this.tilePoles.values()) for (const p of poles) {
-        if (p.broken && p.kind === 'lamp') (this.pools.instanceMatrix.array as Float32Array).fill(0, p.slot * 16, p.slot * 16 + 16);
+        if (p.broken && p.kind === 'lamp' && p.slot >= lo && p.slot <= hi) dst.fill(0, p.slot * 16, p.slot * 16 + 16);
       }
-      this.pools.instanceMatrix.needsUpdate = true;
+      pm.addUpdateRange(lo * 16, (hi - lo + 1) * 16);
+      pm.needsUpdate = true;
     }
-    this.pools.count = this.sets.lamp.mesh.count;
+    this.pools.count = lamp.mesh.count;
   }
 
   /** Spawn a burst of orange-white metallic/electric sparks at (x, y, z) in Three.js coordinates. */
@@ -1050,8 +1061,10 @@ export class NycProps {
 
   private extinguish(p: BreakablePole) {
     if (p.kind !== 'lamp') return;
-    (this.pools.instanceMatrix.array as Float32Array).fill(0, p.slot * 16, p.slot * 16 + 16);
-    this.pools.instanceMatrix.needsUpdate = true;
+    const pm = this.pools.instanceMatrix;
+    (pm.array as Float32Array).fill(0, p.slot * 16, p.slot * 16 + 16);
+    pm.addUpdateRange(p.slot * 16, 16);
+    pm.needsUpdate = true;
     const tl = this.tileLights.get(p.tileKey);
     if (tl && p.lightIdx !== undefined) tl.brokenLamps.add(p.lightIdx);
   }
@@ -1127,6 +1140,7 @@ export class NycProps {
     carVel: THREE.Vector3,
     onImpact?: (impulse: number, kind?: 'pole' | 'shop' | 'wall', wx?: number, wz?: number) => void,
   ) {
+    if (this.solidPoles) return;   // solid Rapier poles (obstacles.ts) break on contact: nothing to test here
     const speed = Math.hypot(carVel.x, carVel.z);
     if (speed < 1.8) return;
     const cx = carPos.x, cy = -carPos.z;
@@ -1139,7 +1153,7 @@ export class NycProps {
         const poles = this.tilePoles.get(key);
         if (poles) {
           for (const p of poles) {
-            if (p.broken || this.solidPoles) continue;
+            if (p.broken) continue;
             const pdx = p.x - cx, pdy = p.y - cy;
             if (pdx * pdx + pdy * pdy < (carR + p.radius) * (carR + p.radius)) {
               this.triggerPoleBreak(p, carVel.x, carVel.z, onImpact);
@@ -1258,9 +1272,12 @@ export class NycProps {
     // 2. 3D glass shards (zero CPU cost when inactive)
     if (this.activeShardCount > 0) {
       const shardArr = this.shardMesh.instanceMatrix.array as Float32Array;
+      let lo = Infinity, hi = -1;   // slots written this frame (uploaded alone)
       for (let i = 0; i < this.shards.length; i++) {
         const p = this.shards[i];
         if (!p.active) continue;
+        if (i < lo) lo = i;
+        hi = i;
         p.age += dt;
         if (p.age >= p.maxAge) {
           p.active = false;
@@ -1286,15 +1303,18 @@ export class NycProps {
         _mat4.toArray(shardArr, i * 16);
       }
       this.shardMesh.count = this.activeShardCount > 0 ? this.shards.length : 1;
-      this.shardMesh.instanceMatrix.needsUpdate = true;
+      if (hi >= lo) { this.shardMesh.instanceMatrix.addUpdateRange(lo * 16, (hi - lo + 1) * 16); this.shardMesh.instanceMatrix.needsUpdate = true; }
     }
 
     // 3. 3D brick & concrete masonry wall chunks (zero CPU cost when inactive)
     if (this.activeDebrisCount > 0) {
       const debrisArr = this.debrisMesh.instanceMatrix.array as Float32Array;
+      let lo = Infinity, hi = -1;   // slots written this frame (uploaded alone)
       for (let i = 0; i < this.debris.length; i++) {
         const p = this.debris[i];
         if (!p.active) continue;
+        if (i < lo) lo = i;
+        hi = i;
         p.age += dt;
         if (p.age >= p.maxAge) {
           p.active = false;
@@ -1320,15 +1340,18 @@ export class NycProps {
         _mat4.toArray(debrisArr, i * 16);
       }
       this.debrisMesh.count = this.activeDebrisCount > 0 ? this.debris.length : 1;
-      this.debrisMesh.instanceMatrix.needsUpdate = true;
+      if (hi >= lo) { this.debrisMesh.instanceMatrix.addUpdateRange(lo * 16, (hi - lo + 1) * 16); this.debrisMesh.instanceMatrix.needsUpdate = true; }
     }
 
     // 4. Electric & metallic collision sparks (zero CPU cost when inactive)
     if (this.activeSparkCount > 0) {
       const sparkArr = this.sparkMesh.instanceMatrix.array as Float32Array;
+      let lo = Infinity, hi = -1;   // slots written this frame (uploaded alone)
       for (let i = 0; i < this.sparks.length; i++) {
         const p = this.sparks[i];
         if (!p.active) continue;
+        if (i < lo) lo = i;
+        hi = i;
         p.age += dt;
         if (p.age >= p.maxAge) {
           p.active = false;
@@ -1352,7 +1375,7 @@ export class NycProps {
         _mat4.toArray(sparkArr, i * 16);
       }
       this.sparkMesh.count = this.activeSparkCount > 0 ? this.sparks.length : 1;
-      this.sparkMesh.instanceMatrix.needsUpdate = true;
+      if (hi >= lo) { this.sparkMesh.instanceMatrix.addUpdateRange(lo * 16, (hi - lo + 1) * 16); this.sparkMesh.instanceMatrix.needsUpdate = true; }
     }
   }
 
@@ -1377,7 +1400,7 @@ export class NycProps {
     for (const s of this.lights) {
       if (s.pend >= 0 && s.cur < 0.02 && (s.target === 0 || s.id < 0)) {
         s.id = s.pend; s.pend = -1; s.base = s.pbase;
-        s.light.position.set(s.px, s.pz, -s.py); s.light.color.copy(s.pc); s.light.distance = s.prange; s.target = 1;
+        s.light.position.set(s.px, s.pz, -s.py); s.light.updateMatrix(); s.light.color.copy(s.pc); s.light.distance = s.prange; s.target = 1;
       } else if (s.id >= 0 && s.target === 0 && s.cur < 0.02) s.id = -1;
       s.cur += (s.target - s.cur) * k;
       s.light.intensity = s.cur < 0.01 ? 0 : s.base * s.cur;
@@ -1398,7 +1421,10 @@ export class NycProps {
         const dx = x - cx, dy = y - cy, dist = Math.hypot(dx, dy);
         if (dist > range) return;
         const behind = (dx * fx + dy * fy) < -12 ? 2.2 : 1;
-        cand.push({ id: tl.serial * 1048576 + kind * 262144 + i, score: dist * bias * behind, kind, tl, i });
+        const k = cand.length;
+        const c = this.candPool[k] ?? (this.candPool[k] = { id: 0, score: 0, kind: 0, tl, i: 0 });
+        c.id = tl.serial * 1048576 + kind * 262144 + i; c.score = dist * bias * behind; c.kind = kind; c.tl = tl; c.i = i;
+        cand.push(c);
       };
       const L = tl.lamps, S = tl.signals, G = tl.signs;
       for (let i = 0; i < L.length; i++) if (!tl.brokenLamps.has(i)) push(0, i, L[i][0], L[i][1], 1, R);
@@ -1408,9 +1434,9 @@ export class NycProps {
     cand.sort((a, b) => a.score - b.score);
     const n = Math.min(this.lightCap, this.lights.length, cand.length);
     const sel = this.selected; sel.clear();
-    const byId = new Map<number, (typeof cand)[number]>();
+    const byId = this.byId; byId.clear();
     for (let i = 0; i < n; i++) { sel.add(cand[i].id); byId.set(cand[i].id, cand[i]); }
-    const taken = new Set<number>();
+    const taken = this.taken; taken.clear();
     for (const s of this.lights) {
       if (s.id >= 0) {
         if (sel.has(s.id)) { s.target = 1; taken.add(s.id); const cd = byId.get(s.id)!; if (cd.kind === 1) { const r = cd.tl.signals[cd.i]; signalColor(this.time + 0.1, r[4], r[5], s.light.color); } }
@@ -1444,6 +1470,16 @@ export class NycProps {
       s.px = r[0] + Math.cos(r[3]) * 3.0; s.py = r[1] + Math.sin(r[3]) * 3.0; s.pz = z + r[2];
       s.pc.setRGB(col[0], col[1], col[2]); s.pbase = Math.min(220, 40 + r[4] * r[5] * 0.9); s.prange = 34;
     }
+  }
+
+  /**
+   * Keep at most n pooled street lights in the scene. WebGL 2 has no clustered lighting (renderer.lighting stays three's
+   * default there): its forward shaders evaluate EVERY light in the scene for every lit pixel, dark ones included, and
+   * compile one block per light, so the 128-light pool costs more than the city. Call it before the first frame on WebGL 2
+   * (changing the scene's light set later recompiles every lit material once). The nearest n stay lit (assignLights).
+   */
+  limitLights(n: number) {
+    while (this.lights.length > Math.max(0, n)) { const s = this.lights.pop()!; s.light.removeFromParent(); s.light.dispose?.(); }
   }
 
   dispose() {
