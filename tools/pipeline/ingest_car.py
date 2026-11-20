@@ -127,7 +127,7 @@ def hex_to_rgb01(hx: str):
     return [round(int(h[i : i + 2], 16) / 255.0, 3) for i in (0, 2, 4)]
 
 
-def build_visual_json(car_id, name, meta, paint_mat_name, paint_hex):
+def build_visual_json(car_id, name, meta, paint_mat_name, paint_hex, engine_layout="front"):
     mn = meta["bounds_gltf"]["min"]
     mx = meta["bounds_gltf"]["max"]
     sx = round(max(1.6, mx[0] - mn[0]), 3)
@@ -169,6 +169,11 @@ def build_visual_json(car_id, name, meta, paint_mat_name, paint_hex):
             [round(-sx * 0.34, 3), round(mn[1] + sy * 0.44, 3), round(mx[2] - 0.18, 3)],
             [round(sx * 0.34, 3), round(mn[1] + sy * 0.44, 3), round(mx[2] - 0.18, 3)],
         ],
+        # where engine smoke / fire comes from when the engine is wrecked (damage.ts): over the engine bay at hood height
+        # (front +0.33 L, mid -0.21 L, rear -0.40 L along the car; the game crashed loading cars without it)
+        "engine_smoke_in_model_m": [0.0, round(mn[1] + sy * 0.50 + 0.15, 2),
+                                    round(cz + {"front": 0.33, "mid": -0.21, "rear": -0.40}[engine_layout] * sz, 2)],
+        "lod_distance_m": 32,
         "driver_seat_m": [0.34, round(mn[1] + sy * 0.24, 3), -0.22],
         "driver_scale": 0.92,
         "panels": {
@@ -241,6 +246,7 @@ def main():
     p.add_argument("--license", required=True, help="Source license & author attribution (CC0 / CC BY 4.0 / Original)")
     p.add_argument("--engine", choices=VALID_ENGINES, default="v8_flatplane")
     p.add_argument("--engine-label", default="4.5L Flat-Plane V8")
+    p.add_argument("--engine-layout", choices=("front", "mid", "rear"), default="front", help="Engine position (engine smoke / fire origin)")
     p.add_argument("--base", default="vela_gt", help="Base physics template id in data/cars/")
     p.add_argument("--price", type=int, default=145_000)
     p.add_argument("--sp-level", type=int, default=5)
@@ -307,7 +313,7 @@ def main():
 
         # Stage 3: Generate physics + visual JSON + catalog + credits
         build_physics_json(args.id, args.name, args.base, args.power_scale, args.mass, args.drivetrain)
-        build_visual_json(args.id, args.name, meta, args.paint_material, args.paint)
+        build_visual_json(args.id, args.name, meta, args.paint_material, args.paint, args.engine_layout)
         upsert_catalog(args)
         append_credits(args)
 

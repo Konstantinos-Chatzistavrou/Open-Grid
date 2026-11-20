@@ -36,7 +36,19 @@ export interface DamageVisualConfig {
   detachable: Record<string, [string, number]>;
   front_lights: string[];
   rear_lights: string[];
-  engine_smoke_in_model_m: [number, number, number];
+  /** where engine smoke and fire come from (model space); optional: estimated from the collision box when a config lacks it */
+  engine_smoke_in_model_m?: [number, number, number];
+  collision_box?: { size_m: [number, number, number]; centre_in_model_m: [number, number, number] };
+}
+
+/** The engine smoke / fire origin: the config's, else over the front of the car at hood height (a missing field used to
+ * throw "not iterable" in the constructor, so the whole car failed to load). */
+function smokeOrigin(cfg: DamageVisualConfig): [number, number, number] {
+  const e = cfg.engine_smoke_in_model_m;
+  if (Array.isArray(e) && e.length === 3 && e.every(Number.isFinite)) return [e[0], e[1], e[2]];
+  const cb = cfg.collision_box;
+  if (!cb) return [0, 0.75, 1.5];
+  return [0, cb.centre_in_model_m[1] + 0.15, cb.centre_in_model_m[2] + cb.size_m[2] * 0.33];
 }
 
 /** Instanced camera-facing sprites, simulated on the CPU (tens of particles: cheap), one draw call. */
@@ -224,7 +236,10 @@ export class DamageVisuals {
   private sP = new THREE.Vector3();
   private sQ = new THREE.Quaternion();
 
+  private readonly smokeAt: [number, number, number];
+
   constructor(private car: CarVisual, private cfg: DamageVisualConfig, private pw: PhysicsWorld, private scene: THREE.Scene) {
+    this.smokeAt = smokeOrigin(cfg);
     this.dents.setWheels(car.wheelWells());
     {
       // body extent in model space, for the zone crumple
@@ -268,7 +283,7 @@ export class DamageVisuals {
     this.sparks.color.setRGB(4, 2.2, 0.7);   // HDR: blooms
     this.flames.color.setRGB(5, 1.5, 0.25);
     this.flameCore.color.setRGB(6, 3.6, 1.1);
-    this.fireLight.position.set(...cfg.engine_smoke_in_model_m).sub(car.cg);
+    this.fireLight.position.set(...this.smokeAt).sub(car.cg);
     car.root.add(this.fireLight);
     this.embers.color.setRGB(5, 1.7, 0.3);
     scene.add(this.smoke.sprite, this.sparks.sprite, this.flames.sprite, this.flameCore.sprite, this.embers.sprite);
@@ -384,7 +399,7 @@ export class DamageVisuals {
     this.smokeAcc += dt * rate;
     const grey = burning ? 0.065 : Math.min(0.62 - 0.4 * d.engine, 0.58 - 0.35 * d.smoulder);   // charcoal: still reads against a night sky
     this.smoke.color.setRGB(grey, grey * 0.98, grey * 0.96);
-    const e = this.cfg.engine_smoke_in_model_m;
+    const e = this.smokeAt;
     const origin = this.sOrigin.set(e[0], e[1], e[2]).sub(this.car.cg).applyMatrix4(this.car.root.matrixWorld);
     const v = this.sV, p = this.sP;
     while (this.smokeAcc >= 1) {
@@ -413,7 +428,7 @@ export class DamageVisuals {
     const flick = 0.7 + 0.18 * Math.sin(time * 23) + 0.12 * Math.sin(time * 37.7) + 0.15 * (Math.random() - 0.5);
     this.fireLight.intensity = 55 * g * flick;
     this.fireLight.distance = 4.8 + 4.2 * g;
-    const e = this.cfg.engine_smoke_in_model_m;
+    const e = this.smokeAt;
     const origin = this.sOrigin.set(e[0], e[1], e[2]).sub(this.car.cg).applyMatrix4(this.car.root.matrixWorld);
     fireGlow.value.setRGB(1.0, 0.38, 0.09).multiplyScalar(0.32 * g * flick);
     this.fireAcc += dt * (11 + 22 * f);
