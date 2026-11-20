@@ -1,8 +1,8 @@
-// Tyre model: Full Pacejka Magic Formula (MF 5.2 / 6.1 / 6.2) + WLF Viscoelastic Flash-Temperature +
-// Physical 3-Rib (Inner / Middle / Outer) Contact-Patch Integration with load sensitivity, camber thrust,
-// load/camber-dependent curvature & stiffness, combined slip (Gxa, Gyk, SVyk, friction ellipse),
-// self-aligning torque Mz (pneumatic trail t + residual torque Mzr + carcass offset s + 3-rib differential torque),
-// load-dependent carcass relaxation lengths, MF 6.2 camber-conicity effective rolling radius, and tyre thermodynamics.
+// Tyre model: Siemens Simcenter Tire 2606 (MF-Tyre / MF-Swift 2606 June 2026 architecture) +
+// Pacejka Magic Formula (MF 5.2 / 6.1 / 6.2) + WLF Viscoelastic Flash-Temperature +
+// Physical 3-Rib (Inner / Middle / Outer) Contact-Patch Integration + T&V Thermal Stiffness Coupling +
+// MF-Swift Rigid-Ring Belt Dynamics (40-90 Hz In-Plane/Out-of-Plane Eigenmodes) +
+// 3D Tandem Elliptical Cam Obstacle Enveloping + Simcenter 2606 Broadband Transient Tire-Road NVH Acoustics.
 #pragma once
 #include <algorithm>
 #include "rs/config.hpp"
@@ -15,6 +15,16 @@ struct TireForces {
     double mz = 0;               // self-aligning moment about contact normal (+ = CCW from above), N m
     double pneumatic_trail = 0;  // instantaneous pneumatic trail t, m
     double effective_rib_mu = 1; // load-weighted 3-rib (Inner/Middle/Outer) + WLF flash-temp grip multiplier
+    double thermal_stiffness_scale = 1; // Simcenter 2606 T&V cornering/slip stiffness modulus factor (stiffer cold, softer hot)
+};
+
+// Simcenter Tire 2606 Broadband Transient Tire-Road NVH & Cavity Resonance Acoustic Source (for UE5 MetaSounds).
+struct TireAcousticSource {
+    double cavity_mode_low_hz = 224.0;   // Toroidal air-cavity backward-wave resonance frequency (Hz, Doppler split)
+    double cavity_mode_high_hz = 224.0;  // Toroidal air-cavity forward-wave resonance frequency (Hz, Doppler split)
+    double tread_block_pitch_hz = 0.0;   // Tread-pattern block impact modulation frequency (N_blocks * rps, Hz)
+    double transient_volume_accel = 0.0; // Broadband transient volume-displacement acceleration on cleats/curbs (m^3/s^2)
+    double cavity_ring_gain = 0.0;       // 0..1 excitation amplitude of the ~225 Hz hollow tire cavity boom
 };
 
 // Tyre thermal, pressure & wear state. Three timescales:
@@ -38,7 +48,19 @@ struct TireCondition {
     double track_surface_c = 30.0;// Asphalt road surface temperature (C) for conductive contact-patch heat transfer
     std::array<double, 3> rib_contact_shares{1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0}; // 16-point 3D geometric load shares (Inner, Middle, Outer)
 
+    // Simcenter Tire 2606 MF-Swift Rigid-Ring Belt Dynamics (40-90 Hz steel-belt carcass ring vibration relative to rim)
+    double belt_torsion_rad = 0.0;      // in-plane torsional deflection of tread belt ring vs wheel rim (rad)
+    double belt_torsion_vel_rads = 0.0; // in-plane torsional angular velocity of belt ring vs rim (rad/s)
+    double belt_lateral_m = 0.0;        // out-of-plane lateral sidewall deflection of belt ring vs rim (m)
+    double belt_lateral_vel_mps = 0.0;  // out-of-plane lateral velocity of belt ring vs rim (m/s)
+    double enveloping_slope_tan = 0.0;  // MF-Swift 3D tandem-cam obstacle enveloping slope tan(beta_env)
+
     void set_environment_celsius(double air_c, double track_c) { ambient_air_c = air_c; track_surface_c = track_c; }
+    void step_rigid_ring_belt(double fx_n, double fy_n, double radius_m, double dt);
+    /** Simcenter Tire 2606 T&V (Temperature & Velocity) shear-modulus stiffness factor for K_xk and K_ya. */
+    double thermal_stiffness_factor(const TireParams* p = nullptr) const;
+    /** Simcenter Tire 2606 Broadband Transient Tire-Road NVH & Toroidal Cavity Resonance Acoustic Source. */
+    TireAcousticSource compute_acoustics(double wheel_omega_rads, double radius_m, double carcass_deflection_rate_mps) const;
     void update(double slip_power_w, double load_n, double speed_mps, double dt, const TireParams* p = nullptr);
     void update_zones(double slip_power_w, double load_n, double speed_mps, double camber_rad, double lateral_force_n,
                       double wheel_side_sign, double wheel_omega_rads, double wheel_angle_rad, double dt,

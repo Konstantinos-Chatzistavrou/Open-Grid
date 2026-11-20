@@ -250,6 +250,60 @@ double TireCondition::wlf_rib_grip_factor(double rib_surface_c, const TireParams
     return wlf_grip * flash_grease;
 }
 
+void TireCondition::step_rigid_ring_belt(double fx_n, double fy_n, double radius_m, double dt) {
+    if (dt <= 0.0) return;
+    // Simcenter Tire 2606 MF-Swift Rigid-Ring Belt Model:
+    // Steel-belted tread ring (I_belt ~ 0.44 kg m^2, m_belt ~ 7.4 kg) suspended on elastic sidewalls
+    // relative to the alloy wheel rim:
+    //   In-plane torsional eigenfrequency:  f_nx = 1/(2 pi) * sqrt(k_ torsion / I_belt) ~ 72 Hz
+    //   Out-of-plane lateral eigenfrequency: f_ny = 1/(2 pi) * sqrt(k_lat / m_belt)     ~ 45 Hz
+    constexpr double I_belt = 0.44, k_tor = 90000.0, c_tor = 52.0;
+    constexpr double m_belt = 7.4,  k_lat = 590000.0, c_lat = 360.0;
+    const double r = std::max(radius_m, 0.20);
+    const int n_sub = std::max(1, (int)std::ceil(dt / 0.0005)); // >= 2 kHz integration for 72 Hz ring mode stability
+    const double h = dt / n_sub;
+    for (int i = 0; i < n_sub; ++i) {
+        const double tau_belt = fx_n * r * 0.12 - k_tor * belt_torsion_rad - c_tor * belt_torsion_vel_rads;
+        belt_torsion_vel_rads = clamp(belt_torsion_vel_rads + (tau_belt / I_belt) * h, -35.0, 35.0);
+        belt_torsion_rad = clamp(belt_torsion_rad + belt_torsion_vel_rads * h, -0.045, 0.045);
+
+        const double f_lat_belt = fy_n * 0.15 - k_lat * belt_lateral_m - c_lat * belt_lateral_vel_mps;
+        belt_lateral_vel_mps = clamp(belt_lateral_vel_mps + (f_lat_belt / m_belt) * h, -3.5, 3.5);
+        belt_lateral_m = clamp(belt_lateral_m + belt_lateral_vel_mps * h, -0.022, 0.022);
+    }
+}
+
+double TireCondition::thermal_stiffness_factor(const TireParams* p) const {
+    // Simcenter Tire 2606 T&V (Temperature & Velocity) Stiffness Coupling:
+    // Cold rubber (< 55 C) has a higher glassy storage shear modulus G' (+11% higher cornering/slip stiffness slope at small
+    // slip angles before breaking away sharply); overheated rubber (> 110 C) softens thermally (-16% lower cornering stiffness).
+    const double t_opt = p ? p->temp_optimal_c : 90.0;
+    const double t_blend = 0.60 * temperature_c + 0.40 * surface_c;
+    const double dt_c = clamp(t_blend - t_opt, -65.0, 85.0);
+    return clamp(1.0 - 0.0019 * dt_c, 0.84, 1.12);
+}
+
+TireAcousticSource TireCondition::compute_acoustics(double wheel_omega_rads, double radius_m,
+                                                    double carcass_deflection_rate_mps) const {
+    TireAcousticSource ac;
+    const double r_mean = std::max(0.18, radius_m * 0.78);
+    // Speed of sound in warm tire inflation gas c_s ~ 343 * sqrt(T_K / 293.15)
+    const double t_gas_k = clamp(temperature_c, -10.0, 160.0) + 273.15;
+    const double c_sound = 343.2 * std::sqrt(t_gas_k / 293.15);
+    const double f0_cavity = c_sound / (2.0 * kPi * r_mean); // ~220-238 Hz toroidal cavity fundamental
+    // Simcenter 2606 Doppler frequency split between forward- and backward-traveling acoustic waves in a rotating tire:
+    const double doppler_hz = std::abs(wheel_omega_rads) / kPi;
+    ac.cavity_mode_low_hz = std::max(120.0, f0_cavity - doppler_hz);
+    ac.cavity_mode_high_hz = f0_cavity + doppler_hz;
+    ac.tread_block_pitch_hz = 64.0 * (std::abs(wheel_omega_rads) / (2.0 * kPi)); // 64 tread pitch blocks around circumference
+    // Broadband transient volume-displacement acceleration (m^3/s^2) excited by curb strikes & MF-Swift belt ring vibration
+    const double vib_energy = std::abs(carcass_deflection_rate_mps) * 1.8 + std::abs(belt_torsion_vel_rads) * 0.08
+                            + std::abs(belt_lateral_vel_mps) * 0.45;
+    ac.transient_volume_accel = vib_energy * 0.045;
+    ac.cavity_ring_gain = clamp(vib_energy * 0.32, 0.0, 1.0);
+    return ac;
+}
+
 double TireCondition::dpi(const TireParams& p) const {
     if (pressure_kpa <= 0) return 0.0;
     return clamp((pressure_kpa - p.p_nominal_kpa) / std::max(p.p_nominal_kpa, 1.0), -0.5, 0.5);
@@ -412,13 +466,19 @@ TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, do
         const double mu_mid = tc.wlf_rib_grip_factor(tc.middle_c, &p);
         const double mu_out = tc.wlf_rib_grip_factor(tc.outer_c, &p);
         out.effective_rib_mu = clamp(w_in * mu_in + w_mid * mu_mid + w_out * mu_out, 0.78, 1.05);
+        out.thermal_stiffness_scale = tc.thermal_stiffness_factor(&p);
         mu_scale *= out.effective_rib_mu;
         // Lateral imbalance between outer and inner rib longitudinal forces creates a physical 3-rib yaw scrub torque
         rib_diff_torque_factor = (w_out * mu_out - w_in * mu_in) * (-op.wheel_side_sign);
     }
 
-    double fx0 = mf_pure_fx(p, kappa, fz, mu_scale, gamma, dpi);
-    double fy0 = mf_pure_fy(p, alpha, fz, mu_scale, gamma, dpi);
+    // Simcenter Tire 2606 T&V thermal stiffness coupling: scales slip/cornering stiffness slope (B = K / (C * D))
+    // via effective slip coordinate scaling without altering peak friction D
+    const double tv_stiff = out.thermal_stiffness_scale;
+    const double eff_kappa = kappa * tv_stiff;
+    const double eff_alpha = std::atan(tan_alpha * tv_stiff);
+    double fx0 = mf_pure_fx(p, eff_kappa, fz, mu_scale, gamma, dpi);
+    double fy0 = mf_pure_fy(p, eff_alpha, fz, mu_scale, gamma, dpi);
     // MF 6.1 turn slip (spin) reduction of the lateral force (eqs. 4.E64-4.E69, peak factor zeta_2, stiffness zeta_3):
     //   B_yphi = pDyp1 (1 + pDyp2 dfz) cos(atan(pDyp3 tan alpha))
     //   zeta_2 = cos(atan(B_yphi (R0 |phi| + pDyp4 sqrt(R0 |phi|))))     zeta_3 = cos(atan(pKyp1 R0^2 phi^2))
@@ -479,6 +539,10 @@ TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, do
         const double mz_conicity = -0.024 * fz * p.radius * std::sin(gamma) * std::cos(alpha);
         const double mz_3rib = rib_diff_torque_factor * 0.082 * fx; // ~0.082 m effective half-rib lever arm
         out.mz += mz_conicity + mz_3rib;
+        if (op.condition) {
+            // Simcenter Tire 2606 MF-Swift 3D Tandem Elliptical Cam Enveloping longitudinal resistance over cleats/curbs
+            out.fx -= fz * clamp(op.condition->enveloping_slope_tan, -0.25, 0.25) * 0.35;
+        }
     }
     return out;
 }
