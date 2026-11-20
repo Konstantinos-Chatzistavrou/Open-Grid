@@ -12,7 +12,7 @@
 // own curve and touches its underside; a flare is a lip around the real arch of the real wheel.
 import * as THREE from 'three/webgpu';
 
-const NX = 72, NZ = 180;
+const NX = 72, NY = 24, NZ = 180;
 /** hub centre and tyre radius in model space */
 export interface FitWheel { x: number; y: number; z: number; r: number }
 
@@ -21,12 +21,14 @@ export class BodyFit {
   readonly wheels: FitWheel[];
   /** ground under the tyres (model space y) */
   readonly ground: number;
-  private x0 = 0; private dx = 1; private z0 = 0; private dz = 1;
+  private x0 = 0; private dx = 1; private y0 = 0; private dy = 1; private z0 = 0; private dz = 1;
   private noseZ = new Float32Array(NX).fill(-Infinity); private noseY = new Float32Array(NX).fill(Infinity);
   private tailZ = new Float32Array(NX).fill(Infinity); private tailY = new Float32Array(NX).fill(Infinity);
   private sillX = [new Float32Array(NZ).fill(0), new Float32Array(NZ).fill(0)]; private sillY = [new Float32Array(NZ).fill(Infinity), new Float32Array(NZ).fill(Infinity)];
   private shoulderX = [new Float32Array(NZ).fill(0), new Float32Array(NZ).fill(0)];
   private cornerX = [new Float32Array(NZ).fill(0), new Float32Array(NZ).fill(0)];
+  /** Height-stratified body outer side surface (NY x NZ per side) so widebody flares hug curved rockers, fenders & bumpers seamlessly. */
+  private sideX = [new Float32Array(NY * NZ).fill(0), new Float32Array(NY * NZ).fill(0)];
   private deck = new Float32Array(NX * NZ).fill(-Infinity);
 
   /**
@@ -51,19 +53,30 @@ export class BodyFit {
     });
     const b = this.box;
     if (b.isEmpty()) b.set(new THREE.Vector3(-1, 0, -2.2), new THREE.Vector3(1, 1.2, 2.2));
-    this.x0 = b.min.x; this.dx = (b.max.x - b.min.x) / NX; this.z0 = b.min.z; this.dz = (b.max.z - b.min.z) / NZ;
+    this.x0 = b.min.x; this.dx = (b.max.x - b.min.x) / NX;
+    this.y0 = this.ground; this.dy = Math.max(0.02, (b.max.y - this.ground) / NY);
+    this.z0 = b.min.z; this.dz = (b.max.z - b.min.z) / NZ;
     const col = (x: number) => Math.min(NX - 1, Math.max(0, Math.floor((x - this.x0) / this.dx)));
+    const yrow = (y: number) => Math.min(NY - 1, Math.max(0, Math.floor((y - this.y0) / this.dy)));
     const row = (z: number) => Math.min(NZ - 1, Math.max(0, Math.floor((z - this.z0) / this.dz)));
     const low = this.ground + 0.5;                       // bumper band: below the lamps and the bonnet line
     const sill = this.ground + 0.36;                     // below the doors
     const wy = wheels.length ? wheels[0].y : this.ground + 0.34, wr = wheels.length ? wheels[0].r : 0.34;
     for (let i = 0; i < pts.length; i += 3) {
-      const x = pts[i], y = pts[i + 1], z = pts[i + 2], c = col(x), r = row(z), s = x >= 0 ? 0 : 1, ax = Math.abs(x);
+      const x = pts[i], y = pts[i + 1], z = pts[i + 2], c = col(x), r = row(z), yr = yrow(y), s = x >= 0 ? 0 : 1, ax = Math.abs(x);
       if (y > this.deck[r * NX + c]) this.deck[r * NX + c] = y;
+      if (ax > this.sideX[s][yr * NZ + r]) this.sideX[s][yr * NZ + r] = ax;
       if (y < low) { if (z > this.noseZ[c]) this.noseZ[c] = z; if (z < this.tailZ[c]) this.tailZ[c] = z; }
       if (y < sill && ax > this.sillX[s][r]) this.sillX[s][r] = ax;
       if (y > wy && y < wy + wr + 0.3 && ax > this.shoulderX[s][r]) this.shoulderX[s][r] = ax;
       if (y > this.ground + 0.3 && y < this.ground + 0.6 && ax > this.cornerX[s][r]) this.cornerX[s][r] = ax;
+    }
+    // Smooth each height slice of sideX along Z so widebody inner seams hug the body with zero jagged noise
+    for (let s = 0; s < 2; s++) {
+      for (let yr = 0; yr < NY; yr++) {
+        const slice = this.sideX[s].subarray(yr * NZ, (yr + 1) * NZ);
+        heal(slice, 2);
+      }
     }
     // underside heights: the lowest body point within 0.3 m behind the nose outline / ahead of the tail outline, and
     // within 0.14 m inboard of the sill outline
@@ -90,6 +103,17 @@ export class BodyFit {
   /** side: +1 = left (x > 0), -1 = right. The sill's outermost |x| at z, and its underside height */
   sill(z: number, side: 1 | -1) { const t = (z - this.z0) / this.dz, s = side > 0 ? 0 : 1; return { x: this.sample(this.sillX[s], t), y: this.sample(this.sillY[s], t) }; }
   shoulder(z: number, side: 1 | -1) { return this.sample(this.shoulderX[side > 0 ? 0 : 1], (z - this.z0) / this.dz); }
+  /** Exact height-stratified body outer |x| at (y, z) on side (+1 left, -1 right), bilinearly interpolated. */
+  bodySideAt(y: number, z: number, side: 1 | -1): number {
+    const s = side > 0 ? 0 : 1;
+    const fy = Math.min(NY - 1.001, Math.max(0, (y - this.y0) / this.dy - 0.5));
+    const iy0 = Math.floor(fy), ky = fy - iy0, iy1 = Math.min(NY - 1, iy0 + 1);
+    const tz = (z - this.z0) / this.dz;
+    const x0 = this.sample(this.sideX[s].subarray(iy0 * NZ, (iy0 + 1) * NZ), tz);
+    const x1 = this.sample(this.sideX[s].subarray(iy1 * NZ, (iy1 + 1) * NZ), tz);
+    const v = x0 * (1 - ky) + x1 * ky;
+    return v > 0.25 ? v : this.shoulder(z, side);
+  }
   /** the body side at bumper-corner height (0.3-0.6 m above the ground): canards sit on it */
   corner(z: number, side: 1 | -1) { return this.sample(this.cornerX[side > 0 ? 0 : 1], (z - this.z0) / this.dz); }
   /** highest body point within r of (x, z): where a wing mount stands */
@@ -101,18 +125,32 @@ export class BodyFit {
     return Number.isFinite(y) ? y : this.box.max.y;
   }
   /**
-   * Where a rear wing mounts: the tail deck, as the box the wing builders expect (wings.ts WingCtx.wb): its bottom is
-   * the deck surface under the mounts, its z the mount line 0.2-0.35 m ahead of the tail.
+   * Where a rear wing mounts: stays strictly on the rear tail/trunk deck (0.14..0.34 m ahead of the tail edge)
+   * instead of climbing up a fastback's rear windshield or C-pillars, so every aftermarket wing sits flush on the deck.
    */
   wingBase(): THREE.Box3 {
     const hw = this.halfWidth, zt = this.box.min.z;
-    let best = zt + 0.3, y = -Infinity;
-    // the highest stretch of deck in the last 0.55 m of the car (a fastback's lip, a notchback's boot lid)
-    for (let z = zt + 0.16; z <= zt + 0.56; z += 0.04) {
-      const yy = Math.min(this.deckAt(hw * 0.3, z), this.deckAt(-hw * 0.3, z));
-      if (yy > y + 0.004) { y = yy; best = z; }
+    // Clamp max wing mount height to realistic trunk/tail deck height (below roof/greenhouse line)
+    const maxDeckY = this.ground + (this.box.max.y - this.ground) * 0.84;
+    let bestZ = zt + 0.22;
+    let bestY = -Infinity;
+    let bestScore = -Infinity;
+    for (let z = zt + 0.14; z <= zt + 0.34; z += 0.025) {
+      const yL = this.deckAt(hw * 0.28, z, 0.05);
+      const yR = this.deckAt(-hw * 0.28, z, 0.05);
+      const yC = this.deckAt(0, z, 0.05);
+      const yy = Math.min(yL, yR, Math.max(yC, Math.min(yL, yR)));
+      if (!Number.isFinite(yy) || yy > maxDeckY) continue;
+      // Prefer flat, rear-positioned trunk deck right near the tail edge (penalize climbing toward rear glass)
+      const yFwd = Math.min(this.deckAt(hw * 0.28, z + 0.08, 0.05), this.deckAt(-hw * 0.28, z + 0.08, 0.05));
+      const slopePenalty = Math.max(0, yFwd - yy) * 1.4;
+      const score = yy - slopePenalty - (z - (zt + 0.18)) * 0.12;
+      if (score > bestScore) { bestScore = score; bestY = yy; bestZ = z; }
     }
-    return new THREE.Box3(new THREE.Vector3(-hw * 0.8, y, best - 0.13), new THREE.Vector3(hw * 0.8, y + 0.02, best + 0.13));
+    if (!Number.isFinite(bestY)) bestY = Math.min(maxDeckY, this.deckAt(0, zt + 0.22, 0.08));
+    // Sink base 12 mm into the deck so wing uprights/stanchions NEVER hover above curved trunks
+    const mountY = bestY - 0.012;
+    return new THREE.Box3(new THREE.Vector3(-hw * 0.82, mountY, bestZ - 0.12), new THREE.Vector3(hw * 0.82, mountY + 0.02, bestZ + 0.12));
   }
 }
 

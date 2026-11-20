@@ -24,7 +24,6 @@ export interface Req { spLevel: number; mpLevel: number; price: number }
 
 export const CAR_REQ: Record<string, Req> = {
   vela_gt: { spLevel: 1, mpLevel: 1, price: 0 },
-  k_concept: { spLevel: 1, mpLevel: 10, price: 120_000 },
   kestrel_gt: { spLevel: 6, mpLevel: 5, price: 140_000 },
   harrier_gt: { spLevel: 12, mpLevel: 10, price: 160_000 },
   hayate: { spLevel: 3, mpLevel: 3, price: 38_000 },
@@ -58,7 +57,7 @@ export const levelUpCredits = (newLevel: number) => 2_000 + newLevel * 500;
 
 /** Car top speeds (km/h, core/tests/test_characters.cpp) for the server's plausibility check, with full engine upgrades. */
 export const CAR_VMAX_KMH: Record<string, number> = {
-  vela_gt: 288, kestrel_gt: 269, harrier_gt: 300, k_concept: 295, hayate: 258,
+  vela_gt: 288, kestrel_gt: 269, harrier_gt: 300, hayate: 258,
   basilisk_v12: 332, strix_gt7: 345, tornado_gt: 318, tornado_gt3: 325,
 };
 

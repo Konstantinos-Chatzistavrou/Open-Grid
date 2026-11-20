@@ -29,15 +29,6 @@
       "paint": "#14b8a6"
     },
     {
-      "id": "k_concept",
-      "price": 120000,
-      "name": "K-Concept",
-      "tag": "A concept coupe from the future: wide, low, dramatic aero and a carbon tub.",
-      "physics": "cars/k_concept.json",
-      "visual": "cars/k_concept.visual.json",
-      "paint": "#9b1c12"
-    },
-    {
       "id": "strix_gt7",
       "price": 260000,
       "name": "Strix GT7",

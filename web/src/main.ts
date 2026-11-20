@@ -21,7 +21,7 @@ import { CityLighting, loadCity } from './scene/city';
 import { NycStreamer, nycCityShim } from './scene/nyc';
 import { setGroundGrid } from './scene/nyc/groundMaterials';
 import { setSignCity } from './scene/nyc/signAtlas';
-import { CITIES, currentCity, saveCity } from './cities';
+import { CITIES, currentCity, loadExtraCities, saveCity } from './cities';
 import { StreetObstacles, type PoleHit } from './scene/nyc/obstacles';
 import { setGroundWetness, setMobileFacadeMode } from './scene/nyc';
 import { drawEarly, type BreachSpec, type WallHit } from './scene/nyc/breach';
@@ -77,6 +77,9 @@ import { Identity } from './identity';
 import { usernameError } from './username';
 import { formatLap } from './hud';
 import { autoCap, measureRefresh } from './bench';
+import { registerCarMeta } from './brands';
+import { CAR_REQ, CAR_VMAX_KMH } from './progression';
+import { BASE_CAR_VALUATION } from './auctionMarket';
 
 const params = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d);
@@ -323,6 +326,8 @@ async function main() {
     await Promise.all(j.cars.map((c) => fetch(`/data/${c.physics}`).then((r) => r.json()).then((d) => { physics[c.id] = d; })));
     return j.cars;
   });
+  // Merge any extra 1:1 cities ingested via tools/pipeline/ingest_city.py (zero TS edits!)
+  await loadExtraCities();
   const useNyc = params.get('city') !== 'old';
   // the real-scale city of this session (cities.ts: New York, London, Paris, Tokyo, Los Angeles); `useNyc` = streamed city tiles
   let cityInfo = currentCity(params);
@@ -341,6 +346,13 @@ async function main() {
     loadRapier(),
   ]);
   let route = initRoute;
+  // Auto-register dynamic brand, engine, progression & Auction valuation metadata for any car added via tools/pipeline/ingest_car.py
+  for (const c of catalog as (CatalogCar & { brand?: string; engineVoice?: string; engineLabel?: string; spLevel?: number; mpLevel?: number; vmaxKmh?: number })[]) {
+    registerCarMeta(c.id, c.brand, c.engineVoice, c.engineLabel);
+    if (!CAR_REQ[c.id]) CAR_REQ[c.id] = { spLevel: c.spLevel ?? 5, mpLevel: c.mpLevel ?? 5, price: c.price ?? 120_000 };
+    if (!CAR_VMAX_KMH[c.id]) CAR_VMAX_KMH[c.id] = c.vmaxKmh ?? 310;
+    if (!BASE_CAR_VALUATION[c.id]) BASE_CAR_VALUATION[c.id] = c.price ?? 120_000;
+  }
   const sel = loadSelection(catalog, params);
   initLang();
   const a11y = loadAccessibility();

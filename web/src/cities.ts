@@ -147,3 +147,19 @@ export function currentCity(params: URLSearchParams): CityInfo {
 export function saveCity(id: string) {
   try { localStorage.setItem(KEY, id); } catch { /* storage blocked */ }
 }
+
+/**
+ * Load any additional 1:1 cities registered by `tools/pipeline/ingest_city.py` into `data/cities/extra.json`.
+ * Enables adding unlimited 1:1 cities with ZERO manual TypeScript edits.
+ */
+export async function loadExtraCities(): Promise<void> {
+  try {
+    const r = await fetch('/data/cities/extra.json');
+    if (!r.ok) return;
+    const d = (await r.json()) as { cities?: CityInfo[] };
+    for (const c of d.cities ?? []) {
+      if (!c?.id || CITIES.some((x) => x.id === c.id)) continue;
+      CITIES.push(c);
+    }
+  } catch { /* optional manifest not yet created */ }
+}
