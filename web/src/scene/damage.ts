@@ -336,6 +336,31 @@ export class DamageVisuals {
     }
   }
 
+  /**
+   * Localized roof/hood/fender dent from heavy falling concrete/masonry rubble landing directly on the car.
+   * Zero CPU mesh deformation: pushes straight into the vertex-shader dent array + emits impact sparks.
+   */
+  dentFromWorld(worldPt: THREE.Vector3, worldDir: THREE.Vector3, energyJ: number, glass = false) {
+    this.car.model.updateWorldMatrix(true, false);
+    const inv = this.car.model.matrixWorld.clone().invert();
+    const localPt = worldPt.clone().applyMatrix4(inv);
+    const localDir = worldDir.clone().transformDirection(inv).normalize();
+    const depth = THREE.MathUtils.clamp(0.055 + energyJ / 8500, 0.055, 0.26);
+    const radius = THREE.MathUtils.clamp(0.36 + energyJ / 16000, 0.36, 0.88);
+    this.dents.add(localPt, localDir, depth, radius);
+    const n = Math.min(36, 10 + Math.round(energyJ / 220));
+    for (let i = 0; i < n; i++) {
+      const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8 + 0.25, Math.random() - 0.5)
+        .normalize()
+        .multiplyScalar(2.4 + Math.random() * 5.2);
+      this.sparks.emit(worldPt, v, 0.26 + Math.random() * 0.35, 0.03 + Math.random() * 0.03);
+    }
+    if (glass && energyJ > 1600 && !this.lightsOff.front && localPt.z > 0.7) {
+      this.flicker = Math.max(this.flicker, 1.2);
+      this.flickerHold = 0;
+    }
+  }
+
   private emitSmoke(dt: number) {
     const d = this.dmg!;
     // Burning: a thick, near-black column (oil, plastics, tyres), big billows rising and spreading, lit orange from below.

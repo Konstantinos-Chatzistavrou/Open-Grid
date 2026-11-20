@@ -1,51 +1,349 @@
-// Ground-floor wall & corner crashes (OpenGrid).
-// - Supports breaking BOTH flat walls AND building corners (corner-assist normal + edge-flush hole opening).
-// - High-detail architectural interiors (tiled/planked floors, baseboards, crown moldings, acoustic ceiling beams,
-//   recessed linear LED strips, fluted columns, jagged masonry/rebar hole reveal, and richly detailed Shop, Deli,
-//   Loft Apartment, and Manhattan Lobby furnishings).
-// - Zero-lag, zero-stuck-rubble crash debris: all rubble & flying furniture pieces run on an ultra-fast kinematic
-//   ballistic solver in a single GPU InstancedMesh pool (no Rapier rigid-body solver pileups inside the car hull!).
+// Ground-floor building breaches (docs/nyc_breach.md): driving fast into a wall OR building corner opens a hole
+// and reveals a photorealistic WebGPU TSL PBR architectural interior (polished marble/porcelain floors, hardwood
+// planks, exposed NYC brick & fractured concrete, brushed steel/brass, glowing HDR LED coves & interior lighting).
+// Heavy collapsing concrete/masonry chunks (55–160 kg) drop from the upper lintel onto the car and visibly dent/damage
+// the exact hood/roof/fender panel they hit, then bounce cleanly off via our zero-stall kinematic solver (zero FPS drop,
+// zero stuck rubble!).
 import * as THREE from 'three/webgpu';
+import {
+  abs, attribute, bumpMap, clamp, floor, float, fract, max, min, mix, normalWorld, positionWorld, sin, smoothstep, step,
+  vec2, vec3, vertexColor,
+} from 'three/tsl';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { noise01 } from '../../fx/noiseTex';
 import type { BuildingColliderBox } from './props';
-import { GROUP_CAMERA_ONLY } from '../../physics/world';
 import { instanceSlots } from '../instancing';
-
-/** Membership bit 0x8: collides only with static world geometry — NEVER jams into cars (0x1) or other rubble (0x8). */
-export const GROUP_RUBBLE = (0x0008 << 16) | (0xffff & ~0x0001 & ~0x0008);
-
-const H = 4.2;            // ground floor ceiling height
-const HOLE_W = 3.5, HOLE_H = 3.35, WALL_T = 0.42;
-const PORTAL_OUT = 0.16, PORTAL_IN = 1.25;
-const ORDER_EARLY = -4, ORDER_ROOM = -2, ORDER_PORTAL = -1;
-const MAX_LIVE = 4;
-
-type Room = 'shop' | 'deli' | 'apartment' | 'lobby';
-type RGB = [number, number, number];
-
-/** Opaque meshes under obj are drawn before the breach portals (so they stay visible inside a hole). */
-export function drawEarly(obj: THREE.Object3D) {
-  obj.traverse((o) => {
-    const m = o as THREE.Mesh;
-    if (!m.isMesh) return;
-    const mats = Array.isArray(m.material) ? m.material : [m.material];
-    if (mats.every((x) => !x.transparent)) m.renderOrder = ORDER_EARLY;
-  });
-}
-
-export interface BreachHost {
-  building(handle: number): { key: string; box: BuildingColliderBox } | null;
-  find(cx: number, cy: number): { key: string; box: BuildingColliderBox } | null;
-  /** Swap the building's solid collider for these (static, wall surface); marks it breached. */
-  replace(key: string, box: BuildingColliderBox, descs: RAPIER.ColliderDesc[]): void;
-  facadeDepth?(from: THREE.Vector3, dir: THREE.Vector3, max: number): number | null;
-  burst?(wx: number, groundY: number, wz: number, nx: number, nz: number, vx: number, vz: number, glass: boolean): void;
-}
 
 export interface BreachSpec { cx: number; cy: number; face: number; u: number; seed: number }
 export interface WallHit { spec: BreachSpec; point: { x: number; y: number; z: number }; impulse: number; storefront: boolean }
+export interface RubbleHit {
+  point: THREE.Vector3;
+  dir: THREE.Vector3;
+  impulse: number;
+  energyJ: number;
+  massKg: number;
+  glass: boolean;
+}
+export interface CarObb {
+  pos: THREE.Vector3;
+  quat: THREE.Quaternion;
+  half: [number, number, number];
+  centre: [number, number, number];
+}
+export interface BreachHost {
+  building(handle: number): { key: string; box: BuildingColliderBox } | null | undefined;
+  find(cx: number, cy: number): { key: string; box: BuildingColliderBox } | null | undefined;
+  replace(key: string, box: BuildingColliderBox, next: RAPIER.ColliderDesc[]): void;
+  facadeDepth?(origin: THREE.Vector3, dir: THREE.Vector3, max: number): number | null | undefined;
+  burst?(x: number, y: number, z: number, nx: number, nz: number, vx: number, vz: number, storefront: boolean): void;
+}
 
-/** Zero-overhead kinematic ballistic debris/furniture piece (never traps inside the car hull, <0.03 ms CPU). */
+const H = 3.85;
+const HOLE_H = 3.1;
+const MIN_HOLE = 3.2;
+const MAX_HOLE = 4.6;
+const MAX_DEPTH = 9.5;
+const MIN_DEPTH = 3.6;
+const PORTAL_IN = 1.6;
+const PORTAL_OUT = 0.25;
+const MAX_LIVE = 4;
+const MAX_LIGHTS = 2;
+
+const GROUP_WALL = (0x0004 << 16) | 0xffff;
+const ORDER_EARLY = -10;
+const ORDER_PORTAL = -5;
+const ORDER_ROOM = -4;
+
+type RGB = [number, number, number];
+/** Surface material kinds encoded in vertex attribute `_mat.w` (0..6):
+ *  0 = architectural plaster / drywall / painted wall
+ *  1 = polished veined marble / large-format porcelain tile
+ *  2 = warm grained hardwood planks
+ *  3 = NYC exposed brick / fractured concrete masonry
+ *  4 = brushed stainless steel / architectural brass / chrome
+ *  5 = architectural glass / backlit display / LED / OLED screen
+ *  6 = woven rug / upholstered fabric / leather
+ */
+type MatSpec = [roughness: number, metalness: number, emissive: number, kind: number];
+const MAT_PLASTER: MatSpec = [0.76, 0.02, 0, 0];
+const MAT_MARBLE: MatSpec = [0.16, 0.06, 0, 1];
+const MAT_WOOD: MatSpec = [0.36, 0.04, 0, 2];
+const MAT_BRICK: MatSpec = [0.88, 0.02, 0, 3];
+const MAT_METAL: MatSpec = [0.22, 0.88, 0, 4];
+const MAT_GLASS: MatSpec = [0.09, 0.14, 0.15, 5];
+const MAT_GLOW: MatSpec = [0.12, 0.05, 2.8, 5];
+const MAT_NEON: MatSpec = [0.14, 0.05, 3.6, 5];
+const MAT_FABRIC: MatSpec = [0.93, 0.0, 0, 6];
+
+/** Deterministic PRNG */
+function rng(seed: number) {
+  let s = (seed | 0) || 1;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Photorealistic WebGPU TSL PBR shader for building interiors (single draw call per room!).
+ * Triplanar world-space marble veins + porcelain grout, hardwood plank grain, running-bond NYC brick & concrete,
+ * brushed stainless/brass, woven textile, bump-mapped relief, and true HDR emissive bloom for architectural lighting.
+ */
+function createInteriorMaterial(): THREE.MeshStandardNodeMaterial {
+  const m = new THREE.MeshStandardNodeMaterial();
+  m.name = 'breach_interior_pbr';
+  m.envMapIntensity = 0.85;
+
+  const vc = vertexColor();
+  const matAttr = attribute('_mat', 'vec4'); // x=rough, y=metal, z=emissive, w=kind
+  const kind = matAttr.w;
+
+  // World-space triplanar coordinates (metres) so textures align cleanly on every wall, floor & ceiling at any angle
+  const P = positionWorld;
+  const N = abs(normalWorld);
+  const isHoriz = step(float(0.65), N.y);
+  const useXY = step(N.x, N.z);
+  const wallUV = mix(vec2(P.z, P.y), vec2(P.x, P.y), useXY);
+  const uvM = mix(wallUV, vec2(P.x, P.z), isHoriz);
+
+  // One-hot smooth weights for the 7 procedural PBR materials (zero branching!)
+  const wPlaster = step(kind, float(0.5));
+  const wMarble = step(float(0.5), kind).mul(step(kind, float(1.5)));
+  const wWood = step(float(1.5), kind).mul(step(kind, float(2.5)));
+  const wBrick = step(float(2.5), kind).mul(step(kind, float(3.5)));
+  const wMetal = step(float(3.5), kind).mul(step(kind, float(4.5)));
+  const wGlass = step(float(4.5), kind).mul(step(kind, float(5.5)));
+  const wFabric = step(float(5.5), kind);
+
+  // 0. Architectural plaster / Venetian drywall
+  const plFine = noise01(uvM.mul(14.0));
+  const plBroad = noise01(uvM.mul(1.8));
+  const plShade = mix(float(0.90), float(1.06), plBroad.mul(0.65).add(plFine.mul(0.35)));
+  const plBump = plFine.mul(0.22);
+
+  // 1. Polished veined Carrara marble / large-format 0.85 m porcelain tile
+  const tileScale = uvM.div(0.85);
+  const tLoc = fract(tileScale);
+  const tEdge = min(min(tLoc.x, float(1).sub(tLoc.x)), min(tLoc.y, float(1).sub(tLoc.y)));
+  const grout = float(1).sub(smoothstep(float(0.008), float(0.022), tEdge));
+  const warp = noise01(uvM.mul(1.35)).mul(2.8).add(noise01(uvM.mul(4.2)).mul(0.75));
+  const vein = float(1).sub(smoothstep(float(0.0), float(0.24), abs(sin(uvM.x.mul(3.1).add(uvM.y.mul(1.9)).add(warp)))));
+  const marbleShade = mix(float(1.03), float(0.76), vein.mul(0.55)).mul(mix(float(1.0), float(0.45), grout));
+  const marbleRough = mix(matAttr.x.add(vein.mul(0.08)), float(0.86), grout);
+  const marbleBump = float(0.5).sub(grout.mul(0.55)).sub(vein.mul(0.08));
+
+  // 2. Grained walnut / oak hardwood planks (0.18 m wide x 1.15 m staggered)
+  const plankRow = floor(uvM.x.div(0.18));
+  const rowStagger = fract(plankRow.mul(0.37)).mul(1.15);
+  const pX = fract(uvM.x.div(0.18));
+  const pY = fract(uvM.y.add(rowStagger).div(1.15));
+  const pSeam = max(
+    float(1).sub(smoothstep(float(0.015), float(0.04), min(pX, float(1).sub(pX)))),
+    float(1).sub(smoothstep(float(0.006), float(0.018), min(pY, float(1).sub(pY)))),
+  );
+  const woodGrain = noise01(vec2(uvM.x.mul(22.0).add(plankRow.mul(3.1)), uvM.y.mul(2.4)));
+  const plankTone = mix(float(0.84), float(1.14), fract(plankRow.mul(0.618034)));
+  const woodShade = plankTone.mul(mix(float(0.82), float(1.12), woodGrain)).mul(mix(float(1.0), float(0.42), pSeam));
+  const woodRough = mix(matAttr.x.add(woodGrain.mul(0.14)), float(0.88), pSeam);
+  const woodBump = woodGrain.mul(0.25).sub(pSeam.mul(0.5));
+
+  // 3. Exposed NYC running-bond brick & fractured concrete masonry
+  const bRow = floor(uvM.y.div(0.078));
+  const bShift = fract(bRow.mul(0.5)).mul(0.23);
+  const bx = fract(uvM.x.add(bShift).div(0.23));
+  const by = fract(uvM.y.div(0.078));
+  const mortar = max(
+    float(1).sub(smoothstep(float(0.03), float(0.07), min(bx, float(1).sub(bx)))),
+    float(1).sub(smoothstep(float(0.06), float(0.13), min(by, float(1).sub(by)))),
+  );
+  const bGrit = noise01(uvM.mul(18.0));
+  const bVar = mix(float(0.80), float(1.15), noise01(vec2(floor(uvM.x.add(bShift).div(0.23)), bRow).mul(1.37)));
+  const brickShade = mix(bVar.mul(mix(float(0.84), float(1.08), bGrit)), float(0.62), mortar);
+  const brickBump = bGrit.mul(0.38).sub(mortar.mul(0.65));
+
+  // 4. Brushed stainless steel / warm brass
+  const brush = noise01(vec2(uvM.x.mul(4.0), uvM.y.mul(56.0)));
+  const metalShade = mix(float(0.88), float(1.12), brush);
+  const metalRough = clamp(matAttr.x.add(brush.sub(0.5).mul(0.10)), float(0.10), float(0.45));
+  const metalBump = brush.mul(0.12);
+
+  // 5. Glass / backlit display / LED
+  const glassShade = float(1.0);
+  const glassRough = matAttr.x;
+
+  // 6. Woven rug / upholstered fabric
+  const weave = sin(uvM.x.mul(110.0)).mul(sin(uvM.y.mul(110.0))).mul(0.5).add(0.5);
+  const fabNoise = noise01(uvM.mul(16.0));
+  const fabricShade = mix(float(0.84), float(1.08), weave.mul(0.45).add(fabNoise.mul(0.55)));
+  const fabricBump = weave.mul(0.28).add(fabNoise.mul(0.18));
+
+  // Combine per-material PBR responses seamlessly
+  const shade = plShade.mul(wPlaster)
+    .add(marbleShade.mul(wMarble))
+    .add(woodShade.mul(wWood))
+    .add(brickShade.mul(wBrick))
+    .add(metalShade.mul(wMetal))
+    .add(glassShade.mul(wGlass))
+    .add(fabricShade.mul(wFabric));
+
+  const rough = clamp(
+    matAttr.x.mul(wPlaster.add(wBrick).add(wFabric))
+      .add(marbleRough.mul(wMarble))
+      .add(woodRough.mul(wWood))
+      .add(metalRough.mul(wMetal))
+      .add(glassRough.mul(wGlass)),
+    float(0.06),
+    float(0.96),
+  );
+
+  const heightH = plBump.mul(wPlaster)
+    .add(marbleBump.mul(wMarble))
+    .add(woodBump.mul(wWood))
+    .add(brickBump.mul(wBrick))
+    .add(metalBump.mul(wMetal))
+    .add(fabricBump.mul(wFabric));
+
+  // Subtle floor-to-ceiling architectural light gradient so lower corners ground naturally
+  const baseCol = vc.rgb.mul(shade);
+  m.colorNode = baseCol;
+  m.roughnessNode = rough;
+  m.metalnessNode = clamp(matAttr.y, float(0.0), float(0.96));
+  m.normalNode = bumpMap(heightH, float(0.34));
+  // True HDR bloom emissive on LED ceiling coves, hanging globes, neon menu boards, drink cases & OLED TVs
+  m.emissiveNode = vc.rgb.mul(matAttr.z);
+  return m;
+}
+
+/** Photorealistic fractured concrete & NYC brick rubble material (used by the 1-draw-call InstancedMesh pool). */
+function createRubbleMaterial(): THREE.MeshStandardNodeMaterial {
+  const m = new THREE.MeshStandardNodeMaterial();
+  m.name = 'breach_rubble_pbr';
+  const P = positionWorld;
+  const grit = noise01(vec2(P.x.mul(16.0).add(P.z.mul(9.0)), P.y.mul(16.0).sub(P.x.mul(7.0))));
+  const coarse = noise01(vec2(P.x.mul(4.5), P.z.mul(4.5).add(P.y.mul(3.0))));
+  const strata = mix(float(0.76), float(1.14), grit.mul(0.55).add(coarse.mul(0.45)));
+  m.colorNode = vec3(strata, strata, strata);
+  m.roughnessNode = mix(float(0.80), float(0.95), grit);
+  m.metalness = 0.03;
+  m.normalNode = bumpMap(grit.mul(0.55).add(coarse.mul(0.35)), float(0.45));
+  return m;
+}
+
+/** Room geometry builder with per-vertex PBR material channel `_mat` + crease AO. */
+class Geo {
+  private p: number[] = [];
+  private n: number[] = [];
+  private c: number[] = [];
+  private m: number[] = [];
+  private idx: number[] = [];
+
+  constructor(private map: (u: number, w: number, y: number) => THREE.Vector3, private ao: (u: number, w: number, y: number) => number) {}
+
+  quad(pts: [number, number, number][], nrm: [number, number, number], col: RGB, mat: MatSpec = MAT_PLASTER, glow = 0) {
+    const base = this.p.length / 3;
+    const nw = this.map(nrm[0], nrm[1], nrm[2]).sub(this.map(0, 0, 0)).normalize();
+    const em = glow > 0 ? glow : mat[2];
+    for (const [u, w, y] of pts) {
+      const v = this.map(u, w, y);
+      const a = em > 0.2 ? 1.0 : this.ao(u, w, y);
+      this.p.push(v.x, v.y, v.z);
+      this.n.push(nw.x, nw.y, nw.z);
+      this.c.push(col[0] * a, col[1] * a, col[2] * a);
+      this.m.push(mat[0], mat[1], em, mat[3]);
+    }
+    this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+
+  box(u0: number, u1: number, w0: number, w1: number, y0: number, y1: number, col: RGB, mat: MatSpec = MAT_PLASTER, glow = 0) {
+    const dark = (f: number): RGB => [col[0] * f, col[1] * f, col[2] * f];
+    this.quad([[u0, w0, y1], [u1, w0, y1], [u1, w1, y1], [u0, w1, y1]], [0, 0, 1], col, mat, glow);
+    this.quad([[u0, w1, y0], [u1, w1, y0], [u1, w0, y0], [u0, w0, y0]], [0, 0, -1], dark(0.65), mat, glow);
+    this.quad([[u0, w0, y0], [u1, w0, y0], [u1, w0, y1], [u0, w0, y1]], [0, -1, 0], dark(0.92), mat, glow);
+    this.quad([[u1, w1, y0], [u0, w1, y0], [u0, w1, y1], [u1, w1, y1]], [0, 1, 0], dark(0.86), mat, glow);
+    this.quad([[u0, w1, y0], [u0, w0, y0], [u0, w0, y1], [u0, w1, y1]], [-1, 0, 0], dark(0.82), mat, glow);
+    this.quad([[u1, w0, y0], [u1, w1, y0], [u1, w1, y1], [u1, w0, y1]], [1, 0, 0], dark(0.82), mat, glow);
+  }
+
+  /** Architectural cylinder (fluted column, brass pendant globe, chrome barstool pedestal, planter). */
+  cylinder(cu: number, cw: number, r: number, y0: number, y1: number, segs: number, col: RGB, mat: MatSpec = MAT_METAL, glow = 0) {
+    const stepA = (Math.PI * 2) / segs;
+    for (let i = 0; i < segs; i++) {
+      const a0 = i * stepA, a1 = (i + 1) * stepA;
+      const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+      const cm = Math.cos((a0 + a1) * 0.5), sm = Math.sin((a0 + a1) * 0.5);
+      const shade = 0.85 + 0.15 * cm;
+      const sc: RGB = [col[0] * shade, col[1] * shade, col[2] * shade];
+      this.quad(
+        [[cu + c0 * r, cw + s0 * r, y0], [cu + c1 * r, cw + s1 * r, y0], [cu + c1 * r, cw + s1 * r, y1], [cu + c0 * r, cw + s0 * r, y1]],
+        [cm, sm, 0], sc, mat, glow,
+      );
+      // Top cap
+      this.quad(
+        [[cu, cw, y1], [cu + c0 * r, cw + s0 * r, y1], [cu + c1 * r, cw + s1 * r, y1], [cu, cw, y1]],
+        [0, 0, 1], col, mat, glow,
+      );
+    }
+  }
+
+  /** Subtle checkerboard / planked floor with per-tile tonal variation (real PBR shader adds grout/veins/grain!). */
+  tiledFloor(u0: number, u1: number, w0: number, w1: number, y: number, tileU: number, tileW: number, colA: RGB, colB: RGB, mat: MatSpec) {
+    const nu = Math.max(1, Math.min(8, Math.round((u1 - u0) / tileU)));
+    const nw = Math.max(1, Math.min(8, Math.round((w1 - w0) / tileW)));
+    const du = (u1 - u0) / nu, dw = (w1 - w0) / nw;
+    for (let iu = 0; iu < nu; iu++) {
+      for (let iw = 0; iw < nw; iw++) {
+        const a0 = u0 + iu * du, a1 = a0 + du, b0 = w0 + iw * dw, b1 = b0 + dw;
+        const c = (iu + iw) % 2 === 0 ? colA : colB;
+        this.quad([[a0, b0, y], [a1, b0, y], [a1, b1, y], [a0, b1, y]], [0, 0, 1], c, mat);
+      }
+    }
+  }
+
+  /** Framed recessed wall display (backlit menu board, 4K OLED TV, refrigerated cooler, framed artwork). */
+  framedBackWall(u0: number, u1: number, back: number, y0: number, y1: number, frameC: RGB, innerC: RGB, frameMat: MatSpec = MAT_METAL, glow = 1.6) {
+    this.box(u0, u1, back - 0.10, back - 0.01, y0, y1, frameC, frameMat);
+    this.quad(
+      [[u0 + 0.06, back - 0.11, y0 + 0.06], [u1 - 0.06, back - 0.11, y0 + 0.06],
+       [u1 - 0.06, back - 0.11, y1 - 0.06], [u0 + 0.06, back - 0.11, y1 - 0.06]],
+      [0, -1, 0], innerC, MAT_GLASS, glow,
+    );
+  }
+
+  /** Architectural potted indoor plant (ceramic/stone planter + soil + layered foliage fronds). */
+  planter(u: number, w: number, potCol: RGB) {
+    this.cylinder(u, w, 0.28, 0, 0.52, 8, potCol, MAT_MARBLE);
+    this.cylinder(u, w, 0.24, 0.50, 0.55, 8, [0.16, 0.12, 0.08], MAT_BRICK);
+    this.cylinder(u, w, 0.04, 0.52, 1.35, 6, [0.24, 0.16, 0.10], MAT_WOOD);
+    // Layered foliage canopy blades
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const du = Math.cos(a) * 0.26, dw = Math.sin(a) * 0.26;
+      const yBase = 1.05 + (i % 2) * 0.22;
+      this.box(u + du - 0.16, u + du + 0.16, w + dw - 0.16, w + dw + 0.16, yBase, yBase + 0.14, i % 2 === 0 ? [0.14, 0.34, 0.15] : [0.18, 0.42, 0.17], MAT_FABRIC);
+    }
+  }
+
+  build() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    g.setAttribute('_mat', new THREE.Float32BufferAttribute(this.m, 4));
+    g.setIndex(this.idx);
+    g.computeBoundingSphere();
+    return g;
+  }
+}
+
+function unitBox() {
+  const g = new THREE.BoxGeometry(1, 1, 1);
+  g.deleteAttribute('uv');
+  return g;
+}
+
+/** Kinematic ballistic debris piece with real mass (kg) & car-denting collision cooldown (0 Rapier bodies -> 0 FPS drop!). */
 interface KinPiece {
   pos: THREE.Vector3;
   vel: THREE.Vector3;
@@ -54,6 +352,10 @@ interface KinPiece {
   size: THREE.Vector3;
   groundY: number;
   slot: number;
+  massKg: number;
+  heavy: boolean;
+  hitCarCd: number;
+  delay: number;
   sleeping: boolean;
 }
 
@@ -62,7 +364,8 @@ interface Live {
   key: string;
   group: THREE.Group;
   portal: THREE.Mesh;
-  face: { ax: 'x' | 'z'; s: number; plane: number };
+  light: THREE.PointLight | null;
+  face: { ax: 'x' | 'z'; s: 1 | -1; plane: number };
   center: THREE.Vector3;
   quat: THREE.Quaternion;
   pieces: KinPiece[];
@@ -70,125 +373,34 @@ interface Live {
   age: number;
 }
 
-const rand = (seed: number) => {
-  let s = (seed * 2654435761) >>> 0 || 1;
-  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
-};
-
-/** High-detail procedural interior geometry builder with baked multi-source lighting & vertex AO. */
-class Geo {
-  pos: number[] = [];
-  col: number[] = [];
-  constructor(
-    private map: (u: number, w: number, y: number) => THREE.Vector3,
-    private light: (u: number, w: number, y: number) => number,
-  ) {}
-
-  quad(p: [number, number, number][], n: [number, number, number], c: RGB, glow = 1) {
-    const v = p.map(([u, w, y]) => this.map(u, w, y));
-    const want = this.map(p[0][0] + n[0], p[0][1] + n[1], p[0][2] + n[2]).sub(v[0]);
-    const e1 = v[1].clone().sub(v[0]), e2 = v[2].clone().sub(v[0]);
-    const order = e1.cross(e2).dot(want) >= 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2];
-    const shade = n[2] > 0.5 ? 1.0 : n[2] < -0.5 ? 0.52 : Math.abs(n[0]) > 0.5 ? 0.84 : 0.72;
-    for (const i of order) {
-      const q = p[i];
-      const L = glow > 1 ? glow : shade * this.light(q[0], q[1], q[2]);
-      this.pos.push(v[i].x, v[i].y, v[i].z);
-      this.col.push(c[0] * L, c[1] * L, c[2] * L);
-    }
-  }
-
-  box(u0: number, u1: number, w0: number, w1: number, y0: number, y1: number, c: RGB, glow = 1) {
-    this.quad([[u0, w0, y1], [u1, w0, y1], [u1, w1, y1], [u0, w1, y1]], [0, 0, 1], c, glow);
-    this.quad([[u0, w0, y0], [u1, w0, y0], [u1, w1, y0], [u0, w1, y0]], [0, 0, -1], c, glow);
-    this.quad([[u0, w0, y0], [u1, w0, y0], [u1, w0, y1], [u0, w0, y1]], [0, -1, 0], c, glow);
-    this.quad([[u0, w1, y0], [u1, w1, y0], [u1, w1, y1], [u0, w1, y1]], [0, 1, 0], c, glow);
-    this.quad([[u0, w0, y0], [u0, w1, y0], [u0, w1, y1], [u0, w0, y1]], [-1, 0, 0], c, glow);
-    this.quad([[u1, w0, y0], [u1, w1, y0], [u1, w1, y1], [u1, w0, y1]], [1, 0, 0], c, glow);
-  }
-
-  /** Multi-sided architectural column, table pedestal, pendant globe, or planter barrel. */
-  cylinder(uc: number, wc: number, r: number, y0: number, y1: number, segs: number, c: RGB, glow = 1) {
-    for (let i = 0; i < segs; i++) {
-      const a0 = (i / segs) * Math.PI * 2;
-      const a1 = ((i + 1) / segs) * Math.PI * 2;
-      const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
-      const u0 = uc + c0 * r, w0 = wc + s0 * r;
-      const u1 = uc + c1 * r, w1 = wc + s1 * r;
-      const nm: [number, number, number] = [Math.cos((a0 + a1) * 0.5), Math.sin((a0 + a1) * 0.5), 0];
-      this.quad([[u0, w0, y0], [u1, w1, y0], [u1, w1, y1], [u0, w0, y1]], nm, c, glow);
-      // top cap wedge
-      this.quad([[uc, wc, y1], [u0, w0, y1], [u1, w1, y1], [uc, wc, y1]], [0, 0, 1], c, glow);
-    }
-  }
-
-  /** Tiled / planked floor with subtle architectural checker/plank variation and grout shadows. */
-  tiledFloor(u0: number, u1: number, w0: number, w1: number, tileU: number, tileW: number, cA: RGB, cB: RGB) {
-    const nu = Math.max(1, Math.min(12, Math.round((u1 - u0) / tileU)));
-    const nw = Math.max(1, Math.min(14, Math.round((w1 - w0) / tileW)));
-    const du = (u1 - u0) / nu, dw = (w1 - w0) / nw;
-    for (let iu = 0; iu < nu; iu++) {
-      for (let iw = 0; iw < nw; iw++) {
-        const c = (iu + iw) % 2 === 0 ? cA : cB;
-        const ua = u0 + iu * du, ub = ua + du;
-        const wa = w0 + iw * dw, wb = wa + dw;
-        this.quad([[ua, wa, 0.012], [ub, wa, 0.012], [ub, wb, 0.012], [ua, wb, 0.012]], [0, 0, 1], c);
-      }
-    }
-  }
-
-  /** Framed wall artwork, backlit menu board, or flat-screen display. */
-  framedBackWall(u0: number, u1: number, wWall: number, y0: number, y1: number, frameC: RGB, artC: RGB, glow = 1.25) {
-    this.box(u0, u1, wWall - 0.08, wWall, y0, y1, frameC);
-    this.quad([[u0 + 0.06, wWall - 0.085, y0 + 0.06], [u1 - 0.06, wWall - 0.085, y0 + 0.06],
-      [u1 - 0.06, wWall - 0.085, y1 - 0.06], [u0 + 0.06, wWall - 0.085, y1 - 0.06]], [0, -1, 0], artC, glow);
-  }
-
-  build() {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
-    g.computeVertexNormals();
-    g.computeBoundingSphere();
-    return g;
-  }
-}
-
-/** Unit beveled chunk geometry with baked directional face shading for instanced rubble & debris. */
-function unitBox() {
-  const g = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
-  const n = g.getAttribute('normal');
-  const c: number[] = [];
-  for (let i = 0; i < n.count; i++) {
-    const y = n.getY(i), s = y > 0.5 ? 1.0 : y < -0.5 ? 0.45 : Math.abs(n.getX(i)) > 0.5 ? 0.82 : 0.68;
-    c.push(s, s, s);
-  }
-  g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
-  g.deleteAttribute('uv');
-  return g;
-}
-
 export class Breaches {
-  private live: Live[] = [];
   private specs: BreachSpec[] = [];
-  private roomMat = new THREE.MeshBasicMaterial({ vertexColors: true });
-  private looseMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+  private live: Live[] = [];
+  private roomMat: THREE.MeshStandardNodeMaterial;
+  private looseMat: THREE.MeshStandardNodeMaterial;
   private pool: THREE.InstancedMesh;
   private free: number[] = [];
   private used = 0;
-  private static readonly POOL = 320;
+  private static readonly POOL = 180;
   private zero = new THREE.Matrix4().makeScale(0, 0, 0);
   private portalMat = new THREE.MeshBasicMaterial({ colorWrite: false });
   private box = unitBox();
   private warm: THREE.Object3D[] = [];
+  private activeLights: THREE.PointLight[] = [];
   private m4 = new THREE.Matrix4();
   private v = new THREE.Vector3();
+  private v2 = new THREE.Vector3();
   private q = new THREE.Quaternion();
+  private invQ = new THREE.Quaternion();
   private dq = new THREE.Quaternion();
-  private s = new THREE.Vector3();
   private axis = new THREE.Vector3();
 
+  /** Callback invoked whenever a heavy falling concrete/masonry block strikes the player's car. */
+  onRubbleHit: ((hit: RubbleHit) => void) | null = null;
+
   constructor(private scene: THREE.Scene, private pw: { world: RAPIER.World }, private host: BreachHost) {
+    this.roomMat = createInteriorMaterial();
+    this.looseMat = createRubbleMaterial();
     this.portalMat.name = 'breach_portal';
     this.pool = new THREE.InstancedMesh(this.box, this.looseMat, instanceSlots(Breaches.POOL));
     this.pool.name = 'breach_pieces';
@@ -225,7 +437,7 @@ export class Breaches {
   warmup(on: boolean, p?: THREE.Vector3) {
     if (!on) { for (const o of this.warm) o.removeFromParent(); this.warm.length = 0; return; }
     const g = new Geo((u, w, y) => new THREE.Vector3(u, y, w), () => 1);
-    g.box(0, 0.01, 0, 0.01, 0, 0.01, [0.5, 0.5, 0.5]);
+    g.box(0, 0.01, 0, 0.01, 0, 0.01, [0.5, 0.5, 0.5], MAT_MARBLE);
     const room = new THREE.Mesh(g.build(), this.roomMat);
     const portal = new THREE.Mesh(this.box, this.portalMat);
     for (const o of [room, portal]) {
@@ -260,7 +472,6 @@ export class Breaches {
     const lp = this.v.set(t.x, t.y, t.z).sub(center).applyQuaternion(this.q.copy(quat).invert());
     const dx = Math.abs(lp.x) - box.hx, dz = Math.abs(lp.z) - box.hy;
 
-    // Pick face: if hitting a corner (both dx & dz near 0), pick the face most aligned with car's incoming velocity!
     let face = dx > dz ? (lp.x > 0 ? 0 : 1) : (lp.z > 0 ? 2 : 3);
     const nearCorner = Math.abs(dx - dz) < 1.8;
     if (nearCorner) {
@@ -276,7 +487,6 @@ export class Breaches {
     const nW = new THREE.Vector3(f.ax === 'x' ? f.s : 0, 0, f.ax === 'z' ? f.s : 0).applyQuaternion(quat);
     const vnRaw = -(preV.x * nW.x + preV.z * nW.z);
     const horizSpeed = Math.hypot(preV.x, preV.z);
-    // Corner impacts split velocity across two faces: use effective corner impact speed so corners break smoothly!
     const vn = nearCorner ? Math.max(vnRaw, horizSpeed * 0.86) : vnRaw;
     if (vn <= 1.0) return null;
 
@@ -311,253 +521,302 @@ export class Breaches {
   }
 
   private faceOf(box: BuildingColliderBox, face: number) {
-    return face < 2
-      ? { ax: 'x' as const, s: face === 0 ? 1 : -1, half: box.hx, uHalf: box.hy }
-      : { ax: 'z' as const, s: face === 2 ? 1 : -1, half: box.hy, uHalf: box.hx };
-  }
-
-  private local(box: BuildingColliderBox, face: number, u: number, w: number, y: number) {
-    const f = this.faceOf(box, face), a = f.s * (f.half - w);
-    return f.ax === 'x' ? new THREE.Vector3(a, y, u) : new THREE.Vector3(u, y, a);
+    const ax: 'x' | 'z' = face < 2 ? 'x' : 'z';
+    const s: 1 | -1 = face % 2 === 0 ? 1 : -1;
+    return { ax, s, half: ax === 'x' ? box.hx : box.hy, uHalf: ax === 'x' ? box.hy : box.hx };
   }
 
   private map(box: BuildingColliderBox, face: number, u: number, w: number, y: number) {
     const { center, quat } = this.frame(box);
-    return this.local(box, face, u, w, y).applyQuaternion(quat).add(center);
+    const f = this.faceOf(box, face);
+    const p = f.ax === 'x' ? new THREE.Vector3(f.s * (f.half - w), y, u) : new THREE.Vector3(u, y, f.s * (f.half - w));
+    return p.applyQuaternion(quat).add(center);
   }
 
-  /** Open a breach (supports flat walls AND building corners) with high-detail interior & zero-lag kinematic debris. */
-  open(spec: BreachSpec, crash?: { carPos: { x: number; y: number; z: number }; carVel: { x: number; y: number; z: number }; preV: { x: number; y: number; z: number } }) {
+  open(
+    spec: BreachSpec,
+    crash?: { carPos: { x: number; y: number; z: number }; carVel: { x: number; y: number; z: number }; preV: { x: number; y: number; z: number } },
+  ): boolean {
     const b = this.host.find(spec.cx, spec.cy);
     if (!b) return false;
-    const box = b.box, face = spec.face, f = this.faceOf(box, face);
-    if (!this.specs.some((x) => x.cx === spec.cx && x.cy === spec.cy)) this.specs.push(spec);
-    const R = rand(spec.seed + 17);
+    const box = b.box;
+    if (this.live.some((l) => Math.hypot(l.spec.cx - spec.cx, l.spec.cy - spec.cy) < 1)) return false;
+    if (!this.specs.some((s) => Math.hypot(s.cx - spec.cx, s.cy - spec.cy) < 1)) this.specs.push(spec);
 
-    // Allow hole & room to extend right up to building corners (0.08 m margin) so corners break cleanly!
-    const holeW = Math.min(HOLE_W, 2 * f.uHalf - 0.24);
-    const W = Math.min(8.2, Math.max(holeW + 0.16, 2 * f.uHalf - 0.16));
-    const u0 = Math.max(-f.uHalf + 0.08, Math.min(f.uHalf - 0.08 - W, spec.u - W / 2));
-    const u1 = u0 + W;
-    const h0 = Math.max(u0 + 0.04, Math.min(u1 - 0.04 - holeW, spec.u - holeW / 2));
-    const h1 = h0 + holeW;
-    const isLeftCorner = h0 < -f.uHalf + 0.45;
-    const isRightCorner = h1 > f.uHalf - 0.45;
+    const f = this.faceOf(box, spec.face);
     const height = box.z1 - box.z0;
-    const full = 2 * f.half;
+    const D = Math.min(MAX_DEPTH, Math.max(MIN_DEPTH, 2 * f.half - 1.2));
+    const holeW = Math.min(MAX_HOLE, Math.max(MIN_HOLE, 2 * f.uHalf - 0.4));
+    const h0 = THREE.MathUtils.clamp(spec.u - holeW / 2, -f.uHalf + 0.08, f.uHalf - 0.08 - holeW);
+    const h1 = h0 + holeW;
+    const W = Math.min(2 * f.uHalf - 0.16, Math.max(holeW + 1.8, 7.6));
+    const L = THREE.MathUtils.clamp((h0 + h1) / 2 - W / 2, -f.uHalf + 0.08, f.uHalf - 0.08 - W);
+    const Rr = L + W;
+    const { center, quat } = this.frame(box);
 
     let wo = 0;
-    {
-      const from = this.map(box, face, (h0 + h1) / 2, -2, 1.5);
-      const to = this.map(box, face, (h0 + h1) / 2, 0, 1.5);
-      const d = this.host.facadeDepth?.(from, to.sub(from).normalize(), 2 + Math.min(4, full - 4));
-      if (d !== null && d !== undefined) wo = Math.max(0, Math.min(full - 4, d - 2));
+    if (this.host.facadeDepth) {
+      const nW = new THREE.Vector3(f.ax === 'x' ? f.s : 0, 0, f.ax === 'z' ? f.s : 0).applyQuaternion(quat);
+      const orig = this.map(box, spec.face, (h0 + h1) / 2, -3, 1.5);
+      const d = this.host.facadeDepth(orig, nW.clone().negate(), 6);
+      if (d != null && d > 0.2 && d < 5.5) wo = THREE.MathUtils.clamp(d - 3, -0.3, 2.2);
     }
-    const D = Math.max(3.6, Math.min(10.5, full - wo - 0.6));
-    const local = (u: number, w: number, y: number) => this.local(box, face, u, w + wo, y);
-    const mapW = (u: number, w: number, y: number) => this.map(box, face, u, w + wo, y);
-    const kind: Room = height > 60 ? 'lobby' : height < 22 ? (spec.seed % 2 ? 'apartment' : 'shop') : (['shop', 'deli', 'shop', 'apartment'] as Room[])[spec.seed % 4];
 
-    // ---- Static colliders around the breached room (upper floors, back/side walls, lintel)
-    const { center, quat } = this.frame(box);
-    const descs: RAPIER.ColliderDesc[] = [];
-    const cuboid = (uA: number, uB: number, wA: number, wB: number, yA: number, yB: number) => {
-      if (uB - uA < 0.05 || wB - wA < 0.05 || yB - yA < 0.05) return;
-      const c = local((uA + uB) / 2, (wA + wB) / 2, (yA + yB) / 2).applyQuaternion(quat).add(center);
-      const hu = (uB - uA) / 2, hw = (wB - wA) / 2, hy = (yB - yA) / 2;
-      descs.push(RAPIER.ColliderDesc.cuboid(f.ax === 'x' ? hw : hu, hy, f.ax === 'x' ? hu : hw)
-        .setTranslation(c.x, c.y, c.z)
+    const local = (u: number, w: number, y: number) =>
+      f.ax === 'x' ? new THREE.Vector3(f.s * (f.half - wo - w), y, u) : new THREE.Vector3(u, y, f.s * (f.half - wo - w));
+    const mapW = (u: number, w: number, y: number) => local(u, w, y).applyQuaternion(quat).add(center);
+
+    const cols: RAPIER.ColliderDesc[] = [];
+    const wallCol = (u0: number, u1: number, w0: number, w1: number, y0: number, y1: number) => {
+      if (u1 - u0 < 0.06 || w1 - w0 < 0.06 || y1 - y0 < 0.06) return;
+      const c = mapW((u0 + u1) / 2, (w0 + w1) / 2, (y0 + y1) / 2);
+      const hx = (f.ax === 'x' ? w1 - w0 : u1 - u0) / 2;
+      const hz = (f.ax === 'x' ? u1 - u0 : w1 - w0) / 2;
+      cols.push(
+        RAPIER.ColliderDesc.cuboid(hx, (y1 - y0) / 2, hz)
+          .setTranslation(c.x, c.y, c.z)
+          .setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w })
+          .setFriction(0.5)
+          .setCollisionGroups(GROUP_WALL),
+      );
+    };
+
+    const wallT = 0.45;
+    wallCol(-f.uHalf, f.uHalf, 0, 2 * f.half, H, height);
+    wallCol(h0, h1, 0, wallT, HOLE_H, H);
+    wallCol(-f.uHalf, h0, 0, wallT, 0, H);
+    wallCol(h1, f.uHalf, 0, wallT, 0, H);
+    wallCol(-f.uHalf, L, wallT, D, 0, H);
+    wallCol(Rr, f.uHalf, wallT, D, 0, H);
+    wallCol(-f.uHalf, f.uHalf, D, 2 * f.half, 0, H);
+    const fc = mapW((L + Rr) / 2, D / 2, -0.2);
+    cols.push(
+      RAPIER.ColliderDesc.cuboid((f.ax === 'x' ? D : W) / 2, 0.2, (f.ax === 'x' ? W : D) / 2)
+        .setTranslation(fc.x, fc.y, fc.z)
         .setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w })
-        .setFriction(0.5).setRestitution(0.05));
+        .setFriction(0.95),
+    );
+
+    const R = rng(spec.seed);
+    const kind = height > 60 ? 'lobby' : (['shop', 'deli', 'apartment', 'lobby'] as const)[Math.floor(R() * 4)];
+    const ao = (u: number, w: number, y: number) => {
+      const edge = Math.min(u - L, Rr - u, D - w, y, H - y);
+      const d = Math.min(1, Math.max(0, edge) / 1.15);
+      const depthFade = 0.80 + 0.20 * (1 - w / Math.max(1, D));
+      return (0.48 + 0.52 * d) * depthFade;
     };
-    cuboid(-f.uHalf, f.uHalf, -wo, full - wo, H, height);
-    cuboid(-f.uHalf, u0, -wo, full - wo, 0, H);
-    cuboid(u1, f.uHalf, -wo, full - wo, 0, H);
-    cuboid(u0, u1, D, full - wo, 0, H);
-    if (!isLeftCorner) cuboid(u0, h0, 0, WALL_T, 0, H);
-    if (!isRightCorner) cuboid(h1, u1, 0, WALL_T, 0, H);
-    cuboid(h0, h1, 0, WALL_T, HOLE_H, H);
-    cuboid(h0, h1, 0.1, 0.3, 0, HOLE_H);
-    descs[descs.length - 1].setCollisionGroups(GROUP_CAMERA_ONLY);
+    const geo = new Geo(local, ao);
+    const flip = (pts: [number, number, number][]) => (f.s === 1 && f.ax === 'x') || (f.s === -1 && f.ax === 'z') ? pts.slice().reverse() : pts;
+    const back = D - 0.12;
+    const mid = (L + Rr) / 2;
 
-    // ---- High-Detail Architectural Room Geometry
-    const statics: [number, number, number, number, number, number][] = [];
-    const debrisSpec: { u: number; w: number; y: number; su: number; sw: number; sy: number; c: RGB }[] = [];
-    const light = (u: number, w: number, y: number) => {
-      const du = (u - (u0 + u1) / 2) / Math.max(1, W);
-      const dw = (w - D * 0.48) / Math.max(1, D);
-      const ceilGlow = 0.55 + 0.45 * (y / H);
-      const centerFall = 0.42 + 0.48 * Math.max(0, 1 - Math.hypot(du, dw) * 1.45);
-      // Corner ambient occlusion near wall-floor & wall-wall creases
-      const edgeU = Math.min(u - u0, u1 - u);
-      const edgeW = Math.min(w - WALL_T, D - w);
-      const crease = 0.72 + 0.28 * Math.min(1, Math.min(edgeU, edgeW, y + 0.15) / 0.65);
-      return centerFall * ceilGlow * crease;
-    };
-    const geo = new Geo(local, light);
-    const wallC: RGB = kind === 'apartment' ? [0.64, 0.55, 0.46] : kind === 'lobby' ? [0.74, 0.71, 0.66] : kind === 'deli' ? [0.72, 0.68, 0.60] : [0.78, 0.78, 0.76];
-    const trimC: RGB = kind === 'lobby' ? [0.62, 0.50, 0.28] : [0.22, 0.21, 0.20];
-    const floorA: RGB = kind === 'apartment' ? [0.40, 0.25, 0.14] : kind === 'lobby' ? [0.82, 0.80, 0.76] : kind === 'deli' ? [0.46, 0.44, 0.40] : [0.56, 0.55, 0.53];
-    const floorB: RGB = kind === 'apartment' ? [0.34, 0.21, 0.11] : kind === 'lobby' ? [0.28, 0.29, 0.31] : kind === 'deli' ? [0.34, 0.32, 0.29] : [0.48, 0.48, 0.46];
-    const T = WALL_T, L = u0 + 0.02, Rr = u1 - 0.02;
-    const mid = (u0 + u1) / 2;
-    const back = D - 0.06;
+    // ---- Architectural palette & floor/wall materials per archetype
+    const floorMat = kind === 'apartment' ? MAT_WOOD : MAT_MARBLE;
+    const floorA: RGB = kind === 'lobby' ? [0.76, 0.74, 0.70] : kind === 'deli' ? [0.68, 0.64, 0.58] : kind === 'apartment' ? [0.42, 0.27, 0.16] : [0.70, 0.72, 0.74];
+    const floorB: RGB = kind === 'lobby' ? [0.64, 0.62, 0.58] : kind === 'deli' ? [0.22, 0.23, 0.25] : kind === 'apartment' ? [0.36, 0.23, 0.13] : [0.58, 0.60, 0.63];
+    const wallColC: RGB = kind === 'lobby' ? [0.72, 0.70, 0.66] : kind === 'apartment' ? [0.66, 0.62, 0.56] : kind === 'deli' ? [0.64, 0.56, 0.44] : [0.64, 0.66, 0.68];
+    const wallMat = kind === 'lobby' ? MAT_MARBLE : MAT_PLASTER;
+    const ceilC: RGB = [0.74, 0.73, 0.71];
+    const trimC: RGB = kind === 'lobby' ? [0.74, 0.58, 0.30] : [0.22, 0.20, 0.19];
+    const trimMat = kind === 'lobby' ? MAT_METAL : MAT_WOOD;
 
-    // 1. Tiled / planked floor + coffered ceiling + architectural walls
-    geo.tiledFloor(L, Rr, T, D, kind === 'apartment' ? 0.45 : 0.85, kind === 'apartment' ? 1.4 : 0.85, floorA, floorB);
-    geo.quad([[L, T, H], [Rr, T, H], [Rr, D, H], [L, D, H]], [0, 0, -1], [0.62, 0.62, 0.60]);
-    geo.quad([[L, T, 0], [L, D, 0], [L, D, H], [L, T, H]], [1, 0, 0], wallC);
-    geo.quad([[Rr, T, 0], [Rr, D, 0], [Rr, D, H], [Rr, T, H]], [-1, 0, 0], wallC);
-    geo.quad([[L, D, 0], [Rr, D, 0], [Rr, D, H], [L, D, H]], [0, -1, 0], wallC);
-    geo.quad([[L, T, 0], [h0, T, 0], [h0, T, H], [L, T, H]], [0, 1, 0], wallC);
-    geo.quad([[h1, T, 0], [Rr, T, 0], [Rr, T, H], [h1, T, H]], [0, 1, 0], wallC);
-    geo.quad([[h0, T, HOLE_H], [h1, T, HOLE_H], [h1, T, H], [h0, T, H]], [0, 1, 0], wallC);
+    // Photorealistic floor & architectural ceiling
+    geo.tiledFloor(L, Rr, 0, D, 0.015, kind === 'apartment' ? 0.9 : 1.0, kind === 'apartment' ? 1.1 : 1.0, floorA, floorB, floorMat);
+    geo.quad(flip([[L, 0, H], [L, D, H], [Rr, D, H], [Rr, 0, H]]), [0, 0, -1], ceilC, MAT_PLASTER);
 
-    // 2. Baseboard moldings, crown cornice moldings & acoustic ceiling beams + recessed LED linear lights
-    geo.box(L, L + 0.05, T, D, 0, 0.16, trimC);
-    geo.box(Rr - 0.05, Rr, T, D, 0, 0.16, trimC);
-    geo.box(L, Rr, D - 0.05, D, 0, 0.16, trimC);
-    geo.box(L, L + 0.08, T, D, H - 0.14, H, trimC);
-    geo.box(Rr - 0.08, Rr, T, D, H - 0.14, H, trimC);
-    geo.box(L, Rr, D - 0.08, D, H - 0.14, H, trimC);
-    for (let w = 1.6; w < D - 0.6; w += 2.2) {
-      geo.box(L + 0.04, Rr - 0.04, w - 0.08, w + 0.08, H - 0.22, H, [0.24, 0.24, 0.26]);
-      // Recessed warm/white linear LED light strip + cylindrical pendant fixtures
-      const ledC: RGB = kind === 'apartment' ? [1.0, 0.78, 0.48] : kind === 'lobby' ? [1.0, 0.90, 0.72] : [0.96, 0.98, 1.0];
-      geo.quad([[u0 + W * 0.22, w + 0.35, H - 0.03], [u1 - W * 0.22, w + 0.35, H - 0.03],
-        [u1 - W * 0.22, w + 0.55, H - 0.03], [u0 + W * 0.22, w + 0.55, H - 0.03]], [0, 0, -1], ledC, 1.65);
-      // Hanging pendant cord + glowing glass shade
-      if (W > 4.2) {
-        for (const pu of [mid - W * 0.22, mid + W * 0.22]) {
-          geo.cylinder(pu, w + 0.9, 0.015, H - 0.75, H, 6, [0.15, 0.15, 0.16]);
-          geo.cylinder(pu, w + 0.9, 0.14, H - 0.92, H - 0.74, 10, ledC, 1.45);
+    // Back wall + left/right side walls (apartments & delis feature exposed NYC red-brick accent walls!)
+    geo.quad(flip([[L, D, 0], [L, D, H], [Rr, D, H], [Rr, D, 0]]), [0, -1, 0], wallColC, wallMat);
+    const leftBrick = kind === 'apartment' || kind === 'deli';
+    geo.quad(flip([[L, 0, 0], [L, 0, H], [L, D, H], [L, D, 0]]), [1, 0, 0], leftBrick ? [0.54, 0.24, 0.16] : wallColC, leftBrick ? MAT_BRICK : wallMat);
+    geo.quad(flip([[Rr, D, 0], [Rr, D, H], [Rr, 0, H], [Rr, 0, 0]]), [-1, 0, 0], wallColC, wallMat);
+
+    // Architectural wainscoting panels + baseboards + crown molding + recessed LED coves
+    geo.box(L, Rr, D - 0.07, D, 0.01, 0.18, trimC, trimMat);
+    geo.box(L, L + 0.07, 0.2, D, 0.01, 0.18, trimC, trimMat);
+    geo.box(Rr - 0.07, Rr, 0.2, D, 0.01, 0.18, trimC, trimMat);
+    geo.box(L, Rr, D - 0.11, D, H - 0.20, H, trimC, trimMat);
+    geo.box(L, L + 0.11, 0.2, D, H - 0.20, H, trimC, trimMat);
+    geo.box(Rr - 0.11, Rr, 0.2, D, H - 0.20, H, trimC, trimMat);
+    // Warm architectural indirect cove LED strips tucked along crown moldings!
+    geo.box(L + 0.15, Rr - 0.15, D - 0.14, D - 0.09, H - 0.24, H - 0.20, [1.0, 0.88, 0.68], MAT_GLOW, 2.2);
+    // Wainscoting chair rail on right & back walls
+    geo.box(Rr - 0.05, Rr, 0.3, D - 0.1, 1.05, 1.12, trimC, trimMat);
+    geo.box(L + 0.06, Rr - 0.06, D - 0.05, D, 1.05, 1.12, trimC, trimMat);
+
+    // Inner front wall surround framing the hole
+    if (h0 > L + 0.05) geo.quad(flip([[L, 0.06, 0], [h0, 0.06, 0], [h0, 0.06, H], [L, 0.06, H]]), [0, 1, 0], wallColC, wallMat);
+    if (Rr > h1 + 0.05) geo.quad(flip([[h1, 0.06, 0], [Rr, 0.06, 0], [Rr, 0.06, H], [h1, 0.06, H]]), [0, 1, 0], wallColC, wallMat);
+    geo.quad(flip([[h0, 0.06, HOLE_H], [h1, 0.06, HOLE_H], [h1, 0.06, H], [h0, 0.06, H]]), [0, 1, 0], wallColC, wallMat);
+
+    // ---- Shattered masonry / drywall studs + bent steel rebar around the breach opening
+    const masonryCol: RGB = [0.44, 0.24, 0.18];
+    const concreteCol: RGB = [0.46, 0.45, 0.43];
+    const rebarCol: RGB = [0.38, 0.34, 0.32];
+    for (let k = 0; k < 6; k++) {
+      const y0 = (k / 6) * HOLE_H, y1 = ((k + 1) / 6) * HOLE_H;
+      const jL = 0.06 + R() * 0.20, jR = 0.06 + R() * 0.20;
+      geo.box(h0 - 0.08, h0 + jL, -0.04, 0.44, y0, y1, k % 2 === 0 ? masonryCol : concreteCol, MAT_BRICK);
+      geo.box(h1 - jR, h1 + 0.08, -0.04, 0.44, y0, y1, k % 2 === 0 ? concreteCol : masonryCol, MAT_BRICK);
+      if (k % 2 === 1) {
+        geo.box(h0 + jL - 0.02, h0 + jL + 0.24, 0.16, 0.22, y0 + 0.14, y0 + 0.175, rebarCol, MAT_METAL);
+        geo.box(h1 - jR - 0.24, h1 - jR + 0.02, 0.16, 0.22, y0 + 0.24, y0 + 0.275, rebarCol, MAT_METAL);
+      }
+    }
+    for (let k = 0; k < 7; k++) {
+      const u0 = h0 + (k / 7) * holeW, u1 = h0 + ((k + 1) / 7) * holeW;
+      const drop = 0.06 + R() * 0.24;
+      geo.box(u0, u1, -0.04, 0.44, HOLE_H - drop, HOLE_H + 0.16, k % 2 === 0 ? concreteCol : masonryCol, MAT_BRICK);
+      if (k % 2 === 0) geo.box(u0 + 0.14, u0 + 0.175, 0.14, 0.20, HOLE_H - drop - 0.24, HOLE_H - drop, rebarCol, MAT_METAL);
+    }
+
+    // ---- Architectural ceiling beams + recessed HDR LED linear light panels + brass/chrome pendant globes
+    const nBeams = Math.max(2, Math.floor(D / 2.2));
+    const ledTint: RGB = kind === 'shop' ? [0.92, 0.96, 1.0] : [1.0, 0.90, 0.72];
+    for (let i = 1; i <= nBeams; i++) {
+      const w = (i / (nBeams + 1)) * D;
+      geo.box(L + 0.1, Rr - 0.1, w - 0.14, w + 0.14, H - 0.24, H, kind === 'apartment' ? [0.34, 0.22, 0.13] : [0.22, 0.23, 0.26], kind === 'apartment' ? MAT_WOOD : MAT_PLASTER);
+      // Recessed glowing LED panel
+      geo.box(mid - Math.min(2.0, W * 0.32), mid + Math.min(2.0, W * 0.32), w - 0.07, w + 0.07, H - 0.265, H - 0.23, ledTint, MAT_GLOW, 3.0);
+      if (i % 2 === 1 && D > 4.2) {
+        for (const pu of [mid - W * 0.24, mid + W * 0.24]) {
+          geo.cylinder(pu, w, 0.015, H - 0.88, H - 0.22, 6, [0.76, 0.62, 0.34], MAT_METAL);
+          geo.cylinder(pu, w, 0.14, H - 1.04, H - 0.86, 10, [1.0, 0.92, 0.74], MAT_GLOW, 3.2);
+          geo.cylinder(pu, w, 0.18, H - 0.88, H - 0.82, 10, [0.72, 0.56, 0.28], MAT_METAL);
         }
       }
     }
 
-    // 3. Fluted structural columns in rear corners
-    geo.cylinder(L + 0.28, back - 0.28, 0.22, 0, H, 10, [0.52, 0.50, 0.48]);
-    geo.cylinder(Rr - 0.28, back - 0.28, 0.22, 0, H, 10, [0.52, 0.50, 0.48]);
-
-    // 4. Jagged layered broken masonry/plaster/rebar reveal around the crash hole (looks genuinely smashed!)
-    const brickC: RGB = [0.46, 0.24, 0.18];
-    const concC: RGB = [0.42, 0.41, 0.39];
-    const rebarC: RGB = [0.26, 0.18, 0.14];
-    const steps = 6;
-    for (let i = 0; i < steps; i++) {
-      const yA = (i / steps) * HOLE_H, yB = ((i + 1) / steps) * HOLE_H;
-      const jagL = (R() - 0.35) * 0.16, jagR = (R() - 0.35) * 0.16;
-      geo.box(h0 - 0.04, h0 + 0.12 + jagL, -wo - 0.02, T + 0.04, yA, yB, i % 2 === 0 ? brickC : concC);
-      geo.box(h1 - 0.12 - jagR, h1 + 0.04, -wo - 0.02, T + 0.04, yA, yB, i % 2 === 1 ? brickC : concC);
-      // Exposed bent steel rebar rods sticking out of the broken concrete
-      if (i % 2 === 1) {
-        geo.box(h0 + 0.08, h0 + 0.34, 0.06, 0.10, yA + 0.12, yA + 0.16, rebarC);
-        geo.box(h1 - 0.34, h1 - 0.08, 0.08, 0.12, yA + 0.18, yA + 0.22, rebarC);
-      }
-    }
-    for (let i = 0; i < 6; i++) {
-      const uA = h0 + (i / 6) * holeW, uB = h0 + ((i + 1) / 6) * holeW;
-      const drop = R() * 0.14;
-      geo.box(uA, uB, -wo - 0.02, T + 0.04, HOLE_H - drop, HOLE_H + 0.12, i % 2 === 0 ? concC : brickC);
+    // Fluted marble/stone columns near back corners
+    for (const cu of [L + 0.42, Rr - 0.42]) {
+      geo.cylinder(cu, back - 0.42, 0.22, 0.02, H - 0.02, 12, kind === 'lobby' ? [0.76, 0.73, 0.68] : [0.58, 0.57, 0.55], MAT_MARBLE);
+      geo.box(cu - 0.28, cu + 0.28, back - 0.70, back - 0.14, 0.01, 0.24, trimC, trimMat);
+      geo.box(cu - 0.28, cu + 0.28, back - 0.70, back - 0.14, H - 0.26, H - 0.02, trimC, trimMat);
     }
 
-    // 5. High-Detail Room-Specific Architectural Furnishings
-    const bright = (): RGB => ([[0.88, 0.22, 0.18], [0.95, 0.74, 0.14], [0.18, 0.52, 0.88], [0.22, 0.72, 0.38], [0.92, 0.48, 0.16], [0.86, 0.84, 0.80]][Math.floor(R() * 6)] as RGB);
-    const stat = (uA: number, uB: number, wA: number, wB: number, yA: number, yB: number, c: RGB) => {
-      geo.box(uA, uB, wA, wB, yA, yB, c);
-      statics.push([uA, uB, wA, wB, yA, yB]);
+    const stat = (u0: number, u1: number, w0: number, w1: number, y0: number, y1: number, c: RGB, mat: MatSpec = MAT_WOOD) => {
+      geo.box(u0, u1, w0, w1, y0, y1, c, mat);
+      wallCol(u0, u1, w0, w1, y0, y1);
     };
-    const addDebris = (u: number, w: number, su: number, sw: number, sy: number, c: RGB, y = 0) =>
-      debrisSpec.push({ u, w, y: y + sy / 2, su, sw, sy, c });
+    const debrisSpec: { u: number; w: number; y: number; su: number; sw: number; sy: number; c: RGB; mass: number }[] = [];
+    const addDebris = (u: number, w: number, su: number, sw: number, sy: number, c: RGB, mass = 16) => {
+      debrisSpec.push({ u, w, y: sy / 2 + 0.03, su, sw, sy, c, mass });
+    };
+    const bright = (): RGB => ([[0.88, 0.22, 0.18], [0.16, 0.52, 0.86], [0.92, 0.72, 0.16], [0.18, 0.70, 0.36], [0.92, 0.90, 0.86], [0.85, 0.34, 0.62]] as RGB[])[Math.floor(R() * 6)];
 
+    // ---- High-detail photorealistic furnishings per room archetype
     if (kind === 'shop') {
-      // Dark walnut + brushed-steel multi-tier retail wall shelving with backlit alcoves & varied merchandise
-      for (const [a, bb] of [[L + 0.04, L + 0.56], [Rr - 0.56, Rr - 0.04]] as [number, number][]) {
-        stat(a, bb, 1.5, Math.max(2.2, back - 1.6), 0, 0.35, [0.22, 0.18, 0.15]);
-        for (let y = 0.35; y <= 2.15; y += 0.45) {
-          geo.box(a, bb, 1.5, Math.max(2.2, back - 1.6), y, y + 0.04, [0.28, 0.24, 0.20]);
+      // Modern NYC boutique / sneaker & electronics store: walnut shelving with steel brackets, backlit glass showcase,
+      // quartz checkout island with chrome espresso/POS, neon signage, glass refrigerator wall & indoor planters
+      for (const [a, bb] of [[L + 0.05, L + 0.58], [Rr - 0.58, Rr - 0.05]] as [number, number][]) {
+        stat(a, bb, 1.4, Math.max(2.2, back - 1.5), 0, 0.36, [0.24, 0.16, 0.11], MAT_WOOD);
+        // Vertical brushed-steel rack uprights
+        for (let w = 1.5; w <= back - 1.6; w += 1.2) {
+          geo.box(a + 0.04, a + 0.09, w - 0.02, w + 0.02, 0.36, 2.35, [0.68, 0.70, 0.74], MAT_METAL);
+        }
+        for (let y = 0.36; y <= 2.20; y += 0.46) {
+          geo.box(a, bb, 1.4, Math.max(2.2, back - 1.5), y, y + 0.045, [0.38, 0.25, 0.15], MAT_WOOD);
+          // Under-shelf warm LED display strip
+          geo.box(a + 0.08, bb - 0.08, 1.45, Math.max(2.15, back - 1.55), y - 0.015, y, [1.0, 0.92, 0.76], MAT_GLOW, 1.8);
           if (y < 2.0) {
-            for (let w = 1.62; w < back - 1.8; w += 0.36) {
-              const hItem = 0.18 + R() * 0.16;
-              geo.box(a + 0.08, bb - 0.08, w, w + 0.26, y + 0.04, y + 0.04 + hItem, bright());
+            for (let w = 1.56; w < back - 1.75; w += 0.38) {
+              const hItem = 0.18 + R() * 0.17;
+              geo.box(a + 0.10, bb - 0.10, w, w + 0.25, y + 0.045, y + 0.045 + hItem, bright(), MAT_GLASS);
             }
           }
         }
       }
-      // Illuminated glass-and-chrome checkout counter + POS monitor + backlit refrigerated beverage wall
-      stat(mid - 1.4, mid + 0.7, back - 1.7, back - 1.05, 0, 0.98, [0.20, 0.17, 0.15]);
-      geo.box(mid - 1.45, mid + 0.75, back - 1.75, back - 1.0, 0.98, 1.06, [0.76, 0.78, 0.80]); // quartz countertop
-      geo.box(mid - 0.55, mid - 0.15, back - 1.45, back - 1.38, 1.06, 1.42, [0.12, 0.13, 0.15]); // POS monitor
-      geo.quad([[mid - 0.52, back - 1.46, 1.12], [mid - 0.18, back - 1.46, 1.12], [mid - 0.18, back - 1.46, 1.38], [mid - 0.52, back - 1.46, 1.38]], [0, -1, 0], [0.45, 0.82, 1.0], 1.4);
-      geo.framedBackWall(L + 0.7, Rr - 0.7, back, 0.25, 2.35, [0.16, 0.17, 0.19], [0.75, 0.92, 1.0], 1.35);
-      // Center island display tables (thrown aside smoothly on crash!)
-      addDebris(mid - 0.85, D * 0.44, 0.95, 0.55, 0.95, [0.32, 0.28, 0.24]);
-      addDebris(mid + 0.85, D * 0.54, 0.95, 0.55, 0.95, [0.32, 0.28, 0.24]);
+      // Quartz & brushed-brass checkout counter + dual POS displays
+      stat(mid - 1.55, mid + 0.95, back - 1.75, back - 1.02, 0, 0.98, [0.18, 0.19, 0.22], MAT_MARBLE);
+      geo.box(mid - 1.60, mid + 1.00, back - 1.80, back - 0.98, 0.98, 1.06, [0.84, 0.83, 0.80], MAT_MARBLE);
+      geo.box(mid - 1.56, mid + 0.96, back - 1.78, back - 1.73, 0.04, 0.08, [0.80, 0.66, 0.32], MAT_METAL);
+      geo.box(mid - 0.65, mid - 0.22, back - 1.44, back - 1.38, 1.06, 1.40, [0.12, 0.13, 0.15], MAT_METAL);
+      geo.quad([[mid - 0.62, back - 1.45, 1.11], [mid - 0.25, back - 1.45, 1.11], [mid - 0.25, back - 1.45, 1.37], [mid - 0.62, back - 1.45, 1.37]], [0, -1, 0], [0.40, 0.84, 1.0], MAT_GLASS, 2.4);
+      // Backlit frosted glass showcase wall + glowing neon logo bar
+      geo.framedBackWall(L + 0.78, Rr - 0.78, back, 0.30, 2.35, [0.22, 0.23, 0.26], [0.74, 0.90, 1.0], MAT_METAL, 1.9);
+      geo.framedBackWall(mid - 1.3, mid + 1.3, back, 2.55, 3.15, [0.14, 0.14, 0.16], [1.0, 0.22, 0.50], MAT_METAL, 3.2);
+      geo.planter(L + 0.92, back - 0.52, [0.76, 0.75, 0.72]);
+      geo.planter(Rr - 0.92, back - 0.52, [0.76, 0.75, 0.72]);
+      addDebris(mid - 0.95, D * 0.42, 0.95, 0.62, 0.88, [0.42, 0.28, 0.18], 24);
+      addDebris(mid + 0.95, D * 0.54, 0.95, 0.62, 0.88, [0.42, 0.28, 0.18], 24);
     } else if (kind === 'deli') {
-      // Stainless-steel NYC deli counter + glass sneeze guard + colorful trays + illuminated menu boards
-      stat(L + 0.35, Rr - 0.35, back - 1.35, back - 0.65, 0, 1.02, [0.38, 0.39, 0.42]);
-      geo.box(L + 0.45, Rr - 0.45, back - 1.30, back - 0.72, 1.02, 1.46, [0.74, 0.88, 0.95], 1.25);
-      for (let u = L + 0.6; u < Rr - 0.8; u += 0.55) {
-        geo.box(u, u + 0.42, back - 1.22, back - 0.80, 1.04, 1.16, bright());
+      // NYC Bistro / Corner Café: checkerboard marble floor, exposed brick left wall, brushed-stainless counter,
+      // illuminated pastry/deli glass vitrine, chrome espresso machine, warm glowing menu boards & marble bistro tables
+      stat(L + 0.42, Rr - 0.42, back - 1.42, back - 0.65, 0, 1.02, [0.64, 0.66, 0.70], MAT_METAL);
+      geo.box(L + 0.46, Rr - 0.46, back - 1.38, back - 0.70, 1.02, 1.48, [0.80, 0.92, 0.96], MAT_GLASS, 1.35);
+      // Chrome espresso machine on the right end of counter
+      geo.box(Rr - 1.15, Rr - 0.58, back - 1.25, back - 0.78, 1.04, 1.56, [0.78, 0.80, 0.84], MAT_METAL);
+      for (let u = L + 0.62; u < Rr - 1.30; u += 0.52) {
+        geo.box(u, u + 0.40, back - 1.26, back - 0.82, 1.04, 1.16, bright(), MAT_PLASTER);
       }
-      geo.framedBackWall(mid - 1.8, mid - 0.1, back, 2.2, 3.15, [0.12, 0.12, 0.14], [1.0, 0.65, 0.24], 1.45);
-      geo.framedBackWall(mid + 0.1, mid + 1.8, back, 2.2, 3.15, [0.12, 0.12, 0.14], [0.95, 0.85, 0.38], 1.40);
-      // Sculpted round bistro pedestal tables + chairs with backrests
-      for (const [du, w] of [[-1.35, 2.5], [1.35, 2.5], [-1.35, 4.9], [1.35, 4.9]]) {
-        if (w > back - 1.9 || Math.abs(du) > W * 0.38) continue;
-        geo.cylinder(mid + du, w, 0.06, 0, 0.74, 8, [0.18, 0.18, 0.20]);
-        geo.cylinder(mid + du, w, 0.44, 0.74, 0.79, 12, [0.58, 0.40, 0.24]);
-        for (const cx of [-0.62, 0.62]) {
-          geo.box(mid + du + cx - 0.20, mid + du + cx + 0.20, w - 0.20, w + 0.20, 0.44, 0.49, [0.22, 0.22, 0.25]);
-          geo.box(mid + du + cx + (cx > 0 ? 0.16 : -0.20), mid + du + cx + (cx > 0 ? 0.20 : -0.16), w - 0.19, w + 0.19, 0.49, 0.90, [0.22, 0.22, 0.25]);
+      // Twin illuminated warm menu boards + neon espresso sign
+      geo.framedBackWall(mid - 2.0, mid - 0.15, back, 2.05, 3.05, [0.16, 0.15, 0.14], [1.0, 0.70, 0.28], MAT_METAL, 2.4);
+      geo.framedBackWall(mid + 0.15, mid + 2.0, back, 2.05, 3.05, [0.16, 0.15, 0.14], [0.98, 0.84, 0.42], MAT_METAL, 2.2);
+      // Marble-top round bistro tables + chrome pedestals + upholstered leather chairs
+      for (const [du, w] of [[-1.42, 2.4], [1.42, 2.4], [-1.42, 4.9], [1.42, 4.9]]) {
+        if (w > back - 2.0 || Math.abs(du) > W * 0.38) continue;
+        geo.cylinder(mid + du, w, 0.22, 0.015, 0.05, 10, [0.72, 0.74, 0.78], MAT_METAL);
+        geo.cylinder(mid + du, w, 0.045, 0.05, 0.74, 8, [0.72, 0.74, 0.78], MAT_METAL);
+        geo.cylinder(mid + du, w, 0.46, 0.74, 0.79, 14, [0.84, 0.82, 0.78], MAT_MARBLE);
+        for (const cx of [-0.64, 0.64]) {
+          geo.box(mid + du + cx - 0.20, mid + du + cx + 0.20, w - 0.20, w + 0.20, 0.44, 0.50, [0.36, 0.18, 0.12], MAT_FABRIC);
+          geo.box(mid + du + cx + (cx > 0 ? 0.16 : -0.20), mid + du + cx + (cx > 0 ? 0.20 : -0.16), w - 0.19, w + 0.19, 0.50, 0.90, [0.36, 0.18, 0.12], MAT_FABRIC);
         }
-        addDebris(mid + du, w, 0.45, 0.45, 0.48, [0.55, 0.38, 0.22]);
+        addDebris(mid + du, w, 0.44, 0.44, 0.48, [0.46, 0.30, 0.20], 18);
       }
+      geo.planter(L + 0.85, back - 1.95, [0.38, 0.24, 0.16]);
     } else if (kind === 'apartment') {
-      // Bordered woven area rug + floor-to-ceiling bookcase + tufted sectional sofa + wall TV + framed art + floor lamp
-      geo.quad([[mid - 1.8, 2.1, 0.02], [mid + 1.8, 2.1, 0.02], [mid + 1.8, Math.min(back - 0.6, 5.4), 0.02], [mid - 1.8, Math.min(back - 0.6, 5.4), 0.02]], [0, 0, 1], [0.42, 0.16, 0.14]);
-      geo.quad([[mid - 1.6, 2.3, 0.024], [mid + 1.6, 2.3, 0.024], [mid + 1.6, Math.min(back - 0.8, 5.2), 0.024], [mid - 1.6, Math.min(back - 0.8, 5.2), 0.024]], [0, 0, 1], [0.52, 0.22, 0.18]);
-      stat(Rr - 0.42, Rr - 0.02, 1.5, Math.min(back - 0.5, 4.8), 0, 2.3, [0.28, 0.19, 0.12]);
-      for (let y = 0.3; y < 2.1; y += 0.44) {
-        for (let w = 1.6; w < Math.min(back - 0.65, 4.65); w += 0.13) {
-          geo.box(Rr - 0.36, Rr - 0.07, w, w + 0.09, y, y + 0.26 + R() * 0.10, bright());
+      // SoHo / Tribeca Loft: hardwood plank floor, exposed red brick left wall, plush woven rug, floor-to-ceiling
+      // walnut bookcase, tufted leather sectional sofa, marble coffee table, glowing 4K OLED TV, brass floor lamp & ficus
+      geo.quad([[mid - 1.9, 2.0, 0.022], [mid + 1.9, 2.0, 0.022], [mid + 1.9, Math.min(back - 0.5, 5.5), 0.022], [mid - 1.9, Math.min(back - 0.5, 5.5), 0.022]], [0, 0, 1], [0.48, 0.22, 0.18], MAT_FABRIC);
+      geo.quad([[mid - 1.65, 2.25, 0.026], [mid + 1.65, 2.25, 0.026], [mid + 1.65, Math.min(back - 0.75, 5.25), 0.026], [mid - 1.65, Math.min(back - 0.75, 5.25), 0.026]], [0, 0, 1], [0.64, 0.54, 0.42], MAT_FABRIC);
+      // Walnut floor-to-ceiling bookcase along right wall
+      stat(Rr - 0.46, Rr - 0.03, 1.4, Math.min(back - 0.5, 5.0), 0, 2.45, [0.32, 0.20, 0.12], MAT_WOOD);
+      for (let y = 0.32; y < 2.25; y += 0.44) {
+        for (let w = 1.55; w < Math.min(back - 0.65, 4.85); w += 0.14) {
+          geo.box(Rr - 0.40, Rr - 0.08, w, w + 0.10, y, y + 0.24 + R() * 0.12, bright(), MAT_FABRIC);
         }
       }
-      // Tufted L-sofa (base + backrest + armrests + throw pillows)
-      const sy = Math.min(back - 1.1, 5.3);
-      geo.box(mid - 1.15, mid + 1.15, sy - 0.42, sy + 0.42, 0.12, 0.46, [0.24, 0.29, 0.39]);
-      geo.box(mid - 1.15, mid + 1.15, sy + 0.24, sy + 0.44, 0.46, 0.92, [0.22, 0.27, 0.36]);
-      geo.box(mid - 1.25, mid - 1.05, sy - 0.42, sy + 0.44, 0.12, 0.68, [0.20, 0.25, 0.34]);
-      geo.box(mid + 1.05, mid + 1.25, sy - 0.42, sy + 0.44, 0.12, 0.68, [0.20, 0.25, 0.34]);
-      geo.box(mid - 0.92, mid - 0.58, sy + 0.05, sy + 0.22, 0.46, 0.74, [0.85, 0.42, 0.20]);
-      geo.box(mid + 0.58, mid + 0.92, sy + 0.05, sy + 0.22, 0.46, 0.74, [0.88, 0.72, 0.24]);
-      // Framed artwork & glowing wall-mounted flatscreen TV
-      geo.framedBackWall(mid - 1.2, mid + 1.2, back, 1.35, 2.55, [0.16, 0.14, 0.12], [0.28, 0.48, 0.68], 1.15);
-      geo.cylinder(L + 0.45, back - 0.55, 0.04, 0, 1.65, 8, [0.18, 0.18, 0.20]);
-      geo.cylinder(L + 0.45, back - 0.55, 0.22, 1.55, 1.88, 10, [1.0, 0.78, 0.44], 1.55);
-      addDebris(mid, Math.max(2.0, sy - 1.4), 1.15, 0.62, 0.42, [0.36, 0.24, 0.14]);
+      // Tufted leather sectional sofa + warm accent throw pillows
+      const sy = Math.min(back - 1.15, 5.3);
+      geo.box(mid - 1.25, mid + 1.25, sy - 0.44, sy + 0.44, 0.12, 0.46, [0.24, 0.28, 0.36], MAT_FABRIC);
+      geo.box(mid - 1.25, mid + 1.25, sy + 0.24, sy + 0.46, 0.46, 0.94, [0.22, 0.26, 0.34], MAT_FABRIC);
+      geo.box(mid - 1.36, mid - 1.16, sy - 0.44, sy + 0.46, 0.12, 0.68, [0.20, 0.24, 0.32], MAT_FABRIC);
+      geo.box(mid + 1.16, mid + 1.36, sy - 0.44, sy + 0.46, 0.12, 0.68, [0.20, 0.24, 0.32], MAT_FABRIC);
+      geo.box(mid - 0.96, mid - 0.60, sy + 0.05, sy + 0.22, 0.46, 0.74, [0.86, 0.44, 0.22], MAT_FABRIC);
+      geo.box(mid + 0.60, mid + 0.96, sy + 0.05, sy + 0.22, 0.46, 0.74, [0.88, 0.74, 0.26], MAT_FABRIC);
+      // Wall-mounted 4K OLED TV + media console + glowing brass floor lamp + indoor ficus
+      geo.box(mid - 1.45, mid + 1.45, back - 0.48, back - 0.04, 0.06, 0.56, [0.34, 0.22, 0.14], MAT_WOOD);
+      geo.framedBackWall(mid - 1.25, mid + 1.25, back, 1.25, 2.48, [0.10, 0.10, 0.12], [0.28, 0.54, 0.86], MAT_METAL, 2.2);
+      geo.cylinder(L + 0.55, back - 0.55, 0.16, 0.015, 0.05, 10, [0.76, 0.60, 0.30], MAT_METAL);
+      geo.cylinder(L + 0.55, back - 0.55, 0.025, 0.05, 1.65, 8, [0.76, 0.60, 0.30], MAT_METAL);
+      geo.cylinder(L + 0.55, back - 0.55, 0.22, 1.52, 1.88, 12, [1.0, 0.84, 0.52], MAT_GLOW, 2.8);
+      geo.planter(Rr - 0.72, back - 0.55, [0.78, 0.76, 0.72]);
+      addDebris(mid, Math.max(2.0, sy - 1.35), 1.18, 0.64, 0.42, [0.78, 0.76, 0.72], 22);
     } else {
-      // Manhattan Tower Lobby: veined marble wall panels + brass trim + twin steel elevators + concierge desk + sculpted planters
-      for (const eu of [mid - 1.35, mid + 0.15]) {
-        geo.framedBackWall(eu, eu + 1.20, back, 0.02, 2.65, [0.64, 0.54, 0.32], [0.68, 0.70, 0.73], 1.12);
-        geo.box(eu + 0.58, eu + 0.62, back - 0.10, back, 0.02, 2.65, [0.18, 0.19, 0.21]); // elevator door seam
+      // Manhattan Tower Lobby: polished bookmatched Carrara marble floor & walls, brushed-brass inlays, twin stainless
+      // elevators with glowing floor indicators, curved marble concierge desk with glowing monitors & sculptural planters
+      for (const eu of [mid - 1.35, mid + 1.35]) {
+        geo.box(eu - 0.92, eu + 0.92, back - 0.14, back, 0, 2.68, [0.74, 0.60, 0.30], MAT_METAL);
+        geo.box(eu - 0.80, eu - 0.02, back - 0.10, back - 0.02, 0.02, 2.56, [0.68, 0.71, 0.76], MAT_METAL);
+        geo.box(eu + 0.02, eu + 0.80, back - 0.10, back - 0.02, 0.02, 2.56, [0.68, 0.71, 0.76], MAT_METAL);
+        // Glowing elevator floor indicator above doors
+        geo.box(eu - 0.24, eu + 0.24, back - 0.16, back - 0.10, 2.74, 2.94, [1.0, 0.76, 0.34], MAT_NEON, 3.0);
       }
-      stat(mid - 1.5, mid + 1.5, back - 2.0, back - 1.15, 0, 1.08, [0.22, 0.20, 0.19]);
-      geo.box(mid - 1.56, mid + 1.56, back - 2.06, back - 1.10, 1.08, 1.16, [0.82, 0.80, 0.76]); // marble desk cap
-      geo.box(mid - 0.3, mid + 0.3, back - 1.65, back - 1.58, 1.16, 1.50, [0.10, 0.11, 0.13]); // concierge monitor
-      for (const pu of [L + 0.75, Rr - 0.75]) {
-        geo.cylinder(pu, 2.2, 0.38, 0, 0.68, 10, [0.32, 0.31, 0.30]);
-        geo.cylinder(pu, 2.2, 0.52, 0.68, 1.25, 10, [0.16, 0.38, 0.18]);
-        geo.cylinder(pu, 2.2, 0.34, 1.25, 1.68, 8, [0.20, 0.46, 0.22]);
+      // Illuminated concierge desk with veined marble front & brass trim
+      stat(mid - 1.90, mid + 1.90, D * 0.48, D * 0.48 + 0.96, 0, 1.04, [0.76, 0.74, 0.70], MAT_MARBLE);
+      geo.box(mid - 1.96, mid + 1.96, D * 0.48 - 0.05, D * 0.48 + 1.02, 1.04, 1.12, [0.86, 0.84, 0.80], MAT_MARBLE);
+      geo.box(mid - 1.88, mid + 1.88, D * 0.48 - 0.04, D * 0.48 + 0.01, 0.08, 0.14, [1.0, 0.84, 0.52], MAT_GLOW, 2.4);
+      geo.box(mid - 0.70, mid - 0.22, D * 0.48 + 0.35, D * 0.48 + 0.41, 1.12, 1.46, [0.14, 0.15, 0.18], MAT_METAL);
+      geo.box(mid + 0.22, mid + 0.70, D * 0.48 + 0.35, D * 0.48 + 0.41, 1.12, 1.46, [0.14, 0.15, 0.18], MAT_METAL);
+      for (const pu of [L + 0.82, Rr - 0.82]) {
+        geo.planter(pu, D * 0.56, [0.74, 0.72, 0.68]);
       }
-      addDebris(L + 0.95, 4.2, 1.4, 0.52, 0.46, [0.26, 0.24, 0.22]);
-      addDebris(Rr - 0.95, 4.2, 1.4, 0.52, 0.46, [0.26, 0.24, 0.22]);
+      addDebris(mid, D * 0.26, 0.95, 0.48, 0.48, [0.74, 0.72, 0.68], 26);
     }
 
-    for (const [uA, uB, wA, wB, yA, yB] of statics) cuboid(uA, uB, wA, wB, yA, yB);
-    this.host.replace(b.key, box, descs);
+    this.host.replace(b.key, box, cols);
 
-    // ---- Room visual mesh + depth portal
+    // ---- Room visual mesh + depth portal + real architectural interior PointLight
     const group = new THREE.Group();
     group.position.copy(center);
     group.quaternion.copy(quat);
@@ -570,16 +829,28 @@ export class Breaches {
     portal.position.copy(pc);
     portal.scale.set(f.ax === 'x' ? PORTAL_IN + PORTAL_OUT : holeW, HOLE_H - 0.06, f.ax === 'x' ? holeW : PORTAL_IN + PORTAL_OUT);
     group.add(portal);
+
+    // Real interior architectural light (Clustered Forward+, zero shadow cost): bathes the room & car hood in warm light!
+    let light: THREE.PointLight | null = null;
+    while (this.activeLights.length >= MAX_LIGHTS) {
+      const oldL = this.activeLights.shift();
+      oldL?.removeFromParent();
+    }
+    light = new THREE.PointLight(kind === 'shop' ? 0xeef5ff : 0xffddb0, 16, 18, 2);
+    light.position.copy(local(mid, Math.min(D * 0.45, 3.2), H - 0.55));
+    group.add(light);
+    this.activeLights.push(light);
+
     this.scene.add(group);
     group.updateMatrixWorld(true);
 
     const live: Live = {
-      spec, key: b.key, group, portal,
+      spec, key: b.key, group, portal, light,
       face: { ax: f.ax, s: f.s, plane: f.half - wo },
       center, quat, pieces: [], pending: [], age: 0,
     };
 
-    const spawnKin = (p: THREE.Vector3, size: THREE.Vector3, c: RGB, vel: THREE.Vector3) => {
+    const spawnKin = (p: THREE.Vector3, size: THREE.Vector3, c: RGB, vel: THREE.Vector3, massKg: number, delay = 0) => {
       const slot = this.take(new THREE.Color(...c));
       if (slot < 0) return;
       const piece: KinPiece = {
@@ -590,12 +861,15 @@ export class Breaches {
         size: size.clone(),
         groundY: box.z0 + size.y * 0.5,
         slot,
+        massKg,
+        heavy: massKg >= 35,
+        hitCarCd: 0,
+        delay,
         sleeping: false,
       };
       live.pieces.push(piece);
     };
 
-    // Scatter light interior props cleanly away from the car path (zero Rapier solver stall!)
     const inDir = mapW((h0 + h1) / 2, 1.0, 0).sub(mapW((h0 + h1) / 2, 0.0, 0)).normalize();
     const tanDir = new THREE.Vector3(-inDir.z, 0, inDir.x);
     for (const d of debrisSpec) {
@@ -605,26 +879,43 @@ export class Breaches {
       const vel = crash
         ? inDir.clone().multiplyScalar(3.5 + R() * 4).addScaledVector(tanDir, sidePush).add(new THREE.Vector3(0, 1.5 + R() * 2.0, 0))
         : new THREE.Vector3(0, 0, 0);
-      spawnKin(p, size, d.c, vel);
+      spawnKin(p, size, d.c, vel, d.mass);
     }
 
-    // ---- Kinematic ballistic rubble burst (14 chunks: zero Rapier bodies -> 0 FPS drop, NEVER stuck in car!)
+    // ---- Kinematic ballistic rubble:
+    //  1) 10 fast wall-blast fragments spraying out & sideways (12-32 kg)
+    //  2) 7 HEAVY collapsing upper-lintel concrete/brick chunks (55-155 kg) cascading down onto the car's hood/roof!
     if (crash) {
       const out = inDir.clone().negate();
       const storefront = height >= 22 && !(height <= 60 && spec.seed % 3 === 0);
       this.host.burst?.(pc.x, box.z0, pc.z, out.x, out.z, crash.preV.x, crash.preV.z, storefront);
-      for (let i = 0; i < 14; i++) {
-        const s = 0.16 + R() * 0.26;
-        const brick = R() < 0.58;
-        const p = mapW(h0 + 0.2 + R() * Math.max(0.4, holeW - 0.4), -0.15 + R() * 0.9, 0.5 + R() * (HOLE_H - 0.6));
-        const size = new THREE.Vector3(s * (0.9 + R() * 0.9), s * 0.72, s * (0.8 + R() * 0.6));
-        // Blast chunks out & sideways so they clear the car cleanly and settle naturally around the crash site
+      for (let i = 0; i < 10; i++) {
+        const s = 0.15 + R() * 0.20;
+        const brick = R() < 0.55;
+        const p = mapW(h0 + 0.2 + R() * Math.max(0.4, holeW - 0.4), -0.15 + R() * 0.8, 0.5 + R() * (HOLE_H - 0.7));
+        const size = new THREE.Vector3(s * (0.9 + R() * 0.8), s * 0.7, s * (0.8 + R() * 0.6));
         const spray = (R() - 0.5) * 7.5;
-        const fwd = 2.0 + R() * 5.5;
+        const fwd = 2.4 + R() * 5.2;
         const vel = inDir.clone().multiplyScalar(fwd * (R() < 0.65 ? 1 : -0.45))
           .addScaledVector(tanDir, spray)
-          .add(new THREE.Vector3(0, 1.4 + R() * 3.8, 0));
-        spawnKin(p, size, brick ? [0.34, 0.16, 0.12] : [0.32, 0.31, 0.30], vel);
+          .add(new THREE.Vector3(0, 1.4 + R() * 3.4, 0));
+        spawnKin(p, size, brick ? [0.46, 0.22, 0.16] : [0.44, 0.43, 0.41], vel, 12 + R() * 20);
+      }
+      // Heavy upper-lintel concrete & masonry slabs dropping down right onto the car!
+      for (let i = 0; i < 7; i++) {
+        const s = 0.30 + R() * 0.22;
+        const brick = R() < 0.45;
+        const uDrop = (h0 + h1) * 0.5 + (R() - 0.5) * Math.min(2.4, holeW * 0.65);
+        const wDrop = -0.35 + R() * 2.2;
+        const p = mapW(uDrop, wDrop, HOLE_H + 0.35 + R() * 1.15);
+        const size = new THREE.Vector3(s * (0.95 + R() * 0.55), s * (0.65 + R() * 0.35), s * (0.9 + R() * 0.5));
+        const massKg = Math.round(55 + (s - 0.30) * 450); // 55..155 kg heavy concrete/masonry blocks!
+        const vel = new THREE.Vector3(
+          crash.carVel.x * (0.25 + R() * 0.35) + (R() - 0.5) * 1.8,
+          -0.6 - R() * 1.8,
+          crash.carVel.z * (0.25 + R() * 0.35) + (R() - 0.5) * 1.8,
+        );
+        spawnKin(p, size, brick ? [0.48, 0.23, 0.17] : [0.46, 0.45, 0.43], vel, massKg, 0.04 + i * 0.11);
       }
     }
 
@@ -634,9 +925,18 @@ export class Breaches {
     return true;
   }
 
+  private removeLight(l: Live) {
+    if (!l.light) return;
+    l.light.removeFromParent();
+    const idx = this.activeLights.indexOf(l.light);
+    if (idx >= 0) this.activeLights.splice(idx, 1);
+    l.light = null;
+  }
+
   private dropOldest() {
     const oldest = this.live.shift();
     if (!oldest) return;
+    this.removeLight(oldest);
     oldest.group.removeFromParent();
     (oldest.group.children[0] as THREE.Mesh).geometry.dispose();
     for (const p of oldest.pieces) this.release(p.slot);
@@ -644,15 +944,25 @@ export class Breaches {
 
   private sync(l: Live) {
     for (const p of l.pieces) {
+      if (p.delay > 0) {
+        this.pool.setMatrixAt(p.slot, this.zero);
+        continue;
+      }
       this.m4.compose(p.pos, p.quat, p.size);
       this.pool.setMatrixAt(p.slot, this.m4);
     }
     this.pool.instanceMatrix.needsUpdate = true;
   }
 
-  /** Ultra-fast kinematic ballistic update (<0.03 ms CPU) + portal visibility. */
-  update(dt: number, camera: THREE.Camera) {
+  /**
+   * Ultra-fast kinematic ballistic update (<0.04 ms CPU) + exact car-hull OBB hit detection:
+   * heavy falling concrete/masonry blocks visibly dent & damage the exact hood/roof/fender they strike, then bounce off cleanly!
+   */
+  update(dt: number, camera: THREE.Camera, carBox?: CarObb | null, carVel?: { x: number; y: number; z: number }) {
     const h = Math.min(dt, 0.033);
+    if (carBox) this.invQ.copy(carBox.quat).invert();
+    const cvx = carVel?.x ?? 0, cvy = carVel?.y ?? 0, cvz = carVel?.z ?? 0;
+
     for (const l of this.live) {
       l.age += h;
       for (let i = l.pending.length - 1; i >= 0; i--) {
@@ -664,6 +974,13 @@ export class Breaches {
       let moved = false;
       for (const p of l.pieces) {
         if (p.sleeping) continue;
+        if (p.delay > 0) {
+          p.delay -= h;
+          if (p.delay <= 0) moved = true;
+          continue;
+        }
+        if (p.hitCarCd > 0) p.hitCarCd -= h;
+
         p.vel.y -= 11.5 * h;
         p.pos.addScaledVector(p.vel, h);
         const wMag = p.angVel.length();
@@ -672,6 +989,40 @@ export class Breaches {
           this.dq.setFromAxisAngle(this.axis, wMag * h);
           p.quat.premultiply(this.dq).normalize();
         }
+
+        // Exact OBB check against player car: heavy chunks falling onto hood/roof/trunk DENT & DAMAGE the car, then deflect cleanly!
+        if (carBox && p.hitCarCd <= 0) {
+          const r = Math.max(p.size.x, p.size.y, p.size.z) * 0.48;
+          const lp = this.v2.copy(p.pos).sub(carBox.pos).applyQuaternion(this.invQ);
+          const lx = lp.x - carBox.centre[0];
+          const ly = lp.y - carBox.centre[1];
+          const lz = lp.z - carBox.centre[2];
+          const hx = carBox.half[0] + r, hy = carBox.half[1] + r, hz = carBox.half[2] + r;
+          if (Math.abs(lx) < hx && Math.abs(ly) < hy && Math.abs(lz) < hz) {
+            const vRel = Math.hypot(p.vel.x - cvx, p.vel.y - cvy, p.vel.z - cvz);
+            if (p.heavy && (p.vel.y < -1.0 || vRel > 3.2)) {
+              const energyJ = 0.5 * p.massKg * vRel * vRel * 2.4;
+              const impulse = p.massKg * vRel * 2.5;
+              const glass = ly > carBox.half[1] * 0.20 && lz > -0.35 && lz < 1.25;
+              this.onRubbleHit?.({
+                point: p.pos.clone(),
+                dir: new THREE.Vector3(0, -1, 0),
+                impulse,
+                energyJ,
+                massKg: p.massKg,
+                glass,
+              });
+            }
+            // Deflect chunk cleanly up & away from the car body so it NEVER traps inside the car!
+            const pushSide = lx >= 0 ? 1 : -1;
+            const outW = this.v.set(pushSide * (2.4 + Math.random() * 2.2), Math.abs(p.vel.y) * 0.38 + 2.2, (lz >= 0 ? 1 : -1) * 1.4).applyQuaternion(carBox.quat);
+            p.vel.set(outW.x + cvx * 0.35, Math.max(2.0, outW.y), outW.z + cvz * 0.35);
+            p.pos.y = Math.max(p.pos.y, carBox.pos.y + carBox.centre[1] + carBox.half[1] + r * 0.65);
+            p.angVel.set((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10);
+            p.hitCarCd = 0.7;
+          }
+        }
+
         if (p.pos.y <= p.groundY) {
           p.pos.y = p.groundY;
           if (Math.abs(p.vel.y) > 0.85) {
@@ -684,7 +1035,7 @@ export class Breaches {
             p.vel.x *= 0.78;
             p.vel.z *= 0.78;
             p.angVel.multiplyScalar(0.7);
-            if (p.vel.lengthSq() < 0.03 || l.age > 3.2) {
+            if (p.vel.lengthSq() < 0.03 || l.age > 4.2) {
               p.vel.set(0, 0, 0);
               p.angVel.set(0, 0, 0);
               p.sleeping = true;
@@ -699,6 +1050,7 @@ export class Breaches {
 
   clear() {
     for (const l of this.live) {
+      this.removeLight(l);
       l.group.removeFromParent();
       (l.group.children[0] as THREE.Mesh).geometry.dispose();
       for (const p of l.pieces) this.release(p.slot);
@@ -717,6 +1069,7 @@ export class Breaches {
 
   dropTile(key: string) {
     for (const l of this.live.filter((x) => x.key === key)) {
+      this.removeLight(l);
       l.group.removeFromParent();
       (l.group.children[0] as THREE.Mesh).geometry.dispose();
       for (const p of l.pieces) this.release(p.slot);
@@ -745,4 +1098,8 @@ export class Breaches {
     const seed = Math.floor(Math.abs(best.box.cx * 7.31 + best.box.cy * 3.17) * 100) % 100000;
     return this.open({ cx: best.box.cx, cy: best.box.cy, face, u: face < 2 ? lp.z : lp.x, seed }, { carPos: p, carVel: { x: 0, y: 0, z: 0 }, preV: { x: 0, y: 0, z: 0 } });
   }
+}
+
+export function drawEarly(root: THREE.Object3D) {
+  root.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.renderOrder = ORDER_EARLY; });
 }

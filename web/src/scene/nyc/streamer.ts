@@ -729,7 +729,7 @@ export class NycStreamer {
     }
     this.updateVisibility();
     this.props?.update(dt, carPos, carVel, onImpact);
-    this.breaches.update(dt, this.camera);
+    this.breaches.update(dt, this.camera, this.props instanceof NycProps ? this.props.carBox : null, carVel);
     const ms = performance.now() - t0;
     this.stat.streamMs += (ms - this.stat.streamMs) * 0.05;
     this.stat.commitMs += (used - this.stat.commitMs) * 0.05;

@@ -436,12 +436,13 @@ async function main() {
   }
   mark('environment capture');
   say('Loading car…', 80);
-  // Frame cap: uncapped (native display refresh) by default; ?cap=N pins a specific frame rate.
+  // Frame cap: potato & low modes cap cleanly at 60 fps; medium+ on phones cap at 30 fps to prevent thermal throttling;
+  // desktop medium+ runs uncapped (native refresh). Explicit ?cap=N always wins.
   const hz = await refreshP;
-  // Desktop uncapped (the cap only delays a ready frame); phones capped at 30 - uncapped there just burns the power
-  // budget, heats the SoC and throttles down to the 20s, which reads as "laggy". ?cap=0 uncaps, ?cap=45 changes it.
-  const capFps = num('cap', isTouch || potato ? 30 : 0);
-  const capInterval = capFps > 0 ? 1000 / capFps : 0;
+  const computeCapFps = (p: PresetName): number =>
+    params.has('cap') ? num('cap', 0) : (potato || p === 'low' ? 60 : isTouch ? 30 : 0);
+  let capFps = computeCapFps(PRESET_ORDER[presetIdx]);
+  let capInterval = capFps > 0 ? 1000 / capFps : 0;
   const loadedCar = await carLoadP;
   let visualCfg = loadedCar.cfg;
   let visual = loadedCar.vis;
@@ -1064,10 +1065,17 @@ async function main() {
     : 'Potato mode: the lightest picture, for low-end phones. Pick another preset to leave it (the game reloads).';
   const startScale = () => guessScale();
   /** `resize`: also move to the preset's own pixel budget (desktop; a render-target resize, so never while driving). */
+  const syncCap = (p: PresetName) => {
+    capFps = computeCapFps(p);
+    capInterval = capFps > 0 ? 1000 / capFps : 0;
+    hud.cap = capFps > 0 ? Math.round(capFps) : 0;
+    visual.renderDt = capInterval ? capInterval / 1000 : 1 / 60;
+  };
   const setPreset = (i: number, resize = true) => {
     presetIdx = i;
     post.preset = PRESET_ORDER[i];
     if (resize && !isTouch && !scalePinned && scale !== presetScale(post.preset)) applyScale(presetScale(post.preset));
+    syncCap(post.preset);
     syncShowPreset();
     try { localStorage.setItem(PRESET_KEY, post.preset); } catch { /* storage blocked */ }
   };
@@ -2004,6 +2012,7 @@ async function main() {
       await nextStreamer.ready();
       streetProps = nextStreamer.streetProps;
       obstacles = streetProps && params.get('solidprops') !== '0' ? new StreetObstacles(pw, streetProps) : null;
+      wireCityImpactCallbacks();
       post.onPreset?.(post.preset);
 
       nycS0 = nextStreamer.spawnPoint();
@@ -2452,11 +2461,32 @@ async function main() {
     audio.impact(Math.max(60, (w.impulse * w.impulse) / (2 * core.info.mass) / 1000), w.storefront, 'wall');
     party?.sendBreach(w.spec);
   };
-  // A falling pole landing on our car: dent where it lands.
-  if (streetProps) {
-    // the core's damage reads an impulse on our car: the one that carries this energy (E = J^2 / 2m)
-    streetProps.onLand = (x, y, z, energy) => { core.contact({ x, y, z }, Math.sqrt(2 * core.info.mass * energy), ++contactId); audio.impact(Math.max(10, energy / 1000), true, 'pole'); };
-  }
+  // Wire falling pole & heavy collapsing building rubble impacts to localized car denting, chassis damage, suspension jolt & audio.
+  const wireCityImpactCallbacks = () => {
+    if (streetProps) {
+      // the core's damage reads an impulse on our car: the one that carries this energy (E = J^2 / 2m)
+      streetProps.onLand = (x, y, z, energy) => {
+        core.contact({ x, y, z }, Math.sqrt(2 * core.info.mass * energy), ++contactId);
+        damage.dentFromWorld(new THREE.Vector3(x, y, z), new THREE.Vector3(0, -1, 0), energy, true);
+        audio.impact(Math.max(10, energy / 1000), true, 'pole');
+      };
+    }
+    if (nyc) {
+      nyc.breaches.onRubbleHit = (hit) => {
+        // Visibly dent the exact roof/hood/fender spot where the heavy concrete/brick block landed!
+        damage.dentFromWorld(hit.point, hit.dir, hit.energyJ, hit.glass);
+        core.contact(hit.point, hit.impulse, ++contactId);
+        // Real downward suspension thump without ever trapping the chunk in Rapier
+        if (car?.body && car.body.isEnabled()) {
+          car.body.applyImpulseAtPoint({ x: 0, y: -Math.min(1800, hit.massKg * 9.5), z: 0 }, hit.point, true);
+        }
+        const kj = Math.max(14, hit.energyJ / 450);
+        audio.impact(kj, hit.glass, 'wall');
+        rumbleKj = Math.max(rumbleKj, kj);
+      };
+    }
+  };
+  wireCityImpactCallbacks();
   const carBox = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), half: [0, 0, 0] as [number, number, number], centre: [0, 0, 0] as [number, number, number] };
   const halveRemoteHits = (tTick: number) => {
     let touching = false;
