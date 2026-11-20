@@ -393,7 +393,7 @@ export function setupCarMaterials(model: THREE.Object3D, cfg: CarVisualConfig, p
 
 export class CarVisual {
   readonly root = new THREE.Group();          // placed at the physics body (CG)
-  private wheels: { node: THREE.Object3D; rest: THREE.Quaternion; restPos: THREE.Vector3; radius: number; caliper?: THREE.Object3D; caliperRest?: THREE.Quaternion; spin: number; off: boolean; hub: THREE.Vector3; rotorHeat: THREE.UniformNode<'float', number> }[] = [];
+  private wheels: { node: THREE.Object3D; rest: THREE.Quaternion; restPos: THREE.Vector3; radius: number; caliper?: THREE.Object3D; caliperRest?: THREE.Quaternion; spin: number; off: boolean; hub: THREE.Vector3; rotorHeat: THREE.UniformNode<'float', number>; blur?: THREE.Object3D; glow?: THREE.Object3D }[] = [];
   /** seconds between DRAWN frames (main.ts sets it from the cap): decides when the spokes alias and the blur disc takes over */
   renderDt = 1 / 60;
   private blurMat: THREE.MeshStandardNodeMaterial | null = null;
@@ -444,6 +444,8 @@ export class CarVisual {
         off: false,
         hub: node.position.clone(),
         rotorHeat,
+        blur: node.getObjectByName(`wheel_blur_${node.name}`),
+        glow: node.getObjectByName(`wheel_rotor_glow_${node.name}`),
       });
     }
     this.paint = setupCarMaterials(model, cfg, null);
@@ -689,6 +691,8 @@ export class CarVisual {
   private flameNosU: THREE.UniformNode<'float', number> = uniform(0);
   private flameLight: THREE.PointLight | null = null;
   private flameLightAt = new THREE.Vector3();
+  /** load-time warm-up running (main.ts): every on-demand mesh is drawn so its pipelines compile behind the loader */
+  private warming = false;
   private flameLevel = 0;
 
   setStance(camberFrontDeg: number, camberRearDeg: number) {
@@ -823,13 +827,15 @@ export class CarVisual {
   }
 
   /**
-   * Load-time warm-up (main.ts, next to damage.warmup): the flames and their light are built now and drawn at zero
-   * intensity through the warm-up frames, so their pipelines compile behind the loading screen instead of at the first
-   * backfire (pipelog: exhaust_mach_flame compiled 0.3 s into a race, a frame of up to ~330 ms). The material is the same
-   * node graph for every car, so a car bought later reuses those pipelines. The flame's light stays lazy (setExhaustFlame).
+   * Load-time warm-up (main.ts, next to damage.warmup): the exhaust flames are built now and drawn at zero intensity
+   * through the warm-up frames, and the wheel blur discs and rotor glows stay drawn too, so their pipelines compile behind
+   * the loading screen instead of mid-drive (pipelog: two exhaust_mach_flame pipelines compiled on the main thread at the
+   * first throttle lift of a race). The materials are the same node graphs for every car, so a car bought later reuses
+   * those pipelines. The flame's light stays lazy (setExhaustFlame).
    */
-  warmupFlames(on: boolean) {
-    this.setExhaustFlame(0);   // builds the group (nozzles, plume, light) once
+  warmup(on: boolean) {
+    this.warming = on;         // wheel blur discs and rotor glows stay drawn too (update), so they compile now as well
+    this.setExhaustFlame(0);   // builds the flame group (nozzles, plume) once
     if (!this.flameGroup) return;
     this.flameLevel = 0;
     this.flameIntU.value = 0;
@@ -991,6 +997,14 @@ export class CarVisual {
     if (this.blurMat) {
       const target = 0.88 * THREE.MathUtils.smoothstep(spinFrame, 0.42, 1.35);
       this.blurOp.value += (target - this.blurOp.value) * 0.25;
+    }
+    // The spin-blur discs and rotor glows are transparent, depthWrite off and double-sided (two draws each): at zero
+    // opacity / heat they add nothing to the picture, so they are not drawn then (16 draws per pass on a parked car,
+    // 8 at speed with cool brakes). A torn-off wheel keeps its blur hidden (DamageVisuals).
+    const blurOn = this.warming || this.blurOp.value > 0.002;
+    for (const w of this.wheels) {
+      if (w.blur) { const v = blurOn && !w.off; if (w.blur.visible !== v) w.blur.visible = v; }
+      if (w.glow) { const v = this.warming || w.rotorHeat.value > 0.002; if (w.glow.visible !== v) w.glow.visible = v; }
     }
   }
 }
