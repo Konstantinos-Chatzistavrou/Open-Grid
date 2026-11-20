@@ -24,8 +24,7 @@ as the web build. Not a city, not good lighting yet. Everything that could be do
 2. Install **Visual Studio** with the "Game development with C++" workload (check Epic's page for the version 5.8
    wants), or **JetBrains Rider** (free for non-commercial use).
 3. Install **Git**, **Git LFS** (`git lfs install`) and **Node.js 20+**.
-4. `git clone https://github.com/Konstantinos-Chatzistavrou/Racing-Game` and check out `ue5-prep` (or `main` once
-   merged).
+4. `git clone https://github.com/Konstantinos-Chatzistavrou/Open-Grid` (the `main` branch has everything).
 5. Export the cars for Unreal:
    ```
    cd tools/ue5 && npm install

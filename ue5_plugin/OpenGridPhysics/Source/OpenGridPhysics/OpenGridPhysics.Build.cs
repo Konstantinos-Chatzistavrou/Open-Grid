@@ -47,6 +47,6 @@ public class OpenGridPhysics : ModuleRules
             Dir = Dir.Parent;
         }
         throw new BuildException("OpenGridPhysics: no core/ folder (core/CMakeLists.txt + core/include/rs) above " + Start +
-                                 ". Keep the plugin inside the Racing-Game repo.");
+                                 ". Keep the plugin inside the Open-Grid repo.");
     }
 }

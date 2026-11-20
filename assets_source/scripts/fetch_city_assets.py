@@ -17,7 +17,7 @@ import zipfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "assets_source", "downloads")
-UA = {"User-Agent": "racing-game-asset-fetch/1.0 (CC0 assets, personal project)"}
+UA = {"User-Agent": "open-grid-asset-fetch/1.0 (CC0 assets, personal project)"}
 
 # Poly Haven "hidden_alley" collection models (glTF + 1k textures; the .bin is full resolution and
 # gets decimated into LODs by make_city.py).

@@ -5,7 +5,7 @@ import json, os, urllib.parse, urllib.request
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "assets_source/downloads/nyc/footprints_manhattan.json")
 S, N, W, E = 40.6990, 40.8830, -74.0250, -73.9050
-UA = "NightRun-racing-game/1.0 (open-source)"
+UA = "OpenGrid/1.0 (open-source)"
 rows, off = [], 0
 while True:
     where = urllib.parse.quote(f"within_box(the_geom,{S},{W},{N},{E}) AND substring(base_bbl,1,1)='1'")   # BBL borough 1 = Manhattan
