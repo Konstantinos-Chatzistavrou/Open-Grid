@@ -184,6 +184,17 @@ export class GameAudio {
   private extraTurbo = false;
   private boostSpool = 0;
   private revUntil = 0;
+  // Real interactive Garage engine state (Ignition = toggle ON/OFF, Rev = momentary press-and-hold!)
+  private garageRunning = false;
+  private garageRevHeld = false;
+  private garagePulseUntil = 0;
+  private garageCrankUntil = 0;
+  private garageFlareUntil = 0;
+  private garageRpm = 0;
+  private garageThr = 0;
+  private garageLimCutUntil = 0;
+  private garageFlame = 0;
+  private garageWasHighRpm = false;
   muted = false;
   /** Low-power mobile/potato audio mode: skips heavy stereo FFT ConvolverNode reverb to save phone ARM CPU. */
   lowPower = false;
@@ -218,61 +229,274 @@ export class GameAudio {
     e.shaper.curve = distortion(v.drive);
   }
 
-  /** Garage Ignition button: starter motor crank + cold-start bark tuned to the active engine swap! */
-  triggerIgnition() {
+  get garageEngineOn(): boolean { return this.garageRunning; }
+  get garageFlameLevel(): number { return this.garageFlame; }
+  get revvingInGarage(): boolean { return this.garageRevHeld || performance.now() < this.garagePulseUntil || performance.now() < this.revUntil; }
+
+  /** Toggle Garage Ignition ON/OFF using the car's REAL multi-harmonic engine synthesizer. Returns new ON/OFF state. */
+  toggleGarageIgnition(): boolean {
     this.unlock();
     const ctx = this.ctx;
-    if (!ctx || !this.out) return;
-    const v = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
-    const t = ctx.currentTime;
-    const fIdle = (900 / 60) * v.firingsPerRev;
-    const fBark = (2600 / 60) * v.firingsPerRev;
-    for (let i = 0; i < 4; i++) {
-      this.tone(t + i * 0.11, 0.08, 125, 160, 'sawtooth', 0.13);
+    if (this.garageRunning) {
+      // Shut engine off cleanly with ignition-cut relay click
+      this.garageRunning = false;
+      this.garageRevHeld = false;
+      this.garagePulseUntil = 0;
+      this.garageCrankUntil = 0;
+      this.garageFlareUntil = 0;
+      this.garageFlame = 0;
+      if (ctx && this.out) this.tone(ctx.currentTime, 0.04, 180, 90, 'triangle', 0.08);
+      return false;
     }
-    this.burst(t + 0.44, 0.24, 'bandpass', v.f2[0], 1.4, 0.36);
-    this.tone(t + 0.44, 0.34, fIdle, fBark, 'sawtooth', 0.24);
-    this.tone(t + 0.44, 0.34, fIdle * v.bankRatio, fBark * v.bankRatio, 'triangle', 0.18);
-    this.tone(t + 0.78, 0.58, fBark, fIdle * 1.05, 'sawtooth', 0.17);
-    if (v.boost === 'supercharger') {
-      this.tone(t + 0.44, 0.42, 1150, 1950, 'sine', 0.08);
+    this.startGarageEngine();
+    return true;
+  }
+
+  private startGarageEngine() {
+    this.unlock();
+    this.applyVoice();
+    const ctx = this.ctx;
+    const now = performance.now();
+    this.garageRunning = true;
+    this.garageCrankUntil = now + 380;
+    this.garageFlareUntil = now + 980;
+    this.garageRpm = 320;
+    this.garageThr = 0;
+    this.garageWasHighRpm = false;
+    if (ctx && this.out && !this.muted) {
+      const t = ctx.currentTime;
+      // Crisp starter-motor solenoid + 4 compression cranks before the real engine catches
+      for (let i = 0; i < 4; i++) {
+        this.tone(t + i * 0.095, 0.072, 118, 152, 'sawtooth', 0.11);
+        this.burst(t + i * 0.095, 0.045, 'bandpass', 620, 2.2, 0.06);
+      }
+      // Cold-start exhaust catch bark at 0.38s
+      const v = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
+      this.burst(t + 0.37, 0.18, 'bandpass', v.f2[0], 1.5, 0.24);
     }
   }
 
-  /** Garage Rev button: authentic 1.4 s full-load rev of the installed engine (V12 / V10 / Flat-6 / Flat-8 / V8 SC / Rotary) + overrun pops! */
-  triggerGarageRev() {
-    this.unlock();
-    const ctx = this.ctx;
-    if (!ctx || !this.out) return;
-    const v = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
-    const t = ctx.currentTime;
-    this.revUntil = performance.now() + 1450;
-    const f0 = (1000 / 60) * v.firingsPerRev;
-    const fPeak = (v.revRpm / 60) * v.firingsPerRev;
-    // Primary firing order + sub-order + bank harmonic + upper screamer
-    this.tone(t, 0.52, f0, fPeak, 'sawtooth', 0.26 * v.mainGain);
-    this.tone(t, 0.52, f0 * v.subRatio, fPeak * v.subRatio, 'triangle', 0.24 * v.subGain);
-    this.tone(t, 0.52, f0 * v.bankRatio, fPeak * v.bankRatio, 'sawtooth', 0.20 * v.bankGain);
-    this.tone(t, 0.52, f0 * v.harmRatio, fPeak * v.harmRatio, 'sine', 0.16 * v.harmGain);
-    this.burst(t + 0.10, 0.44, 'bandpass', v.f2[0] * 1.4, 1.3, 0.24);
-    // Supercharger helical whine or turbo spool + BOV flutter on lift-off!
-    if (v.boost === 'supercharger') {
-      this.tone(t, 0.52, 1100, 950 + v.revRpm * 0.30, 'sine', 0.11);
-      this.tone(t + 0.52, 0.72, 950 + v.revRpm * 0.30, 1100, 'sine', 0.07);
-    } else if (v.boost === 'turbo' || this.extraTurbo) {
-      this.tone(t + 0.10, 0.42, 2400, 5600, 'sine', 0.06);
-      for (let k = 0; k < 4; k++) this.burst(t + 0.53 + k * 0.052, 0.044, 'bandpass', 3600 - k * 340, 5.0, 0.12 * (1 - k * 0.18));
+  /** Momentary press-and-hold Garage Rev control (true on press, false on release — NEVER toggled). */
+  setGarageRev(held: boolean): boolean {
+    if (held) {
+      this.unlock();
+      this.applyVoice();
+      if (!this.garageRunning) this.startGarageEngine();
+      this.garageRevHeld = true;
+    } else {
+      const wasHeld = this.garageRevHeld;
+      this.garageRevHeld = false;
+      if (wasHeld && this.garageRpm > 3000) {
+        this.garageWasHighRpm = true;
+        this.triggerGarageLiftOffEffects();
+      }
     }
-    // Decel ramp down
-    this.tone(t + 0.52, 0.78, fPeak, f0, 'sawtooth', 0.20 * v.mainGain);
-    this.tone(t + 0.52, 0.78, fPeak * v.bankRatio, f0 * v.bankRatio, 'triangle', 0.15 * v.bankGain);
-    // Overrun flamethrower exhaust pops on lift-off!
-    this.exhaustPop(t + 0.56, 1.0);
-    this.exhaustPop(t + 0.69, 0.88);
-    this.exhaustPop(t + 0.84, 0.72);
+    return this.garageRunning;
   }
 
-  get revvingInGarage(): boolean { return performance.now() < this.revUntil; }
+  /** Brief automatic rev blip when installing a new Engine Swap so you immediately hear its real voice. */
+  pulseGarageRev(ms = 680) {
+    this.unlock();
+    this.applyVoice();
+    if (!this.garageRunning) {
+      this.garageRunning = true;
+      this.garageCrankUntil = 0;
+      this.garageFlareUntil = 0;
+      this.garageRpm = 1050;
+    }
+    const now = performance.now();
+    this.garagePulseUntil = Math.max(this.garagePulseUntil, now + ms);
+    this.revUntil = Math.max(this.revUntil, now + ms + 450);
+  }
+
+  /** Silence and reset the Garage engine cleanly when exiting Garage into menus or driving. */
+  stopGarageEngine() {
+    this.garageRunning = false;
+    this.garageRevHeld = false;
+    this.garagePulseUntil = 0;
+    this.garageCrankUntil = 0;
+    this.garageFlareUntil = 0;
+    this.garageRpm = 0;
+    this.garageThr = 0;
+    this.garageFlame = 0;
+    const e = this.eng, ctx = this.ctx;
+    if (e && ctx) {
+      const t = ctx.currentTime;
+      e.g.gain.setTargetAtTime(0, t, 0.05);
+      e.boostGain.gain.setTargetAtTime(0, t, 0.05);
+      e.gearGain.gain.setTargetAtTime(0, t, 0.05);
+    }
+  }
+
+  /** Turbo BOV flutter + overrun exhaust pops when releasing the Rev pedal from high RPM in Garage. */
+  private triggerGarageLiftOffEffects() {
+    const ctx = this.ctx;
+    if (!ctx || !this.out || ctx.state !== 'running' || this.muted) return;
+    const t = ctx.currentTime;
+    const vSpec = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
+    const intensity = Math.min(1, Math.max(0.25, (this.garageRpm - 2800) / Math.max(3000, vSpec.revRpm - 2800)));
+    const boostMode = vSpec.boost !== 'none' ? vSpec.boost : (this.extraTurbo ? 'turbo' : 'none');
+    if (boostMode === 'turbo' && this.boostSpool > 0.2 && t > this.lastBovAt + 0.28) {
+      this.lastBovAt = t;
+      for (let k = 0; k < 4; k++) {
+        this.burst(t + k * 0.048, 0.042, 'bandpass', 3600 - k * 340, 5.2, 0.13 * intensity * (1 - k * 0.18));
+      }
+    }
+    this.exhaustPop(t + 0.03, intensity);
+    this.garageFlame = Math.max(this.garageFlame, 0.75 + 0.45 * intensity);
+  }
+
+  /**
+   * Per-frame real engine synthesizer update while in the Garage showroom.
+   * Drives the EXACT same multi-harmonic PeriodicWave + formant + intake/exhaust + boost synth as driving!
+   */
+  updateGarage(dt: number) {
+    const e = this.eng, ctx = this.ctx;
+    if (!e || !ctx || ctx.state !== 'running') {
+      this.garageFlame = Math.max(0, this.garageFlame - dt * 5);
+      return;
+    }
+    const now = performance.now();
+    const t = ctx.currentTime;
+    const vSpec = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
+    const idleRpm = this.voiceId === 'rotary_4' ? 1150 : vSpec.firingsPerRev >= 5 ? 980 : 860;
+    const redline = vSpec.revRpm;
+
+    // Decay exhaust flame smoothly between pops/limiter cuts
+    this.garageFlame = Math.max(0, this.garageFlame - dt * 4.2);
+
+    // Silence road/tyre/wind/gear noise in the static garage
+    if (this.tyre) this.tyre.g.gain.setTargetAtTime(0, t, 0.05);
+    if (this.wind) this.wind.g.gain.setTargetAtTime(0, t, 0.05);
+    if (this.roadRoll) this.roadRoll.g.gain.setTargetAtTime(0, t, 0.05);
+    if (this.cavity) this.cavity.g.gain.setTargetAtTime(0, t, 0.05);
+    e.gearGain.gain.setTargetAtTime(0, t, 0.05);
+
+    if (!this.garageRunning) {
+      // Smooth engine spin-down when ignition is switched OFF
+      this.garageRpm = Math.max(0, this.garageRpm - dt * 2800);
+      this.garageThr = Math.max(0, this.garageThr - dt * 8);
+      if (this.garageRpm < 180) {
+        e.g.gain.setTargetAtTime(0, t, 0.05);
+        e.boostGain.gain.setTargetAtTime(0, t, 0.05);
+        return;
+      }
+    } else if (now < this.garageCrankUntil) {
+      // Cranking starter before ignition catches
+      this.garageRpm = 320 + Math.sin(now * 0.06) * 45;
+      this.garageThr = 0.08;
+      e.g.gain.setTargetAtTime(0, t, 0.03);
+      e.boostGain.gain.setTargetAtTime(0, t, 0.03);
+      return;
+    } else {
+      const pulsing = now < this.garagePulseUntil;
+      const revPressed = this.garageRevHeld || pulsing;
+      const flaring = now < this.garageFlareUntil && !revPressed;
+
+      if (flaring && this.garageRpm < 1600) {
+        // Cold-start initial bark flare
+        this.garageRpm = 2450;
+        this.garageThr = 0.42;
+        this.garageFlame = Math.max(this.garageFlame, 0.55);
+      }
+
+      const targetThr = revPressed ? 1.0 : flaring ? 0.16 : 0.0;
+      this.garageThr += (targetThr - this.garageThr) * Math.min(1, dt * (revPressed ? 18 : 10));
+
+      // Realistic unloaded flywheel RPM response (exotics & rotaries spin up faster than heavy V8s)
+      const accelRate = this.voiceId === 'rotary_4' || vSpec.firingsPerRev >= 5 ? 9200 : 7600;
+      const decelRate = 4300;
+      const inLimCut = now < this.garageLimCutUntil;
+
+      if (revPressed && !inLimCut) {
+        this.garageRpm += accelRate * dt;
+        if (this.garageRpm >= redline) {
+          this.garageRpm = redline - 240;
+          this.garageLimCutUntil = now + 72; // authentic crisp fuel/ignition rev-limiter bounce!
+          if (!this.muted) this.shiftBark(t, 0.85);
+          this.garageFlame = Math.max(this.garageFlame, 1.15);
+          this.garageWasHighRpm = true;
+        }
+      } else {
+        const floorRpm = flaring ? idleRpm + 650 : idleRpm;
+        const dropRate = inLimCut ? 5200 : decelRate;
+        if (this.garageRpm > floorRpm) {
+          this.garageRpm = Math.max(floorRpm, this.garageRpm - dropRate * dt);
+        } else {
+          this.garageRpm += (floorRpm - this.garageRpm) * Math.min(1, dt * 8);
+        }
+      }
+
+      // Overrun crackle pops & exhaust flames while decelerating from high RPM after letting go of Rev
+      if (!revPressed && this.garageWasHighRpm) {
+        if (this.garageRpm > 2800 && !this.muted && t > this.nextCrackleAt) {
+          const inten = Math.min(1, (this.garageRpm - 2500) / Math.max(3000, redline - 2500));
+          this.exhaustPop(t, inten);
+          this.garageFlame = Math.max(this.garageFlame, 0.55 + 0.55 * inten);
+          this.nextCrackleAt = t + 0.055 + Math.random() * 0.11;
+        } else if (this.garageRpm <= 2200) {
+          this.garageWasHighRpm = false;
+        }
+      }
+      // Subtle lift-off pop right as a swap pulse ends
+      if (pulsing && now + dt * 1000 >= this.garagePulseUntil && this.garageRpm > 3200) {
+        this.garageWasHighRpm = true;
+        this.triggerGarageLiftOffEffects();
+      }
+    }
+
+    // Drive the REAL multi-harmonic engine synthesizer with `garageRpm` & `garageThr`
+    const rpm = Math.max(450, this.garageRpm);
+    const thr = this.garageThr;
+    const f = Math.max(20, (rpm / 60) * vSpec.firingsPerRev);
+    const tc = 0.018;
+    const lopeAmt = rpm < 1800 ? vSpec.lopeDepth : vSpec.lopeDepth * 0.35;
+    const lope = 1 + lopeAmt * Math.sin(t * vSpec.lopeHz);
+
+    e.oMain.frequency.setTargetAtTime(f * lope, t, tc);
+    e.oSub.frequency.setTargetAtTime(f * vSpec.subRatio * lope, t, tc);
+    e.oBank.frequency.setTargetAtTime(f * vSpec.bankRatio * (2 - lope), t, tc);
+    e.oHarm.frequency.setTargetAtTime(f * vSpec.harmRatio, t, tc);
+
+    const rpmNorm = Math.min(1, (rpm - 650) / Math.max(5500, redline - 650));
+    const load = 0.16 + 0.84 * thr;
+    e.exhaustFilter.frequency.setTargetAtTime(160 + f * 1.9, t, tc);
+    e.exhaustGain.gain.setTargetAtTime(0.18 + 0.42 * load + 0.22 * rpmNorm, t, tc);
+
+    e.intakeFilter.frequency.setTargetAtTime(280 + f * 2.8, t, tc);
+    e.intakeGain.gain.setTargetAtTime(thr * thr * (0.28 + 0.36 * rpmNorm), t, tc);
+
+    // Real supercharger whine OR turbo spool while revving in Garage
+    const boostMode = vSpec.boost !== 'none' ? vSpec.boost : (this.extraTurbo ? 'turbo' : 'none');
+    if (boostMode === 'supercharger' && !this.muted && this.garageRunning) {
+      const scFreq = 920 + rpm * 0.31;
+      e.oBoost.frequency.setTargetAtTime(scFreq, t, 0.02);
+      e.boostFilter.frequency.setTargetAtTime(scFreq, t, 0.03);
+      e.boostGain.gain.setTargetAtTime((0.025 + 0.105 * thr) * (0.35 + 0.65 * rpmNorm), t, 0.03);
+    } else if (boostMode === 'turbo' && !this.muted && this.garageRunning) {
+      const targetSpool = Math.max(0, (rpmNorm - 0.15) * 1.25) * thr;
+      this.boostSpool += (targetSpool - this.boostSpool) * 0.16;
+      const tFreq = 2200 + this.boostSpool * 4400;
+      e.oBoost.frequency.setTargetAtTime(tFreq, t, 0.035);
+      e.boostFilter.frequency.setTargetAtTime(tFreq, t, 0.035);
+      e.boostGain.gain.setTargetAtTime(this.boostSpool * 0.052, t, 0.035);
+    } else {
+      this.boostSpool *= 0.85;
+      e.boostGain.gain.setTargetAtTime(0, t, 0.05);
+    }
+
+    const topBright = vSpec.firingsPerRev >= 5 || this.voiceId === 'rotary_4' || this.voiceId === 'flat6_na' || this.voiceId === 'flat8_na' ? 2600 : 1800;
+    const cutoff = 320 + f * (2.2 + 5.8 * load) + rpmNorm * topBright * thr;
+    e.lp.frequency.setTargetAtTime(cutoff, t, tc);
+
+    const spinFade = this.garageRunning ? 1 : Math.min(1, rpm / Math.max(1, idleRpm));
+    const master = this.muted ? 0 : (0.15 + 0.25 * load + 0.11 * rpmNorm) * spinFade;
+    e.g.gain.setTargetAtTime(master, t, 0.035);
+    // Warm enclosed showroom reverb so the garage echoes like a real concrete bay
+    if (this.reverbSend) {
+      this.reverbSend.gain.setTargetAtTime(this.muted ? 0 : 0.36, t, 0.08);
+    }
+  }
 
   /**
    * Police siren while a pursuit is live: a wailing tone (LFO on pitch) at a level set by proximity. Silent and free
