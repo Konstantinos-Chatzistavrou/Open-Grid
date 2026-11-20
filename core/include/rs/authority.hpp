@@ -8,6 +8,7 @@
 //      (detects 5,000 hp power/grip tamper, speed hacks, teleportation, and state hash tampering).
 //   4. UE5 client-prediction reconciliation (centimeter delta, snap threshold, and smooth blend factor).
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -25,7 +26,8 @@ enum class CheatViolation : int {
     SpeedOrPowerTamper = 2,
     TeleportOrPositionDesync = 3,
     StateHashMismatch = 4,
-    SpecConfigMismatch = 5
+    SpecConfigMismatch = 5,
+    AutosteerOrMacroBot = 6
 };
 
 struct TickInputFrame {
@@ -99,6 +101,36 @@ public:
 private:
     Simulation sim_;
     std::uint64_t config_hash_ = 0;
+};
+
+struct BotTelemetryFrame {
+    double time_s = 0.0;
+    double steer = 0.0;                   // -1..+1
+    double throttle = 0.0;                // 0..1
+    double brake = 0.0;                   // 0..1
+    double front_slip_angle_rad = 0.0;
+    double optimal_slip_angle_rad = 0.14; // Pacejka peak slip angle (rad)
+    double yaw_accel_rads2 = 0.0;
+};
+
+struct BotAnalysisReport {
+    bool flagged_as_bot = false;
+    CheatViolation violation = CheatViolation::None;
+    double bot_confidence_0_to_1 = 0.0;
+    double slip_lock_precision_score = 0.0; // 0..1: high when front slip ratio |alpha / alpha_opt| is locked near 1.0 with inhumanly tiny variance (< 0.002) during hard cornering
+    double sawtooth_macro_score = 0.0;      // 0..1: high when steering or throttle exhibits 240 Hz sign-alternating bang-bang sawtooth micro-oscillations (+d, -d, +d, -d)
+    double zero_latency_reflex_score = 0.0; // 0..1: high when counter-steer responds to sudden yaw acceleration spikes within 0..12 ms (impossible for human >= 80 ms visuomotor loop)
+};
+
+class AntiBotAnalyzer {
+public:
+    void reset();
+    void record_frame(const BotTelemetryFrame& frame);
+    std::size_t frame_count() const { return frames_.size(); }
+    BotAnalysisReport analyze() const;
+
+private:
+    std::vector<BotTelemetryFrame> frames_;
 };
 
 }  // namespace rs

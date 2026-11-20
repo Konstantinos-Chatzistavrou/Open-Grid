@@ -57,11 +57,12 @@ struct WheelContact {
     Vec3 point;             // world
     Vec3 normal{0, 0, 1};   // world, unit
     int surface = 0;        // index into CarConfig::surface_grip
+    double water_depth_mm = 0.0; // mm of standing water at this specific wheel contact patch (0 = dry/damp, > 1.5 mm = puddle/flooded curb)
 };
 
 struct WheelOutput {
     bool contact = false;
-    double load = 0;                 // N, normal load Fz
+    double load = 0;                 // N, normal load Fz (after any hydroplaning water-wedge lift)
     double compression = 0;          // m, spring compression (0 = full droop)
     double slip_ratio = 0;           // kappa (relaxed)
     double slip_angle = 0;           // rad (relaxed)
@@ -81,6 +82,7 @@ struct WheelOutput {
     double unsprung_vel_mps = 0;     // m/s, vertical wheel-hop velocity of the unsprung hub/wheel mass
     double brake_fluid_temp_c = 45.0;// C, caliper DOT 4 brake fluid temperature (vapor lock / spongy pedal > 260 C)
     double brake_pad_wear = 0.0;     // 0..1 progressive brake pad friction lining wear
+    double hydroplaning_lift = 0.0;  // 0..0.90 hydrodynamic water-wedge lift fraction on standing puddles
 };
 
 // Chassis torsional stiffness (frame twist between front & rear strut towers), Active Torque-Vectoring E-Diff (AYC),

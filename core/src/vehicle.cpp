@@ -1,4 +1,5 @@
 #include "rs/vehicle.hpp"
+#include "rs/pinnacle.hpp"
 #include <cmath>
 
 namespace rs {
@@ -298,6 +299,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     struct Kin {
         Vec3 fwd, lat, normal{0, 0, 1}, point;
         double vx = 0, vy = 0, load = 0, mu = 1, gamma = 0, re = 0.33, sigma_x = 0.12, sigma_y = 0.30;
+        double ffb_hydro_scale = 1.0;
     };
     std::array<Kin, 4> kin;
     for (int w = 0; w < 4; ++w) {
@@ -324,6 +326,14 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const double rch = roll_centre(w);
         double geo = prev_axle_fy_[w < 2 ? 0 : 1] * rch / ax.track;
         k.load = std::max(0.0, k.load + (w % 2 == 0 ? -geo : geo));
+        // Per-wheel Hydroplaning (Aquaplaning Water-Wedge Lift): asymmetric standing puddles lift only the submerged wheels
+        if (c.water_depth_mm > 0.05) {
+            const double p_kpa = tire_condition_[w].pressure_kpa > 0.0 ? tire_condition_[w].pressure_kpa : tp.p_nominal_kpa;
+            const HydroplaningState hydro = compute_hydroplaning(std::hypot(k.vx, k.vy), p_kpa, tire_condition_[w].wear, c.water_depth_mm);
+            out.wheels[w].hydroplaning_lift = hydro.wedge_lift_fraction;
+            k.load *= hydro.effective_load_scale;
+            k.ffb_hydro_scale = hydro.ffb_aligning_torque_scale;
+        }
         k.mu = cfg_.grip_for_surface(c.surface) * tire_condition_[w].grip_factor(&cfg_.tire(w))
              * (tire_zones_enabled ? tire_condition_[w].zone_health_grip_factor() : 1.0) * damage_.grip[w];
         // Dynamic inclination / camber angle gamma in the tyre frame (+ = top tilted toward +left):
@@ -552,7 +562,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             const double flat_thump = tire_zones_enabled
                                     ? tire_condition_[w].flat_spot_ffb_torque_nm(wheel_angle_[w], k.load, std::hypot(k.vx, k.vy))
                                     : 0.0;
-            out.steer_torque += mz - fy * trail + flat_thump;
+            out.steer_torque += (mz - fy * trail) * k.ffb_hydro_scale + flat_thump;
         }
         // Low-speed damping (below ~2 m/s): the relaxation-length model acts like an undamped
         // spring at standstill; real tyres have internal damping. Blends out with speed.

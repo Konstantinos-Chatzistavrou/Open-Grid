@@ -10,6 +10,7 @@
 #include "rs/vehicle.hpp"
 #include "rs/telemetry.hpp"
 #include "rs/pinnacle.hpp"
+#include "rs/esports.hpp"
 #include "rs/ue5_bridge.hpp"
 #include "OpenGridVehicleComponent.generated.h"
 
@@ -121,6 +122,17 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float BrakeVaporLockSponge = 0.0f;
+
+    /** Automated Virtual-Track Performance Index (PI 100..999) and predicted benchmark lap time (s). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Esports")
+    int32 PerformanceIndex = 500;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Esports")
+    float VirtualBenchmarkLapSeconds = 70.0f;
+
+    /** Apply Balance of Performance (BoP) ballast and power restrictor to equalize this car to TargetPi (100..999). */
+    UFUNCTION(BlueprintCallable, Category="OpenGrid|Esports")
+    void ApplyBopEqualizer(int32 TargetPi);
 
     // ---- MetaSounds Physical Engine & Turbo Acoustic Outputs -------------------------------------------
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Acoustics")
