@@ -348,12 +348,13 @@ export function setupCarMaterials(model: THREE.Object3D, cfg: CarVisualConfig, p
     });
   });
   model.userData.carMats = { paint: paintMat, glass: glassMat, carbon: carbonMat };
-  // Panel badges: chrome nose and rear emblems, sized and placed from the model's own bounds so they fit any car.
-  // (Panel-gap lines are not here: they need a gap normal map with the car's UVs, which the CC BY models don't carry.)
+  // Panel badges: if the GLB doesn't already carry our Blender-sculpted OpenGrid 3D crests (`badge_nose`/`badge_rear`),
+  // place a clean chrome fallback emblem sized from the model's own bounds.
   try {
+    const hasBakedBadges = !!(model.getObjectByName('badge_nose') || model.getObjectByName('badge_rear'));
     const bb = new THREE.Box3().setFromObject(model);
     const h = bb.max.y - bb.min.y;
-    if (h > 0.5) {
+    if (!hasBakedBadges && h > 0.5) {
       const chrome = new THREE.MeshPhysicalMaterial({ name: 'badge_chrome', color: 0xdfe3e8, metalness: 1, roughness: 0.16, clearcoat: 1, clearcoatRoughness: 0.04 });
       const ring = new THREE.TorusGeometry(h * 0.042, h * 0.0075, 8, 32);
       const nose = new THREE.Mesh(ring, chrome);
@@ -462,6 +463,7 @@ export class CarVisual {
     }
     const mats = model.userData.carMats as { paint: THREE.MeshPhysicalMaterial | null; glass: THREE.MeshPhysicalMaterial | null; carbon: THREE.MeshPhysicalMaterial | null };
     this.custom = new CarCustomizer(model, mats.paint, mats.glass, mats.carbon, this.headlights, this.wheels.map((w) => w.node));
+    this.custom.onWidebodyTrack = (m) => { this.widebodyTrackM = m; };
     this.driver = new Driver(new THREE.Vector3(...(cfg.driver_seat_m ?? [0.36, 0.25, -0.3])));
     this.driver.root.scale.setScalar(cfg.driver_scale ?? 0.93);
     model.add(this.driver.root);
@@ -597,7 +599,7 @@ export class CarVisual {
 
   /** Wheel hub centres and outer tyre radii in car MODEL space (used by Dents to keep crumpled fenders out of tyres). */
   wheelWells(): { pos: THREE.Vector3; radius: number }[] {
-    const off = this.cfg.wheel_visual_offset_m ?? 0;
+    const off = (this.cfg.wheel_visual_offset_m ?? 0) + this.widebodyTrackM;
     return this.wheels.map((w) => ({
       pos: new THREE.Vector3(w.restPos.x + Math.sign(w.restPos.x) * off, w.restPos.y, w.restPos.z),
       radius: w.radius,
@@ -607,6 +609,8 @@ export class CarVisual {
   /** Visual stance camber (radians, negative = top tilted inward) matching tuned physics camber 1:1. */
   private camberFrontRad = 0;
   private camberRearRad = 0;
+  /** Outward wheel track spacer (m) synced with equipped widebody fender kit so wheels sit flush inside widebody arches. */
+  private widebodyTrackM = 0;
   private qc = new THREE.Quaternion();
   /** Photorealistic Mach-diamond exhaust-only flamethrower VFX (anchored strictly to real exhaust tips). */
   private flameGroup: THREE.Group | null = null;
@@ -623,6 +627,10 @@ export class CarVisual {
 
   /** Detect the exact rear-exit mouth (x, y, z) of every real exhaust pipe on this car model. */
   private detectExhaustNozzles(): { x: number; y: number; z: number; r: number }[] {
+    const baked = (this.cfg as unknown as { exhaust_nozzles?: { x: number; y: number; z: number; r?: number }[] }).exhaust_nozzles;
+    if (Array.isArray(baked) && baked.length) {
+      return baked.map((n) => ({ x: n.x, y: n.y, z: n.z, r: n.r ?? 0.055 }));
+    }
     this.model.updateMatrixWorld(true);
     const invModel = this.model.matrixWorld.clone().invert();
     const mLocal = new THREE.Matrix4();
@@ -810,7 +818,7 @@ export class CarVisual {
     this.root.updateMatrixWorld();
     this.custom.sync(pos, quat);
     const inv = this.physInv.compose(physPos, physQuat, ONE).invert();
-    const off = this.cfg.wheel_visual_offset_m ?? 0;
+    const off = (this.cfg.wheel_visual_offset_m ?? 0) + this.widebodyTrackM;
     const tNow = performance.now(), dtS = Math.min(0.05, Math.max(0.001, (tNow - this.lastUpdate) / 1000));
     const first = this.lastUpdate === 0;
     this.lastUpdate = tNow;
@@ -825,16 +833,18 @@ export class CarVisual {
     for (let i = 0; i < 4; i++) {
       const w = this.wheels[i], o = OUT.wheel(i);
       const side = w.restPos.x >= 0 ? 1 : -1;
+      const trackTargetX = w.restPos.x + side * this.widebodyTrackM;
       let centre: THREE.Vector3;
       if (outValid) {
         centre = this.tmpCentre.set(out[o], out[o + 1], out[o + 2]).applyMatrix4(inv).add(this.cg);
         centre.x += Math.sign(centre.x || side) * off;
-        // Enforce physical wheel-arch envelope so crash wall overlaps or extreme impulses NEVER pop wheels out of arches
-        centre.x = THREE.MathUtils.clamp(centre.x, side > 0 ? w.restPos.x - 0.06 : w.restPos.x - 0.06, side > 0 ? w.restPos.x + 0.06 : w.restPos.x + 0.06);
+        // Enforce physical wheel-arch envelope around widebody-adjusted rest track so crash impulses NEVER pop wheels out
+        centre.x = THREE.MathUtils.clamp(centre.x, trackTargetX - 0.06, trackTargetX + 0.06);
         centre.y = THREE.MathUtils.clamp(centre.y, w.restPos.y - 0.075, w.restPos.y + 0.062);
         centre.z = THREE.MathUtils.clamp(centre.z, w.restPos.z - 0.032, w.restPos.z + 0.032);
       } else {
         centre = this.tmpCentre.copy(w.restPos);
+        centre.x = trackTargetX;
       }
       w.hub.copy(centre);
       if (w.off) {            // torn off (DamageVisuals owns the wheel now): the caliper stays on the hub

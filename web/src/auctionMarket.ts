@@ -83,7 +83,6 @@ export interface AppraisalResult {
 export const BASE_CAR_VALUATION: Record<string, number> = {
   vela_gt: 48_000,
   hayate: 54_000,
-  k_concept: 120_000,
   kestrel_gt: 140_000,
   harrier_gt: 160_000,
   tornado_gt: 175_000,

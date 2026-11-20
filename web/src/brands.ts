@@ -91,7 +91,6 @@ const CAR_BRAND: Record<string, BrandInfo['id']> = {
   hayate: 'kaze',
   tornado_gt: 'kaze',
   tornado_gt3: 'kaze',
-  k_concept: 'kronos',
   strix_gt7: 'aether',
 };
 
@@ -99,13 +98,20 @@ const CAR_STOCK_ENGINE: Record<string, { voice: EngineVoiceId; label: string }> 
   vela_gt:      { voice: 'v8_crossplane', label: '4.2L Cross-Plane V8' },
   kestrel_gt:   { voice: 'flat6_na',      label: '4.0L High-Rev Flat-6' },
   harrier_gt:   { voice: 'v8_twin_turbo', label: '4.4L Twin-Turbo V8' },
-  k_concept:    { voice: 'v8_flatplane',  label: '4.5L Flat-Plane V8' },
   strix_gt7:    { voice: 'v12_na',        label: '6.5L NA Track V12' },
   hayate:       { voice: 'i6_forged',     label: '3.0L Inline-6 Turbo' },
   basilisk_v12: { voice: 'v12_na',        label: '6.5L 65° NA V12' },
   tornado_gt:   { voice: 'v6_tt',         label: '3.5L Twin-Turbo V6 Hybrid' },
   tornado_gt3:  { voice: 'v8_flatplane',  label: '4.5L Flat-Plane GT3 V8' },
 };
+
+/** Register dynamic car brand & stock engine metadata from catalog.json (enables unlimited pipeline cars with zero TS edits). */
+export function registerCarMeta(carId: string, brand?: string, engineVoice?: string, engineLabel?: string) {
+  if (brand && brand in BRANDS) CAR_BRAND[carId] = brand as BrandInfo['id'];
+  if (engineVoice && engineLabel) {
+    CAR_STOCK_ENGINE[carId] = { voice: engineVoice as EngineVoiceId, label: engineLabel };
+  }
+}
 
 export function brandOfCar(carId: string): BrandInfo {
   return BRANDS[CAR_BRAND[carId] ?? 'valenza'];
