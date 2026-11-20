@@ -12,7 +12,7 @@ import argparse, json, os, sys, time, urllib.parse, urllib.request
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "assets_source/downloads/nyc")
-UA = "NightRun-racing-game/1.0 (open-source; contact via https://github.com/Konstantinos-Chatzistavrou/Racing-Game/issues)"
+UA = "OpenGrid/1.0 (open-source; contact via https://github.com/Konstantinos-Chatzistavrou/Open-Grid/issues)"
 MIRRORS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"]
 S, N, W, E = 40.7500, 40.7720, -73.9990, -73.9740
 

@@ -13,7 +13,7 @@ Copyright © 2026 OpenGrid contributors.
 
 You may copy, share and adapt the models, data and docs, **for non-commercial purposes only**, and you must **give
 credit**: name "OpenGrid contributors", link to this repository
-(https://github.com/Konstantinos-Chatzistavrou/Racing-Game) and to the licence, and say whether you changed anything.
+(https://github.com/Konstantinos-Chatzistavrou/Open-Grid) and to the licence, and say whether you changed anything.
 Selling them, putting them in a paid or ad-funded product, or any other use primarily intended for commercial
 advantage needs written permission from the copyright holder. The Apache-2.0 licence of the code does not extend to
 these files.

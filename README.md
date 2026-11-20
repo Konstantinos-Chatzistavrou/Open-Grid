@@ -1,4 +1,4 @@
-# Racing Game
+# Open Grid
 
 Realistic-handling street racing sim: an illegal night race through a city, with crash damage and
 AI rivals. The game runs in the browser on **WebGPU** (three.js r186). Its vehicle physics is an
