@@ -113,9 +113,18 @@ TelemetrySample make_telemetry_sample(
         s.tire_slip_ratio[i] = w.slip_ratio;
         s.tire_slip_angle[i] = w.slip_angle;
         s.tire_temp_c[i] = w.condition.surface_c > 0.0 ? w.condition.surface_c : w.condition.temperature_c;
+        s.tire_temp_inner_c[i] = w.condition.inner_c;
+        s.tire_temp_middle_c[i] = w.condition.middle_c;
+        s.tire_temp_outer_c[i] = w.condition.outer_c;
+        s.flat_spot_depth_mm[i] = w.condition.flat_spot_depth_mm;
         s.brake_temp_c[i] = w.brake_temp_c;
         s.wheel_load_n[i] = w.load;
     }
+    s.boost_bar = out.boost_bar;
+    s.intake_air_temp_c = out.intake_air_temp_c;
+    s.oil_temp_c = out.oil_temp_c;
+    s.fuel_liters = out.fuel_liters;
+    s.slipstream_drag_scale = out.slipstream_drag_scale;
     return s;
 }
 
