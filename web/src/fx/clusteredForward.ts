@@ -41,7 +41,46 @@ const clusterAabbMinWgsl = wgslFn(extractWgslFn(clusteredWgslSource, 'clusterAab
 const clusterAabbMaxWgsl = wgslFn(extractWgslFn(clusteredWgslSource, 'clusterAabbMax'));
 const sphereIntersectsAabbWgsl = wgslFn(extractWgslFn(clusteredWgslSource, 'sphereIntersectsAabb'));
 const clusterIndexFromScreenWgsl = wgslFn(extractWgslFn(clusteredWgslSource, 'clusterIndexFromScreen'));
-const evalClusteredAttenuationWgsl = wgslFn(extractWgslFn(clusteredWgslSource, 'evalClusteredAttenuation'));
+// Fragment-side attenuation: the same math as evalClusteredAttenuation in clustered_forward.wgsl (the engine-agnostic
+// core keeps the general form), with the physical inverse-square case (decay 2: every street lamp and headlight) done on
+// the squared distance: no sqrt and no pow (log2 + exp2) per light per pixel. max(dist^2, 0.01) == max(distSq, 0.01) and
+// (dist / cutoff)^2 == distSq / cutoff^2, so the result is the same; the spot cone uses inverseSqrt for its direction.
+const evalClusteredAttenuationWgsl = wgslFn(/* wgsl */ `
+fn evalClusteredAttenuationFast(
+  lightVec: vec3<f32>,
+  cutoffDist: f32,
+  decayExp: f32,
+  spotDir: vec3<f32>,
+  coneCos: f32,
+  penumbraCos: f32
+) -> f32 {
+  let distSq = max(dot(lightVec, lightVec), 1e-6);
+  let cutoffSq = cutoffDist * cutoffDist;
+  if (cutoffDist > 0.0 && distSq >= cutoffSq) {
+    return 0.0;
+  }
+
+  var atten = 0.0;
+  if (abs(decayExp - 2.0) < 1e-4) {
+    atten = 1.0 / max(distSq, 0.01);
+  } else {
+    atten = 1.0 / max(pow(sqrt(distSq), decayExp), 0.01);
+  }
+  if (cutoffDist > 0.0) {
+    let ratio2 = distSq / cutoffSq;
+    let falloff = clamp(1.0 - ratio2 * ratio2, 0.0, 1.0);
+    atten *= falloff * falloff;
+  }
+
+  if (coneCos > -1.5) {
+    let fromLight = -lightVec * inverseSqrt(distSq);
+    let angleCos = dot(fromLight, spotDir);
+    let spot = smoothstep(coneCos, max(penumbraCos, coneCos + 1e-4), angleCos);
+    atten *= spot;
+  }
+
+  return atten;
+}`);
 
 const _pos = new THREE.Vector3();
 const _target = new THREE.Vector3();
@@ -61,6 +100,7 @@ class ClusteredForwardLightsNode extends THREE.LightsNode {
   private readonly cullSphereAttr: THREE.StorageBufferAttribute;
   private readonly spotPenumbraAttr: THREE.StorageBufferAttribute;
   private readonly zSliceRangeAttr: THREE.StorageBufferAttribute;
+  private readonly lightAttrs4: THREE.StorageBufferAttribute[];
 
   private readonly posRangeBuf: THREE.StorageBufferNode<'vec4'>;
   private readonly colorDecayBuf: THREE.StorageBufferNode<'vec4'>;
@@ -95,6 +135,7 @@ class ClusteredForwardLightsNode extends THREE.LightsNode {
     this.cullSphereAttr = new THREE.StorageBufferAttribute(this.packer.cullSpheres, 4);
     this.spotPenumbraAttr = new THREE.StorageBufferAttribute(this.packer.spotPenumbra, 1);
     this.zSliceRangeAttr = new THREE.StorageBufferAttribute(this.packer.zSliceRanges, 4);
+    this.lightAttrs4 = [this.posRangeAttr, this.colorDecayAttr, this.spotDirCosAttr, this.cullSphereAttr];
 
     this.posRangeBuf = storage(this.posRangeAttr, 'vec4', maxLights).toReadOnly() as THREE.StorageBufferNode<'vec4'>;
     this.colorDecayBuf = storage(this.colorDecayAttr, 'vec4', maxLights).toReadOnly() as THREE.StorageBufferNode<'vec4'>;
@@ -261,13 +302,16 @@ class ClusteredForwardLightsNode extends THREE.LightsNode {
     this.camInput.projectionMatrix = proj;
     this.camInput.near = near;
     this.camInput.far = far;
-    this.packer.pack(this.camInput, this.clusteredLights.length, this.readThreeLight);
+    const active = this.packer.pack(this.camInput, this.clusteredLights.length, this.readThreeLight);
 
-    this.posRangeAttr.needsUpdate = true;
-    this.colorDecayAttr.needsUpdate = true;
-    this.spotDirCosAttr.needsUpdate = true;
-    this.cullSphereAttr.needsUpdate = true;
-    this.spotPenumbraAttr.needsUpdate = true;
+    // Upload only the packed lights, not all maxLights slots (512 x 4 vec4 + floats, ~34 KB, every lit pass): the
+    // cluster pass and the fragment loop only read indices inside the z-slice ranges, which all lie below `active`.
+    // The WebGPU backend honours updateRanges for storage attributes (writeBuffer per range, then clears them).
+    if (active > 0) {
+      for (const a of this.lightAttrs4) { a.addUpdateRange(0, active * 4); a.needsUpdate = true; }
+      this.spotPenumbraAttr.addUpdateRange(0, active);
+      this.spotPenumbraAttr.needsUpdate = true;
+    }
     this.zSliceRangeAttr.needsUpdate = true;
 
     if (this.computeNode) renderer.compute(this.computeNode);

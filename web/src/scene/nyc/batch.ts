@@ -348,8 +348,9 @@ export class MaterialBatch {
     if (dead > 8192 && dead > this.usedV * 0.25) this.compact();
   }
 
-  cull(renderer: THREE.WebGPURenderer, camera: THREE.Camera) {
-    this.culler?.cull(renderer, camera);
+  /** Queue this batch's meshlet reset + cull compute nodes (dispatched together by CityBatcher.cull). */
+  prepareCull(renderer: THREE.WebGPURenderer, camera: THREE.Camera, resets: THREE.ComputeNode[], culls: THREE.ComputeNode[]) {
+    this.culler?.prepareCull(renderer, camera, undefined, 0, resets, culls);
   }
 
   dispose() {
@@ -371,6 +372,9 @@ export class CityBatcher {
   private batches = new Map<THREE.Material, MaterialBatch>();
   private tiles = new Map<string, { batch: MaterialBatch; alloc: Alloc }[]>();
   private rejected = 0;
+  /** Reused every cull: [all resets..., all culls...] -> one renderer.compute() = one compute pass, one queue.submit. */
+  private computeList: THREE.ComputeNode[] = [];
+  private cullScratch: THREE.ComputeNode[] = [];
 
   constructor(private scene: THREE.Scene, readonly useMeshlets = false) {}
 
@@ -392,7 +396,15 @@ export class CityBatcher {
   /** Dispatch WebGPU compute meshlet culling + drawIndexedIndirect compaction for every material batch. */
   cull(renderer: THREE.WebGPURenderer, camera: THREE.Camera) {
     if (!this.useMeshlets) return;
-    for (const b of this.batches.values()) b.cull(renderer, camera);
+    // Was two renderer.compute() calls per material batch (each its own command encoder + queue.submit: ~22 per scene
+    // pass, several scene passes per frame). Now all batches go in one call; the same array object is reused so the
+    // backend's per-group bookkeeping (keyed by the array) is not re-created every pass.
+    const list = this.computeList, culls = this.cullScratch;
+    list.length = 0; culls.length = 0;
+    for (const b of this.batches.values()) b.prepareCull(renderer, camera, list, culls);
+    for (let i = 0; i < culls.length; i++) list.push(culls[i]);
+    culls.length = 0;
+    if (list.length) renderer.compute(list);
   }
 
   /** Async GPU readback of exact meshlet culling counts across all city batches (for diagnostics/profiling). */

@@ -83,6 +83,8 @@ export function usePotatoOnly() { PRESET_ORDER.length = 0; PRESET_ORDER.push('po
 export interface PostOptions { bloom: boolean; aa: boolean; scale: number; preset: PresetName }
 
 type BloomNode = ReturnType<typeof bloom>;
+interface BloomParams { strength: number; radius: number; threshold: number; knee: number }
+type BloomUniforms = { strength: { value: number }; radius: { value: number }; threshold: { value: number }; smoothWidth: { value: number } };
 // The JS module default-exports the class; @types/three declares a named export.
 type SMAALike = THREE.TempNode<'vec4'> & { setSize(w: number, h: number): void; getTextureNode(): THREE.TextureNode };
 const SMAANode = (SMAAModule as unknown as { default: new (t: THREE.Node) => SMAALike }).default;
@@ -192,6 +194,9 @@ export class Post {
   private scenePass: THREE.PassNode;
   private pipelines = new Map<PresetName, THREE.RenderPipeline>();
   private blooms: { node: BloomNode; res: number }[] = [];
+  /** Presets drawn with the shared bloom node -> the uniforms render() sets before drawing them. */
+  private bloomFor = new Map<PresetName, { node: BloomNode; p: BloomParams }>();
+  private bloomApplied: PresetName | null = null;
   private scaled: { setResolutionScale(s: number): unknown }[] = [];
   private smaas: ScaledSMAA[] = [];
   private maxFx: DepthFx | null = null;
@@ -243,10 +248,14 @@ export class Post {
     for (const k of ['contrast', 'sat', 'split', 'grain', 'lift', 'exposure'] as const) if (q.has(k)) (GRADE[k] as { value: number }).value = Number(q.get(k));
     const bloomStrength = Number(q.get('bs') ?? BLOOM.strength), bloomRadius = Number(q.get('br') ?? BLOOM.radius);
     const bloomThreshold = Number(q.get('bt') ?? BLOOM.threshold), bloomKnee = Number(q.get('bk') ?? BLOOM.knee);
+    // Presets whose bloom input is the plain scene colour (high, medium) share ONE BloomNode and, for grade 'full', one
+    // tone-mapped target: their bloom numbers differ only in uniforms (strength, radius, threshold, knee), which
+    // render() sets for the preset being drawn. Saves a bloom chain (11 targets) and a render-size RGBA8 target of VRAM
+    // and their warm-up; no shader differs, so switching between them compiles nothing. max/ultra bloom their own
+    // reflection-lit colour (a different input node), so they keep their own BloomNode.
     let sharedBloom: BloomNode | null = null;
-    let sharedBloomKey = '';
+    let sharedBloomRes = 0;
     let sharedTonedFull: THREE.RTTNode | null = null;
-    let sharedTonedKey = '';
     const ssrOn = q.get('ssr') !== '0';
     const planarOn = q.get('planar') !== '0' && ssrOn && PRESET_ORDER.some((n) => PRESETS[n].ssr);
     const aoOn = q.get('ao') !== '0';
@@ -291,27 +300,35 @@ export class Post {
         ? (this.depthFx ??= new DepthFx(this.scenePass, camera, { resScale: 0.5, quality: 0.16, maxDistance: 55, intensity: 0.6, carPos: this.carPos, planar: this.planarRoad, planarIntensity: 0.44 }))
         : null;
       let lit: THREE.Node<'vec4'> = fx ? fx.color : lite ? lite.color : color;
-      const bloomKey = opts.bloom && pr.bloom > 0
-        ? `${pr.bloomStrength ?? bloomStrength}|${pr.bloomRadius ?? bloomRadius}|${pr.bloomThreshold ?? bloomThreshold}|${pr.bloomKnee ?? bloomKnee}`
-        : '';
+      const bp: BloomParams = {
+        strength: pr.bloomStrength ?? bloomStrength, radius: pr.bloomRadius ?? bloomRadius,
+        threshold: pr.bloomThreshold ?? bloomThreshold, knee: pr.bloomKnee ?? bloomKnee,
+      };
+      const plainInput = !fx && !lite;
+      let onSharedBloom = false;
       if (opts.bloom && pr.bloom > 0) {
-        if (!fx && !lite && sharedBloom && sharedBloomKey === bloomKey) {
+        if (plainInput && sharedBloom && sharedBloomRes === pr.bloom) {
           lit = lit.add(sharedBloom);
+          this.bloomFor.set(name, { node: sharedBloom, p: bp });
+          onSharedBloom = true;
         } else {
-          const b = bloom(lit, pr.bloomStrength ?? bloomStrength, pr.bloomRadius ?? bloomRadius, pr.bloomThreshold ?? bloomThreshold);
-          (b as unknown as { smoothWidth: { value: number } }).smoothWidth.value = pr.bloomKnee ?? bloomKnee;
+          const b = bloom(lit, bp.strength, bp.radius, bp.threshold);
+          (b as unknown as { smoothWidth: { value: number } }).smoothWidth.value = bp.knee;
           this.blooms.push({ node: b, res: pr.bloom });
-          if (!fx && !lite) { sharedBloom = b; sharedBloomKey = bloomKey; }
+          if (plainInput) {
+            sharedBloom = b; sharedBloomRes = pr.bloom; onSharedBloom = true;
+            this.bloomFor.set(name, { node: b, p: bp });
+          }
           lit = lit.add(b);
         }
       }
       let toned: THREE.RTTNode;
-      if (!fx && !lite && opts.bloom && pr.bloom > 0 && pr.grade === 'full' && sharedTonedFull && sharedTonedKey === bloomKey) {
-        toned = sharedTonedFull;
+      if (onSharedBloom && pr.grade === 'full' && sharedTonedFull) {
+        toned = sharedTonedFull;   // same graph: colour + the shared bloom, full grade
       } else {
         toned = rtt8(toneGrade(lit, curve, pr.grade === 'full' && grading));
         this.scaled.push(toned);
-        if (!fx && !lite && opts.bloom && pr.bloom > 0 && pr.grade === 'full') { sharedTonedFull = toned; sharedTonedKey = bloomKey; }
+        if (onSharedBloom && pr.grade === 'full') sharedTonedFull = toned;
       }
       let src: THREE.TextureNode = toned;
       const aa = opts.aa ? pr.aa : 'none';
@@ -384,6 +401,15 @@ export class Post {
   render() {
     this.onPreset?.(this.preset);
     this.ensurePreset(this.preset);
+    if (this.bloomApplied !== this.preset) {
+      // the shared bloom node carries the numbers of whichever preset drew last: switch them with the preset (uniforms only)
+      const e = this.bloomFor.get(this.preset);
+      if (e) {
+        const u = e.node as unknown as BloomUniforms;
+        u.strength.value = e.p.strength; u.radius.value = e.p.radius; u.threshold.value = e.p.threshold; u.smoothWidth.value = e.p.knee;
+      }
+      this.bloomApplied = this.preset;
+    }
     this.pipelines.get(this.preset)!.render();
   }
 
