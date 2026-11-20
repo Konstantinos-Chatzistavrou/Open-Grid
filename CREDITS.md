@@ -87,7 +87,7 @@ Build: `assets_source/scripts/make_trees.py` -> `web/public/assets/trees/`.
   (extract from download.bbbike.org). Building footprints, official roof heights, ground elevation and construction years: NYC Open Data "Building Footprints"
   (dataset 5zhs-2jue) and "Borough Boundaries" (gthc-hcne), City of New York, public domain. Processing: tools/nyc/.
 
-## London, Paris, Tokyo and Los Angeles city data
+## London, Paris, Tokyo, Los Angeles, Chicago, Miami, Toronto, Berlin, Barcelona, Amsterdam, Singapore, Melbourne, Madrid and Seoul city data
 - Streets, building footprints and heights (height / building:levels tags; missing heights estimated from neighbouring
   buildings and the city's typical floors), parks, water, rails, trees, signals and street furniture: (c) OpenStreetMap
   contributors, Open Database Licence (ODbL), https://www.openstreetmap.org/copyright. City extracts from
