@@ -1,0 +1,124 @@
+{
+  "schema": "car_visual/1",
+  "name": "Kronos Fulmine V10",
+  "physics": "cars/kronos_fulmine.json",
+  "model": "res://assets/cars/v5/kronos_fulmine_hero.glb",
+  "lod_model": "res://assets/cars/v3/vela_gt_traffic.glb",
+  "paint_material": "paint",
+  "default_paint": [
+    0.463,
+    1.0,
+    0.012
+  ],
+  "cg_in_model_m": [
+    0.0,
+    0.421,
+    -0.15
+  ],
+  "wheel_nodes": {
+    "fl": "wheel_FL",
+    "fr": "wheel_FR",
+    "rl": "wheel_RL",
+    "rr": "wheel_RR"
+  },
+  "wheel_visual_offset_m": 0,
+  "collision_box": {
+    "size_m": [
+      2.064,
+      0.748,
+      4.44
+    ],
+    "centre_in_model_m": [
+      0.0,
+      0.585,
+      0.0
+    ],
+    "end_lift_m": 0.12,
+    "end_lift_start_m": 1.687
+  },
+  "headlights": [
+    [
+      -0.702,
+      0.514,
+      2.04
+    ],
+    [
+      0.702,
+      0.514,
+      2.04
+    ]
+  ],
+  "driver_seat_m": [
+    0.34,
+    0.281,
+    -0.22
+  ],
+  "driver_scale": 0.92,
+  "panels": {
+    "front": [
+      "bumper_front",
+      "hood",
+      "grille",
+      "drl_L",
+      "drl_R"
+    ],
+    "rear": [
+      "bumper_rear",
+      "taillight_bar",
+      "diffuser"
+    ],
+    "left": [
+      "door_L",
+      "fender_L",
+      "quarter_L",
+      "mirror_L"
+    ],
+    "right": [
+      "door_R",
+      "fender_R",
+      "quarter_R",
+      "mirror_R"
+    ]
+  },
+  "detachable": {
+    "bumper_front": [
+      "front",
+      0.7
+    ],
+    "bumper_rear": [
+      "rear",
+      0.7
+    ],
+    "mirror_L": [
+      "left",
+      0.45
+    ],
+    "mirror_R": [
+      "right",
+      0.45
+    ]
+  },
+  "front_lights": [
+    "beam_L_0",
+    "beam_R_0",
+    "drl_L",
+    "drl_R"
+  ],
+  "rear_lights": [
+    "taillight_bar"
+  ],
+  "exhaust_nozzles": [
+    {
+      "x": -0.231,
+      "y": 0.448,
+      "z": -2.143,
+      "r": 0.055
+    },
+    {
+      "x": 0.231,
+      "y": 0.448,
+      "z": -2.143,
+      "r": 0.055
+    }
+  ]
+}

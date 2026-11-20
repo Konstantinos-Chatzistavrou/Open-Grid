@@ -551,8 +551,10 @@ def main():
             o.scale *= scale_f
     bpy.context.view_layer.update()
 
-    # 3. Apply proportional FFD restyling (copyright/trade-dress differentiation)
-    apply_ffd_restyle(cfg.get("restyle", {"nose_len": 0.035, "nose_taper": -0.025, "roof_drop": -0.02, "haunch": 0.03}))
+    # 3. Apply proportional FFD restyling (copyright/trade-dress differentiation; skipped if restyle is disabled)
+    restyle_cfg = cfg.get("restyle", {"nose_len": 0.035, "nose_taper": -0.025, "roof_drop": -0.02, "haunch": 0.03})
+    if restyle_cfg:
+        apply_ffd_restyle(restyle_cfg)
 
     # 4. Separate any stock spoiler into a clean `wing` node (by name or bbox spec)
     spoiler_boxes = cfg.get("spoiler_boxes", [])
@@ -574,6 +576,9 @@ def main():
     mn2, mx2 = scene_body_bounds_gltf()
     total_tris = sum(sum(max(1, len(p.vertices) - 2) for p in o.data.polygons) for o in mesh_objects())
     nozzles = detect_exhaust_nozzles_metadata()
+    all_names = [o.name for o in bpy.context.scene.objects]
+    front_lights = [n for n in all_names if re.search(r"(headlight|drl|beam_)", n, re.I)]
+    rear_lights = [n for n in all_names if re.search(r"(taillight|tail_light|brake_light|rear_light)", n, re.I)]
     meta = {
         "id": car_id,
         "brand": brand,
@@ -582,6 +587,9 @@ def main():
         "has_stock_wing": any(o.name == "wing" or o.name.startswith("wing_") for o in bpy.context.scene.objects),
         "has_badges": bool(bpy.data.objects.get("badge_nose")),
         "exhaust_nozzles": nozzles,
+        "front_lights": front_lights,
+        "rear_lights": rear_lights,
+        "node_names": all_names,
     }
     meta_path = os.path.join(out_dir, f"{car_id}_meta.json")
     with open(meta_path, "w") as f:
