@@ -1022,7 +1022,7 @@ async function main() {
   city.props.warmup(true);
   nyc?.breaches.warmup(true, pos);   // room / rubble / portal materials compiled now, not at the first crash
   damage.warmup(true);
-  visual.warmupFlames(true);   // exhaust flame pipelines now, not at the first backfire
+  visual.warmup(true);   // exhaust flames, wheel blur, rotor glow: pipelines now, not at the first backfire / speed / hot brake
   visual.update(pos, quat, car.out);
   if (ai.cars.length && !potato) {   // potato compiles the rivals at the first race start (compileRivals), not here
     const yaw = Math.atan2(Math.cos(s0.heading), -Math.sin(s0.heading));
@@ -1071,7 +1071,7 @@ async function main() {
   nyc?.breaches.warmup(false);
   nyc?.endWarm();
   damage.warmup(false);
-  visual.warmupFlames(false);
+  visual.warmup(false);
   city.update(camera, true);
   if (webgpu) await (renderer.backend as unknown as { device: GPUDevice }).device.queue.onSubmittedWorkDone();
   const pipelinesAtStart =(renderer as unknown as { _pipelines: { caches: Map<string, unknown> } })._pipelines.caches.size;
