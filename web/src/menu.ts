@@ -26,6 +26,8 @@ import { INSURANCE_PREMIUM_CR, INSURANCE_PREMIUM_XP, conditionOf, repairCostOf, 
 import { AUCTION_LOTS, ENGINE_SWAPS, ENGINE_SWAP_THRESHOLD, MANIFOLDS, NOS_MAX_LITERS, NOS_PRICE_PER_LITER_XP, TURBOS, engineOf, stanceOf, type ManifoldId, type NightRunnersStore, type SwapId, type TurboId } from './nightRunners';
 import { PARTY_BONUS_MUL, type RetentionStore } from './retention';
 import { checkSplitScreen } from './splitScreen';
+import { MOD_CATALOG, loadModHub, toggleModSub, type ModHubStore } from './modHub';
+import { ACADEMY_LESSONS, WEEKLY_CALENDAR, loadCompletedLessons, todayCalendarEvent, type AcademyLesson, type CalendarEvent } from './careerEvents';
 
 /** Garage tabs: name, camera (azimuth, elevation, distance) that shows those parts. */
 const GTABS: { id: string; label: string; cam: string }[] = [
@@ -49,8 +51,8 @@ export interface Standing { name: string; you: boolean; fin: number; d: number; 
 export interface ResultData {
   total: number; best: number; laps: number[]; laps_target: number; standings: Standing[]; routeLength: number; online: boolean;
   /** credits/XP paid for this race */ earned?: number;
-  /** Tow Truck Fee deducted when totaled, saved structural damage %, and Insurance discount */
-  towFeeXp?: number; repairBillXp?: number; insured?: boolean; damagePct?: number;
+  /** Tow Truck Fee deducted when totaled, saved structural damage %, Insurance discount, and race time penalties */
+  towFeeXp?: number; repairBillXp?: number; insured?: boolean; damagePct?: number; penaltySec?: number;
 }
 
 export interface MenuHooks {
@@ -115,7 +117,13 @@ export interface MenuHooks {
   prestigeReset?(): void;
   voiceToggle?(): void;
   voiceMode?(m: 'ptt' | 'open'): void;
+  voiceMutePeer?(peerId: string): void;
+  voiceBlockPeer?(peerId: string): void;
   publicMatchmake?(): void;
+  musicToggle?(on: boolean): void;
+  launchAcademy?(lesson: AcademyLesson): void;
+  launchCalendar?(ev: CalendarEvent): void;
+  specClassToggle?(on: boolean): void;
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -188,10 +196,19 @@ export class Menu {
   voiceStatus = 'Voice Off';
   voiceOn = false;
   voiceMode: 'ptt' | 'open' = 'ptt';
+  voiceMutedPeers = new Set<string>();
   garageWalkActive = false;
+  musicOn = true;
+  specClass = false;
+  modHub: ModHubStore = loadModHub();
+  completedLessons: string[] = loadCompletedLessons();
+  private carFilter: 'all' | 'fav' | 'S' | 'A' | 'B' = 'all';
+  private carSort: 'name' | 'power' | 'weight' = 'name';
+  private favCars: string[] = (() => { try { return JSON.parse(localStorage.getItem('nr.favcars.v1') ?? '[]'); } catch { return []; } })();
   private reportTarget = '';
   simhubOn = false;
   telemetrySamples = 0;
+  private shopTab: 'cars' | 'upgrades' | 'gear' | 'auction' | 'mods' = 'cars';
   /** the rear-view mirror at the top of the screen while driving */
   mirror = true;
   assists!: AssistSettings;
@@ -202,7 +219,6 @@ export class Menu {
   private garageTab = 'paint';
   /** the option under the pointer: the live panel previews its effect without applying it */
   private hover: { k: string; v: string | number } | null = null;
-  private shopTab: 'cars' | 'upgrades' | 'gear' | 'auction' = 'cars';
   private shopCar = '';
 
   constructor(readonly sel: Selection, private cars: CatalogCar[], private physics: Record<string, unknown>, private hooks: MenuHooks) {
@@ -245,6 +261,15 @@ export class Menu {
     el.textContent = text;
     el.classList.toggle('show', !!text);
     if (text) { el.style.animation = 'none'; void el.offsetWidth; el.style.animation = ''; }
+  }
+
+  /** Public helper for 3D click-on-part customization in the Garage. */
+  openGarageTab(tabId: string) {
+    if (this.screen !== 'garage') return;
+    this.garageTab = tabId;
+    const t = GTABS.find((x) => x.id === tabId);
+    if (t) { const [az, el, dist] = t.cam.split(',').map(Number); this.hooks.cam?.(az, el, dist); }
+    this.render();
   }
 
   private car() { return this.cars.find((c) => c.id === this.sel.car)!; }
@@ -367,6 +392,7 @@ export class Menu {
       <div class="dim note">String-table localization (UE5 Localization Dashboard ready) with automatic text-expansion layouts.</div>
       <h3>♿ ${t('settings.accessibility')}</h3>
       ${row('WALKABLE GARAGE', chip('nr-walk', '1', 'On (Default)', this.nr.walkableGarage) + chip('nr-walk', '0', 'Orbit Only', !this.nr.walkableGarage), 'Walk around your car in the garage to inspect the hood, oil cap, and locker.')}
+      ${row('DYNAMIC ADAPTIVE MUSIC', chip('music', '1', '🎵 Adaptive ON', this.musicOn) + chip('music', '0', 'OFF', !this.musicOn), 'Reacts to speed, shifts into chase tempo during police pursuits, and swells at the finish line.')}
       ${row('ANNUAL SEASON PRESTIGE', `<button class="chip" data-act="prestige">★ Prestige Reset (Season ${this.ret.seasonYear} · ★${this.ret.prestige})</button>`, 'Resets rank/XP for a permanent Prestige badge while keeping 100% of your owned cars & garage builds.')}
       ${row(t('settings.colorblind').toUpperCase(),
         (['off', 'protanopia', 'deuteranopia', 'tritanopia'] as ColorblindMode[]).map((m) => chip('a11y-cb', m, m[0].toUpperCase() + m.slice(1), this.a11y.colorblind === m)).join(''),
@@ -457,16 +483,26 @@ export class Menu {
         <button class="small ${sold ? '' : 'primary'}" data-act="buy-auction" data-v="${lot.id}" ${sold ? 'disabled' : ''}>${sold ? '✓ Won Auction' : `🔨 Buy Lot · ${lot.priceXp} XP`}</button>
       </div>`;
     }).join('');
+    const modCards = MOD_CATALOG.map((m) => {
+      const sub = this.modHub.subscribed.includes(m.id);
+      return `<div class="scard ${sub ? 'owned' : ''}">
+        <div class="car-head"><b>${esc(m.title)}</b><i class="car-badge">${m.kind.toUpperCase()} · v${esc(m.version)}</i></div>
+        <div class="dim small-note">by ${esc(m.author)} · ${m.downloads} subs · ${m.polyCount ? `${(m.polyCount / 1000).toFixed(1)}k tris` : '2D Pack'} · ${m.hasLods ? 'LOD ✓' : ''} · ${m.validated ? 'Anti-Cheat ✓' : ''} · ${esc(m.workshopId)}</div>
+        <p class="dim small-note">${esc(m.blurb)}</p>
+        <button class="small ${sub ? '' : 'primary'}" data-act="mod-sub" data-v="${m.id}">${sub ? '✓ Subscribed (Auto-Sync)' : '＋ Subscribe Mod'}</button>
+      </div>`;
+    }).join('');
     const content = this.shopTab === 'cars' ? `<div class="shop-cars">${cars}</div>`
       : this.shopTab === 'upgrades' ? `<p class="dim small-note">Fit and remove stages in the Garage → Tune.</p><div class="chips">${carChips}</div>${ups}`
       : this.shopTab === 'auction' ? `<p class="dim small-note">Night Runners Used-Car Auction House: opaque condition tags &amp; high mileage carry real mechanical wear at steep discounts.</p><div class="shop-cars">${auctionCards}</div>`
+      : this.shopTab === 'mods' ? `<p class="dim small-note">In-Game Mod Hub (Steam Workshop &amp; OpenGrid validated packs — poly limit &lt;= 120k tris, LODs verified, zero unsafe scripts).</p><div class="shop-cars">${modCards}</div>`
       : `<p class="dim small-note">Helmet and suit: worn by your driver and shown as your avatar to everyone in a party.</p><div class="shop-cars">${gear}</div>`;
     const how = sp ? 'Single player: everything unlocks as you level up (XP from races and free roam). Nothing to buy.'
       : 'Online: credits and XP come only from ranked party races (6+ players who race; at most 2 per network). Each item needs an online level and credits.';
     return `<div class="lobby-screen"><div class="card lobby-card shop-card">
       <div class="lobby-head"><button data-act="home" class="back-btn">← Main Menu</button><div><div class="kicker">${sp ? 'UNLOCKS' : 'SPEND YOUR CREDITS'}</div><h2>Shop</h2></div>${sp ? '' : `<div class="wallet-pill">${this.mp.ready ? fmt(w.credits) : '—'}</div>`}</div>
       ${this.careerBar()}
-      <div class="gtabs">${tab('cars', 'Cars')}${tab('upgrades', 'Upgrades')}${tab('gear', 'Driver gear')}${tab('auction', '🏷 Auction House')}</div>
+      <div class="gtabs">${tab('cars', 'Cars')}${tab('upgrades', 'Upgrades')}${tab('gear', 'Driver gear')}${tab('auction', '🏷 Auction House')}${tab('mods', `🧩 Mod Hub (${this.modHub.subscribed.length})`)}</div>
       ${this.shopNote ? `<div class="pnote ${this.shopNote.startsWith('✓') ? '' : 'bad'}">${esc(this.shopNote)}</div>` : ''}
       ${content}
       <div class="dim note">${how}</div>
@@ -477,14 +513,26 @@ export class Menu {
   private garage() {
     const sel = this.sel;
     const w = this.career;
-    const cards = this.cars.filter((c) => w.owns(c.id)).map((c) => {
+    const ownedList = this.cars.filter((c) => w.owns(c.id));
+    const classOfCar = (id: string) => { const p = statsOf(this.physics[id]).power; return p > 420 ? 'S' : p > 330 ? 'A' : 'B'; };
+    const filtered = ownedList
+      .filter((c) => this.carFilter === 'all' ? true : this.carFilter === 'fav' ? this.favCars.includes(c.id) : classOfCar(c.id) === this.carFilter)
+      .sort((a, b) => {
+        if (this.carSort === 'power') return statsOf(this.physics[b.id]).power - statsOf(this.physics[a.id]).power;
+        if (this.carSort === 'weight') return statsOf(this.physics[a.id]).mass - statsOf(this.physics[b.id]).mass;
+        return a.name.localeCompare(b.name);
+      });
+    const cards = filtered.map((c) => {
       const st = statsOf(this.physics[c.id]);
+      const fav = this.favCars.includes(c.id);
       return `<button class="car ${c.id === sel.car ? 'on' : ''}" data-act="car" data-v="${c.id}">
-        <div class="car-head"><b>${esc(c.name)}</b><i class="car-badge">${c.id === sel.car ? 'SELECTED' : 'SELECT'}</i></div>
+        <div class="car-head"><b>${esc(c.name)}</b><span data-act="fav-car" data-v="${c.id}" title="Favorite">${fav ? '★' : '☆'}</span><i class="car-badge">${c.id === sel.car ? 'SELECTED' : 'SELECT'}</i></div>
         <span>${esc(c.tag)}</span>
         <div class="mini"><em>${Math.round(st.power)} kW</em><em>${Math.round(st.mass)} kg</em><em>${st.grip.toFixed(2)} µ</em></div>
       </button>`;
-    }).join('');
+    }).join('') || '<div class="dim small-note">No cars match this filter.</div>';
+    const filterBar = `<div class="chips" style="margin-bottom:6px">${(['all', 'fav', 'S', 'A', 'B'] as const).map((f) => `<button class="chip ${this.carFilter === f ? 'on' : ''}" data-act="gfilter" data-v="${f}">${f === 'fav' ? '★' : f.toUpperCase()}</button>`).join('')}
+      ${(['name', 'power', 'weight'] as const).map((s) => `<button class="chip ${this.carSort === s ? 'on' : ''}" data-act="gsort" data-v="${s}">⇅ ${s}</button>`).join('')}</div>`;
     const mods = modsOf(sel);
     const now = statsOf(applyMods(this.physics[sel.car], mods));
     const stages = MOD_KEYS.reduce((a, k) => a + mods[k], 0);
@@ -526,8 +574,9 @@ export class Menu {
           ${this.nr.walkableGarage ? `<button class="chip ${this.garageWalkActive ? 'on' : ''}" data-act="g-walk">🚶 ${this.garageWalkActive ? 'Stop Walk' : 'Walk Garage'}</button>` : ''}
         </div>
       </header>
-      <aside class="g-carlist panel"><h3>Your cars (${this.cars.filter((c) => w.owns(c.id)).length}/${this.cars.length})</h3>${cards}
-        ${this.cars.some((c) => !w.owns(c.id)) ? '<button class="small more-cars" data-act="shop-open">+ More cars</button>' : ''}</aside>
+      <aside class="g-carlist panel"><h3>Your cars (${ownedList.length}/${this.cars.length})</h3>${filterBar}${cards}
+        <div class="dim small-note" style="margin-top:6px">Tip: click any 3D part on the car to jump directly to its tab!</div>
+        ${this.cars.some((c) => !w.owns(c.id)) ? '<button class="small more-cars" data-act="shop-open">+ More cars / Mod Hub</button>' : ''}</aside>
       <nav class="g-rail">${rail}</nav>
       <section class="g-stage panel"><div class="g-stage-scroll"><div class="g-tabtitle">${this.garageTab.toUpperCase()}</div>${this.lookNow()}${body}</div></section>
       <section class="g-live" id="g-live">${this.liveStats()}</section>
@@ -766,6 +815,7 @@ export class Menu {
           <div class="opts"><span class="dim">INSURANCE</span><button class="chip ${this.maint.insured ? 'on' : ''}" data-act="insure" data-v="1">🛡 Insured ON</button><button class="chip ${!this.maint.insured ? 'on' : ''}" data-act="insure" data-v="0">OFF</button><span class="dim small-note">${this.maint.insured ? `${INSURANCE_PREMIUM_XP} XP / $${INSURANCE_PREMIUM_CR} premium · -50% off repairs &amp; tow if wrecked` : 'Full repair &amp; Tow Truck Fee if totaled'}</span></div>
           ${(() => { const r = repairCostOf(conditionOf(this.maint, sel.car), this.maint.insured); return r.pct > 0 ? `<div class="opts"><span class="pill gold">🔧 ${r.pct}% SAVED DAMAGE</span><button class="chip" data-act="repair-car">Repair (${r.xp} XP)</button></div>` : ''; })()}
           <div class="opts"><span class="dim">RULES</span><span class="pill ${sel.realism ? 'gold' : ''}">${sel.realism ? 'FULL REALISM' : 'RESPAWNS'}</span><span class="dim small-note">change on main menu</span></div>
+          <div class="opts"><span class="dim">SPEC CLASS</span><button class="chip ${this.specClass ? 'on' : ''}" data-act="spec-class" data-v="1">🏆 Equal Spec Car</button><button class="chip ${!this.specClass ? 'on' : ''}" data-act="spec-class" data-v="0">Open Tune</button><span class="dim small-note">${this.specClass ? 'All upgrades locked to identical stock spec (pure driver skill)' : 'Bring your tuned Garage build'}</span></div>
           <div class="opts"><span class="dim">LAPS</span>${laps}</div>
           <button class="primary huge" data-act="start-race">Start Race · ${sel.laps} Lap${sel.laps > 1 ? 's' : ''}</button>
         </div>
@@ -780,6 +830,16 @@ export class Menu {
           <p class="dim">16-player chill Free Roam lobbies with spontaneous 1v1 drag wagers &amp; zone leaderboards, or instanced 8–12 player Race Events with optional Tactical Cop Mode.</p>
           <div class="opts">${inParty || '<span class="dim">Create or join a party</span>'}</div>
           <button class="primary huge" data-act="lobby">Party Lobby</button>
+        </div>
+      </div>
+      <div class="career-strips">
+        <div class="cstrip">
+          <div class="kicker">📈 GT7-STYLE WEEKLY CALENDAR · TODAY: ${esc(todayCalendarEvent().day)}</div>
+          <div class="chips">${WEEKLY_CALENDAR.map((ev) => `<button class="chip ${ev.dayIdx === todayCalendarEvent().dayIdx ? 'on' : ''}" data-act="cal-go" data-v="${ev.dayIdx}" title="${esc(ev.kind)} (+${ev.bonusXp} XP)"><b>${ev.day}</b> ${esc(ev.title)}</button>`).join('')}</div>
+        </div>
+        <div class="cstrip">
+          <div class="kicker">🎓 DRIVING ACADEMY (${this.completedLessons.length}/${ACADEMY_LESSONS.length} COMPLETED)</div>
+          <div class="chips">${ACADEMY_LESSONS.map((l) => `<button class="chip ${this.completedLessons.includes(l.id) ? 'on' : ''}" data-act="ac-go" data-v="${l.id}" title="${esc(l.goal)}">${this.completedLessons.includes(l.id) ? '✓' : `0${l.num}`} ${esc(l.title)} (+${l.xpReward} XP)</button>`).join('')}</div>
         </div>
       </div>
     </div>`;
@@ -817,6 +877,7 @@ export class Menu {
         <span class="avatar">${helmetSvg(skinOf(m.skin), 30)}<i class="dot" style="background:${hex(m.paint)}"></i></span>
         <div class="mtext"><div class="mname"><b>${esc(m.name)}</b>${m.host ? '<span class="pill gold">LEADER</span>' : ''}${m.id === p.selfId ? '<span class="pill">YOU</span>' : ''}</div>
         <span class="dim">${esc(carName(m.car))}${m.city ? ` · ${esc(cityName(m.city))}` : ''} · <span class="mstate ${m.ready ? 'ok' : ''}">${p.phase === 'loading' ? (m.ready ? 'on the grid' : 'loading…') : p.phase === 'driving' ? 'driving' : 'in lobby'}</span></span></div>
+        ${m.id !== p.selfId ? `<button class="small" data-act="voice-mute" data-v="${esc(m.id)}" title="Mute voice">${this.voiceMutedPeers.has(m.id) ? '🔇' : '🔊'}</button><button class="small" data-act="voice-block" data-v="${esc(m.id)}" title="Block player">🚫</button>` : ''}
       </div>`).join('');
     const maxSlots = p.maxMembers;
     const leaderCityObj = cs?.list.find((c) => c.id === (leaderCity ?? cs.current));
@@ -898,6 +959,7 @@ export class Menu {
       <button class="small" data-act="report-send" data-k="cheating" data-v="${esc(this.reportTarget)}">Cheating</button>
       <button class="small" data-act="report-cancel">Cancel</button></div>` : '';
     const maintLines: string[] = [];
+    if (r.penaltySec && r.penaltySec > 0) maintLines.push(`⚠ Steward Time Penalties: +${r.penaltySec.toFixed(1)}s added to finish time`);
     if (r.towFeeXp) maintLines.push(`🚛 Tow Truck Fee (Totaled): -${r.towFeeXp} XP${r.insured ? ' (50% Insured)' : ''}`);
     if (r.damagePct && r.damagePct > 0) maintLines.push(`🔧 Saved Car Damage: ${r.damagePct}% · Est. Repair ${r.repairBillXp ?? 0} XP${r.insured ? ' (-50% Insured)' : ''} — repair in Garage`);
     const maintHtml = maintLines.length ? `<div class="pnote bad">${maintLines.map(esc).join('<br>')}</div>` : '';
@@ -1087,7 +1149,36 @@ export class Menu {
       case 'prestige': this.hooks.prestigeReset?.(); this.render(); break;
       case 'voice-toggle': this.hooks.voiceToggle?.(); break;
       case 'voice-mode': this.hooks.voiceMode?.(v as 'ptt' | 'open'); this.render(); break;
+      case 'voice-mute': this.hooks.voiceMutePeer?.(v); this.render(); break;
+      case 'voice-block': this.hooks.voiceBlockPeer?.(v); this.render(); break;
       case 'pmatch': this.hooks.publicMatchmake?.(); break;
+      case 'music': this.musicOn = v === '1'; this.hooks.musicToggle?.(this.musicOn); this.render(); break;
+      case 'spec-class': this.specClass = v === '1'; this.hooks.specClassToggle?.(this.specClass); this.render(); break;
+      case 'mod-sub': {
+        const on = toggleModSub(this.modHub, v);
+        this.shopNote = on ? '✓ Mod subscribed & verified.' : 'Mod unsubscribed.';
+        this.render();
+        break;
+      }
+      case 'gfilter': this.carFilter = v as typeof this.carFilter; this.render(); break;
+      case 'gsort': this.carSort = v as typeof this.carSort; this.render(); break;
+      case 'fav-car': {
+        const i = this.favCars.indexOf(v);
+        if (i >= 0) this.favCars.splice(i, 1); else this.favCars.push(v);
+        try { localStorage.setItem('nr.favcars.v1', JSON.stringify(this.favCars)); } catch { /* blocked */ }
+        this.render();
+        break;
+      }
+      case 'cal-go': {
+        const ev = WEEKLY_CALENDAR.find((x) => x.dayIdx === Number(v));
+        if (ev) this.hooks.launchCalendar?.(ev);
+        break;
+      }
+      case 'ac-go': {
+        const l = ACADEMY_LESSONS.find((x) => x.id === v);
+        if (l) this.hooks.launchAcademy?.(l);
+        break;
+      }
       case 'wear-skin': if (this.career.ownsSkin(v)) { sel.skin = v; this.save(); this.hooks.look(); this.hooks.partyMe(); this.render(); } break;
       case 'shop-car': this.shopCar = v; this.render(); break;
       case 'shop-drive': sel.car = v; this.shopCar = v; this.save(); this.render(); this.hooks.preview(); break;

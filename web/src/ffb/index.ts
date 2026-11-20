@@ -29,7 +29,14 @@ export interface FfbFrame {
   wheelVel: number;          // d wheel / dt, 1/s
   impactKj: number;          // crash this frame (0 none)
 }
-export interface FfbSettings { ffbStrength: number; ffbMax: number; ffbInvert: boolean }
+export interface FfbSettings {
+  ffbStrength: number;
+  ffbMax: number;
+  ffbInvert: boolean;
+  ffbDamper?: number;
+  ffbFriction?: number;
+  ffbRoadEffects?: number;
+}
 
 export class ForceFeedback {
   driver: FfbDriver | null = null;
@@ -105,10 +112,14 @@ export class ForceFeedback {
     if (this.test > 0) { this.test -= dt; target = s.ffbInvert ? -0.35 : 0.35; }
     else if (f.driving) {
       const rack = Math.tanh(f.rackTorque / RACK_REF_NM);
-      const damping = -f.wheelVel * (0.06 + 0.25 / (1 + f.speed / 4));
+      // sliders scale around their defaults (belt preset 0.35 / 0.25 / 0.55): default settings feel exactly as before
+      const damperMul = (s.ffbDamper ?? 0.35) / 0.35;
+      const friction = -Math.sign(f.wheelVel) * Math.min(1, Math.abs(f.wheelVel) * 4) * (s.ffbFriction ?? 0.25) * 0.25;
+      const roadMul = (s.ffbRoadEffects ?? 0.55) / 0.55;
+      const damping = -f.wheelVel * (0.06 + 0.25 / (1 + f.speed / 4)) * damperMul;
       const beyond = Math.abs(f.wheel) - 1;
       const lock = beyond > 0 ? -Math.sign(f.wheel) * Math.min(1, beyond * 10) : 0;
-      target = s.ffbStrength * (rack + damping + this.jolt * Math.sin(this.joltPhase)) + lock;
+      target = s.ffbStrength * (rack + damping + friction + this.jolt * roadMul * Math.sin(this.joltPhase)) + lock;
       target = Math.max(-s.ffbMax, Math.min(s.ffbMax, target));
       if (s.ffbInvert) target = -target;
     }

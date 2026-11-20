@@ -12,6 +12,23 @@ export class VoiceChat {
   private stream: MediaStream | null = null;
   private audioCtx: AudioContext | null = null;
   private remoteAudios = new Map<string, HTMLAudioElement>();
+  readonly mutedPeers = new Set<string>();
+  readonly blockedPeers = new Set<string>();
+
+  toggleMutePeer(peerId: string): boolean {
+    if (this.mutedPeers.has(peerId)) this.mutedPeers.delete(peerId);
+    else this.mutedPeers.add(peerId);
+    const el = this.remoteAudios.get(peerId);
+    if (el) el.muted = this.mutedPeers.has(peerId) || this.blockedPeers.has(peerId);
+    return this.mutedPeers.has(peerId);
+  }
+
+  blockPeer(peerId: string) {
+    this.blockedPeers.add(peerId);
+    this.mutedPeers.add(peerId);
+    const el = this.remoteAudios.get(peerId);
+    if (el) { el.muted = true; el.volume = 0; }
+  }
 
   async enable(): Promise<boolean> {
     if (this.enabled && this.stream) return true;

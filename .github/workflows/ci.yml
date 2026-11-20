@@ -1,0 +1,47 @@
+name: OpenGrid CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  cpp-core:
+    name: C++17 Physics Core + ASan/UBSan + CTest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure & Build rs_core (Release)
+        run: |
+          cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build core/build -j
+      - name: Run All Physics & Telemetry CTests
+        run: ctest --test-dir core/build --output-on-failure
+      - name: Memory Leak & Undefined Behavior Check (ASan + UBSan)
+        run: |
+          cmake -S core -B core/build-asan -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          cmake --build core/build-asan -j
+          ctest --test-dir core/build-asan --output-on-failure
+
+  web-and-cloud:
+    name: Mod Validator, WebGPU Build & Cloud Worker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validate Car Physics Assets (Anti-Cheat / Poly Bounds)
+        run: node tools/validate_mod.mjs --dir data/cars
+      - name: Typecheck & Build WebGPU Client
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - name: Typecheck Cloudflare Worker Backend
+        working-directory: cloud
+        run: |
+          npm ci
+          npx tsc --noEmit

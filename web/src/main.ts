@@ -70,6 +70,7 @@ import { WorldClock } from './worldClock';
 import { AUCTION_LOTS, applyNightRunnersToPhysics, engineOf, loadNightRunners, saveNightRunners, stanceOf, tickEngineAndNos } from './nightRunners';
 import { PARTY_BONUS_MUL, advanceChallenge, loadRetention, saveRetention, triggerPrestigeReset } from './retention';
 import { VoiceChat } from './voice';
+import { ACADEMY_LESSONS, PenaltyTracker, markLessonDone } from './careerEvents';
 import { assetUrl, loadGLTF } from './scene/loaders';
 import { Identity } from './identity';
 import { usernameError } from './username';
@@ -352,8 +353,14 @@ async function main() {
   // Start downloading the player's car GLTF in parallel with the city tiles!
   const carLoadP = (visualPath === DEFAULT_VISUAL ? Promise.resolve(defaultCfg) : fetchVisualCfg(visualPath))
     .then(async (cfg) => ({ cfg, vis: await CarVisual.load(cfg) }));
-  const coreJson = () => JSON.stringify(applyNightRunnersToPhysics(applyMods(physics[sel.car], modsOf(sel)), engineOf(nr, sel.car), stanceOf(nr, sel.car)));
-  const carKey = () => `${sel.car}|${JSON.stringify(modsOf(sel))}|${JSON.stringify(stanceOf(nr, sel.car))}|${engineOf(nr, sel.car).turbo}|${engineOf(nr, sel.car).manifold}|${engineOf(nr, sel.car).swap}`;
+  /** Spec Class (equal stock car, esports): no upgrades, engine swaps or stance - pure skill. */
+  let specClass = false;
+  /** the Driving Academy lesson being driven ('' none) and the race's steward time penalties */
+  let activeAcademyId = '';
+  const penalties = new PenaltyTracker();
+  const coreJson = () => specClass ? JSON.stringify(physics[sel.car])
+    : JSON.stringify(applyNightRunnersToPhysics(applyMods(physics[sel.car], modsOf(sel)), engineOf(nr, sel.car), stanceOf(nr, sel.car)));
+  const carKey = () => specClass ? `${sel.car}|spec` : `${sel.car}|${JSON.stringify(modsOf(sel))}|${JSON.stringify(stanceOf(nr, sel.car))}|${engineOf(nr, sel.car).turbo}|${engineOf(nr, sel.car).manifold}|${engineOf(nr, sel.car).swap}`;
   let builtKey = carKey();
   let core = new CoreCar(coreJson());
   const pw = new PhysicsWorld();
@@ -667,7 +674,12 @@ async function main() {
   let freeRoamM = 0;      // metres driven in free roam this session (paid on leaving)
   toToggles(assistSet, input.assists);
   input.onAssistKey = () => { fromToggles(assistSet, input.assists); toToggles(assistSet, input.assists); saveAssists(assistSet); };
-  const wireDamage = () => { damage.onImpact = (kj, glass) => { audio.impact(kj, glass); rumbleKj = Math.max(rumbleKj, kj); if (state === 'race' && kj > 3) raceImpacts++; }; };
+  const wireDamage = () => { damage.onImpact = (kj, glass) => {
+    audio.impact(kj, glass); rumbleKj = Math.max(rumbleKj, kj);
+    if (state === 'race' && kj > 3) raceImpacts++;
+    // stewards: a heavy hit in a race (ramming / cutting through the wall line) costs +5.0 s
+    if (state === 'race' && raceLaps() > 0 && kj > 22 && penalties.addPenalty('Collision / Track Cut', 5.0)) hud.toast('⚠ +5.0s PENALTY', 'Clean racing enforced (GT7 / iRacing rules)');
+  }; };
   wireDamage();
   input.onAnyInput = () => audio.unlock();
   audio.muted = true;   // silent in the menus
@@ -719,7 +731,7 @@ async function main() {
     raceCar = race.addCar(car.body.translation());
     aiRace = ai.mode === 'race' ? ai.cars.map((c) => ({ idx: race.addCar(c.pos), lap: null, fin: -1 })) : [];
     raceT0 = ticks * DT;
-    lapTimes = []; raceFinishedAt = -1; lap = null; racePaid = false; raceImpacts = 0;
+    lapTimes = []; raceFinishedAt = -1; lap = null; racePaid = false; raceImpacts = 0; penalties.reset();
     copSpawned = false; escapedCopsThisRace = false; cops.breakOff(); wagers.cancel();
     myDnf = ''; rolledT = stuckT = 0; hud.outWarn = '';
     hud.resetLaps();
@@ -1378,6 +1390,26 @@ async function main() {
         .catch((e: Error) => { menu.partyNote = e.message; })
         .finally(() => { menu.partyBusy = false; if (menu.screen === 'lobby') menu.render(); });
     },
+    voiceMutePeer: (id) => { if (voice.toggleMutePeer(id)) menu.voiceMutedPeers.add(id); else menu.voiceMutedPeers.delete(id); },
+    voiceBlockPeer: (id) => { voice.blockPeer(id); menu.voiceMutedPeers.add(id); hud.toast('🚫 PLAYER BLOCKED', 'Voice & chat muted'); },
+    musicToggle: (on) => { audio.musicEnabled = on; },
+    specClassToggle: (on) => {
+      specClass = on;
+      if (carKey() !== builtKey) { rebuildPlayer(); spawn(); syncPose(); }
+    },
+    launchAcademy: (l) => {
+      activeAcademyId = l.id;
+      specClass = l.specClass; menu.specClass = l.specClass;
+      sel.laps = l.laps; sel.copMode = l.cops; saveSelection(sel);
+      hud.toast(`🎓 ACADEMY 0${l.num}`, l.goal);
+      void startSession('race');
+    },
+    launchCalendar: (ev) => {
+      activeAcademyId = '';
+      specClass = ev.specClass; menu.specClass = ev.specClass;
+      if (ev.laps > 0) { sel.laps = ev.laps; sel.copMode = ev.cops; saveSelection(sel); void startSession('race'); }
+      else void startSession('free');
+    },
   });
   menu.a11y = a11y;
   menu.maint = maint;
@@ -1625,6 +1657,7 @@ async function main() {
   (g.__game as Record<string, unknown>).nr = nr;
   (g.__game as Record<string, unknown>).ret = ret;
   (g.__game as Record<string, unknown>).voice = voice;
+  (g.__game as Record<string, unknown>).penalties = penalties;
   {
     const inv = cleanCode(params.get('party') ?? '');
     if (inv.length >= 4) menu.invite = inv;
@@ -1779,7 +1812,24 @@ async function main() {
     specPrev.copy(cur.root.position);
     specOut[OUT.speed] = cur.ground ? cur.speed() : v;
     rig.update(frame, specPos, specQuat, stepAcc.set(0, 0, 0), specOut);
+    // esports broadcast pill (~10 Hz): watched car's speed, lateral G, and our steward penalties
+    const now = performance.now();
+    if (now - specTelAt > 100) {
+      const dtT = (now - specTelAt) / 1000;
+      specTelAt = now;
+      const spd = Math.abs(specOut[OUT.speed]);
+      const yaw = specYawVec.set(0, 0, 1).applyQuaternion(specQuat);
+      const yawA = Math.atan2(yaw.x, yaw.z);
+      let dYaw = yawA - specTelYaw; dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
+      specTelYaw = yawA;
+      const latG = dtT > 0 && dtT < 1 ? Math.abs(spd * dYaw / dtT) / 9.81 : 0;
+      let tel = specEl.querySelector('.sp-tel') as HTMLElement | null;
+      if (!tel) { tel = document.createElement('span'); tel.className = 'sp-tel'; specEl.insertBefore(tel, specEl.querySelector('button')); }
+      tel.textContent = `${Math.round(spd * 3.6)} km/h · ${latG.toFixed(2)} G${penalties.seconds > 0 ? ` · YOU +${penalties.seconds.toFixed(1)}s` : ''}`;
+    }
   }
+  let specTelAt = 0, specTelYaw = 0;
+  const specYawVec = new THREE.Vector3();
 
   /** HUD running order: gap to the car in front, in seconds at the current speed (distance-based) or metres. */
   let boardAt = 0, progAt = 0;
@@ -2072,7 +2122,9 @@ async function main() {
     }
     setState('results');
     audio.muted = true;
-    const total = lapTimes.reduce((a, b) => a + b, 0);
+    if (raceLaps() > 0 && !myDnf) audio.triggerFinishSwell();
+    const penaltySec = raceLaps() > 0 ? penalties.seconds : 0;
+    const total = lapTimes.reduce((a, b) => a + b, 0) + penaltySec;
     hideSpectate();
     rig.setTarget(car.body, core.info.redline);
     const st = standings();
@@ -2094,8 +2146,18 @@ async function main() {
     } else if (towFeeXp > 0 && sp.kind === 'sp') {
       sp.penalty(towFeeXp);
     }
+    // Driving Academy: a finished lesson is marked done once and pays its XP
+    if (activeAcademyId && !myDnf && lap?.finished) {
+      const lesson = ACADEMY_LESSONS.find((l) => l.id === activeAcademyId);
+      if (lesson && !menu.completedLessons.includes(lesson.id)) {
+        menu.completedLessons = markLessonDone(lesson.id);
+        if (sel.mode !== 'online') earned += sp.earn(lesson.xpReward, `academy · ${lesson.title}`).xp;
+        hud.toast(`🎓 LESSON 0${lesson.num} COMPLETE`, `+${lesson.xpReward} XP`);
+      }
+    }
+    activeAcademyId = '';
     menu.showResults({ total, best: lapTimes.length ? Math.min(...lapTimes) : 0, laps: lapTimes, laps_target: raceLaps(), standings: st,
-      routeLength: lap?.routeLength ?? route.length_m, online: sel.mode === 'online', earned, towFeeXp, repairBillXp, insured, damagePct });
+      routeLength: lap?.routeLength ?? route.length_m, online: sel.mode === 'online', earned, towFeeXp, repairBillXp, insured, damagePct, penaltySec });
     if (party) party.sendProgress({ d: lap?.distance ?? 0, lap: lap?.laps ?? 0, fin: lap?.finished ? total : -1, best: lap?.best ?? 0, dnf: myDnf ? 1 : 0 });
   }
 
@@ -2129,7 +2191,7 @@ async function main() {
   (g.__game as { orbit?: typeof orbit; nyc?: typeof nyc }).orbit = orbit;
   (g.__game as { orbit?: typeof orbit; nyc?: typeof nyc }).nyc = nyc;
   const dom = renderer.domElement;
-  dom.addEventListener('pointerdown', (e) => { if (driving()) return; orbit.drag = true; orbit.x = e.clientX; orbit.y = e.clientY; dom.setPointerCapture(e.pointerId); });
+  dom.addEventListener('pointerdown', (e) => { partDownX = e.clientX; partDownY = e.clientY; if (driving()) return; orbit.drag = true; orbit.x = e.clientX; orbit.y = e.clientY; dom.setPointerCapture(e.pointerId); });
   dom.addEventListener('pointermove', (e) => {
     if (!orbit.drag) return;
     orbit.az -= (e.clientX - orbit.x) * 0.008;
@@ -2137,10 +2199,36 @@ async function main() {
     orbit.x = e.clientX; orbit.y = e.clientY;
   });
   const endDrag = () => { orbit.drag = false; };
+  // Garage: a click (not a drag) on a part of the 3D car opens the matching customization tab
+  let partDownX = 0, partDownY = 0;
+  const partRay = new THREE.Raycaster(), partNdc = new THREE.Vector2();
+  const partTab = (name: string) =>
+    /wheel|rim|tire|tyre|caliper|disc/i.test(name) ? 'wheels'
+      : /headlight|tail|lamp|light/i.test(name) ? 'lights'
+        : /glass|window|windshield|exhaust/i.test(name) ? 'glass'
+          : /wing|spoiler|diffuser|splitter|skirt/i.test(name) ? 'aero'
+            : /fender/i.test(name) ? 'fenders'
+              : /hood|bumper/i.test(name) ? 'body'
+                : /driver|helmet/i.test(name) ? 'driver' : 'paint';
+  dom.addEventListener('pointerup', (e) => {
+    if (state !== 'garage' || !inGarage || menu.screen !== 'garage' || Math.hypot(e.clientX - partDownX, e.clientY - partDownY) >= 6) return;
+    const r = dom.getBoundingClientRect();
+    partNdc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    partRay.setFromCamera(partNdc, camera);
+    const hit = partRay.intersectObject(visual.model, true).find((h) => (h.object as THREE.Mesh).isMesh && h.object.visible);
+    if (!hit) return;
+    const m = (hit.object as THREE.Mesh).material;
+    const matName = Array.isArray(m) ? m.map((x) => x.name).join(' ') : m?.name ?? '';
+    let names = `${hit.object.name} ${matName}`;
+    for (let p = hit.object.parent; p && p !== visual.model; p = p.parent) names += ` ${p.name}`;
+    menu.openGarageTab(partTab(names));
+  });
   dom.addEventListener('pointerup', endDrag);
   dom.addEventListener('pointercancel', endDrag);
   dom.addEventListener('wheel', (e) => { if (!driving()) orbit.dist = Math.min(inGarage ? 7.6 : 11, Math.max(inGarage ? 3.6 : 4.5, orbit.dist + e.deltaY * 0.004)); }, { passive: true });
   const tmpT = new THREE.Vector3(), tmpP = new THREE.Vector3(), tmpR = new THREE.Vector3(), tmpD = new THREE.Vector3();
+  const envV = new THREE.Vector3(), envFrom = new THREE.Vector3(), envTo = new THREE.Vector3();
+  let envAudioAt = 0;
   /**
    * Showroom camera. In the garage it orbits the turntable (car at the origin, nose down +z) and stays inside the
    * room; behind the tuner's cover it orbits the car where it stands on the street (that view is what gets measured).
@@ -2397,6 +2485,27 @@ async function main() {
     prof.vis += performance.now() - tVis;
     const tAud = performance.now();
     if (driving()) audio.update(car.out, car.out[OUT.speed]);
+    // Environment audio (~10 Hz): 3 short rays (left, right, up) pick tunnel / urban-canyon reverb; road wetness and the
+    // adaptive music follow the weather, speed, cops and heat
+    if (state === 'race' && now - envAudioAt > 100) {
+      envAudioAt = now;
+      const kmhA = Math.abs(car.out[OUT.speed]) * 3.6;
+      const right = envV.set(1, 0, 0).applyQuaternion(quat).setY(0).normalize();
+      envFrom.copy(pos).setY(pos.y + 0.6);
+      const hitL = pw.raycast(envFrom, envTo.copy(envFrom).addScaledVector(right, -10), car.body);
+      const hitR = pw.raycast(envFrom, envTo.copy(envFrom).addScaledVector(right, 10), car.body);
+      const hitU = pw.raycast(envFrom, envTo.copy(envFrom).setY(envFrom.y + 14), car.body);
+      let rev = 0;
+      if (hitU) rev = 0.85;
+      else if (hitL && hitR) rev = 0.6 - Math.min(0.35, (hitL.toi + hitR.toi) / 40 * 0.35);
+      else if (hitL || hitR) rev = 0.12;
+      audio.envReverb += (rev - audio.envReverb) * 0.35;
+      audio.roadWetness = worldClock.wetness;
+      let rough = 0;   // wheels on a non-asphalt surface (kerbs / pavement): coarse rolling crunch instead of smooth asphalt
+      for (let i = 0; i < 4; i++) { const o = OUT.wheel(i); if (car.out[o + 5] > 0.5 && car.out[o + 11] !== core.info.surfaces.asphalt) rough++; }
+      audio.onGravel = rough >= 2;
+      audio.setMusicContext(kmhA, cops.active, heat.level);
+    }
     // force feedback runs every frame (it ramps to zero in the menus); only while the wheel is the driving device
     ffb.update(frame, { driving: state === 'race' && input.device === 'wheel', rackTorque: car.out[OUT.steerTorque], speed: Math.abs(car.out[OUT.speed]),
       wheel: input.wheelPos, wheelVel: input.wheelVel, impactKj: state === 'race' ? rumbleKj : 0 }, input.settings);
