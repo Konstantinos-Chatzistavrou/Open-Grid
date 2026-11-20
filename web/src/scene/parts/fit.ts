@@ -382,40 +382,6 @@ export function fittedSkirt(fit: BodyFit, mat: THREE.Material, p: SkirtP): THREE
 }
 
 // ---- fender flares --------------------------------------------------------------------------------------------------------
-export interface FlareP {
-  /** how far the lip stands out from the body, m */ out: number;
-  /** radial depth of the lip above the arch, m */ lip: number;
-  /** exposed bolts along the lip */ bolts?: boolean;
-}
-export function fittedFlares(fit: BodyFit, mat: THREE.Material, p: FlareP): THREE.Object3D {
-  const g = new THREE.Group(), T = new Tris();
-  for (const w of fit.wheels) {
-    const s = (w.x >= 0 ? 1 : -1) as 1 | -1;
-    const R = w.r + 0.055;                                            // the arch opening: the tyre plus its clearance
-    const N = 44, a0 = -0.12 * Math.PI, a1 = 1.12 * Math.PI;
-    let prev: THREE.Vector3[] | null = null;
-    for (let i = 0; i <= N; i++) {
-      const a = a0 + (a1 - a0) * (i / N), ca = Math.cos(a), sa = Math.sin(a);
-      const z = w.z + ca * R, body = fit.shoulder(Math.min(fit.box.max.z, Math.max(fit.box.min.z, z)), s);
-      // the lip is widest over the top of the arch and blends into the body at its feet
-      const k = 0.35 + 0.65 * Math.sin(Math.min(Math.PI, Math.max(0, (a - a0) / (a1 - a0) * Math.PI)));
-      const xin = s * (body - 0.03), xout = s * (body + p.out * k);
-      const at = (rad: number, x: number) => new THREE.Vector3(x, w.y + sa * rad, w.z + ca * rad);
-      // section: inner foot (in the body), arch edge, outer edge, outer top, inner top
-      const sec = [at(R, xin), at(R, xout), at(R + p.lip * 0.45, xout), at(R + p.lip, xin)];
-      if (prev) for (let j = 0; j < sec.length; j++) T.quad(prev[j], prev[(j + 1) % sec.length], sec[(j + 1) % sec.length], sec[j]);
-      prev = sec;
-      if (p.bolts && i % 6 === 2) {
-        const c = at(R + p.lip * 0.5, xout + s * 0.004);
-        T.tri(c.clone().add(new THREE.Vector3(0, 0.012, 0)), c.clone().add(new THREE.Vector3(0, -0.008, 0.011)), c.clone().add(new THREE.Vector3(0, -0.008, -0.011)));
-      }
-    }
-  }
-  g.add(meshOf(T, mat, 'flares'));
-  return g;
-}
-
-// ---- the designs: every id of the old catalogue keeps its name and gets a fitted shape -----------------------------------------
 export const SPLITTERS_FIT: Record<string, SplitterP> = {
   'splitter-lip-01': { out: 0.035, t: 0.014 },
   'splitter-deep-02': { out: 0.09, t: 0.018, plates: 0.05 },
@@ -452,14 +418,76 @@ export const SKIRTS_FIT: Record<string, SkirtP> = {
   'skirt-lip-29': { out: 0.045, lip: 0.03 },
   'skirt-cap-30': { out: 0.06, fins: 0.05, lip: 0.02 },
 };
-export const FLARES_FIT: Record<string, FlareP> = {
-  'fender-smooth': { out: 0.012, lip: 0.035 },
-  'fender-plus': { out: 0.022, lip: 0.045 },
-  'fender-wide': { out: 0.035, lip: 0.055 },
-  'fender-bolt': { out: 0.04, lip: 0.06, bolts: true },
-  'fender-race': { out: 0.055, lip: 0.07 },
-  'fender-extreme': { out: 0.075, lip: 0.085, bolts: true },
-};
+/**
+ * Where a replacement panel meets the rest of THIS car. A reshaped bumper or hood must not move where it touches a
+ * fender, the hood, a lamp, the grille surround or the windscreen cowl: those vertices are its seam, found by touch (a
+ * vertex of the part within ~2 cm of another body panel), and pin(p) rises smoothly from 0 on the seam to 1 at `reach`
+ * from it. Pinning at a fixed z plane (the old way) let a bumper whose seam curves round the corner slide out of it: a
+ * visible step at the quarter panel. Free edges (a lip's lower edge, an open intake) touch nothing, so they still move.
+ */
+export class SeamPin {
+  private seam = new Map<number, number[]>();
+  private memo = new Map<string, number>();
+  private readonly cell: number;
+
+  constructor(model: THREE.Object3D, part: THREE.Object3D, isBody: (m: THREE.Mesh) => boolean, touch = 0.016, private reach = 0.16) {
+    model.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(model.matrixWorld).invert(), m4 = new THREE.Matrix4(), v = new THREE.Vector3();
+    const inPart = (o: THREE.Object3D) => { for (let q: THREE.Object3D | null = o; q && q !== model; q = q.parent) if (q === part) return true; return false; };
+    const key = (x: number, y: number, z: number, c: number) => ((Math.floor(x / c) + 2048) * 4096 + (Math.floor(y / c) + 2048)) * 4096 + (Math.floor(z / c) + 2048);
+    // 1. every other body panel's vertices, as occupied cells of `touch`
+    const body = new Set<number>();
+    model.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || !m.geometry?.attributes.position || inPart(m) || !isBody(m)) return;
+      m4.multiplyMatrices(inv, m.matrixWorld);
+      const pos = m.geometry.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(m4); body.add(key(v.x, v.y, v.z, touch)); }
+    });
+    // 2. the part's vertices that touch one of them: its seam, in cells of `reach`
+    this.cell = reach;
+    const near = (x: number, y: number, z: number) => {
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++)
+        if (body.has(key(x + dx * touch, y + dy * touch, z + dz * touch, touch))) return true;
+      return false;
+    };
+    part.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || !m.geometry?.attributes.position) return;
+      m4.multiplyMatrices(inv, m.matrixWorld);
+      const pos = m.geometry.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(m4);
+        if (!near(v.x, v.y, v.z)) continue;
+        const k = key(v.x, v.y, v.z, reach);
+        let list = this.seam.get(k);
+        if (!list) this.seam.set(k, (list = []));
+        list.push(v.x, v.y, v.z);
+      }
+    });
+  }
+
+  /** 0 on the seam .. 1 at `reach` and beyond (model-space point of the stock part) */
+  pin(p: THREE.Vector3): number {
+    const mk = `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)},${Math.round(p.z * 1e4)}`;
+    const hit = this.memo.get(mk);
+    if (hit !== undefined) return hit;
+    const c = this.cell, cx = Math.floor(p.x / c), cy = Math.floor(p.y / c), cz = Math.floor(p.z / c);
+    let best = Infinity;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      const list = this.seam.get(((cx + dx + 2048) * 4096 + (cy + dy + 2048)) * 4096 + (cz + dz + 2048));
+      if (!list) continue;
+      for (let i = 0; i < list.length; i += 3) {
+        const d = (list[i] - p.x) ** 2 + (list[i + 1] - p.y) ** 2 + (list[i + 2] - p.z) ** 2;
+        if (d < best) best = d;
+      }
+    }
+    const d = Math.sqrt(best), t = Math.min(1, Math.max(0, (d - 0.008) / (this.reach - 0.008)));
+    const w = t * t * t * (t * (t * 6 - 15) + 10);
+    this.memo.set(mk, w);
+    return w;
+  }
+}
 
 /**
  * A copy of one of the car's own panels with its vertices moved, baked to plain float geometry in model space.

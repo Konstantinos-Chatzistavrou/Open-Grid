@@ -493,6 +493,7 @@ export class CarVisual {
     model.add(this.driver.root);
     for (const nm of cfg.hide_for_driver ?? []) { const o = model.getObjectByName(nm); if (o) o.visible = false; }
     if (typeof location === 'undefined' || new URLSearchParams(location.search).get('merge') !== '0') this.mergeStatic();
+    this.custom.prepareWidebody();   // after the merge: the widebody deforms the meshes the car really draws
   }
 
   /**
