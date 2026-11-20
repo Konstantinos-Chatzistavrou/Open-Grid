@@ -269,6 +269,15 @@ WheelContact Vehicle::resolve_footprint_16(const WheelFootprint16Rays& footprint
             if (dot(ramp_n, up_dir) > 0.4) normal_acc += ramp_n * 1.6;
         }
     }
+    // Simcenter Tire 2606 MF-Swift 3D Tandem Elliptical Cam Obstacle Enveloping Slope:
+    // Compares effective enveloped height of the front cam (rows 3-4) vs rear cam (rows 0-1) across contact length 2a
+    const double trail_dist = std::min({hits[0].hit ? hits[0].distance : 1e9,
+                                        hits[1].hit ? hits[1].distance : 1e9,
+                                        hits[2].hit ? hits[2].distance : 1e9});
+    if (lead_dist < 1e8 && trail_dist < 1e8) {
+        const double cam_base_m = std::max(0.10, 1.08 * r);
+        best.enveloping_slope_tan = clamp((trail_dist - lead_dist) / cam_base_m, -0.30, 0.30);
+    }
     best.normal = weight_sum > 0.0 ? normalized(normal_acc) : Vec3{0, 0, 1};
     return best;
 }
@@ -450,6 +459,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             tire_condition_[w].set_environment_celsius(atmosphere_.ambient_air_c, atmosphere_.track_surface_c);
         }
         tire_condition_[w].rib_contact_shares = c.rib_contact_shares;
+        tire_condition_[w].enveloping_slope_tan = c.enveloping_slope_tan;
         k.mu = cfg_.grip_for_surface(c.surface) * tire_condition_[w].grip_factor(&cfg_.tire(w))
              * (tire_zones_enabled ? tire_condition_[w].zone_health_grip_factor() : 1.0) * damage_.grip[w];
         // Dynamic inclination / camber angle gamma in the tyre frame (+ = top tilted toward +left):
@@ -592,6 +602,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
                 const double side_sign = (w % 2 == 0) ? -1.0 : 1.0;
                 tire_condition_[w].update_zones(slip_power, k.load, std::hypot(k.vx, k.vy), k.gamma, f.fy,
                                                 side_sign, drivetrain_.wheel_omega[w], wheel_angle_[w], h, &tp);
+                tire_condition_[w].step_rigid_ring_belt(f.fx, f.fy, k.re, h);
             } else {
                 tire_condition_[w].update(slip_power, k.load, std::hypot(k.vx, k.vy), h, &tp);
             }

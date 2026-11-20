@@ -466,4 +466,30 @@ RS_TEST(ue5_upgrade) {
                     tire_summer.surface_c > tire_winter.surface_c + 12.0 &&
                     tire_summer.pressure_kpa > tire_winter.pressure_kpa + 8.0);
     }
+
+    // 18. Simcenter Tire 2606 (MF-Tyre / MF-Swift 2606): T&V Thermal Stiffness, Rigid-Ring Belt Dynamics,
+    //     3D Tandem-Cam Obstacle Enveloping & Broadband Toroidal Cavity Resonance Doppler Acoustics
+    {
+        const TireParams& tp = cfg.tire_front;
+        TireCondition cold_t, hot_t;
+        cold_t.temperature_c = 38.0; cold_t.surface_c = 36.0;
+        hot_t.temperature_c = 128.0; hot_t.surface_c = 138.0;
+        test::check("Simcenter 2606 T&V: cold rubber has higher small-slip shear modulus stiffness than overheated rubber",
+                    cold_t.thermal_stiffness_factor(&tp) > 1.05 &&
+                    hot_t.thermal_stiffness_factor(&tp) < 0.93);
+
+        // MF-Swift Rigid-Ring Belt Dynamics (~72 Hz in-plane torsional & ~45 Hz out-of-plane lateral modes)
+        TireCondition ring_t;
+        ring_t.step_rigid_ring_belt(3800.0, 2900.0, tp.radius, 0.004);
+        test::check("Simcenter 2606 MF-Swift Rigid-Ring belt deflects torsionally and laterally under transient force",
+                    std::abs(ring_t.belt_torsion_rad) > 1e-4 && std::abs(ring_t.belt_lateral_m) > 1e-4);
+
+        // Simcenter 2606 Broadband Transient Tire-Road NVH & Toroidal Air-Cavity Doppler Split (~225 Hz doublet)
+        TireAcousticSource ac_slow = ring_t.compute_acoustics(5.0, tp.radius, 0.05);
+        TireAcousticSource ac_fast = ring_t.compute_acoustics(110.0, tp.radius, 0.65);
+        test::check("Simcenter 2606 Tire Acoustics: toroidal air-cavity resonance (~225 Hz) exhibits rotational Doppler split & transient volume acceleration",
+                    (ac_fast.cavity_mode_high_hz - ac_fast.cavity_mode_low_hz) > (ac_slow.cavity_mode_high_hz - ac_slow.cavity_mode_low_hz) + 40.0 &&
+                    ac_fast.tread_block_pitch_hz > 900.0 &&
+                    ac_fast.transient_volume_accel > ac_slow.transient_volume_accel);
+    }
 }

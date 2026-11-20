@@ -68,6 +68,7 @@ struct WheelContact {
     int surface = 0;        // index into CarConfig::surface_grip
     double water_depth_mm = 0.0; // mm of standing water at this specific wheel contact patch (0 = dry/damp, > 1.5 mm = puddle/flooded curb)
     std::array<double, 3> rib_contact_shares{1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0}; // 3D geometric normal load shares (Inner, Middle, Outer)
+    double enveloping_slope_tan = 0.0; // Simcenter 2606 MF-Swift 3D tandem-cam obstacle enveloping road slope tan(beta_env)
 };
 
 struct WheelOutput {
