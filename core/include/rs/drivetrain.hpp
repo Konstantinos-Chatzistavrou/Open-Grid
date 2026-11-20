@@ -15,6 +15,24 @@ struct DrivetrainInput {
     std::array<double, 4> brake_scale{1, 1, 1, 1};   // ABS: fraction of driver brake pressure
     std::array<double, 4> extra_brake{};             // ESC: added brake torque, N m
     std::array<double, 4> pad_mu{1, 1, 1, 1};        // brake pad friction vs. its working range (disc temperature)
+    bool nos_active = false;                         // N2O nitrous solenoid open
+    bool starter_crank = false;                      // physical starter motor cranking
+    double airspeed_mps = 0.0;                       // vehicle forward speed for oil radiator cooling
+};
+
+// Night Runners / UE5 forced induction, nitrous oxide, oil thermal & mechanical health state.
+struct EngineSystemState {
+    int turbo_stage = 0;            // 0 = NA, 1 = Street (0.70 bar), 2 = Sport (1.15 bar), 3 = Race Twin-Scroll (1.65 bar)
+    double boost_bar = 0.0;         // current manifold gauge pressure (bar; negative in vacuum, positive under boost)
+    bool bov_venting = false;       // true when blow-off valve is venting compressed charge on throttle lift (UE5 MetaSounds trigger)
+    double bov_timer_s = 0.0;       // remaining BOV vent duration (s)
+    double nos_bottles_l = 4.5;     // remaining N2O liquid volume (liters)
+    double nos_capacity_l = 4.5;    // full N2O bottle capacity (liters)
+    double oil_temp_c = 85.0;       // engine oil temperature (C; optimal 80-115 C, overheats > 130 C)
+    double engine_health = 1.0;     // 0..1 mechanical health (degrades under severe overheat/redline abuse; < 0.65 causes misfires)
+    bool wear_enabled = false;      // true to accumulate progressive redline/thermal wear during a session
+    bool misfiring = false;         // true during an active ignition misfire dip
+    double misfire_phase = 0.0;     // deterministic phase accumulator for misfire events
 };
 
 class Drivetrain {
@@ -33,6 +51,8 @@ public:
     double engine_rpm() const;
     double engine_torque_full(double rpm) const; // N m at full throttle
     double clutch_torque = 0;                   // last clutch torque (engine -> gearbox), N m
+    EngineSystemState systems{};                // turbo boost, BOV, N2O nitrous, oil temp & mechanical wear
+    static double max_boost_for_stage(int stage);
 
     // Differential tree node: a wheel (leaf) or a differential with two children and a torque
     // split (fraction of input torque to child a). Built once from the layout (rwd/fwd/awd).

@@ -91,6 +91,69 @@ std::array<WheelRay, 4> Vehicle::wheel_rays(const ChassisState& s) const {
     return rays;
 }
 
+std::array<WheelContactPatchRays, 4> Vehicle::wheel_contact_patch_rays(const ChassisState& s) const {
+    std::array<WheelContactPatchRays, 4> out;
+    const Vec3 down = s.orientation.rotate({0, 0, -1});
+    for (int w = 0; w < 4; ++w) {
+        const WheelGeom& g = cfg_.wheels[w];
+        const double r = cfg_.tire(w).radius;
+        const double len = cfg_.axle(w).spring_rest_length + r;
+        const Vec3 mount = s.position + s.orientation.rotate({g.x, g.y, g.mount_z});
+        const double st = steer_angle(w);
+        const Vec3 wheel_fwd = s.orientation.rotate({std::cos(st), std::sin(st), 0.0});
+        const double dx = 0.52 * r;
+        out[w].longitudinal_offsets_m = {0.0, dx, -dx};
+        for (int i = 0; i < 3; ++i) {
+            out[w].rays[i].origin = mount + wheel_fwd * out[w].longitudinal_offsets_m[i];
+            out[w].rays[i].direction = down;
+            out[w].rays[i].length = len;
+        }
+    }
+    return out;
+}
+
+WheelContact Vehicle::resolve_contact_patch(const WheelContactPatchRays& patch,
+                                            const std::array<WheelContact, 3>& hits,
+                                            double tire_radius) {
+    WheelContact best;
+    const double r = std::max(tire_radius, 0.10);
+    double best_eff_dist = 1e9;
+    Vec3 normal_acc{0, 0, 0};
+    double weight_sum = 0.0;
+
+    for (int i = 0; i < 3; ++i) {
+        if (!hits[i].hit) continue;
+        const double dx = patch.longitudinal_offsets_m[i];
+        // Circular tire tread profile: point at horizontal offset dx sits dz higher than the bottom of the wheel
+        const double dz = r - std::sqrt(std::max(0.0, r * r - dx * dx));
+        const double eff_dist = hits[i].distance + dz;
+        if (eff_dist < best_eff_dist) {
+            best_eff_dist = eff_dist;
+            best.hit = true;
+            best.distance = eff_dist;
+            best.point = patch.rays[0].origin + patch.rays[0].direction * eff_dist;
+            best.surface = hits[i].surface;
+        }
+        const double w = (i == 0) ? 1.0 : 0.65;
+        normal_acc += hits[i].normal * w;
+        weight_sum += w;
+    }
+    if (!best.hit) return best;
+
+    // If leading ray hits a higher step (curb lip) than center ray, tilt effective normal slightly back along ramp
+    if (hits[1].hit && hits[0].hit && hits[1].distance + 0.005 < hits[0].distance) {
+        const Vec3 step_vec = hits[1].point - hits[0].point;
+        const double step_len2 = dot(step_vec, step_vec);
+        if (step_len2 > 1e-6) {
+            const Vec3 up_dir = patch.rays[0].direction * -1.0;
+            Vec3 ramp_n = normalized(up_dir - normalized(step_vec) * 0.35);
+            if (dot(ramp_n, up_dir) > 0.4) normal_acc += ramp_n * 0.85;
+        }
+    }
+    best.normal = weight_sum > 0.0 ? normalized(normal_acc) : Vec3{0, 0, 1};
+    return best;
+}
+
 VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelContact, 4>& contacts, double dt) {
     VehicleOutput out;
     time_ += dt;
@@ -271,6 +334,9 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     DrivetrainInput din{input_.throttle, input_.clutch, input_.brake, input_.handbrake, input_.gear,
                         damage_.engine_power};
     din.brake_power_scale = damage_.brakes;
+    din.nos_active = input_.nos;
+    din.starter_crank = input_.starter;
+    din.airspeed_mps = std::abs(out.speed);
     // ---- ASSIST: auto-clutch (sits on top of the model; the drivetrain only sees a pedal value)
     // Behaves like a centrifugal clutch: engagement rises with engine rpm above idle, so the car
     // launches when you add throttle and declutches before stalling when you slow down. Gear
@@ -455,6 +521,12 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     out.engine_rpm = drivetrain_.engine_rpm();
     out.gear = input_.gear;
     out.engine_stalled = drivetrain_.stalled;
+    out.boost_bar = drivetrain_.systems.boost_bar;
+    out.bov_venting = drivetrain_.systems.bov_venting;
+    out.nos_remaining_l = drivetrain_.systems.nos_bottles_l;
+    out.oil_temp_c = drivetrain_.systems.oil_temp_c;
+    out.engine_health = drivetrain_.systems.engine_health;
+    out.engine_misfire = drivetrain_.systems.misfiring;
     return out;
 }
 
