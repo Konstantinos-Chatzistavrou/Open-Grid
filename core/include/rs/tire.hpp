@@ -56,7 +56,7 @@ struct TireCondition {
     double enveloping_slope_tan = 0.0;  // MF-Swift 3D tandem-cam obstacle enveloping slope tan(beta_env)
 
     void set_environment_celsius(double air_c, double track_c) { ambient_air_c = air_c; track_surface_c = track_c; }
-    void step_rigid_ring_belt(double fx_n, double fy_n, double radius_m, double dt);
+    void step_rigid_ring_belt(double fx_n, double fy_n, double radius_m, double dt, const TireParams* p = nullptr);
     /** Simcenter Tire 2606 T&V (Temperature & Velocity) shear-modulus stiffness factor for K_xk and K_ya. */
     double thermal_stiffness_factor(const TireParams* p = nullptr) const;
     /** Simcenter Tire 2606 Broadband Transient Tire-Road NVH & Toroidal Cavity Resonance Acoustic Source. */
@@ -82,6 +82,8 @@ struct TireOperating {
     double phi = 0;               // turn slip (spin) 1/m: -(yaw rate of the wheel) / V_cx (MF 6.1)
     bool enable_mf62_hybrid = false;          // enables MF 6.2 camber coupling + 3-Rib load integration + WLF flash temp
     double wheel_side_sign = -1.0;            // -1.0 for left wheels (FL/RL), +1.0 for right wheels (FR/RR)
+    double gamma_rate_rads = 0.0;             // camber rate d(gamma)/dt (rad/s) for gyroscopic belt precession torque QTZ1
+    double rolling_speed_mps = 0.0;           // wheel longitudinal rolling speed V_x (m/s) for gyroscopic belt torque
     const TireCondition* condition = nullptr; // optional pointer to 3-zone I/M/O + WLF flash-temperature state
 };
 
@@ -97,11 +99,13 @@ double mf_pure_fy(const TireParams& p, double alpha, double fz, double mu_scale,
 double mf_aligning_torque(const TireParams& p, double kappa, double alpha, double fz, double mu_scale, double gamma,
                           double fx, double fy_no_svyk, double* out_trail = nullptr);
 
-// Effective rolling radius R_e under vertical load Fz (Pacejka Ch. 4) and MF 6.2 camber-conicity asymmetric deflection.
+// Effective rolling radius R_e under vertical load Fz (Pacejka Ch. 4 BREFF/DREFF/FREFF) and MF 6.2/Simcenter 2606
+// camber-conicity, inflation-pressure stiffness PFZ1, and high-speed centrifugal steel-belt growth.
 double effective_rolling_radius(const TireParams& p, double fz);
-double effective_rolling_radius_mf62(const TireParams& p, double fz, double gamma);
+double effective_rolling_radius_mf62(const TireParams& p, double fz, double gamma, double dpi = 0.0,
+                                     double wheel_omega_rads = 0.0);
 
-// Load- and camber-dependent transient relaxation lengths sigma_x(Fz), sigma_y(Fz, gamma) (Pacejka Ch. 7).
-void relaxation_lengths(const TireParams& p, double fz, double gamma, double& sigma_x, double& sigma_y);
+// Load-, camber-, and pressure-dependent transient relaxation lengths sigma_x(Fz), sigma_y(Fz, gamma) (Pacejka Ch. 7 + PTX/PTY).
+void relaxation_lengths(const TireParams& p, double fz, double gamma, double& sigma_x, double& sigma_y, double dpi = 0.0);
 
 }  // namespace rs

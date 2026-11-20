@@ -125,6 +125,31 @@ TireParams parse_tire(const json& j, const std::string& ctx) {
     t.relax_y = num(j, "relaxation_length_lat_m", ctx);
     t.rolling_resistance = num(j, "rolling_resistance", ctx);
     t.rolling_resistance_v2 = num_or(j, "rolling_resistance_v2", 0.001);
+    t.vertical_damping = num_or(j, "vertical_damping_ns_per_m", t.vertical_damping);
+    t.breff = num_or(j, "breff", t.breff);
+    t.dreff = num_or(j, "dreff", t.dreff);
+    t.freff = num_or(j, "freff", t.freff);
+    t.pfz1 = num_or(j, "pfz1", t.pfz1);
+    t.ptx1 = num_or(lo, "pTx1", t.ptx1);
+    t.ptx2 = num_or(lo, "pTx2", t.ptx2);
+    t.ptx3 = num_or(lo, "pTx3", t.ptx3);
+    t.pty1 = num_or(la, "pTy1", t.pty1);
+    t.pty2 = num_or(la, "pTy2", t.pty2);
+    t.ppx1 = num_or(lo, "pPx1", t.ppx1);
+    t.ppx2 = num_or(lo, "pPx2", t.ppx2);
+    t.ppx3 = num_or(lo, "pPx3", t.ppx3);
+    t.ppx4 = num_or(lo, "pPx4", t.ppx4);
+    t.ppy1 = num_or(la, "pPy1", t.ppy1);
+    t.ppy2 = num_or(la, "pPy2", t.ppy2);
+    t.ppy3 = num_or(la, "pPy3", t.ppy3);
+    t.ppy4 = num_or(la, "pPy4", t.ppy4);
+    if (j.contains("aligning")) {
+        const json& al = j.at("aligning");
+        t.qtz1 = num_or(al, "qTz1", t.qtz1);
+    }
+    t.mbelt = num_or(j, "mbelt_kg", t.mbelt);
+    t.section_width_m = num_or(j, "section_width_m", t.section_width_m);
+    t.aspect_ratio = num_or(j, "aspect_ratio", t.aspect_ratio);
     return t;
 }
 
