@@ -80,6 +80,8 @@ export class Input {
   private keys = new Set<string>();
   private pending = { up: false, down: false };
   private padPrev = new Map<number, boolean[]>();
+  private padCur = new Map<number, boolean[]>();
+  private padsBuf: Gamepad[] = [];
   /** After a spawn the car is held on the brake until the first throttle input (start on a hill). */
   hold = true;
   /** Keeps the hold on (throttle ignored) while the renderer calibrates its resolution. */
@@ -257,35 +259,67 @@ export class Input {
   /** Hold the phone the way you want "straight" and call this. */
   recentreTilt() { this.tilt.neutral = this.tilt.angle; }
 
-  /** Call once per physics tick. Edge events (shifts) are delivered exactly once. */
+  /** Call once per frame (or tick). Edge events (shifts) are delivered exactly once. */
   poll(): RawInput {
-    const k = (c: string) => this.keys.has(c);
     const r = this.raw;
     r.directGear = -99;
-    const allPads = (navigator.getGamepads?.() ?? []).filter((p): p is Gamepad => !!p && p.connected);
+    const pads = this.padsBuf;
+    pads.length = 0;
+    const rawPads = navigator.getGamepads?.();
+    if (rawPads) {
+      for (let i = 0; i < rawPads.length; i++) {
+        const p = rawPads[i];
+        if (p && p.connected) pads.push(p);
+      }
+    }
+    const allCount = pads.length;
     // In 2-Player Split-Screen:
     //  - 2+ controllers: P1 ONLY listens to pads[0] (pads[1] belongs exclusively to Player 2!)
     //  - 1 controller: P1 uses WASD keyboard so the single controller drives Player 2 cleanly!
-    const pads = this.splitScreen ? (allPads.length >= 2 ? [allPads[0]] : []) : allPads;
-    if (this.splitScreen && allPads.length >= 2 && this.activeIndex !== allPads[0].index) {
-      this.activeIndex = allPads[0].index;
-      this.activeId = allPads[0].id;
-      const c0 = this.kindOf(allPads[0]);
-      if (c0.kind === 'wheel') { this.wheel = { model: c0.model, key: deviceKey(allPads[0]) }; this.setSource('wheel'); }
-      else { this.family = c0.family; this.wheel = null; this.setSource('pad'); }
-    } else if (this.splitScreen && allPads.length < 2 && (this.source === 'pad' || this.source === 'wheel')) {
-      this.setSource('keys');
+    if (this.splitScreen) {
+      if (allCount >= 2) {
+        const p0 = pads[0];
+        pads.length = 1;
+        if (this.activeIndex !== p0.index) {
+          this.activeIndex = p0.index;
+          this.activeId = p0.id;
+          const c0 = this.kindOf(p0);
+          if (c0.kind === 'wheel') { this.wheel = { model: c0.model, key: deviceKey(p0) }; this.setSource('wheel'); }
+          else { this.family = c0.family; this.wheel = null; this.setSource('pad'); }
+        }
+      } else {
+        pads.length = 0;
+        if (this.source === 'pad' || this.source === 'wheel') this.setSource('keys');
+      }
     }
     this.rightStick.x = 0; this.rightStick.y = 0;
     // which pad / wheel was moved? (it becomes the driving device) "Moved" = changed since it last drove or was first
     // seen, so a wheel left turned, a pedal resting at full scale or a drifting stick never steals control back.
-    for (const p of pads) {
+    let pad: Gamepad | undefined;
+    for (let pi = 0; pi < pads.length; pi++) {
+      const p = pads[pi];
       const c = this.kindOf(p);
-      let a = this.anchors.get(p.index);
-      if (!a || a.id !== p.id) { a = { id: p.id, axes: p.axes.map(() => 0), buttons: p.buttons.map(() => 0) }; this.anchors.set(p.index, a); }
-      const anchor = a;
-      const moved = p.axes.some((v, i) => Math.abs(v - (anchor.axes[i] ?? 0)) > (c.kind === 'wheel' ? 0.06 : 0.25)) || p.buttons.some((b, i) => b.value - (anchor.buttons[i] ?? 0) > 0.3);
-      if (p.index === this.activeIndex && (this.source === 'pad' || this.source === 'wheel') || moved) { anchor.axes = p.axes.slice(); anchor.buttons = p.buttons.map((b) => b.value); }
+      let anchor = this.anchors.get(p.index);
+      if (!anchor || anchor.id !== p.id) {
+        anchor = { id: p.id, axes: new Array<number>(p.axes.length).fill(0), buttons: new Array<number>(p.buttons.length).fill(0) };
+        this.anchors.set(p.index, anchor);
+      }
+      const thresh = c.kind === 'wheel' ? 0.06 : 0.25;
+      let moved = false;
+      for (let i = 0; i < p.axes.length; i++) {
+        if (Math.abs(p.axes[i] - (anchor.axes[i] ?? 0)) > thresh) { moved = true; break; }
+      }
+      if (!moved) {
+        for (let i = 0; i < p.buttons.length; i++) {
+          if (p.buttons[i].value - (anchor.buttons[i] ?? 0) > 0.3) { moved = true; break; }
+        }
+      }
+      if ((p.index === this.activeIndex && (this.source === 'pad' || this.source === 'wheel')) || moved) {
+        anchor.axes.length = p.axes.length;
+        for (let i = 0; i < p.axes.length; i++) anchor.axes[i] = p.axes[i];
+        anchor.buttons.length = p.buttons.length;
+        for (let i = 0; i < p.buttons.length; i++) anchor.buttons[i] = p.buttons[i].value;
+      }
       // a different device (index), or another device plugged into the same slot (id), or coming back from keys / touch
       if (moved && !this.suspended && (p.index !== this.activeIndex || p.id !== this.activeId || (this.source !== 'pad' && this.source !== 'wheel'))) {
         this.activeIndex = p.index;
@@ -294,10 +328,10 @@ export class Input {
         else { this.family = c.family; this.wheel = null; this.setSource('pad'); }
         this.onDevice();
       }
+      if (p.index === this.activeIndex) pad = p;
     }
     const t = this.touch?.state;
     if (t?.active) { this.setSource('touch'); t.active = false; }   // a new touch: touch drives until keys/pad
-    const pad = pads.find((p) => p.index === this.activeIndex);
     if (this.suspended) { r.steer = r.throttle = r.brake = r.clutch = r.handbrake = 0; r.shiftUp = r.shiftDown = false; return r; }
 
     if (this.source === 'touch' && this.touch) {
@@ -349,19 +383,20 @@ export class Input {
     } else {
       r.device = 0;
       const kb = this.keyBinds;
+      const keys = this.keys;
       if (this.splitScreen) {
         // Split-Screen: P1 uses WASD + Space ONLY (Arrow Keys & Right Shift belong exclusively to Player 2!)
-        r.steer = (k(kb.steerLeft) ? 1 : 0) - (k(kb.steerRight) ? 1 : 0);
-        r.throttle = k(kb.throttle) ? 1 : 0;
-        r.brake = k(kb.brake) ? 1 : 0;
-        r.handbrake = k(kb.handbrake) ? 1 : 0;
-        r.clutch = k(kb.clutch) ? 1 : 0;
+        r.steer = (keys.has(kb.steerLeft) ? 1 : 0) - (keys.has(kb.steerRight) ? 1 : 0);
+        r.throttle = keys.has(kb.throttle) ? 1 : 0;
+        r.brake = keys.has(kb.brake) ? 1 : 0;
+        r.handbrake = keys.has(kb.handbrake) ? 1 : 0;
+        r.clutch = keys.has(kb.clutch) ? 1 : 0;
       } else {
-        r.steer = (k(kb.steerLeft) || k('ArrowLeft') ? 1 : 0) - (k(kb.steerRight) || k('ArrowRight') ? 1 : 0);
-        r.throttle = k(kb.throttle) || k('ArrowUp') ? 1 : 0;
-        r.brake = k(kb.brake) || k('ArrowDown') ? 1 : 0;
-        r.handbrake = k(kb.handbrake) ? 1 : 0;
-        r.clutch = k(kb.clutch) || k('ShiftRight') ? 1 : 0;
+        r.steer = (keys.has(kb.steerLeft) || keys.has('ArrowLeft') ? 1 : 0) - (keys.has(kb.steerRight) || keys.has('ArrowRight') ? 1 : 0);
+        r.throttle = keys.has(kb.throttle) || keys.has('ArrowUp') ? 1 : 0;
+        r.brake = keys.has(kb.brake) || keys.has('ArrowDown') ? 1 : 0;
+        r.handbrake = keys.has(kb.handbrake) ? 1 : 0;
+        r.clutch = keys.has(kb.clutch) || keys.has('ShiftRight') ? 1 : 0;
       }
     }
     if (this.hold) {
@@ -385,16 +420,36 @@ export class Input {
 
   /** Forget buttons held right now (call when driving resumes: the button that closed a menu is not a game press). */
   syncPads() {
-    for (const p of navigator.getGamepads?.() ?? []) if (p) this.padPrev.set(p.index, p.buttons.map((b) => b.pressed));
+    const rawPads = navigator.getGamepads?.();
+    if (rawPads) {
+      for (let pi = 0; pi < rawPads.length; pi++) {
+        const p = rawPads[pi];
+        if (!p) continue;
+        const n = p.buttons.length;
+        let cur = this.padCur.get(p.index);
+        if (!cur) { cur = new Array<boolean>(n); this.padCur.set(p.index, cur); }
+        cur.length = n;
+        for (let i = 0; i < n; i++) cur[i] = p.buttons[i].pressed;
+      }
+    }
     this.pending.up = this.pending.down = false;
   }
 
   /** Pressed-this-poll test for buttons of one pad. */
   private edges(pad: Gamepad) {
-    const prev = this.padPrev.get(pad.index) ?? [];
-    const now = pad.buttons.map((b) => b.pressed);
-    this.padPrev.set(pad.index, now);
-    return (i: number) => !!now[i] && !prev[i];
+    const n = pad.buttons.length;
+    let prev = this.padPrev.get(pad.index);
+    let cur = this.padCur.get(pad.index);
+    if (!prev) { prev = new Array<boolean>(n).fill(false); this.padPrev.set(pad.index, prev); }
+    if (!cur) { cur = new Array<boolean>(n).fill(false); this.padCur.set(pad.index, cur); }
+    prev.length = n;
+    cur.length = n;
+    for (let i = 0; i < n; i++) {
+      prev[i] = cur[i] ?? false;
+      cur[i] = pad.buttons[i].pressed;
+    }
+    const cRef = cur, pRef = prev;
+    return (i: number) => !!cRef[i] && !pRef[i];
   }
 
   private kinds = new Map<string, ReturnType<typeof classify>>();

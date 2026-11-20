@@ -6,6 +6,8 @@ const SEL = 'button[data-act]:not([disabled]), a.source-link, input[type=text], 
 
 export class MenuNav {
   private prev = new Map<number, boolean[]>();
+  /** second button buffer per pad (swapped with prev each frame: no arrays per frame) */
+  private spare = new Map<number, boolean[]>();
   private repeatAt = 0;
   private held = '';
   private focused: HTMLElement | null = null;
@@ -77,18 +79,33 @@ export class MenuNav {
     pick?.click();
   }
 
+  /** The pads' buttons as they are now become `prev` (so a button already down is not a press). */
+  private snapshot() {
+    const pads = navigator.getGamepads?.();
+    if (!pads) return;
+    for (let i = 0; i < pads.length; i++) {
+      const p = pads[i];
+      if (!p) continue;
+      let a = this.prev.get(p.index);
+      if (!a) this.prev.set(p.index, (a = []));
+      a.length = p.buttons.length;
+      for (let b = 0; b < p.buttons.length; b++) a[b] = p.buttons[b].pressed;
+    }
+  }
+
   /** Every frame while a menu is up. */
   update(now: number) {
-    if (this.root.hidden || this.paused) {
-      // keep the button state current so a button held while the menu opens (Start that paused) is not a press
-      if (this.root.hidden) { this.focused = null; this.shown = false; }
-      for (const p of navigator.getGamepads?.() ?? []) if (p) this.prev.set(p.index, p.buttons.map((x) => x.pressed));
+    if (this.root.hidden) {
+      // driving: no pad reads at all. The frame the menu opens takes the buttons as they are (below), so a button held
+      // while it opens (the Start that paused) is still not a press.
+      this.focused = null; this.shown = false;
       return;
     }
+    if (this.paused) { this.snapshot(); return; }   // a wheel is being calibrated: keep the state current
     if (!this.shown) {
       // the menu just opened (maybe by the very Start press that is still down): take the buttons as they are now
       this.shown = true;
-      for (const p of navigator.getGamepads?.() ?? []) if (p) this.prev.set(p.index, p.buttons.map((x) => x.pressed));
+      this.snapshot();
       return;
     }
     if (this.focused && !this.root.contains(this.focused)) {
@@ -97,11 +114,16 @@ export class MenuNav {
       this.focused = null;
       if (this.active && act) this.setFocus(this.visible().find((e) => e.dataset.act === act && e.dataset.v === v) ?? null);
     }
-    for (const p of navigator.getGamepads?.() ?? []) {
+    const pads = navigator.getGamepads?.() ?? [];
+    for (let pi = 0; pi < pads.length; pi++) {
+      const p = pads[pi];
       if (!p || !p.connected) continue;
       const prev = this.prev.get(p.index) ?? [];
-      const now2 = p.buttons.map((b) => b.pressed);
+      const now2 = this.spare.get(p.index) ?? [];
+      now2.length = p.buttons.length;
+      for (let b = 0; b < p.buttons.length; b++) now2[b] = p.buttons[b].pressed;
       this.prev.set(p.index, now2);
+      this.spare.set(p.index, prev);
       const edge = (i: number) => !!now2[i] && !prev[i];
       if (p.mapping === 'standard') {
         if (edge(0)) { if (this.active && this.focused) this.focused.click(); else this.move(0, 1); }

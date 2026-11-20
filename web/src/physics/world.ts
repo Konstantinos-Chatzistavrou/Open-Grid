@@ -43,6 +43,8 @@ export class PhysicsWorld {
   readonly world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
   private surfaceOf = new Map<number, number>();   // collider handle -> core surface index
   private rayDir = new THREE.Vector3();
+  private rayOrigin = { x: 0, y: 0, z: 0 };
+  private rayDirObj = { x: 0, y: -1, z: 0 };
   private ray: RAPIER.Ray | null = null;
   private rayHit = { toi: 0, normal: { x: 0, y: 1, z: 0 }, collider: null as unknown as RAPIER.Collider };
 
@@ -94,9 +96,10 @@ export class PhysicsWorld {
     const len = d.length();
     if (len < 1e-6) return null;
     d.divideScalar(len);
+    this.rayOrigin.x = from.x; this.rayOrigin.y = from.y; this.rayOrigin.z = from.z;
+    this.rayDirObj.x = d.x; this.rayDirObj.y = d.y; this.rayDirObj.z = d.z;
     let ray = this.ray;
-    if (!ray) ray = this.ray = new RAPIER.Ray(from, d);
-    else { ray.origin = from; ray.dir = d; }
+    if (!ray) ray = this.ray = new RAPIER.Ray(this.rayOrigin, this.rayDirObj);
     const hit = this.world.castRayAndGetNormal(ray, len, solid, undefined, groups, undefined, exclude);
     if (!hit) return null;
     const out = this.rayHit;
@@ -129,6 +132,15 @@ export class CarBody {
   private appliedMass: number;
   private prevF = new THREE.Vector3();
   private hasPrev = false;
+  private forceVec = { x: 0, y: 0, z: 0 };
+  private torqueVec = { x: 0, y: 0, z: 0 };
+  private zeroVec = { x: 0, y: 0, z: 0 };
+  private identQ = { x: 0, y: 0, z: 0, w: 1 };
+  private inertiaVec = { x: 0, y: 0, z: 0 };
+  private crashQ = new THREE.Quaternion();
+  private crashBest = new THREE.Vector3();
+  private crashTmp = new THREE.Vector3();
+  private shiftRaw: RawInput = { steer: 0, throttle: 0, brake: 0, clutch: 0, handbrake: 0, shiftUp: true, shiftDown: false, device: 0, directGear: -99 };
 
   constructor(private pw: PhysicsWorld, readonly core: CoreCar, shape: CarShape, cgInModel: THREE.Vector3) {
     const { mass, inertia } = core.info;
@@ -245,7 +257,12 @@ export class CarBody {
     // Bug fix: ensure auto-gearbox immediately engages 1st from Neutral when throttle is pressed
     let inRaw = raw;
     if (assists.autoGearbox && Math.round(this.out[OUT.gear] ?? 1) === 1 && raw.throttle > 0.05 && raw.brake < 0.1 && !raw.shiftUp) {
-      inRaw = { ...raw, shiftUp: true };
+      const sr = this.shiftRaw;
+      sr.steer = raw.steer; sr.throttle = raw.throttle; sr.brake = raw.brake;
+      sr.clutch = raw.clutch; sr.handbrake = raw.handbrake;
+      sr.shiftUp = true; sr.shiftDown = raw.shiftDown; sr.device = raw.device;
+      sr.directGear = raw.directGear;
+      inRaw = sr;
     }
     const out = this.stepCore(c, inRaw, assists, DT);
     this.body.resetForces(false);
@@ -259,14 +276,17 @@ export class CarBody {
       fx += fwdX * this.nosThrustN;
       fz += fwdZ * this.nosThrustN;
     }
-    this.body.addForce({ x: fx, y: fy, z: fz }, true);
-    this.body.addTorque({ x: out[OUT.torque], y: out[OUT.torque + 1], z: out[OUT.torque + 2] }, true);
+    this.forceVec.x = fx; this.forceVec.y = fy; this.forceVec.z = fz;
+    this.body.addForce(this.forceVec, true);
+    this.torqueVec.x = out[OUT.torque]; this.torqueVec.y = out[OUT.torque + 1]; this.torqueVec.z = out[OUT.torque + 2];
+    this.body.addTorque(this.torqueVec, true);
     // Burnt fuel makes the car lighter (the core's spec mass is with a full tank). Refresh the body every 0.25 kg so
     // Rapier is not touched every tick; inertia stays the spec's (the tank sits near the CG).
     const mass = out[OUT.massKg];
     if (mass > 0 && Math.abs(mass - this.appliedMass) > 0.25) {
       const I = this.core.info.inertia;
-      this.body.setAdditionalMassProperties(mass, { x: 0, y: 0, z: 0 }, { x: I[0], y: I[1], z: I[2] }, { x: 0, y: 0, z: 0, w: 1 }, true);
+      this.inertiaVec.x = I[0]; this.inertiaVec.y = I[1]; this.inertiaVec.z = I[2];
+      this.body.setAdditionalMassProperties(mass, this.zeroVec, this.inertiaVec, this.identQ, true);
       this.appliedMass = mass;
     }
     this.out = out;
@@ -292,10 +312,10 @@ export class CarBody {
     // Contact points after the step live in the manifold in each collider's LOCAL frame (the
     // solver-point list is empty by then). The car hull sits at the body origin, so body pose
     // maps them to world.
-    let best: THREE.Vector3 | null = null, bestI = -1, other = 0;
+    let hasBest = false, bestI = -1, other = 0;
     const w = this.pw.world;
     const t = this.body.translation(), r = this.body.rotation();
-    const q = new THREE.Quaternion(r.x, r.y, r.z, r.w);
+    this.crashQ.set(r.x, r.y, r.z, r.w);
     w.contactPairsWith(this.collider, (o) => {
       w.contactPair(this.collider, o, (man, flipped) => {
         for (let i = 0; i < man.numContacts(); i++) {
@@ -304,12 +324,14 @@ export class CarBody {
           if (imp < bestI) continue;
           const lp = flipped ? man.localContactPoint2(i) : man.localContactPoint1(i);
           if (!lp) continue;
-          best = new THREE.Vector3(lp.x, lp.y, lp.z).applyQuaternion(q).add(t as THREE.Vector3);
+          this.crashTmp.set(lp.x, lp.y, lp.z).applyQuaternion(this.crashQ);
+          this.crashBest.set(this.crashTmp.x + t.x, this.crashTmp.y + t.y, this.crashTmp.z + t.z);
+          hasBest = true;
           bestI = imp;
           other = o.handle + 1;
         }
       });
     });
-    if (best) this.core.contact(best, j, other);
+    if (hasBest) this.core.contact(this.crashBest, j, other);
   }
 }

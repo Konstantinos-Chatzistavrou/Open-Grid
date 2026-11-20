@@ -2,6 +2,7 @@ import { OUT, type AssistToggles, type CarInfo, type Damage, type LapInfo } from
 
 const $ = (id: string) => document.getElementById(id)!;
 const NS = 'http://www.w3.org/2000/svg';
+const LABELS = ['FL', 'FR', 'RL', 'RR'];
 
 // Dial geometry: 270 degree sweep, 0 km/h at the lower left, 320 km/h at the lower right.
 const MAX_KMH = 320, A0 = -225, SWEEP = 270, CX = 120, CY = 120;
@@ -22,8 +23,15 @@ export function formatLap(t: number) {
   return `${m}:${s.toFixed(3).padStart(6, '0')}`;
 }
 
+/** ring capacity for the drawn-frame times of the last second (enough for a 500 Hz display) */
+const FRAME_RING = 512;
+
 export class Hud {
-  private frames: number[] = [];
+  /** drawn-frame timestamps of the last second: O(1) ring (head = oldest), no shift() and no arrays per frame */
+  private frames = new Float64Array(FRAME_RING);
+  private fHead = 0;
+  private fCount = 0;
+  private gaps = new Float64Array(FRAME_RING);
   private last = 0;
   private needle = 0;            // smoothed needle position, km/h
   private rev = 0;
@@ -31,7 +39,7 @@ export class Hud {
   private toastTimer = 0;
   private warnHtml = '';
   private assistHtml = '';
-  private simTelHtml = '';
+  private damageBad = false;
   extra = '';
   /** Race mode: lap count shown as 'n / total' (0 = free run, counted forever). */
   lapTotal = 0;
@@ -76,14 +84,20 @@ export class Hud {
   hide() { ($('hud') as HTMLElement).hidden = true; }
   get visible() { return !($('hud') as HTMLElement).hidden; }
   toggle() { const h = $('hud') as HTMLElement; h.hidden = !h.hidden; }
-  resetFps() { this.frames.length = 0; }
+  resetFps() { this.fHead = 0; this.fCount = 0; }
 
   /** Every frame: the dial animates at frame rate; text updates at 10 Hz. */
   /** A frame was actually drawn (the fps readout counts these, not display refreshes: the 30 fps cap skips some). */
-  rendered(now: number) { if (this.visible) this.frames.push(now); }
+  rendered(now: number) {
+    if (!this.visible) return;
+    if (this.fCount === FRAME_RING) { this.fHead = (this.fHead + 1) % FRAME_RING; this.fCount--; }
+    this.frames[(this.fHead + this.fCount) % FRAME_RING] = now;
+    this.fCount++;
+  }
+  private frameAt(i: number) { return this.frames[(this.fHead + i) % FRAME_RING]; }
 
   update(now: number, dt: number, out: Float64Array, info: CarInfo, assists: AssistToggles, dmg: Damage | null, lap: LapInfo | null) {
-    while (this.frames.length && this.frames[0] < now - 1000) this.frames.shift();
+    while (this.fCount && this.frames[this.fHead] < now - 1000) { this.fHead = (this.fHead + 1) % FRAME_RING; this.fCount--; }
 
     // dial: the needle eases toward the true speed (critically damped feel, no ticking)
     const kmh = Math.abs(out[OUT.speed]) * 3.6;
@@ -106,22 +120,23 @@ export class Hud {
       this.el.rev.classList.toggle('red', this.rev > 0.92);
     }
 
-    if (lap) this.updateLaps(lap, dt);
+    if (lap) this.updateLapToast(lap, dt);   // the lap-finished card reacts every frame; its texts below at 10 Hz
 
     if (now - this.last < 100) return;   // DOM text at 10 Hz
     this.last = now;
-    const n = this.frames.length;
-    const span = n > 1 ? this.frames[n - 1] - this.frames[0] : 0;
+    if (lap) this.updateLaps(lap);
+    const n = this.fCount;
+    const span = n > 1 ? this.frameAt(n - 1) - this.frameAt(0) : 0;
     const fps = (this.fps = span >= 850 ? n : span > 10 ? Math.round(((n - 1) * 1000) / span) : 30);
     // Frame intervals over the last second: the median is the pace the player sees, p95 is the jitter. The old readout
     // showed the maximum only ("worst 128 ms"), so one shader compile or texture upload made a healthy 30 fps game
     // look like it ran at 128 ms; the maximum is logged (lastMax) instead of displayed.
-    const gaps: number[] = [];
-    for (let i = 1; i < n; i++) gaps.push(this.frames[i] - this.frames[i - 1]);
-    gaps.sort((a, b) => a - b);
-    const med = gaps.length ? gaps[gaps.length >> 1] : 0;
-    const p95 = gaps.length ? gaps[Math.min(gaps.length - 1, Math.floor(gaps.length * 0.95))] : 0;
-    this.lastMax = gaps.length ? gaps[gaps.length - 1] : 0;
+    const ng = Math.max(0, n - 1);
+    for (let i = 1; i < n; i++) this.gaps[i - 1] = this.frameAt(i) - this.frameAt(i - 1);
+    const gaps = this.gaps.subarray(0, ng).sort();   // typed-array sort: numeric, in place
+    const med = ng ? gaps[ng >> 1] : 0;
+    const p95 = ng ? gaps[Math.min(ng - 1, Math.floor(ng * 0.95))] : 0;
+    this.lastMax = ng ? gaps[ng - 1] : 0;
     const cap = this.cap ? ` (cap ${this.cap})` : '';
     const st = this.stats ? ` · ${this.stats.calls} calls · ${this.stats.textureMB} MB tex${this.stats.noMips ? ` · ${this.stats.noMips} NO MIPS` : ''}` : '';
     this.text('perf', `${fps} fps${cap} · ${med.toFixed(0)} ms · p95 ${p95.toFixed(0)}${st}\n${this.extra}`);
@@ -136,13 +151,12 @@ export class Hud {
     if (assistHtml !== this.assistHtml) $('assists').innerHTML = this.assistHtml = assistHtml;
     this.updateWarnings(dmg, out);
     this.updateSimTelemetry(out);
-    const el = $('damage');
-    if (!dmg || dmg.totalKj < 1) { el.textContent = ''; return; }
+    if (!dmg || dmg.totalKj < 1) { this.text('damage', ''); return; }
     const pct = (x: number) => Math.round(Math.min(1, x) * 100);
-    el.classList.toggle('bad', dmg.totaled);
-    el.textContent = dmg.totaled
+    if (dmg.totaled !== this.damageBad) { this.damageBad = dmg.totaled; $('damage').classList.toggle('bad', dmg.totaled); }
+    this.text('damage', dmg.totaled
       ? (this.canRecover ? 'WRECKED · limping · R repairs' : 'WRECKED')
-      : `DAMAGE  body ${pct(Math.max(...dmg.zone))}%  engine ${pct(dmg.engine)}%  wheels ${pct(Math.max(...dmg.wheel))}%`;
+      : `DAMAGE  body ${pct(Math.max(...dmg.zone))}%  engine ${pct(dmg.engine)}%  wheels ${pct(Math.max(...dmg.wheel))}%`);
   }
 
   /** Fire and brake lamps (DOM rebuilt only when the text changes). */
@@ -176,37 +190,79 @@ export class Hud {
     if (html !== this.warnHtml) $('warn').innerHTML = this.warnHtml = html;
   }
 
-  /** Simcenter Tire 2606 3-Zone (Inner/Middle/Outer) thermal widget + live Active Aero & Turbo Boost pills. */
+  /** Simcenter Tire 2606 3-Zone (Inner/Middle/Outer) thermal widget + live Active Aero & Turbo Boost pills.
+   *  The DOM is built once; every 10 Hz update only writes a rib colour or a label that changed (it used to rebuild the
+   *  whole widget's innerHTML whenever one rounded temperature moved). */
+  private st: {
+    host: HTMLElement; pills: HTMLDivElement; grid: HTMLDivElement; ribs: HTMLElement[]; lbls: HTMLElement[];
+    drs: HTMLSpanElement; air: HTMLSpanElement; boost: HTMLSpanElement; ribBg: string[]; lblTxt: string[]; pillKey: string; boostTxt: string;
+  } | null = null;
+
+  private buildSimTelemetry(host: HTMLElement) {
+    host.textContent = '';
+    const div = (cls: string) => { const d = document.createElement('div'); d.className = cls; return d; };
+    const pill = (cls: string, txt: string) => { const p = document.createElement('span'); p.className = `st-pill ${cls}`; p.textContent = txt; return p; };
+    const pills = div('st-pills'), grid = div('st-grid');
+    const ribs: HTMLElement[] = [], lbls: HTMLElement[] = [];
+    for (let i = 0; i < 4; i++) {
+      const tire = div('st-tire'), rib = div('st-ribs');
+      for (let k = 0; k < 3; k++) { const r = document.createElement('i'); rib.appendChild(r); ribs.push(r); }
+      const lbl = document.createElement('span'); lbl.className = 'st-lbl';
+      tire.append(rib, lbl);
+      grid.appendChild(tire);
+      lbls.push(lbl);
+    }
+    host.appendChild(grid);   // the pills row is inserted above the grid only while a pill is lit (as before)
+    return (this.st = { host, pills, grid, ribs, lbls, drs: pill('drs', 'DRS OPEN'), air: pill('air', 'AIRBRAKE'), boost: pill('boost', ''),
+      ribBg: new Array<string>(12).fill(''), lblTxt: new Array<string>(4).fill(''), pillKey: '', boostTxt: '' });
+  }
+
   private updateSimTelemetry(out: Float64Array) {
     const host = document.getElementById('sim-telemetry');
     if (!host) return;
+    const st = this.st && this.st.host === host && this.st.grid.parentNode === host ? this.st : this.buildSimTelemetry(host);
     const ribColor = (c: number) =>
       c < 62 ? '#38bdf8' : c < 76 ? '#4ade80' : c <= 108 ? '#22c55e' : c <= 130 ? '#f59e0b' : '#ef4444';
-    const labels = ['FL', 'FR', 'RL', 'RR'];
-    let grid = '';
     for (let i = 0; i < 4; i++) {
       const ti = out[OUT.tireInner(i)] || out[OUT.treadSurface(i)] || 80;
       const tm = out[OUT.tireMiddle(i)] || out[OUT.treadSurface(i)] || 80;
       const to = out[OUT.tireOuter(i)] || out[OUT.treadSurface(i)] || 80;
       const surf = Math.round((ti + tm + to) / 3);
       // Left wheels (0,2): Outer|Mid|Inner left-to-right; Right wheels (1,3): Inner|Mid|Outer left-to-right
-      const cols = i % 2 === 0 ? [to, tm, ti] : [ti, tm, to];
-      grid += `<div class="st-tire"><div class="st-ribs"><i style="background:${ribColor(cols[0])}"></i><i style="background:${ribColor(cols[1])}"></i><i style="background:${ribColor(cols[2])}"></i></div><span class="st-lbl">${labels[i]} ${surf}°</span></div>`;
+      const left = i % 2 === 0;
+      for (let k = 0; k < 3; k++) {
+        const c = ribColor(k === 1 ? tm : (k === 0) === left ? to : ti), j = i * 3 + k;
+        if (st.ribBg[j] !== c) { st.ribBg[j] = c; st.ribs[j].style.background = c; }
+      }
+      const txt = `${LABELS[i]} ${surf}°`;
+      if (st.lblTxt[i] !== txt) { st.lblTxt[i] = txt; st.lbls[i].textContent = txt; }
     }
-    const pills: string[] = [];
-    if ((out[OUT.drsActive] || 0) > 0.5) pills.push('<span class="st-pill drs">DRS OPEN</span>');
-    if ((out[OUT.airbrakeActive] || 0) > 0.5) pills.push('<span class="st-pill air">AIRBRAKE</span>');
-    const boost = out[OUT.boostBar] || 0;
-    if (boost > 0.05) pills.push(`<span class="st-pill boost">${boost.toFixed(2)} BAR</span>`);
-    const html = `${pills.length ? `<div class="st-pills">${pills.join('')}</div>` : ''}<div class="st-grid">${grid}</div>`;
-    if (html !== this.simTelHtml) host.innerHTML = this.simTelHtml = html;
+    const drs = (out[OUT.drsActive] || 0) > 0.5, air = (out[OUT.airbrakeActive] || 0) > 0.5;
+    const boost = out[OUT.boostBar] || 0, boosting = boost > 0.05;
+    if (boosting) { const bt = `${boost.toFixed(2)} BAR`; if (bt !== st.boostTxt) { st.boostTxt = bt; st.boost.textContent = bt; } }
+    const key = `${+drs}${+air}${+boosting}`;
+    if (key !== st.pillKey) {
+      st.pillKey = key;
+      st.pills.textContent = '';
+      if (drs) st.pills.appendChild(st.drs);
+      if (air) st.pills.appendChild(st.air);
+      if (boosting) st.pills.appendChild(st.boost);
+      if (drs || air || boosting) { if (st.pills.parentNode !== host) host.insertBefore(st.pills, st.grid); }
+      else st.pills.remove();
+    }
   }
 
-  private updateLaps(lap: LapInfo, dt: number) {
+  /** Lap texts (10 Hz, from update). */
+  private updateLaps(lap: LapInfo) {
     this.text('lapno', this.lapTotal ? `${Math.min(lap.laps + 1, this.lapTotal)} / ${this.lapTotal}` : String(lap.laps + 1));
-    this.text('lapcur', formatLap(lap.current) === '—' ? '0:00.000' : formatLap(lap.current));
+    const cur = formatLap(lap.current);
+    this.text('lapcur', cur === '—' ? '0:00.000' : cur);
     this.text('laplast', formatLap(lap.last));
     this.text('lapbest', formatLap(lap.best));
+  }
+
+  /** Every frame: a lap just finished -> fade the lap card in, then out. */
+  private updateLapToast(lap: LapInfo, dt: number) {
     if (lap.laps > this.lapsSeen) {          // a lap just finished: fade a card in, then out
       this.lapsSeen = lap.laps;
       const best = lap.last > 0 && Math.abs(lap.last - lap.best) < 1e-6;

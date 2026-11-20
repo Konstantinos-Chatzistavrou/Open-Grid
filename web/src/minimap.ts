@@ -27,6 +27,14 @@ export class Minimap {
   private last = 0;
   private zoom = 1.6;   // m per css px
   private lastCar = { x: 0, z: 0 };
+  /** css size of the map, cached (reading clientWidth at 15 Hz forced a synchronous layout); 0 = read it again */
+  private sizeCache = 0;
+  /** the banner html last written (reading innerHTML back re-serialized the DOM every draw) */
+  private bannerHtml = '';
+  /** road segments of one tier by stroke width: one path + one stroke per width instead of one per segment */
+  private byWidth = new Map<number, Seg[]>();
+  private segPool: Seg[][] = [];
+  private rp = { x: 0, y: 0 };
   visible = true;
   /** Full-screen interactive map mode (toggled by clicking minimap or pressing Tab). */
   expanded = false;
@@ -40,6 +48,7 @@ export class Minimap {
     this.el.append(this.banner, this.cv);
     parent.appendChild(this.el);
     this.ctx = this.cv.getContext('2d')!;
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { this.sizeCache = 0; }).observe(this.el);
     this.cv.style.cursor = 'pointer';
     this.cv.addEventListener('click', (e) => {
       if (!this.expanded) { this.toggleExpand(true); return; }
@@ -67,6 +76,7 @@ export class Minimap {
   toggleExpand(force?: boolean) {
     this.expanded = force ?? !this.expanded;
     this.el.classList.toggle('expanded', this.expanded);
+    this.sizeCache = 0;   // the size changes with the class: read it on the redraw below, do not wait for the observer
     this.last = 0; // force immediate redraw
   }
 
@@ -111,6 +121,7 @@ export class Minimap {
     this.turns = [];
     this.waypoint = null;
     this.banner.textContent = '';
+    this.bannerHtml = '';
     this.last = 0;
   }
 
@@ -156,13 +167,15 @@ export class Minimap {
     }
   }
 
-  private routeAt(s: number) {
+  /** Route point at arc length s, written into `out` (reused: 75 calls per draw). */
+  private routeAt(s: number, out: { x: number; y: number }) {
     s = ((s % this.routeLen) + this.routeLen) % this.routeLen;
     let lo = 0, hi = this.routeS.length - 1;
     while (hi - lo > 1) { const m = (lo + hi) >> 1; if (this.routeS[m] <= s) lo = m; else hi = m; }
     const a = this.route[lo], b = this.route[(lo + 1) % this.route.length], l = (this.routeS[lo + 1] ?? this.routeLen) - this.routeS[lo];
     const t = l > 0 ? (s - this.routeS[lo]) / l : 0;
-    return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    out.x = a.x + (b.x - a.x) * t; out.y = a.y + (b.y - a.y) * t;
+    return out;
   }
 
   /**
@@ -180,7 +193,8 @@ export class Minimap {
       this.onWaypoint?.(null);
     }
     if (!this.turns.length && this.route.length) this.findTurns();
-    const dpr = Math.min(2, devicePixelRatio || 1), size = this.el.clientWidth || (this.expanded ? 540 : 180);
+    if (!this.sizeCache) this.sizeCache = this.el.clientWidth;
+    const dpr = Math.min(2, devicePixelRatio || 1), size = this.sizeCache || (this.expanded ? 540 : 180);
     if (this.cv.width !== Math.round(size * dpr)) { this.cv.width = this.cv.height = Math.round(size * dpr); }
     const c = this.ctx, r = size / 2;
     const cx = car.x, cy = -car.z, hx = fwd.x, hy = -fwd.z;           // game frame
@@ -212,30 +226,51 @@ export class Minimap {
     const reach = (r * 1.7) * this.zoom, c0x = Math.floor((cx - reach) / CELL), c1x = Math.floor((cx + reach) / CELL);
     const c0y = Math.floor((cy - reach) / CELL), c1y = Math.floor((cy + reach) / CELL);
     c.lineCap = 'round'; c.lineJoin = 'round';
-    for (const major of [false, true]) {
-      const stamp = ++this.drawStamp;
-      c.strokeStyle = major ? 'rgba(180, 195, 220, 0.72)' : 'rgba(128, 140, 165, 0.44)';
+    // minor streets first, then the major ones over them; within a tier one path per stroke width (same colour and
+    // width as one stroke per segment, without hundreds of separate stroke calls per draw)
+    const byWidth = this.byWidth, pool = this.segPool;
+    for (let tier = 0; tier < 2; tier++) {
+      const major = tier === 1;
+      const stamp = ++this.drawStamp, minW = (major ? 3.2 : 2.2) * this.zoom;
       for (let gx = c0x; gx <= c1x; gx++) for (let gy = c0y; gy <= c1y; gy++) {
         const list = this.grid.get(`${gx}_${gy}`);
         if (!list) continue;
-        for (const s of list) {
+        for (let i = 0; i < list.length; i++) {
+          const s = list[i];
           if (s.major !== major || s.stamp === stamp) continue;
           s.stamp = stamp;
-          c.lineWidth = Math.max(s.w * 0.85, (major ? 3.2 : 2.2) * this.zoom);
-          c.beginPath(); c.moveTo(s.x0, s.y0); c.lineTo(s.x1, s.y1); c.stroke();
+          const lw = Math.max(s.w * 0.85, minW);
+          let bucket = byWidth.get(lw);
+          if (!bucket) byWidth.set(lw, (bucket = pool.pop() ?? []));
+          bucket.push(s);
         }
       }
+      c.strokeStyle = major ? 'rgba(180, 195, 220, 0.72)' : 'rgba(128, 140, 165, 0.44)';
+      for (const [lw, bucket] of byWidth) {
+        c.lineWidth = lw;
+        c.beginPath();
+        for (let i = 0; i < bucket.length; i++) { const s = bucket[i]; c.moveTo(s.x0, s.y0); c.lineTo(s.x1, s.y1); }
+        c.stroke();
+        bucket.length = 0;
+        pool.push(bucket);
+      }
+      byWidth.clear();
     }
     // the GPS line: the whole route faint, the next 600 m bright
     if (this.route.length > 1) {
       c.strokeStyle = 'rgba(255, 45, 85, 0.35)'; c.lineWidth = Math.max(4, 5 * this.zoom);
-      c.beginPath(); this.route.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y))); c.closePath(); c.stroke();
+      c.beginPath();
+      for (let i = 0; i < this.route.length; i++) { const p = this.route[i]; if (i) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); }
+      c.closePath(); c.stroke();
       if (routeS !== null) {
-        c.strokeStyle = 'rgba(255, 70, 110, 0.95)'; c.lineWidth = Math.max(5, 7 * this.zoom);
-        c.shadowColor = 'rgba(255, 45, 85, 0.9)'; c.shadowBlur = 8;
         c.beginPath();
-        for (let d = 0; d <= 600; d += 8) { const p = this.routeAt(routeS + d); if (d) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); }
-        c.stroke(); c.shadowBlur = 0;
+        for (let d = 0; d <= 600; d += 8) { const p = this.routeAt(routeS + d, this.rp); if (d) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); }
+        // the glow: two wider translucent strokes under the line (was shadowBlur 8, a Gaussian blur of the canvas on
+        // every draw); widths in css px times zoom, ~7 px and ~3.5 px of halo each side like the 8 px blur
+        const lw = Math.max(5, 7 * this.zoom);
+        c.strokeStyle = 'rgba(255, 45, 85, 0.13)'; c.lineWidth = lw + 14 * this.zoom; c.stroke();
+        c.strokeStyle = 'rgba(255, 45, 85, 0.24)'; c.lineWidth = lw + 7 * this.zoom; c.stroke();
+        c.strokeStyle = 'rgba(255, 70, 110, 0.95)'; c.lineWidth = lw; c.stroke();
       }
       // start / finish
       const s0 = this.route[0];
@@ -310,7 +345,7 @@ export class Minimap {
       const curStreet = this.streetAt(cx, cy);
       if (curStreet) txt = `<span>${esc(curStreet)}</span>`;
     }
-    if (this.banner.innerHTML !== txt) { this.banner.innerHTML = txt; this.banner.hidden = !txt; }
+    if (this.bannerHtml !== txt) { this.banner.innerHTML = this.bannerHtml = txt; this.banner.hidden = !txt; }
   }
 
   show(on: boolean) { this.visible = on; this.el.hidden = !on; }

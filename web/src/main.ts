@@ -80,7 +80,7 @@ import { autoCap, measureRefresh } from './bench';
 import { registerCarMeta } from './brands';
 import { CAR_REQ, CAR_VMAX_KMH } from './progression';
 import { BASE_CAR_VALUATION } from './auctionMarket';
-import { Player2Input, SplitHud, connectedGamepads, type SplitLayout } from './splitScreen';
+import { Player2Input, SplitHud, connectedGamepads, type Player2Poll, type SplitLayout } from './splitScreen';
 
 const params = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d);
@@ -545,7 +545,9 @@ async function main() {
   if (tireSmoke) { tireSmoke.sprite.frustumCulled = false; scene.add(tireSmoke.sprite); }
   const smokeP = new THREE.Vector3(), smokeV = new THREE.Vector3(), smokeF = new THREE.Vector3(), smokeR = new THREE.Vector3();
   // Launch control: hold the throttle on the grid, the start clamps wheelspin for ~1.1 s
-  let launchArmed = false, launchUntil = 0;
+  let launchArmed = false, launchUntil = 0, lastLaunchText = '';
+  /** launch ramp input (reused: no object per 240 Hz tick) */
+  const launchIn: RawInput = { steer: 0, throttle: 0, brake: 0, clutch: 0, handbrake: 0, shiftUp: false, shiftDown: false, device: 0, directGear: -99 };
   const launchEl = document.getElementById('launch');
   // In the garage the car's own lamps are nearly off (no headlight blowout in the room): every emissive "light"
   // material is dimmed and restored for driving. Uniform writes only.
@@ -688,6 +690,10 @@ async function main() {
    * Uses rear-quarter PIT maneuvers (Rapier lateral/yaw impulse), flanking box-in, and physical roadblocks.
    */
   const copsEl = document.getElementById('cops')!;
+  let lastCopsText = '';
+  // cop line-of-sight ray, reused every frame (Rapier's Ray keeps references to these two objects)
+  const copRayO = { x: 0, y: 0, z: 0 }, copRayD = { x: 0, y: 0, z: 1 };
+  const copRay = new RAPIERLib.Ray(copRayO, copRayD);
   let copMsg = '';
   let copMsgUntil = 0;
   let escapedCopsThisRace = false;
@@ -2148,6 +2154,7 @@ async function main() {
   // ---- 2-Player Local Split-Screen (Laptop + Smart TV with 2 Controllers / 1 Controller + Keyboard / Shared Keyboard) ----
   const splitHud = new SplitHud();
   const p2Input = new Player2Input();
+  const isKeyDownP1 = (c: string) => input.isKeyDown(c);   // P2 reads the shared keyboard through P1's key state
   let splitActive = false;
   let splitLayout: SplitLayout = 'horizontal';
   let splitP2CarId = catalog[1]?.id ?? catalog[0].id;
@@ -2814,6 +2821,12 @@ async function main() {
     let steps = 0;
     const tSim = performance.now();
     let p2RightX = 0, p2RightY = 0;
+    // Devices are read ONCE per frame, on the frame's first tick (Gamepad API + key state cost CPU and allocate, and a
+    // gamepad snapshot does not change between the ticks of one frame anyway). Later ticks of the frame reuse the same
+    // axes with the edge events (shifts, P2 camera / reset) cleared, so a press still acts exactly once. No tick this
+    // frame (a very fast display) -> no read, so no edge is consumed without a tick to apply it.
+    let polled: RawInput | null = null;
+    let p2p: Player2Poll | null = null;
     while (acc >= DT && steps < 24) {
       prevPos.copy(physPos);
       prevQuat.copy(physQuat);
@@ -2822,20 +2835,26 @@ async function main() {
         p2PrevQuat.copy(p2PhysQuat);
       }
       const script = (g.__game as { script?: ((tick: number) => RawInput) | null }).script;   // dev / replay: inputs by tick
-      let tin = script ? script(ticks) : state === 'race' ? input.poll() : IDLE;
+      let tin = script ? script(ticks) : state === 'race' ? (polled ??= input.poll()) : IDLE;
       if (state === 'countdown' && input.raw.throttle > 0.5) launchArmed = true;
       if (state === 'race' && launchUntil > 0 && ticks * DT < launchUntil) {
         const ph = Math.min(1, Math.max(0, (ticks * DT - (launchUntil - 1.1)) / 1.1));
-        tin = { ...tin, throttle: Math.min(tin.throttle, 0.55 + 0.45 * ph) };   // ramp instead of instant full power
+        Object.assign(launchIn, tin);
+        launchIn.directGear = tin.directGear ?? -99;
+        launchIn.throttle = Math.min(tin.throttle, 0.55 + 0.45 * ph);   // ramp instead of instant full power
+        tin = launchIn;
       }
       car.tick(tin, input.assists);
+      if (polled) { polled.shiftUp = false; polled.shiftDown = false; }   // edges act on the first tick only
       if (splitActive && p2Car && p2Core) {
-        const p2p = p2Input.poll((c) => input.isKeyDown(c), state !== 'race');
+        const firstP2 = !p2p;
+        if (!p2p) p2p = p2Input.poll(isKeyDownP1, state !== 'race');
+        else { p2p.raw.shiftUp = false; p2p.raw.shiftDown = false; }
         p2SourceLabel = p2p.sourceLabel;
         p2RightX = p2p.rightStickX;
         p2RightY = p2p.rightStickY;
-        if (p2p.camToggle) p2Rig?.toggle();
-        if (p2p.resetCar && state === 'race') {
+        if (firstP2 && p2p.camToggle) p2Rig?.toggle();
+        if (firstP2 && p2p.resetCar && state === 'race') {
           const rp = p2Pos.clone(); rp.y += 1.6;
           const hit = pw.raycast(rp, rp.clone().add(new THREE.Vector3(0, -14, 0)), p2Car.body);
           if (hit) rp.y -= hit.toi;
@@ -2859,16 +2878,14 @@ async function main() {
           if (slip > 0.32 && kmh > 3) {
             smokeF.set(0, 0, 1).applyQuaternion(quat);
             smokeR.set(1, 0, 0).applyQuaternion(quat);
-            for (const side of [-1, 1]) {
+            for (let side = -1; side <= 1; side += 2) {
               smokeP.copy(pos).addScaledVector(smokeF, -1.35).addScaledVector(smokeR, side * 0.8).setY(0.12);
               smokeV.set((Math.random() - 0.5) * 1.1, 0.7 + Math.random() * 0.7, (Math.random() - 0.5) * 1.1);
               tireSmoke.emit(smokeP, smokeV, 0.9 + Math.random() * 0.7, 0.3 + Math.min(1, slip) * 0.45);
             }
           }
         }
-        tireSmoke.update(frame);
       }
-      if (launchEl) launchEl.textContent = state === 'countdown' && launchArmed ? 'LAUNCH READY' : state === 'race' && launchUntil > 0 && ticks * DT < launchUntil ? 'LAUNCH' : '';
       if (inShowroom) { car.body.setLinvel({ x: 0, y: Math.min(0, car.body.linvel().y), z: 0 }, true); car.body.setAngvel({ x: 0, y: 0, z: 0 }, true); settledShowroom++; }   // parked for the showroom
       ai.tick(DT, car.body.translation());
       remote?.tick(now - (acc - DT) * 1000, DT);   // other players' bodies at this tick's time
@@ -2902,6 +2919,13 @@ async function main() {
       acc -= DT;
       steps++;
     }
+    // Tyre smoke ages once per frame by the simulated time (it used to age by the whole frame on EVERY 240 Hz tick, so
+    // its life shrank 4-8x with the tick count and depended on the frame rate). Emission stays per tick, above.
+    if (tireSmoke && live) tireSmoke.update(simDt);
+    if (launchEl && steps > 0) {
+      const lt = state === 'countdown' && launchArmed ? 'LAUNCH READY' : state === 'race' && launchUntil > 0 && ticks * DT < launchUntil ? 'LAUNCH' : '';
+      if (lt !== lastLaunchText) launchEl.textContent = lastLaunchText = lt;
+    }
     prof.sim += performance.now() - tSim;
     if (steps === 24) acc = 0;   // too slow to keep up: drop time rather than spiral
     const alpha = Math.min(1, acc / DT);
@@ -2927,14 +2951,17 @@ async function main() {
       const from = cops.world, to = pos;
       const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
       const len = Math.hypot(dx, dy, dz) || 1;
-      const ray = new RAPIERLib.Ray({ x: from.x, y: from.y + 1.2, z: from.z }, { x: dx / len, y: dy / len, z: dz / len });
-      const hit = pw.world.castRay(ray, len - 2, true);
+      copRayO.x = from.x; copRayO.y = from.y + 1.2; copRayO.z = from.z;
+      copRayD.x = dx / len; copRayD.y = dy / len; copRayD.z = dz / len;
+      const hit = pw.world.castRay(copRay, len - 2, true);
       cops.see(!!hit, frame);
       audio.siren(cops.proximity);
-      copsEl.textContent = `🚨 ${cops.tactic} · ${Math.round(cops.distance)} m`;
+      const ct = `🚨 ${cops.tactic} · ${Math.round(cops.distance)} m`;
+      if (ct !== lastCopsText) copsEl.textContent = lastCopsText = ct;
     } else {
       audio.siren(0);
-      copsEl.textContent = performance.now() < copMsgUntil ? copMsg : '';
+      const ct = performance.now() < copMsgUntil ? copMsg : '';
+      if (ct !== lastCopsText) copsEl.textContent = lastCopsText = ct;
     }
     const tVis = performance.now();
     {
@@ -2956,8 +2983,9 @@ async function main() {
             }
           }
         }
-        const dmg = core.damage();
-        const damageLevel = Math.min(1, Math.max(dmg.severity ?? 0, (dmg.zone[0] + dmg.zone[1] + dmg.zone[2] + dmg.zone[3]) * 0.3));
+        // the damage report DamageVisuals reads from the core at 20 Hz (no core call + 4 arrays per frame here)
+        const dmg = damage.last;
+        const damageLevel = dmg ? Math.min(1, Math.max(dmg.severity ?? 0, (dmg.zone[0] + dmg.zone[1] + dmg.zone[2] + dmg.zone[3]) * 0.3)) : 0;
         advancePaintWear(paintWear, {
           speedMs: spd,
           dtSec: frame,
@@ -3092,7 +3120,7 @@ async function main() {
           nosBarEl.classList.toggle('hot', nrTick.overheated || eng.health <= 20);
         }
         telemetry.tick(frame, true, car.out, core.info, input.raw.throttle, input.raw.brake, input.raw.steer, lap);
-        replay.record(frame, pos, quat, car.out[OUT.speed], car.out[OUT.rpm], input.raw.steer, input.raw.brake, ai.cars.map((c) => ({ pos: c.pos, yaw: c.root.rotation.y })));
+        replay.record(frame, pos, quat, car.out[OUT.speed], car.out[OUT.rpm], input.raw.steer, input.raw.brake, ai.cars);   // yaw = root.rotation.y, read at 20 Hz
       } else {
         car.nosThrustN = 0;
         if (state === 'garage' && audio.garageFlameLevel > 0.02) visual.setExhaustFlame(audio.garageFlameLevel, false);
@@ -3188,8 +3216,9 @@ async function main() {
       if (obstacles) obstacles.sync(frame, pos);
       if (streetProps) {
         carBox.pos.copy(physPos); carBox.quat.copy(physQuat);
-        carBox.half = [shape.boxSize[0] / 2, shape.boxSize[1] / 2, shape.boxSize[2] / 2];
-        carBox.centre = [shape.boxCentre[0] - visual.cg.x, shape.boxCentre[1] - visual.cg.y, shape.boxCentre[2] - visual.cg.z];
+        const bh = carBox.half, bc = carBox.centre;   // in place: no arrays per frame
+        bh[0] = shape.boxSize[0] / 2; bh[1] = shape.boxSize[1] / 2; bh[2] = shape.boxSize[2] / 2;
+        bc[0] = shape.boxCentre[0] - visual.cg.x; bc[1] = shape.boxCentre[1] - visual.cg.y; bc[2] = shape.boxCentre[2] - visual.cg.z;
         streetProps.carBox = driving() ? carBox : null;
       }
       nyc?.update(state === 'spectate' ? specPos : pos, frame, driving() && state !== 'spectate' ? visual.velocity : undefined, (impulse, kind) => {   // spectating: detail around the watched car
@@ -3325,7 +3354,7 @@ async function main() {
       prof.hud += performance.now() - tHud;
     }
     // Graphics tuning (title menu only, behind the cover; see startTuning)
-    if (now >= winStart) frameTimes.push(frame * 1000);
+    if (tuning && now >= winStart) frameTimes.push(frame * 1000);   // only while tuning (it grew forever after)
     if (tuning && now - winStart >= WINDOW) {
       const fps = (frameTimes.length * 1000) / (now - winStart);
       const sorted = frameTimes.slice().sort((x, y) => x - y);

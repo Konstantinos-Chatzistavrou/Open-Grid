@@ -53,6 +53,10 @@ export interface CarInfo {
 export class CoreCar {
   readonly id: number;
   readonly info: CarInfo;
+  private _buf: Float64Array | null = null;
+  private _raysBuf: Float64Array | null = null;
+  private _raysPatchBuf: Float64Array | null = null;
+  private _ptr = 0;
 
   constructor(json: string) {
     if (!mod) throw new Error('loadCore() first');
@@ -60,6 +64,7 @@ export class CoreCar {
     this.id = mod._rs_create(p);
     mod._free(p);
     if (this.id < 0) throw new Error('car config: ' + mod.UTF8ToString(mod._rs_last_error()));
+    this._ptr = mod._rs_buffer(this.id);
     mod._rs_info(this.id);
     const b = this.buf;
     this.info = {
@@ -68,9 +73,15 @@ export class CoreCar {
     };
   }
 
-  // Re-created every access: memory growth detaches old views.
+  // Cached view over WASM heap: only re-wrapped if WASM memory grows and detaches the old buffer.
   get buf(): Float64Array {
-    return new Float64Array(mod!.HEAPF64.buffer, mod!._rs_buffer(this.id), 384);
+    const m = mod!;
+    if (!this._buf || this._buf.buffer !== m.HEAPF64.buffer) {
+      this._buf = new Float64Array(m.HEAPF64.buffer, this._ptr, 384);
+      this._raysBuf = this._buf.subarray(16, 40);
+      this._raysPatchBuf = this._buf.subarray(280, 352);
+    }
+    return this._buf;
   }
 
   resetMotion(speed: number, gear = -1) { mod!._rs_reset_motion(this.id, speed, gear); }
@@ -108,7 +119,7 @@ export class CoreCar {
     const b = this.buf;
     for (let i = 0; i < 13; i++) b[i] = state[i];
     mod!._rs_rays(this.id);
-    return b.subarray(16, 40);
+    return this._raysBuf!;
   }
 
   /** Multi-point 3-ray longitudinal curb contact patch per wheel (12 rays = 72 doubles: 4 wheels x 3 rays x [from,to]). */
@@ -116,7 +127,7 @@ export class CoreCar {
     const b = this.buf;
     for (let i = 0; i < 13; i++) b[i] = state[i];
     mod!._rs_rays_patch(this.id);
-    return b.subarray(280, 352);
+    return this._raysPatchBuf!;
   }
 
   /** contacts: 4 x [hit, px, py, pz, nx, ny, nz, surface]. Returns the output view (see bridge). */
@@ -195,16 +206,38 @@ export interface LapInfo { laps: number; current: number; last: number; best: nu
 
 /** Core RaceTracker: progress along the route, laps and lap times (game logic stays in the core). */
 export class CoreRace {
+  private _buf: Float64Array | null = null;
+  private _ptr = 0;
+  private _infos: LapInfo[] = [];
+
   constructor(routeJson: string, laps = 0) {
     const p = mod!.stringToNewUTF8(routeJson);
     const r = mod!._rs_race_create(p, laps);
     mod!._free(p);
     if (r < 0) throw new Error('route: ' + mod!.UTF8ToString(mod!._rs_last_error()));
+    this._ptr = mod!._rs_race_buffer();
   }
   addCar(p: { x: number; y: number; z: number }): number { return mod!._rs_race_add(p.x, p.y, p.z); }
   update(car: number, p: { x: number; y: number; z: number }, time: number): LapInfo {
-    mod!._rs_race_update(car, p.x, p.y, p.z, time);
-    const b = new Float64Array(mod!.HEAPF64.buffer, mod!._rs_race_buffer(), 16);
-    return { laps: b[0], current: b[1], last: b[2], best: b[3], distance: b[4], position: b[5], finished: b[6] > 0.5, routeLength: b[7] };
+    const m = mod!;
+    m._rs_race_update(car, p.x, p.y, p.z, time);
+    if (!this._buf || this._buf.buffer !== m.HEAPF64.buffer) {
+      this._buf = new Float64Array(m.HEAPF64.buffer, this._ptr, 16);
+    }
+    const b = this._buf;
+    let info = this._infos[car];
+    if (!info) {
+      info = { laps: 0, current: 0, last: 0, best: 0, distance: 0, position: 0, finished: false, routeLength: 0 };
+      this._infos[car] = info;
+    }
+    info.laps = b[0];
+    info.current = b[1];
+    info.last = b[2];
+    info.best = b[3];
+    info.distance = b[4];
+    info.position = b[5];
+    info.finished = b[6] > 0.5;
+    info.routeLength = b[7];
+    return info;
   }
 }
