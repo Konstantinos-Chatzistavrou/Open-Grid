@@ -1,0 +1,12 @@
+# One-command Community Hosted Server stack for OpenGrid leagues & private lobbies.
+# Usage: docker compose up -d
+services:
+  peer-broker:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    ports:
+      - "9000:9000"
+    environment:
+      - PORT=9000
+    restart: unless-stopped

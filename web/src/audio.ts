@@ -35,7 +35,20 @@ export class GameAudio {
     g: GainNode;
   } | null = null;
   private tyre: { f: BiquadFilterNode; f2: BiquadFilterNode; g: GainNode } | null = null;
+  private roadRoll: { f: BiquadFilterNode; g: GainNode } | null = null;
   private wind: { f: BiquadFilterNode; g: GainNode } | null = null;
+  private reverbSend: GainNode | null = null;
+  /** Dynamic adaptive music state (reacts to speed, police pursuit heat & finish line swell). */
+  musicEnabled = true;
+  private musicTimer: ReturnType<typeof setInterval> | null = null;
+  private musicStep = 0;
+  private musicIntensity = 0;
+  private musicChase = false;
+  /** Environmental reverb amount 0 (open avenue) .. 1 (narrow canyon / tunnel). */
+  envReverb = 0;
+  /** Surface wetness 0 (dry asphalt) .. 1 (rain puddles) & off-road gravel flag. */
+  roadWetness = 0.3;
+  onGravel = false;
   /** two-tone police siren, created on first use; gain follows the pursuit's proximity */
   private srn: { o: OscillatorNode; lfo: OscillatorNode; lg: GainNode; g: GainNode } | null = null;
   private lastGear = 1;
@@ -311,6 +324,37 @@ export class GameAudio {
     oGear.connect(gearFilter).connect(gearGain).connect(g);
     oGear.start();
 
+    // Environmental wall/tunnel acoustic reverb convolver (0.9s stereo impulse response)
+    const irLen = Math.floor(ctx.sampleRate * 0.9);
+    const irBuf = ctx.createBuffer(2, irLen, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const data = irBuf.getChannelData(ch);
+      for (let i = 0; i < irLen; i++) {
+        const dec = Math.pow(1 - i / irLen, 2.6);
+        data[i] = (Math.random() * 2 - 1) * dec * (i < 900 ? 0.85 : 0.45);
+      }
+    }
+    const conv = ctx.createConvolver();
+    conv.buffer = irBuf;
+    const revSend = ctx.createGain();
+    revSend.gain.value = 0;
+    revSend.connect(conv).connect(this.out!);
+    this.reverbSend = revSend;
+
+    // Surface-specific rolling tire noise (wet asphalt spray hiss vs dry hum vs gravel crunch)
+    const rSrc = ctx.createBufferSource();
+    rSrc.buffer = this.noise;
+    rSrc.loop = true;
+    const rFilt = ctx.createBiquadFilter();
+    rFilt.type = 'bandpass';
+    rFilt.frequency.value = 520;
+    rFilt.Q.value = 0.9;
+    const rGain = ctx.createGain();
+    rGain.gain.value = 0;
+    rSrc.connect(rFilt).connect(rGain).connect(this.out!);
+    rSrc.start();
+    this.roadRoll = { f: rFilt, g: rGain };
+
     combMix
       .connect(shaper)
       .connect(formant1)
@@ -319,6 +363,9 @@ export class GameAudio {
       .connect(lp)
       .connect(g)
       .connect(this.out!);
+    g.connect(revSend);
+
+    this.startAdaptiveMusic();
 
     this.eng = {
       o1: oMain, oMain, oSub, oBank, oGear, gearGain,
@@ -361,15 +408,32 @@ export class GameAudio {
     const cutoff = 320 + f * (2.2 + 5.8 * load) + rpmNorm * 1800 * thr;
     e.lp.frequency.setTargetAtTime(cutoff, t, tc);
 
-    // Subtle GT transmission gear whine proportional to wheel speed + engine load
     const absSpeed = Math.abs(speed);
+    const kmh = absSpeed * 3.6;
+    // At 250 km/h aerodynamic wind noise swells and gently ducks the engine mix (like real high-speed cabins)
+    const highSpdWind = Math.max(0, Math.min(1, (kmh - 140) / 130));
+    const windDuck = 1 - highSpdWind * 0.34;
+    const master = this.muted || stalled ? 0 : (0.16 + 0.24 * load + 0.10 * rpmNorm) * windDuck;
+    e.g.gain.setTargetAtTime(master, t, 0.04);
+    if (this.reverbSend) {
+      // Narrow tunnels/walled canyons amplify and echo the exhaust note
+      this.reverbSend.gain.setTargetAtTime(this.muted ? 0 : this.envReverb * 0.62, t, 0.08);
+    }
+
+    // Distinct rolling tire surface audio: wet spray hiss (2.2 kHz) vs gravel crunch (260 Hz) vs dry asphalt (540 Hz)
+    if (this.roadRoll) {
+      const rollFrac = Math.min(1, kmh / 180);
+      const targetFreq = this.onGravel ? 240 + kmh * 2.2 : this.roadWetness > 0.55 ? 1650 + kmh * 9.5 : 460 + kmh * 3.2;
+      const targetGain = this.muted ? 0 : rollFrac * (this.onGravel ? 0.14 : this.roadWetness > 0.55 ? 0.11 : 0.055);
+      this.roadRoll.f.frequency.setTargetAtTime(targetFreq, t, 0.08);
+      this.roadRoll.g.gain.setTargetAtTime(targetGain, t, 0.08);
+    }
+
+    // Subtle GT transmission gear whine proportional to wheel speed + engine load
     const gearFreq = Math.max(240, absSpeed * 28 + rpm * 0.12);
     e.oGear.frequency.setTargetAtTime(gearFreq, t, 0.03);
     const whineLevel = this.muted || stalled ? 0 : Math.min(0.038, (absSpeed / 65) * 0.026 * (0.4 + 0.6 * thr));
     e.gearGain.gain.setTargetAtTime(whineLevel, t, 0.04);
-
-    const master = this.muted || stalled ? 0 : 0.16 + 0.24 * load + 0.10 * rpmNorm;
-    e.g.gain.setTargetAtTime(master, t, 0.04);
 
     // Gearshift ignition-cut bark when shifting up or down under load
     if (gear !== this.lastGear && !this.muted && !stalled) {
@@ -402,8 +466,51 @@ export class GameAudio {
     this.tyre!.f2.frequency.setTargetAtTime(1520 + 620 * Math.min(1.6, slip), t, 0.04);
 
     const v = Math.min(1, absSpeed / 70);
-    this.wind!.g.gain.setTargetAtTime(this.muted ? 0 : v * v * 0.26, t, 0.18);
-    this.wind!.f.frequency.setTargetAtTime(260 + 820 * v, t, 0.18);
+    this.wind!.g.gain.setTargetAtTime(this.muted ? 0 : Math.pow(v, 1.8) * 0.42, t, 0.14);
+    this.wind!.f.frequency.setTargetAtTime(260 + 1080 * v, t, 0.14);
+  }
+
+  /** Update dynamic adaptive music intensity from speed, police heat & chase state. */
+  setMusicContext(speedKmh: number, copsActive: boolean, heatLevel: number) {
+    this.musicChase = copsActive;
+    const spd = Math.min(1, speedKmh / 240);
+    this.musicIntensity = copsActive ? Math.min(1, 0.72 + heatLevel * 0.06) : Math.max(0.15, spd);
+  }
+
+  /** Triumphal chord swell when crossing the race finish line! */
+  triggerFinishSwell() {
+    const ctx = this.ctx;
+    if (!ctx || !this.out || !this.musicEnabled) return;
+    const t = ctx.currentTime;
+    for (const hz of [220, 277.18, 329.63, 440, 659.25]) {
+      this.tone(t, 1.45, hz, hz * 1.005, 'triangle', 0.055);
+    }
+  }
+
+  private startAdaptiveMusic() {
+    if (this.musicTimer) return;
+    const cruiseScale = [55, 55, 65.41, 73.42, 82.41, 73.42, 65.41, 49];   // A minor synthwave bass
+    const chaseScale = [61.74, 65.41, 61.74, 73.42, 82.41, 77.78, 65.41, 55]; // High-tension Phrygian pursuit
+    this.musicTimer = setInterval(() => {
+      const ctx = this.ctx;
+      if (!ctx || !this.out || ctx.state !== 'running' || this.muted || !this.musicEnabled) return;
+      const t = ctx.currentTime;
+      const step = this.musicStep++;
+      const scale = this.musicChase ? chaseScale : cruiseScale;
+      const note = scale[step % scale.length];
+      const inten = this.musicIntensity;
+      // Sub-bass pulse
+      this.tone(t, 0.16, note, note * 0.99, this.musicChase ? 'sawtooth' : 'triangle', 0.028 + inten * 0.025);
+      // High-speed / chase arpeggio synth layer unlocks above 110 km/h or during cop pursuit
+      if (inten > 0.45 && step % (this.musicChase ? 1 : 2) === 0) {
+        const arp = note * (step % 4 === 0 ? 4 : step % 2 === 0 ? 3 : 2);
+        this.tone(t, 0.09, arp, arp, 'square', (inten - 0.35) * 0.022);
+      }
+      // Crisp hi-hat tick in chase / high-speed mode
+      if ((this.musicChase || inten > 0.6) && step % 2 === 1) {
+        this.burst(t, 0.025, 'highpass', 7500, 1.2, 0.018 * inten);
+      }
+    }, 185);
   }
 
   /** Brief ignition-cut exhaust thump on high-RPM upshifts. */

@@ -157,12 +157,20 @@ export class ControlsUi {
   private ffbHtml(): string {
     const s = this.s(), f = this.ffb;
     const slider = (id: string, label: string, v: number) => `<label class="field slider"><span class="dim">${label}</span><input id="${id}" type="range" min="0" max="100" step="5" value="${Math.round(v * 100)}" /><b id="${id}-v">${Math.round(v * 100)}%</b></label>`;
-    if (!ForceFeedback.available) return `<h4>Force feedback</h4><p class="dim small-note">${esc(f.status)}.</p>`;
-    return `<h4>Force feedback</h4>
+    const profChip = (id: 'direct_drive' | 'belt' | 'gear', label: string) =>
+      `<button class="chip ${s.ffbProfile === id ? 'on' : ''}" data-act="c-ffbprof" data-v="${id}">${label}</button>`;
+    const tuning = `<div class="opts"><span class="dim">WHEEL PROFILE</span>${profChip('direct_drive', 'Direct Drive (Moza/Simucube)')}${profChip('belt', 'Belt-Driven (Thrustmaster/CSL)')}${profChip('gear', 'Gear-Driven (Logitech G29)')}</div>
+      ${slider('c-ffbs', 'STRENGTH', s.ffbStrength)}
+      ${slider('c-ffbm', 'SAFETY CAP', s.ffbMax)}
+      ${slider('c-ffbd', 'DAMPER', s.ffbDamper)}
+      ${slider('c-ffbf', 'FRICTION', s.ffbFriction)}
+      ${slider('c-ffbr', 'ROAD EFFECTS', s.ffbRoadEffects)}`;
+    if (!ForceFeedback.available) return `<h4>Force feedback (FFB Profiles)</h4>${tuning}<p class="dim small-note">${esc(f.status)}.</p>`;
+    return `<h4>Force feedback (FFB Profiles)</h4>
       <div class="opts"><span class="${f.driver ? '' : 'dim'}">${esc(f.status)}</span>${f.driver ? '' : '<button class="primary" data-act="c-ffb">Connect wheel for force feedback</button>'}</div>
-      ${f.driver ? `${slider('c-ffbs', 'STRENGTH', s.ffbStrength)}${slider('c-ffbm', 'SAFETY CAP', s.ffbMax)}
-      <div class="opts"><button data-act="c-ffbtest">Test: push left</button><span class="dim">DIRECTION</span><button class="chip ${s.ffbInvert ? '' : 'on'}" data-act="c-ffbinv" data-v="0">Normal</button><button class="chip ${s.ffbInvert ? 'on' : ''}" data-act="c-ffbinv" data-v="1">Inverted</button></div>` : ''}
-      <p class="dim small-note">Chrome / Edge on a computer (WebHID). Supported: wheels speaking the USB force-feedback standard (HID PID: Moza, Simucube, Simagic, Asetek, Cammus, VRS, OpenFFBoard, most direct-drive bases) and the Logitech protocol (Driving Force GT, G25, G27, G29, G923 PlayStation version). Thrustmaster and Fanatec belt wheels and the Xbox G920 / G923 use closed protocols: steering and pedals work, force feedback doesn't. If "Test" turns the wheel right, pick Inverted. Linux needs access to the wheel's hidraw device (README).</p>`;
+      ${tuning}
+      ${f.driver ? `<div class="opts"><button data-act="c-ffbtest">Test: push left</button><span class="dim">DIRECTION</span><button class="chip ${s.ffbInvert ? '' : 'on'}" data-act="c-ffbinv" data-v="0">Normal</button><button class="chip ${s.ffbInvert ? 'on' : ''}" data-act="c-ffbinv" data-v="1">Inverted</button></div>` : ''}
+      <p class="dim small-note">Direct Drive uses lower damper &amp; higher dynamic range; Belt/Gear presets boost road effects &amp; friction so Logitech and Moza bases each feel authentic.</p>`;
   }
 
   /** Clicks on data-act="c-…" buttons. Returns true when handled. */
@@ -206,6 +214,14 @@ export class ControlsUi {
       case 'c-ffb': void this.ffb.connect(true); return true;
       case 'c-ffbtest': this.ffb.testPulse(); return true;
       case 'c-ffbinv': s.ffbInvert = v === '1'; break;
+      case 'c-ffbprof': {
+        s.ffbProfile = v as 'direct_drive' | 'belt' | 'gear';
+        if (v === 'direct_drive') { s.ffbStrength = 0.55; s.ffbMax = 0.75; s.ffbDamper = 0.18; s.ffbFriction = 0.12; s.ffbRoadEffects = 0.45; }
+        else if (v === 'belt') { s.ffbStrength = 0.75; s.ffbMax = 0.9; s.ffbDamper = 0.35; s.ffbFriction = 0.25; s.ffbRoadEffects = 0.65; }
+        else { s.ffbStrength = 0.9; s.ffbMax = 1.0; s.ffbDamper = 0.45; s.ffbFriction = 0.35; s.ffbRoadEffects = 0.85; }
+        this.note = `✓ Applied ${v.replace('_', ' ')} FFB curve.`;
+        break;
+      }
       case 'c-rebind-key':
         this.input.listeningBind = { kind: 'key', action: v as BindAction, onDone: () => { this.note = `✓ Remapped ${v}.`; this.rerender(); } };
         this.note = `Press any key for "${v}" (Esc cancels)…`;
@@ -243,6 +259,9 @@ export class ControlsUi {
     const s = this.s(), v = Number(t.value) / 100;
     if (t.id === 'c-ffbs') s.ffbStrength = v;
     else if (t.id === 'c-ffbm') s.ffbMax = v;
+    else if (t.id === 'c-ffbd') s.ffbDamper = v;
+    else if (t.id === 'c-ffbf') s.ffbFriction = v;
+    else if (t.id === 'c-ffbr') s.ffbRoadEffects = v;
     else return;
     const out = document.getElementById(`${t.id}-v`);
     if (out) out.textContent = `${t.value}%`;

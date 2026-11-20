@@ -141,6 +141,10 @@ export interface ControlsSettings {
   calibration: Record<string, WheelCalibration>;
   ffbStrength: number;            // 0..1 overall gain
   ffbMax: number;                 // 0..1 cap (safety on strong direct-drive bases)
+  ffbProfile: 'direct_drive' | 'belt' | 'gear';
+  ffbDamper: number;              // 0..1 steering shaft damping
+  ffbFriction: number;            // 0..1 static tire/column friction
+  ffbRoadEffects: number;         // 0..1 curbs, surface bumps & crash jolts
   ffbInvert: boolean;
   padVibration: boolean;
   touchSteering: 'touch' | 'tilt';
@@ -149,8 +153,9 @@ export interface ControlsSettings {
 }
 const KEY = 'nr.controls.v1';
 export function defaultSettings(): ControlsSettings {
-  return { wheelLockToLock: 720, wheelRotation: {}, calibration: {}, ffbStrength: 0.6, ffbMax: 0.7, ffbInvert: false, padVibration: true,
-    touchSteering: 'touch', haptics: true, hShifter: false };
+  return { wheelLockToLock: 720, wheelRotation: {}, calibration: {}, ffbStrength: 0.6, ffbMax: 0.7,
+    ffbProfile: 'belt', ffbDamper: 0.35, ffbFriction: 0.25, ffbRoadEffects: 0.55,
+    ffbInvert: false, padVibration: true, touchSteering: 'touch', haptics: true, hShifter: false };
 }
 export function loadSettings(): ControlsSettings {
   const d = defaultSettings();
