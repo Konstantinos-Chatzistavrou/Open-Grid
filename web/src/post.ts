@@ -221,6 +221,8 @@ export class Post {
   /** Optional hook called immediately before any scene pass (main, planar road reflection, rear-view mirror) renders. */
   onBeforeScenePass: ((cam: THREE.Camera) => void) | null = null;
 
+  private buildPipelineFn: (name: PresetName) => THREE.RenderPipeline;
+
   constructor(private renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, private opts: PostOptions) {
     this.scenePass = pass(scene, camera);
     {
@@ -271,14 +273,16 @@ export class Post {
     const mImg = toneGrade(this.mirrorPass.getTextureNode('output').sample(mUv), curve, false);
     const mIn = step(mr.x, su.x).mul(step(su.x, mr.z)).mul(step(mr.y, su.y)).mul(step(su.y, mr.w)).mul(this.mirrorMix);
     const withMirror = (base: THREE.Node) => mix(base as THREE.Node<'vec4'>, vec4(mImg.rgb.mul(0.94), 1), mIn);
-    for (const name of PRESET_ORDER) {
+    const buildOne = (name: PresetName): THREE.RenderPipeline => {
+      const existing = this.pipelines.get(name);
+      if (existing) return existing;
       const pr = PRESETS[name];
       const p = new THREE.RenderPipeline(renderer);
       if (pr.direct) {
         p.outputColorTransform = false;
         p.outputNode = withMirror(toneGrade(color, curve, false));
         this.pipelines.set(name, p);
-        continue;
+        return p;
       }
       const fx = pr.ao && pr.ssr && ssrOn
         ? (this.maxFx ??= new DepthFx(this.scenePass, camera, { resScale: 0.75, quality: 0.3, maxDistance: 85, intensity: 0.72, withAo: aoOn, carPos: this.carPos, planar: this.planarRoad, planarIntensity: 0.56 }))
@@ -287,8 +291,6 @@ export class Post {
         ? (this.depthFx ??= new DepthFx(this.scenePass, camera, { resScale: 0.5, quality: 0.16, maxDistance: 55, intensity: 0.6, carPos: this.carPos, planar: this.planarRoad, planarIntensity: 0.44 }))
         : null;
       let lit: THREE.Node<'vec4'> = fx ? fx.color : lite ? lite.color : color;
-      // bloom numbers are per preset (emitter bias, see BLOOM); presets with the same numbers share one node, presets
-      // that ask for a different halo get their own (fx/lite always do: their colour node differs)
       const bloomKey = opts.bloom && pr.bloom > 0
         ? `${pr.bloomStrength ?? bloomStrength}|${pr.bloomRadius ?? bloomRadius}|${pr.bloomThreshold ?? bloomThreshold}|${pr.bloomKnee ?? bloomKnee}`
         : '';
@@ -303,7 +305,6 @@ export class Post {
           lit = lit.add(b);
         }
       }
-      // display-referred image at the render size (AA and the sharpening limiter expect 0..1)
       let toned: THREE.RTTNode;
       if (!fx && !lite && opts.bloom && pr.bloom > 0 && pr.grade === 'full' && sharedTonedFull && sharedTonedKey === bloomKey) {
         toned = sharedTonedFull;
@@ -319,16 +320,29 @@ export class Post {
         this.smaas.push(s);
         src = s.getTextureNode();
       } else if (aa === 'fxaa') {
-        const fx = rtt8(fxaa(toned));
-        this.scaled.push(fx);
-        src = fx;
+        const fxNode = rtt8(fxaa(toned));
+        this.scaled.push(fxNode);
+        src = fxNode;
       }
       p.outputColorTransform = false;
       p.outputNode = withMirror(casUpscale(src, this.sharpness, pr.grain && grading));
       this.pipelines.set(name, p);
-    }
+      return p;
+    };
+    this.buildPipelineFn = buildOne;
+    for (const name of PRESET_ORDER) buildOne(name);
+    // Always pre-build the ultra-lightweight 'potato' direct pass so switching into potato NEVER needs a page reload!
+    if (!this.pipelines.has('potato')) buildOne('potato');
     this.preset = opts.preset;
     this.setScale(opts.scale);
+  }
+
+  /** Lazily ensure any graphics preset pipeline (including switching into/out of potato) is built without reloading! */
+  ensurePreset(name: PresetName) {
+    if (!this.pipelines.has(name)) {
+      this.buildPipelineFn(name);
+      this.setScale(this._scale);
+    }
   }
 
   /**
@@ -343,8 +357,8 @@ export class Post {
   setScale(s: number) {
     this._scale = s;
     this.scenePass.setResolutionScale(s);
-    // the mirror strip is about a quarter of the screen wide: a quarter of the main pass's pixels across is its 1:1
-    this.mirrorPass.setResolutionScale(Math.min(0.45, 0.07 + 0.3 * s));
+    // Match the actual top-center mirror strip (~22% screen width): ~3.5x less pixel fill with crisp car/road visibility!
+    this.mirrorPass.setResolutionScale(Math.min(0.24, 0.08 + 0.16 * s));
     this.maxFx?.setScale(s);
     this.depthFx?.setScale(s);
     this.planarRoad?.setScale(s);
@@ -367,7 +381,11 @@ export class Post {
 
   /** called with the preset before every render */
   onPreset: ((p: PresetName) => void) | null = null;
-  render() { this.onPreset?.(this.preset); this.pipelines.get(this.preset)!.render(); }
+  render() {
+    this.onPreset?.(this.preset);
+    this.ensurePreset(this.preset);
+    this.pipelines.get(this.preset)!.render();
+  }
 
   /** Renders active/fallback presets once (shader warm-up behind the loading screen). */
   warmup() {

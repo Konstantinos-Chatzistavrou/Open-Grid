@@ -122,12 +122,17 @@ export class RaceNodes {
 
   update(dt: number, enabled: boolean, playerPos: THREE.Vector3) {
     if (!enabled) { this.nearby = null; return; }
-    for (const r of this.rings) r.rotation.z += dt * 0.9;
     let best: RaceNodeDef | null = null;
     let bd = 16;
-    for (const n of this.nodes) {
-      const d = Math.hypot(playerPos.x - n.pos.x, playerPos.z - n.pos.z);
-      if (d < bd) { bd = d; best = n; }
+    for (let i = 0; i < this.nodes.length; i++) {
+      const n = this.nodes[i];
+      const dx = playerPos.x - n.pos.x;
+      const dz = playerPos.z - n.pos.z;
+      const d2 = dx * dx + dz * dz;
+      const g = this.root.children[i];
+      if (g) g.visible = d2 < 260 * 260;
+      if (d2 < 260 * 260 && this.rings[i]) this.rings[i].rotation.z += dt * 0.9;
+      if (d2 < bd * bd) { bd = Math.sqrt(d2); best = n; }
     }
     this.nearby = best;
   }

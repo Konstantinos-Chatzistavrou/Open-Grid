@@ -503,12 +503,18 @@ export class AiTraffic {
       [{ car: null, p: this.player, v: this.playerV, lat: this.latOf(this.player, this.playerS) }, ...this.cars.map((o) => ({ car: o, p: o.pos, v: o.v, lat: o.lat }))];
     for (const [carIdx, c] of this.cars.entries()) {
       c.prevPos.copy(c.pos); c.prevQuat.copy(c.quat);
-      // headlight pool: fades out as the player's car comes under it (a rival close behind used to flood the car white)
+      // headlight pool: fades out as the player's car comes under it AND turns off past 90 m (Clustered Forward+ skips 0-intensity lights!)
       if (c.light) {
-        const fw = this.a.set(0, 0, 1).applyQuaternion(c.quat);
-        const lx = c.pos.x + fw.x * 6.5 - player.x, lz = c.pos.z + fw.z * 6.5 - player.z;
-        const k = Math.min(1, Math.max(0, (Math.hypot(lx, lz) - 2.5) / 4.5));
-        c.light.intensity = c.wrecked ? 0 : AI_BEAM * k * k * (3 - 2 * k);
+        const dp2 = (c.pos.x - player.x) ** 2 + (c.pos.z - player.z) ** 2;
+        if (c.wrecked || dp2 > 90 * 90) {
+          c.light.intensity = 0;
+        } else {
+          const fw = this.a.set(0, 0, 1).applyQuaternion(c.quat);
+          const lx = c.pos.x + fw.x * 6.5 - player.x, lz = c.pos.z + fw.z * 6.5 - player.z;
+          const k = Math.min(1, Math.max(0, (Math.hypot(lx, lz) - 2.5) / 4.5));
+          const farFade = dp2 > 70 * 70 ? Math.max(0, (90 - Math.sqrt(dp2)) / 20) : 1;
+          c.light.intensity = AI_BEAM * k * k * (3 - 2 * k) * farFade;
+        }
       }
       const isDragOpponent = this.mode === 'cruise' && carIdx === this.dragCarIdx;
       const still = c.v < 0.05 && Math.abs(c.latV) < 0.05 && Math.abs(c.yawRate) < 0.02;
@@ -665,7 +671,21 @@ export class AiTraffic {
       c.root.quaternion.slerpQuaternions(c.prevQuat, c.quat, alpha);
       // hide the model in the fog (lights stay: changing the light set recompiles materials)
       const d2 = c.root.position.distanceToSquared(camera.position);
-      c.model.visible = d2 < 230 * 230;
+      const vis = d2 < 210 * 210;
+      c.model.visible = vis;
+      if (!vis) continue;
+      // Only cars inside headlight shadow range (< 44 m) cast shadows: saves dozens of shadow draw calls with zero visual loss!
+      const castSh = d2 < 44 * 44;
+      if (c.shadow) c.shadow.visible = d2 < 95 * 95;
+      if ((c as AiCar & { shOn?: boolean }).shOn !== castSh) {
+        (c as AiCar & { shOn?: boolean }).shOn = castSh;
+        c.model.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (!m.isMesh) return;
+          if (castSh) { if (m.userData.wasCaster) m.castShadow = true; }
+          else if (m.castShadow) { m.userData.wasCaster = true; m.castShadow = false; }
+        });
+      }
       const near = d2 < (c.detailOn ? DETAIL_M + 4 : DETAIL_M) ** 2;   // hysteresis: no flicker at the edge
       if (near !== c.detailOn) { c.detailOn = near; for (const o of c.detail) o.visible = near; }
       for (const w of c.wheels) w.node.quaternion.setFromAxisAngle(X, c.spin).multiply(w.rest);

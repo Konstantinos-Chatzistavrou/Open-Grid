@@ -39,20 +39,22 @@ export interface BreachHost {
 }
 
 const H = 3.85;
-const HOLE_H = 3.1;
+const HOLE_H = 3.15;
 const MIN_HOLE = 3.2;
 const MAX_HOLE = 4.6;
 const MAX_DEPTH = 9.5;
 const MIN_DEPTH = 3.6;
 const PORTAL_IN = 1.6;
-const PORTAL_OUT = 0.25;
+const PORTAL_OUT = 0.42;
 const MAX_LIVE = 4;
 const MAX_LIGHTS = 2;
 
 const GROUP_WALL = (0x0004 << 16) | 0xffff;
-const ORDER_EARLY = -10;
-const ORDER_PORTAL = -5;
-const ORDER_ROOM = -4;
+// CRITICAL render order: cars/rubble (-4) -> room interior (-2) -> depth-only portal (-1) -> building facade (0).
+// Room MUST draw before portal so portal writes facade-plane depth AFTER the room, blocking only the exterior facade!
+const ORDER_EARLY = -4;
+const ORDER_ROOM = -2;
+const ORDER_PORTAL = -1;
 
 type RGB = [number, number, number];
 /** Surface material kinds encoded in vertex attribute `_mat.w` (0..6):
@@ -460,7 +462,7 @@ export class Breaches {
       if (!b) return;
       let touching = false;
       w.contactPair(carCol, o, (m) => {
-        for (let i = 0; i < m.numContacts(); i++) if (m.contactDist(i) < 0.06) touching = true;
+        for (let i = 0; i < m.numContacts(); i++) if (m.contactDist(i) < 0.14) touching = true;
       });
       if (touching) found = b;
     });
@@ -493,7 +495,7 @@ export class Breaches {
     const height = box.z1 - box.z0;
     const seed = Math.floor(Math.abs(box.cx * 7.31 + box.cy * 3.17) * 100) % 100000;
     const masonry = height < 22 ? true : height > 60 ? false : seed % 3 === 0;
-    const E = masonry ? 320e3 : 100e3;
+    const E = masonry ? 240e3 : 75e3;
     if (0.5 * mass * vn * vn < E) return null;
 
     const uLocal = f.ax === 'x' ? lp.z : lp.x;
@@ -969,7 +971,7 @@ export class Breaches {
         if (l.age >= l.pending[i].at) { l.pending[i].make(); l.pending.splice(i, 1); }
       }
       const lc = this.v.copy(camera.position).sub(l.center).applyQuaternion(this.q.copy(l.quat).invert());
-      l.portal.visible = l.face.s * (l.face.ax === 'x' ? lc.x : lc.z) > l.face.plane - 0.05;
+      l.portal.visible = l.face.s * (l.face.ax === 'x' ? lc.x : lc.z) > l.face.plane - 0.55;
 
       let moved = false;
       for (const p of l.pieces) {
@@ -1101,5 +1103,10 @@ export class Breaches {
 }
 
 export function drawEarly(root: THREE.Object3D) {
-  root.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.renderOrder = ORDER_EARLY; });
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const mats = Array.isArray(m.material) ? m.material : [m.material];
+    if (mats.every((x) => !x.transparent)) m.renderOrder = ORDER_EARLY;
+  });
 }

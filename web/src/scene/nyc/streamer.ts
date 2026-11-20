@@ -744,6 +744,18 @@ export class NycStreamer {
   /** The street furniture (poles, trees) for obstacles.ts; null until ready or with stub props. */
   get streetProps(): NycProps | null { return this.props instanceof NycProps ? this.props : null; }
 
+  /** Seamlessly adjust city streaming ring distances & fog density when switching into/out of potato mode (no reload!). */
+  setQualityMode(isPotato: boolean, isTouch: boolean) {
+    this.o.farLoad = isPotato ? 420 : isTouch ? 560 : 1000;
+    this.o.farKeep = isPotato ? 500 : isTouch ? 660 : 1150;
+    this.o.nearLoad = isPotato ? 300 : 480;
+    this.o.nearKeep = isPotato ? 380 : 600;
+    this.o.fogDensity = isPotato ? 0.0045 : 0.0024;
+    if (this.scene.fog instanceof THREE.FogExp2) this.scene.fog.density = this.o.fogDensity;
+    if (this.props instanceof NycProps) this.props.treeDensity = isPotato ? 0.4 : 1.0;
+    this.sinceSelect = 99;
+  }
+
   /** Run the WebGPU compute meshlet culling pass for the given camera before rendering city batches. */
   cullMeshlets(cam: THREE.Camera = this.camera) {
     this.batcher?.cull(this.renderer, cam);

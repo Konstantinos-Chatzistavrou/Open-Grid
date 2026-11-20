@@ -204,7 +204,7 @@ async function main() {
   const gpu = isTouch ? gpuName() : '';
   const weakDevice = isTouch && (WEAK_GPU.test(gpu) || ((navigator as { deviceMemory?: number }).deviceMemory ?? 8) <= 3);
   const qParam = params.get('quality');
-  const potato = noWebGPU || qParam === 'potato' || (!qParam && (gfx === 'potato' || (gfx === 'auto' && (weakDevice || potatoFlag))));
+  let potato = noWebGPU || qParam === 'potato' || (!qParam && (gfx === 'potato' || (gfx === 'auto' && (weakDevice || potatoFlag))));
   if (potato) usePotatoOnly();
   const baseRatio = Math.min(devicePixelRatio, potato ? 1 : isTouch ? 2 : 1);
   const GFX_SCALE = { max: 1, ultra: 1, high: 1, medium: 0.85, low: 0.7, potato: 0.7 } as const;   // phones (their canvas is tuned separately)
@@ -835,7 +835,7 @@ async function main() {
   let mirrorOn = !isTouch && !potato;
   try { const v = localStorage.getItem('nr.mirror'); if (v !== null) mirrorOn = v === '1'; } catch { /* blocked */ }
   let mirrorRectAt = -1e9, mirrorLaidOut = false;
-  post.mirrorCam.far = 160; post.mirrorCam.updateProjectionMatrix();   // fewer tiles and props drawn twice
+  post.mirrorCam.far = 135; post.mirrorCam.updateProjectionMatrix();   // crisp rear traffic & city without drawing distant tiles twice
   const mirrorFwd = new THREE.Vector3(), mirrorAt = new THREE.Vector3(), mirrorQ = new THREE.Quaternion();
   const placeMirrorCam = () => {
     const root = visual.root, cam = post.mirrorCam;
@@ -867,7 +867,7 @@ async function main() {
       }
     }
     post.mirror = mirrorLaidOut;
-    post.mirrorEvery = post.preset === 'low' || post.preset === 'medium' ? 4 : 3;
+    post.mirrorEvery = (post.preset === 'low' || post.preset === 'medium' || post.preset === 'potato') ? 6 : 4;
     if (mirrorLaidOut) placeMirrorCam();
   };
   const showScale = (p: PresetName) => (isTouch ? Math.min(SHOW_PRESETS[p].scale, Math.max(0.5, guessScale())) : SHOW_PRESETS[p].scale);
@@ -919,7 +919,7 @@ async function main() {
     const sp = nyc?.streetProps;
     if (sp) { sp.nearR = NEAR_TREES[p]; sp.rangeScale = LIGHT_RANGE[p]; sp.lightCap = lightsOverride ?? LIGHT_CAP[p]; }
   };
-  post.mirrorCam.layers.enable(PROP_DETAIL_LAYER);
+  // Rear-view mirror intentionally stays on layer 0 only (skips high-poly PROP_DETAIL_LAYER trees & clutter): ~60% fewer mirror draw calls!
   post.onBeforeScenePass = (cam) => { nyc?.cullMeshlets(cam); };
   if (probe) probe.onBeforeFace = (cam) => { nyc?.cullMeshlets(cam); };
   (globalThis as { __meshlets?: () => unknown; __readMeshletStats?: () => Promise<unknown> }).__meshlets = () => nyc?.meshletReport() ?? null;
@@ -1061,14 +1061,14 @@ async function main() {
   const needsPotato = (fps: number) => isTouch && !potato && !presetPinned && scale <= RES_FLOOR + 1e-6
     // on `low` already, or so far under the target that the effects between here and `low` (bloom, FXAA) cannot close it
     && (presetIdx === PRESET_ORDER.length - 1 || fps < TUNE_TARGET * 0.6);
-  /** false when the flag cannot be stored (storage blocked): reloading then would tune and reload forever */
+  /** Seamlessly enter potato mode in-place (zero page reload, keeps fullscreen!). */
   const goPotato = () => {
-    try { localStorage.setItem(POTATO_KEY, '1'); if (localStorage.getItem(POTATO_KEY) !== '1') return false; } catch { return false; }
-    location.reload();
+    try { localStorage.setItem(POTATO_KEY, '1'); } catch { /* ignore */ }
+    void applyGfx('potato');
     return true;
   };
   const POTATO_NOTE = noWebGPU ? 'Potato mode on WebGL 2: this browser has no WebGPU, which every other preset needs.'
-    : 'Potato mode: the lightest picture, for low-end phones. Pick another preset to leave it (the game reloads).';
+    : 'Potato mode: lightest graphics, 60 FPS cap. Switch to any preset seamlessly without reloading.';
   const startScale = () => guessScale();
   /** `resize`: also move to the preset's own pixel budget (desktop; a render-target resize, so never while driving). */
   const syncCap = (p: PresetName) => {
@@ -1078,10 +1078,13 @@ async function main() {
     visual.renderDt = capInterval ? capInterval / 1000 : 1 / 60;
   };
   const setPreset = (i: number, resize = true) => {
-    presetIdx = i;
-    post.preset = PRESET_ORDER[i];
-    if (resize && !isTouch && !scalePinned && scale !== presetScale(post.preset)) applyScale(presetScale(post.preset));
-    syncCap(post.preset);
+    const clamped = Math.max(0, Math.min(PRESET_ORDER.length - 1, i));
+    presetIdx = clamped;
+    const p = PRESET_ORDER[clamped];
+    post.ensurePreset(p);
+    post.preset = p;
+    if (resize && !isTouch && !scalePinned && scale !== presetScale(p)) applyScale(presetScale(p));
+    syncCap(p);
     syncShowPreset();
     try { localStorage.setItem(PRESET_KEY, post.preset); } catch { /* storage blocked */ }
   };
@@ -1130,22 +1133,77 @@ async function main() {
     menu.setTuning(false, `Graphics tuned for this device: ${post.preset}, ${Math.round(scale * 100)} % resolution`);
     setExtra();
   };
-  const applyGfx = (g: Gfx) => {
+  let gfxBusy = false;
+  const applyGfx = async (g: Gfx) => {
+    if (gfxBusy) return;
     gfx = g;
     try {
       localStorage.setItem(GFX_KEY, g);
-      if (g === 'auto') localStorage.removeItem(POTATO_KEY);   // Auto measures again (a weak GPU by name still boots potato)
+      if (g === 'potato') localStorage.setItem(POTATO_KEY, '1');
+      else localStorage.removeItem(POTATO_KEY);
     } catch { /* storage blocked */ }
-    // Into or out of potato: the pipelines, shadow maps and city rings of the other side were never built. Reload.
     if (noWebGPU) { menu.setTuning(false, POTATO_NOTE); return; }   // nothing else can run here
-    if (potato !== (g === 'potato')) { menu.setTuning(true); location.reload(); return; }
-    if (g === 'auto') { adaptive = true; presetPinned = false; startTuning(true); return; }
-    adaptive = false; presetPinned = true;
-    tuning = false;
-    setPreset(PRESET_ORDER.indexOf(g));
-    applyScale(presetScale(g));   // desktop: the preset's pixel budget; phones: fixed presets keep the tuned budget
-    menu.setTuning(false, `Graphics fixed: ${g}`);
-    setExtra();
+    const prevPreset = post.preset;
+    const prevPotato = potato;
+    const nextPotato = g === 'potato';
+    const orderAll: PresetName[] = ['max', 'ultra', 'high', 'medium', 'low', 'potato'];
+    const targetPreset: PresetName = g === 'auto' ? defaultPreset : g;
+    const dramatic = prevPotato !== nextPotato || g === 'auto' || Math.abs(orderAll.indexOf(targetPreset) - orderAll.indexOf(prevPreset)) >= 1;
+
+    gfxBusy = true;
+    try {
+      if (dramatic) {
+        await loader.show(`Applying ${g.toUpperCase()} graphics…`, `${g.toUpperCase()} PRESET`, 25);
+      }
+      // If we booted in potato-only mode and are leaving potato, restore full PRESET_ORDER in-place (zero reload!)
+      if (!nextPotato && PRESET_ORDER.length === 1 && PRESET_ORDER[0] === 'potato') {
+        PRESET_ORDER.length = 0;
+        PRESET_ORDER.push('max', 'ultra', 'high', 'medium', 'low');
+      }
+      potato = nextPotato;
+      setMobileFacadeMode(potato);
+      audio.lowPower = isTouch || potato;
+      car.usePatchRays = !(isTouch || potato);
+      renderer.shadowMap.enabled = !potato && params.get('shadows') !== '0';
+      camera.far = potato ? 560 : 1600;
+      camera.updateProjectionMatrix();
+      nyc?.setQualityMode(potato, isTouch);
+
+      if (dramatic) loader.text('Reconfiguring WebGPU pipelines…', 58);
+      if (g === 'auto') {
+        adaptive = true;
+        presetPinned = false;
+        post.ensurePreset(defaultPreset);
+        setPreset(PRESET_ORDER.indexOf(defaultPreset));
+        if (dramatic) { await steadyFrames(3, 68, 1600); loader.text('Ready!', 100); loader.hide(); }
+        startTuning(true);
+        return;
+      }
+      adaptive = false;
+      presetPinned = true;
+      tuning = false;
+      post.ensurePreset(g);
+      if (g === 'potato') {
+        post.preset = 'potato';
+        applyScale(presetScale('potato'));
+        syncCap('potato');
+        syncShowPreset();
+        try { localStorage.setItem(PRESET_KEY, 'potato'); } catch { /* storage blocked */ }
+      } else {
+        setPreset(PRESET_ORDER.indexOf(g));
+        applyScale(presetScale(g));
+      }
+      menu.setTuning(false, g === 'potato' ? POTATO_NOTE : `Graphics fixed: ${g}`);
+      setExtra();
+      if (dramatic) {
+        loader.text('Stabilizing frame pacing…', 86);
+        await steadyFrames(3, 68, 1800);
+        loader.text('Ready!', 100);
+        loader.hide();
+      }
+    } finally {
+      gfxBusy = false;
+    }
   };
   let stepMs = 0;
   const trace: unknown[] = [];
@@ -1284,7 +1342,7 @@ async function main() {
     // right behind the loading overlay — ZERO page reload, stays in Fullscreen!
     city: (id) => { void switchCity(id); },
     cities: () => ({ list: CITIES, current: cityInfo.id }),
-    gfx: (g2) => applyGfx(g2),
+    gfx: (g2) => { void applyGfx(g2); },
     resume: () => resume(),
     restart: () => { menu.show('none'); if (raceLaps() > 0) void beginRace(); else { resetCar(); setState('race'); audio.muted = false; prev = performance.now(); } },
     quit: (to) => quitSession(party ? 'lobby' : to),
