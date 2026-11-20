@@ -2,7 +2,7 @@
 // soft ground contact shadow, and realistic radial spoke motion blur.
 import * as THREE from 'three/webgpu';
 import { applyPlate } from './plate';
-import { float, smoothstep, texture, uniform, uv, vec4 } from 'three/tsl';
+import { float, mix, smoothstep, texture, uniform, uv, vec3, vec4 } from 'three/tsl';
 import { OUT } from '../physics/core';
 import { materialsOf } from './city';
 import { assetUrl, loadGLTF } from './loaders';
@@ -366,7 +366,7 @@ export function setupCarMaterials(model: THREE.Object3D, cfg: CarVisualConfig, p
 
 export class CarVisual {
   readonly root = new THREE.Group();          // placed at the physics body (CG)
-  private wheels: { node: THREE.Object3D; rest: THREE.Quaternion; restPos: THREE.Vector3; radius: number; caliper?: THREE.Object3D; caliperRest?: THREE.Quaternion; spin: number; off: boolean; hub: THREE.Vector3 }[] = [];
+  private wheels: { node: THREE.Object3D; rest: THREE.Quaternion; restPos: THREE.Vector3; radius: number; caliper?: THREE.Object3D; caliperRest?: THREE.Quaternion; spin: number; off: boolean; hub: THREE.Vector3; rotorHeat: THREE.UniformNode<'float', number> }[] = [];
   /** seconds between DRAWN frames (main.ts sets it from the cap): decides when the spokes alias and the blur disc takes over */
   renderDt = 1 / 60;
   private blurMat: THREE.MeshStandardNodeMaterial | null = null;
@@ -404,7 +404,8 @@ export class CarVisual {
       const node = model.getObjectByName(name)!;
       const caliper = model.getObjectByName(name.replace('wheel', 'caliper'));
       this.recentreWheel(node);
-      const radius = this.addBlurDisc(node);
+      const rotorHeat = uniform(0);
+      const radius = this.addBlurDisc(node, rotorHeat);
       this.wheels.push({
         node,
         rest: node.quaternion.clone(),
@@ -415,6 +416,7 @@ export class CarVisual {
         spin: 0,
         off: false,
         hub: node.position.clone(),
+        rotorHeat,
       });
     }
     this.paint = setupCarMaterials(model, cfg, null);
@@ -488,7 +490,7 @@ export class CarVisual {
     node.updateMatrixWorld(true);
   }
 
-  private addBlurDisc(node: THREE.Object3D): number {
+  private addBlurDisc(node: THREE.Object3D, rotorHeat: THREE.UniformNode<'float', number>): number {
     const rimBox = new THREE.Box3(), all = new THREE.Box3(), tmp = new THREE.Box3();
     // Boxes in the wheel node's own space. The transform is the whole chain below the node (quantized glTF meshes
     // carry their scale on a node between the wheel and the mesh): with the mesh's local matrix alone the tyre
@@ -520,6 +522,20 @@ export class CarVisual {
     ring.rotation.y = side * Math.PI / 2;
     ring.position.set(x, (box.max.y + box.min.y) / 2, (box.max.z + box.min.z) / 2);
     node.add(ring);
+
+    // Thermal incandescent brake rotor glow ring inboard of spokes (uniform-only: 0 extra lights, 0 shader recompiles)
+    const rMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    const h = rotorHeat;
+    const cherry = vec3(1.15, 0.12, 0.01);
+    const bright = vec3(2.8, 1.05, 0.22);
+    rMat.colorNode = vec4(mix(cherry, bright, smoothstep(float(0.35), float(1.0), h)).mul(h), 1);
+    rMat.opacityNode = h.mul(0.88);
+    const rotorGlow = new THREE.Mesh(new THREE.RingGeometry(rimRadius * 0.42, rimRadius * 0.79, 32, 1), rMat);
+    rotorGlow.name = `wheel_rotor_glow_${node.name}`;
+    rotorGlow.rotation.y = side * Math.PI / 2;
+    rotorGlow.position.set(outerX - side * 0.052, (box.max.y + box.min.y) / 2, (box.max.z + box.min.z) / 2);
+    node.add(rotorGlow);
+
     return tyreRadius;
   }
 
@@ -691,6 +707,15 @@ export class CarVisual {
         w.caliper.quaternion.copy(this.qa);
         if (w.caliperRest) w.caliper.quaternion.multiply(w.caliperRest);
       }
+      // Thermal incandescent brake rotor glow driven by C++ brake disc temperature (360 C dull cherry -> 900 C bright HDR orange)
+      const bt = outValid ? (out[OUT.brakeTemp(i)] || 150) : 150;
+      const targetHeat = THREE.MathUtils.smoothstep(bt, 360, 880);
+      w.rotorHeat.value += (targetHeat - w.rotorHeat.value) * Math.min(1, dtS * 8);
+    }
+
+    // Active Aero rear wing animation (DRS flat low-drag vs. Airbrake high-downforce braking pitch)
+    if (outValid) {
+      this.custom.setActiveAero((out[OUT.drsActive] || 0) > 0.5, (out[OUT.airbrakeActive] || 0) > 0.5, dtS);
     }
 
     // Keep soft contact shadow planted right on the road surface beneath the tyres (fading smoothly if airborne)

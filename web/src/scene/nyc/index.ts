@@ -4,6 +4,7 @@
 //   ./facade.ts           createFacadeMaterial(): THREE.Material, createRoofMaterial(): THREE.Material
 //   ./props.ts            class NycProps { constructor(scene, camera); setTile(key, data); removeTile(key); update(dt); dispose() }
 export { NycStreamer, loadNycMaterials, type NycStats, type NycSpawn, type NycMaterials, type NycOptions, type NycPropsLike } from './streamer';
+export { setGroundWetness } from './groundMaterials';
 
 import * as THREE from 'three/webgpu';
 import type { City } from '../city';

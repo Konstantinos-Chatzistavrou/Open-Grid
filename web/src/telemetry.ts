@@ -20,6 +20,14 @@ export interface WebTelemetrySample {
   yawRateDeg: number;
   suspMm: [number, number, number, number];
   tireTempC: [number, number, number, number];
+  tireInnerC: [number, number, number, number];
+  tireOuterC: [number, number, number, number];
+  tireFlashFlC: number;
+  boostBar: number;
+  oilTempC: number;
+  fuelLiters: number;
+  chassisTwistDeg: number;
+  airDensity: number;
   slipRatio: [number, number, number, number];
   lap: number;
   lapCur: number;
@@ -125,6 +133,24 @@ export class TelemetrySystem {
         out[OUT.treadSurface(2)] || out[OUT.wheelExt(2) + 2] || 78,
         out[OUT.treadSurface(3)] || out[OUT.wheelExt(3) + 2] || 78,
       ],
+      tireInnerC: [
+        out[OUT.tireInner(0)] || out[OUT.treadSurface(0)] || 78,
+        out[OUT.tireInner(1)] || out[OUT.treadSurface(1)] || 78,
+        out[OUT.tireInner(2)] || out[OUT.treadSurface(2)] || 78,
+        out[OUT.tireInner(3)] || out[OUT.treadSurface(3)] || 78,
+      ],
+      tireOuterC: [
+        out[OUT.tireOuter(0)] || out[OUT.treadSurface(0)] || 78,
+        out[OUT.tireOuter(1)] || out[OUT.treadSurface(1)] || 78,
+        out[OUT.tireOuter(2)] || out[OUT.treadSurface(2)] || 78,
+        out[OUT.tireOuter(3)] || out[OUT.treadSurface(3)] || 78,
+      ],
+      tireFlashFlC: out[OUT.tireFlash(0)] || out[OUT.treadSurface(0)] || 78,
+      boostBar: out[OUT.boostBar] || 0,
+      oilTempC: out[OUT.oilTemp] || 85,
+      fuelLiters: out[OUT.fuelLiters] || 55,
+      chassisTwistDeg: out[OUT.chassisTwist] || 0,
+      airDensity: out[OUT.airDensity] || 1.225,
       slipRatio: [
         out[w0 + 7] || 0,
         out[w1 + 7] || 0,
@@ -202,6 +228,14 @@ export class TelemetrySystem {
       { name: 'Tire Temp RR', short: 'TTmpRR', unit: 'C', fn: (s) => s.tireTempC[3] },
       { name: 'Sideslip Angle', short: 'Slip', unit: 'deg', fn: (s) => s.sideslipDeg },
       { name: 'Yaw Rate', short: 'YawR', unit: 'deg/s', fn: (s) => s.yawRateDeg },
+      { name: 'Tire Inner FL', short: 'TInFL', unit: 'C', fn: (s) => s.tireInnerC[0] },
+      { name: 'Tire Outer FL', short: 'TOutFL', unit: 'C', fn: (s) => s.tireOuterC[0] },
+      { name: 'Tire Flash FL', short: 'TFshFL', unit: 'C', fn: (s) => s.tireFlashFlC },
+      { name: 'Boost Pressure', short: 'Boost', unit: 'bar', fn: (s) => s.boostBar },
+      { name: 'Oil Temp', short: 'OilT', unit: 'C', fn: (s) => s.oilTempC },
+      { name: 'Fuel Level', short: 'Fuel', unit: 'L', fn: (s) => s.fuelLiters },
+      { name: 'Chassis Twist', short: 'Twist', unit: 'deg', fn: (s) => s.chassisTwistDeg },
+      { name: 'Air Density', short: 'AirRho', unit: 'kg/m3', fn: (s) => s.airDensity },
     ];
 
     const HEADER = 1762;

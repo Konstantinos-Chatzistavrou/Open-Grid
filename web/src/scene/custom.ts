@@ -503,6 +503,23 @@ export class CarCustomizer {
     lu.inv.value.copy(this.m4.compose(pos, quat, ONE).multiply(this.model.matrix)).invert();
   }
 
+  /** Active Aero wing pitch angle (rad): smoothed toward -0.15 (DRS) or +0.36 (Airbrake). */
+  private aeroPitch = 0;
+
+  /** Animate active rear wing pitch from C++ Active Aero state (DRS flat low-drag vs. Airbrake high-downforce). */
+  setActiveAero(drs: boolean, airbrake: boolean, dt: number) {
+    const target = airbrake ? 0.36 : drs ? -0.15 : 0;
+    const next = this.aeroPitch + (target - this.aeroPitch) * Math.min(1, dt * 10);
+    if (Math.abs(next - this.aeroPitch) < 1e-4 && Math.abs(target - next) < 1e-4) return;
+    this.aeroPitch = next;
+    for (const w of Object.values(this.wings)) {
+      if (w && w.visible) w.rotation.x = this.aeroPitch;
+    }
+    for (const sw of this.stockWing) {
+      if (sw.visible) sw.rotation.x = this.aeroPitch;
+    }
+  }
+
   /** Model-space box of the body (for the driver seat estimate and the garage camera). */
   get bounds() { return this.box; }
 }

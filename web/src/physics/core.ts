@@ -13,8 +13,12 @@ interface RsModule {
   _rs_buffer(id: number): number;
   _rs_info(id: number): void;
   _rs_reset_motion(id: number, speed: number, gear: number): void;
+  _rs_set_atmosphere(id: number, airC: number, trackC: number, altitudeM: number, humidity: number): void;
+  _rs_set_turbo_stage(id: number, stage: number): void;
   _rs_rays(id: number): void;
+  _rs_rays_patch(id: number): void;
   _rs_step(id: number, dt: number): void;
+  _rs_step_patch(id: number, dt: number): void;
   _rs_contact(id: number, x: number, y: number, z: number, impulse: number, other: number): void;
   _rs_damage(id: number): void;
   _rs_repair(id: number): void;
@@ -66,10 +70,20 @@ export class CoreCar {
 
   // Re-created every access: memory growth detaches old views.
   get buf(): Float64Array {
-    return new Float64Array(mod!.HEAPF64.buffer, mod!._rs_buffer(this.id), 256);
+    return new Float64Array(mod!.HEAPF64.buffer, mod!._rs_buffer(this.id), 384);
   }
 
   resetMotion(speed: number, gear = -1) { mod!._rs_reset_motion(this.id, speed, gear); }
+
+  /** Live ISA climate & asphalt temperature -> C++ air density, NA/turbo power, and road-to-tread conduction. */
+  setAtmosphere(airC: number, trackC: number, altitudeM = 15, humidity = 0.5) {
+    mod!._rs_set_atmosphere(this.id, airC, trackC, altitudeM, humidity);
+  }
+
+  /** Forced-induction turbo stage (0 = NA, 1..3 = Stage 1-3 turbocharger with spool & BOV flutter). */
+  setTurboStage(stage: number) {
+    mod!._rs_set_turbo_stage(this.id, Math.max(0, Math.min(3, Math.round(stage))));
+  }
 
   /** Crash input for the current tick: point in three world, impulse N s, other object id. */
   contact(p: { x: number; y: number; z: number }, impulse: number, other: number) {
@@ -97,6 +111,14 @@ export class CoreCar {
     return b.subarray(16, 40);
   }
 
+  /** Multi-point 3-ray longitudinal curb contact patch per wheel (12 rays = 72 doubles: 4 wheels x 3 rays x [from,to]). */
+  raysPatch(state: ArrayLike<number>): Float64Array {
+    const b = this.buf;
+    for (let i = 0; i < 13; i++) b[i] = state[i];
+    mod!._rs_rays_patch(this.id);
+    return b.subarray(280, 352);
+  }
+
   /** contacts: 4 x [hit, px, py, pz, nx, ny, nz, surface]. Returns the output view (see bridge). */
   step(contacts: ArrayLike<number>, raw: RawInput, assists: AssistToggles, dt: number): Float64Array {
     const b = this.buf;
@@ -107,6 +129,19 @@ export class CoreCar {
     b[93] = assists.absSlip ?? 0; b[94] = assists.tcSlip ?? 0; b[95] = assists.countersteer ?? 0;
     b[92] = raw.directGear ?? -99;
     mod!._rs_step(this.id, dt);
+    return b;
+  }
+
+  /** Multi-point curb patch step: contacts12 = 12 x [hit, px, py, pz, nx, ny, nz, surface] (96 doubles). */
+  stepPatch(contacts12: ArrayLike<number>, raw: RawInput, assists: AssistToggles, dt: number): Float64Array {
+    const b = this.buf;
+    for (let i = 0; i < 96; i++) b[280 + i] = contacts12[i];
+    b[80] = raw.steer; b[81] = raw.throttle; b[82] = raw.brake; b[83] = raw.clutch; b[84] = raw.handbrake;
+    b[85] = raw.shiftUp ? 1 : 0; b[86] = raw.shiftDown ? 1 : 0; b[87] = raw.device;
+    b[88] = +assists.abs; b[89] = +assists.tc; b[90] = +assists.esc; b[91] = +assists.autoGearbox;
+    b[93] = assists.absSlip ?? 0; b[94] = assists.tcSlip ?? 0; b[95] = assists.countersteer ?? 0;
+    b[92] = raw.directGear ?? -99;
+    mod!._rs_step_patch(this.id, dt);
     return b;
   }
 }
@@ -128,6 +163,31 @@ export const OUT = {
   treadSurface: (i: number) => 188 + i, // tread surface temperature, C
   pressure: (i: number) => 192 + i,     // tyre pressure, kPa gauge
   padMu: (i: number) => 196 + i,        // brake pad friction vs. its working range (< 1: cold or fading)
+  // Extended Simcenter Tire 2606 & AAA telemetry [226..273]
+  tireInner: (i: number) => 226 + i,    // inner rib tread temperature, C
+  tireMiddle: (i: number) => 230 + i,   // middle rib tread temperature, C
+  tireOuter: (i: number) => 234 + i,    // outer rib tread temperature, C
+  tireFlash: (i: number) => 238 + i,    // WLF micro-asperity flash temperature, C
+  flatSpot: (i: number) => 242 + i,     // brake-lockup flat-spot depth, mm
+  cavityGain: (i: number) => 246 + i,   // Simcenter 2606 ~225 Hz toroidal cavity boom gain 0..1
+  cavityLowHz: 250,                     // Doppler-split lower cavity frequency, Hz
+  cavityHighHz: 251,                    // Doppler-split upper cavity frequency, Hz
+  boostBar: 252,                        // turbo boost pressure, bar
+  bovVenting: 253,                      // turbo blow-off valve flutter trigger (0/1)
+  shiftCut: 254,                        // dog-box / DCT ignition-cut backfire trigger (0/1)
+  drsActive: 255,                       // active aero DRS low-drag active (0/1)
+  airbrakeActive: 256,                  // active aero high-downforce airbrake active (0/1)
+  splitterStalled: 257,                 // ground-effect front splitter stall (0/1)
+  oilTemp: 258,                         // engine oil temperature, C
+  intakeAirTemp: 259,                   // intercooler intake air temperature, C
+  fuelLiters: 260,                      // remaining fuel tank volume, L
+  chassisTwist: 261,                    // frame torsional twist angle, deg
+  brakeVaporSponge: 262,                // DOT 4 brake fluid boiling vapor-lock sponge 0..0.55
+  airDensity: 263,                      // live ISA atmospheric air density, kg/m^3
+  aycMoment: 264,                       // active torque-vectoring E-Diff yaw moment, N m
+  blistering: (i: number) => 265 + i,   // internal rubber blistering 0..1
+  graining: (i: number) => 269 + i,     // cold-tire surface graining 0..1
+  treadPitchHz: 273,                    // tread block impact pitch frequency, Hz
 } as const;
 
 export interface LapInfo { laps: number; current: number; last: number; best: number; distance: number; position: number; finished: boolean; routeLength: number }
