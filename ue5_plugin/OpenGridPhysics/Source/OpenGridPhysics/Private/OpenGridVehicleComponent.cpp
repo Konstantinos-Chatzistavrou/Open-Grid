@@ -188,14 +188,15 @@ void UOpenGridVehicleComponent::CreateVehicleLocked()
     bHaveRays_ = false;
 }
 
-void UOpenGridVehicleComponent::ApplyMassFromSpec(UPrimitiveComponent* Body) const
+void UOpenGridVehicleComponent::ApplyMass(UPrimitiveComponent* Body, double MassKg)
 {
     FBodyInstance* BI = Body->GetBodyInstance();
     if (!BI) return;
-    BI->SetMassOverride(static_cast<float>(Config_.mass), true);
+    BI->SetMassOverride(static_cast<float>(MassKg), true);
     BI->InertiaTensorScale = FVector::OneVector;
     BI->UpdateMassProperties();
     // Scale the shape's own inertia to the spec's (roll / pitch / yaw about X / Y / Z, the same axes in both frames).
+    // Inertia stays the spec's as fuel burns (the tank sits near the CG), as in the web build.
     const FVector Current = BI->GetBodyInertiaTensor();   // kg cm^2
     const FVector Wanted = FVector(Config_.inertia_xx, Config_.inertia_yy, Config_.inertia_zz) * 1.0e4;
     if (Current.X > 0.0 && Current.Y > 0.0 && Current.Z > 0.0)
@@ -203,6 +204,7 @@ void UOpenGridVehicleComponent::ApplyMassFromSpec(UPrimitiveComponent* Body) con
         BI->InertiaTensorScale = FVector(Wanted.X / Current.X, Wanted.Y / Current.Y, Wanted.Z / Current.Z);
         BI->UpdateMassProperties();
     }
+    AppliedMassKg_ = MassKg;
 }
 
 void UOpenGridVehicleComponent::BeginPlay()
@@ -249,7 +251,7 @@ void UOpenGridVehicleComponent::BeginPlay()
     Body_ = Body;
     BodyRaw_ = Body;
     if (!Body->IsSimulatingPhysics()) Body->SetSimulatePhysics(true);
-    if (bApplyMassFromSpec) ApplyMassFromSpec(Body);
+    if (bApplyMassFromSpec) ApplyMass(Body, Config_.mass);
     Body->SetNotifyRigidBodyCollision(true);
     Body->OnComponentHit.AddDynamic(this, &UOpenGridVehicleComponent::HandleBodyHit);
 
@@ -377,6 +379,76 @@ void UOpenGridVehicleComponent::TraceGround(const std::array<std::array<rs::Whee
     }
 }
 
+int32 UOpenGridVehicleComponent::TraceGroundStrips(UPrimitiveComponent* Body, float FrameDt,
+                                                    const std::array<std::array<rs::WheelRay, MaxRaysPerWheel>, 4>& Rays,
+                                                    int32 PerWheel, std::array<rs::ue5::GroundStrip, 4>& OutStrips) const
+{
+    UWorld* World = GetWorld();
+    if (!World) return 0;
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(OpenGridGroundStrip), false, GetOwner());
+    Params.bReturnPhysicalMaterial = true;
+
+    const rs::Vec3 Vel = rs::ue5::vel_from_ue(ToUe(Body->GetPhysicsLinearVelocity()));
+    const rs::Vec3 Fwd = rs::ue5::dir_from_ue(ToUe(Body->GetForwardVector()));
+    const double Spacing = FMath::Max(0.01, static_cast<double>(GroundStripSpacingCm) * rs::ue5::kCmToMeters);
+    const int32 Lanes = FMath::Clamp(GroundStripLanes, 1, 5);
+    const int32 MaxSamples = FMath::Clamp(GroundStripMaxSamples, 4, 256);
+    // Cover where the wheel will be until the next frame (this frame's dt as the estimate, plus half again).
+    const double Horizon = FMath::Max(static_cast<double>(FrameDt), 1.0 / 240.0) * 1.5;
+    constexpr double Behind = 0.30, Margin = 0.30;   // m: the 3-ray patch and 16-point footprint reach ~0.15-0.3 m
+
+    int32 Traces = 0;
+    for (int32 w = 0; w < 4; ++w)
+    {
+        const rs::Vec3 Down = Rays[w][0].direction;
+        const double Reach = Rays[w][0].length;
+        rs::Vec3 Mount{0, 0, 0};
+        for (int32 j = 0; j < PerWheel; ++j) Mount = Mount + Rays[w][j].origin;
+        Mount = Mount * (1.0 / PerWheel);
+
+        // Direction of travel in the plane across the suspension axis; the car's nose when nearly stopped.
+        const rs::Vec3 VPlane = Vel - Down * rs::dot(Vel, Down);
+        const double Speed = rs::length(VPlane);
+        const rs::Vec3 FPlane = Fwd - Down * rs::dot(Fwd, Down);
+        const rs::Vec3 Along = Speed > 1.0 ? VPlane * (1.0 / Speed) : rs::normalized(FPlane);
+        const rs::Vec3 Across = rs::normalized(rs::cross(Down, Along));
+
+        const double Length = Behind + Speed * Horizon + Margin;
+        int32 Count = static_cast<int32>(FMath::CeilToDouble(Length / Spacing)) + 1;
+        double Step = Spacing;
+        if (Count > MaxSamples) { Count = MaxSamples; Step = Length / (Count - 1); }
+
+        rs::ue5::GroundStrip& S = OutStrips[w];
+        S.origin = Mount - Along * Behind;
+        S.along = Along;
+        S.across = Across;
+        S.spacing = Step;
+        S.lane_spacing = Config_.tire(w).section_width_m * 0.5;   // 3 lanes span 1.5 x the tread: room for steering
+        S.resize(Lanes, Count);
+        for (int32 l = 0; l < Lanes; ++l)
+        {
+            for (int32 i = 0; i < Count; ++i)
+            {
+                const rs::Vec3 P = S.position(l, i);
+                const rs::Vec3 From = P - Down * kTraceExtraUp;
+                const rs::Vec3 To = P + Down * (Reach + kTraceExtraDown);
+                FHitResult Hit;
+                rs::ue5::GroundSample& G = S.at(l, i);
+                ++Traces;
+                if (World->LineTraceSingleByChannel(Hit, ToFVector(rs::ue5::pos_to_ue(From)), ToFVector(rs::ue5::pos_to_ue(To)),
+                                                    WheelTraceChannel.GetValue(), Params))
+                {
+                    G.hit = true;
+                    G.point = rs::ue5::pos_from_ue(ToUe(Hit.ImpactPoint));
+                    G.normal = rs::normalized(rs::ue5::dir_from_ue(ToUe(Hit.ImpactNormal)));
+                    G.surface = SurfaceFromPhysicalMaterial(Hit.PhysMaterial.Get());
+                }
+            }
+        }
+    }
+    return Traces;
+}
+
 std::array<rs::WheelContact, 4> UOpenGridVehicleComponent::ResolveContactsLocked() const
 {
     std::array<rs::WheelContact, 4> Contacts{};
@@ -385,6 +457,11 @@ std::array<rs::WheelContact, 4> UOpenGridVehicleComponent::ResolveContactsLocked
     {
         const double Radius = Vehicle_->config().tire(w).radius;
         auto Hit = [&](int32 j) {
+            if (bHaveStrips_ && Pending_.bUseStrip)
+            {
+                rs::WheelContact FromStrip;
+                if (Strips_[w].lookup(Rays_[w][j], FromStrip)) return FromStrip;
+            }
             const FGroundSample& G = Ground_[w][j];
             return rs::ue5::intersect_ground_plane(Rays_[w][j], G.bHit, G.Point, G.Normal, G.Surface);
         };
@@ -492,6 +569,7 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
         if (!Vehicle_.IsValid()) return;
         Pending_.bCoreControls = bUseCoreControls;
         Pending_.RaysPerWheel = RaysPerWheel();
+        Pending_.bUseStrip = bUseGroundStrip;
         rs::RawInput& Raw = Pending_.Raw;
         Raw.steer = SteerInput;
         Raw.throttle = ThrottleInput;
@@ -534,10 +612,17 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     std::array<std::array<FGroundSample, MaxRaysPerWheel>, 4> Ground{};
     if (bAsyncPhysicsActive)
     {
-        // The physics thread steps on its own clock; give it fresh ground planes for its next steps.
+        // The physics thread steps on its own clock; give it fresh ground for its next steps: a plane per ray, plus
+        // (by default) a strip of samples along each wheel's path so kerbs resolve between frames.
         TraceGround(Rays, PerWheel, Ground);
+        int32 Traces = 4 * PerWheel;
+        std::array<rs::ue5::GroundStrip, 4> NewStrips;
+        if (bUseGroundStrip) Traces += TraceGroundStrips(Body, DeltaTime, Rays, PerWheel, NewStrips);
+        GroundTracesLastFrame = Traces;
         FScopeLock L(&Lock_);
         Ground_ = Ground;
+        if (bUseGroundStrip) Strips_.swap(NewStrips);
+        bHaveStrips_ = bUseGroundStrip;
     }
     else
     {
@@ -551,10 +636,12 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
             Rays = Rays_;
         }
         TraceGround(Rays, PerWheel, Ground);
+        GroundTracesLastFrame = 4 * PerWheel;
         rs::ue5::UeVec3 Force, Torque;
         {
             FScopeLock L(&Lock_);
             Ground_ = Ground;
+            bHaveStrips_ = false;   // fresh traces every step here: no strip needed
             const rs::VehicleOutput& Out = StepLocked(Chassis, FMath::Min(static_cast<double>(DeltaTime), kMaxFrameStep));
             Force = rs::ue5::force_to_ue(Out.force);
             Torque = rs::ue5::torque_to_ue(Out.torque);
@@ -578,6 +665,11 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     }
     ElapsedTimeS_ += DeltaTime;
     PublishOutputs(Out, Spin);
+    // Burnt fuel makes the car lighter: refresh the body every 0.25 kg (game thread; rare, so cheap).
+    if (bApplyMassFromSpec && Out.mass_kg > 0.0 && FMath::Abs(Out.mass_kg - AppliedMassKg_) > 0.25)
+    {
+        ApplyMass(Body, Out.mass_kg);
+    }
 
     const rs::TelemetrySample Sample = rs::make_telemetry_sample(Out, Chassis, In, Config_, ElapsedTimeS_);
     MotecLogger_.record(Sample);
@@ -597,6 +689,7 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
     SteerTorqueNm = static_cast<float>(Out.steer_torque);
     IntakeAirTempC = static_cast<float>(Out.intake_air_temp_c);
     FuelLiters = static_cast<float>(Out.fuel_liters);
+    MassKg = static_cast<float>(Out.mass_kg);
     bGearGrind = Out.gear_grind;
     bShiftCutActive = Out.shift_cut_active;
     DrivelineClunkNm = static_cast<float>(Out.driveline_clunk_nm);
@@ -681,6 +774,6 @@ void UOpenGridVehicleComponent::ApplyBopEqualizer(int32 TargetPi)
         BuildRaysLocked(ChassisFromUe(Body->GetComponentLocation(), Body->GetComponentQuat(),
                                       Body->GetPhysicsLinearVelocity(),
                                       FMath::DegreesToRadians(Body->GetPhysicsAngularVelocityInDegrees())));
-        if (bApplyMassFromSpec) ApplyMassFromSpec(Body);
+        if (bApplyMassFromSpec) ApplyMass(Body, Config_.mass);
     }
 }

@@ -288,6 +288,8 @@ void AOpenGridCarPawn::DrawHud() const
     const int32 G = Vehicle->CurrentGear;
     const FString Gear = G == 0 ? TEXT("R") : G == 1 ? TEXT("N") : FString::FromInt(G - 1);
     GEngine->AddOnScreenDebugMessage(4201, 0.0f, FColor::White,
-        FString::Printf(TEXT("%3.0f km/h   gear %s   %5.0f rpm   %s"), Vehicle->SpeedKmh, *Gear, Vehicle->EngineRpm,
-                        Vehicle->bAsyncPhysicsActive ? TEXT("fixed-step physics") : TEXT("FRAME-TICK FALLBACK")));
+        FString::Printf(TEXT("%3.0f km/h   gear %s   %5.0f rpm   fuel %4.1f L   %s   %d ground traces/frame"),
+                        Vehicle->SpeedKmh, *Gear, Vehicle->EngineRpm, Vehicle->FuelLiters,
+                        Vehicle->bAsyncPhysicsActive ? TEXT("fixed-step physics") : TEXT("FRAME-TICK FALLBACK"),
+                        Vehicle->GroundTracesLastFrame));
 }

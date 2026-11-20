@@ -140,6 +140,7 @@ struct VehicleOutput {
     double engine_health = 1.0;
     bool engine_misfire = false;
     double fuel_liters = 55.0;
+    double mass_kg = 0.0;            // current total mass: spec mass minus the fuel burnt (see Vehicle::current_mass)
     bool gear_grind = false;
     bool shift_cut_active = false;
     double driveline_clunk_nm = 0.0;
@@ -216,6 +217,9 @@ public:
     // Garage service (what the R / repair key does with damage_model().repair()): full tank, healthy engine, no
     // misfire. With fuel use and engine wear on, the car would otherwise stop for good on an empty tank.
     void service();
+    // Total mass now. The car spec's mass is with a FULL tank; burnt fuel (0.745 kg/L) comes off it. Engines must
+    // apply this to their rigid body when it changes (web: world.ts, Unreal: UOpenGridVehicleComponent).
+    double current_mass() const;
     double engine_rpm() const { return drivetrain_.engine_rpm(); }
     VehicleOutput update(const ChassisState& s, const std::array<WheelContact, 4>& contacts, double dt);
 

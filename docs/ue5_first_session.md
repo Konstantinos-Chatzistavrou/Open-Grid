@@ -71,6 +71,7 @@ confirmed and is the most likely source of first-compile errors:
 | C++ build time after editing one .cpp | |
 | Shader recompile after changing one material | |
 | Editor fps with Lumen on, car in view, 1440p | |
+| Ground traces per frame at 50 / 100 / 200 km/h (HUD) and their cost in Unreal Insights | |
 | Streaming feel (input lag while driving in Play) | |
 
 ## Keep-or-cancel rule (decide before the first hour)
@@ -88,10 +89,12 @@ Suggested, change the numbers before you start, not after:
 - The physics body is a box centred on the CG; its size comes from the car's `.visual.json`, its depth is limited so
   it clears the road. Crash contacts go to the core's damage model, but dents and detaching parts are not drawn yet.
 - Wheel visuals use the latest physics step; with async physics they can lag the interpolated body by one step.
-- Ground under each wheel is traced once per rendered frame and intersected as a plane on the physics thread: exact
-  on flat or smoothly sloped ground, approximate across sharp edges (kerb lips) between frames.
+- Ground for the physics thread is traced on the game thread once per frame: a plane per ray plus a strip of samples
+  5 cm apart along each wheel's path until the next frame (`bUseGroundStrip`). Kerbs resolve as finely as tracing
+  every step (core test `ground_strip_drive`). Cost grows with speed: watch "ground traces/frame" on the HUD and the
+  frame time in Unreal Insights, and raise `GroundStripSpacingCm` if it is too expensive.
 - Cars whose wheels are not separate parts (K-Concept, Tornado GT/GT3) export as one body: no spinning wheels yet.
-- Fuel burns (about 1 L a minute flat out) and an empty tank cuts the throttle; R repairs and refuels. The fuel's
-  weight (up to ~41 kg) does not change the car's mass yet: the core tracks it but nothing uses it.
+- Fuel burns (about 1 L a minute flat out), its weight comes off the car (0.745 kg/L; the spec mass is with a full
+  tank) and an empty tank cuts the throttle; R repairs and refuels. Inertia stays the spec's as fuel burns.
 - Packaging a standalone game needs `data/` copied into `ue5/Content/OpenGridData` first (`DefaultGame.ini` stages
   that folder as loose files).

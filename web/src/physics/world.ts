@@ -125,11 +125,14 @@ export class CarBody {
   private b = new THREE.Vector3();
   readonly collider: RAPIER.Collider;
   private prevV = new THREE.Vector3();
+  /** mass last given to the Rapier body (kg): updated as fuel burns, see tick() */
+  private appliedMass: number;
   private prevF = new THREE.Vector3();
   private hasPrev = false;
 
   constructor(private pw: PhysicsWorld, readonly core: CoreCar, shape: CarShape, cgInModel: THREE.Vector3) {
     const { mass, inertia } = core.info;
+    this.appliedMass = mass;
     this.body = pw.world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic()
         .setAdditionalMassProperties(mass, { x: 0, y: 0, z: 0 }, { x: inertia[0], y: inertia[1], z: inertia[2] }, { x: 0, y: 0, z: 0, w: 1 })
@@ -258,6 +261,14 @@ export class CarBody {
     }
     this.body.addForce({ x: fx, y: fy, z: fz }, true);
     this.body.addTorque({ x: out[OUT.torque], y: out[OUT.torque + 1], z: out[OUT.torque + 2] }, true);
+    // Burnt fuel makes the car lighter (the core's spec mass is with a full tank). Refresh the body every 0.25 kg so
+    // Rapier is not touched every tick; inertia stays the spec's (the tank sits near the CG).
+    const mass = out[OUT.massKg];
+    if (mass > 0 && Math.abs(mass - this.appliedMass) > 0.25) {
+      const I = this.core.info.inertia;
+      this.body.setAdditionalMassProperties(mass, { x: 0, y: 0, z: 0 }, { x: I[0], y: I[1], z: I[2] }, { x: 0, y: 0, z: 0, w: 1 }, true);
+      this.appliedMass = mass;
+    }
     this.out = out;
     this.prevF.set(fx, fy, fz);
   }
@@ -269,7 +280,7 @@ export class CarBody {
    * and WITH WHAT. (Engine-reported contact impulses over-count crash energy: measured in Godot.)
    */
   private feedCrash(v: { x: number; y: number; z: number }) {
-    const m = this.core.info.mass;
+    const m = this.appliedMass;
     const ex = this.prevV.x + (this.prevF.x / m) * DT;
     const ey = this.prevV.y + (this.prevF.y / m - 9.81) * DT;
     const ez = this.prevV.z + (this.prevF.z / m) * DT;
