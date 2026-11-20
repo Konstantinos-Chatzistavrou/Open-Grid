@@ -1,0 +1,114 @@
+{
+  "schema": "car_visual/1",
+  "name": "Tornado GT3",
+  "physics": "cars/tornado_gt3.json",
+  "model": "res://assets/cars/v5/tornado_gt3_hero.glb",
+  "notes": "Original de-branded Tornado GT3 built in Blender 5.2 (assets_source/scripts/make_tornado.py). Front axle z +1.320, rear -1.310 (wheelbase 2.630).",
+  "cg_in_model_m": [
+    0,
+    0.48,
+    -0.205
+  ],
+  "wheel_nodes": {
+    "fl": "wheel_FL",
+    "fr": "wheel_FR",
+    "rl": "wheel_RL",
+    "rr": "wheel_RR"
+  },
+  "wheel_visual_offset_m": 0,
+  "collision_box": {
+    "size_m": [
+      2.06,
+      0.72,
+      4.64
+    ],
+    "centre_in_model_m": [
+      0,
+      0.66,
+      0
+    ],
+    "end_lift_m": 0.12,
+    "end_lift_start_m": 1.72,
+    "note": "flat underside, rising to each end"
+  },
+  "paint_material": "paint",
+  "default_paint": [
+    0.86,
+    0.88,
+    0.9
+  ],
+  "headlights": [
+    [
+      -0.66,
+      0.54,
+      2.02
+    ],
+    [
+      0.66,
+      0.54,
+      2.02
+    ]
+  ],
+  "panels": {
+    "front": [
+      "bumper_front",
+      "hood",
+      "grille",
+      "nose_vbar",
+      "drl_L",
+      "drl_R"
+    ],
+    "rear": [
+      "bumper_rear",
+      "taillight_bar",
+      "diffuser",
+      "wing"
+    ],
+    "left": [
+      "door_L",
+      "fender_L",
+      "quarter_L",
+      "mirror_L"
+    ],
+    "right": [
+      "door_R",
+      "fender_R",
+      "quarter_R",
+      "mirror_R"
+    ]
+  },
+  "detachable": {
+    "bumper_front": [
+      "front",
+      0.7
+    ],
+    "bumper_rear": [
+      "rear",
+      0.7
+    ],
+    "mirror_L": [
+      "left",
+      0.45
+    ],
+    "mirror_R": [
+      "right",
+      0.45
+    ]
+  },
+  "front_lights": [
+    "drl_L",
+    "drl_R",
+    "beam_L_0",
+    "beam_R_0"
+  ],
+  "rear_lights": [
+    "taillight_bar"
+  ],
+  "engine_smoke_in_model_m": [
+    0,
+    0.76,
+    -0.95
+  ],
+  "lod_model": "res://assets/cars/v3/vela_gt_traffic.glb",
+  "lod_distance_m": 34
+}

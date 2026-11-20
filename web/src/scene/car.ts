@@ -224,6 +224,9 @@ function cloneCarScene(src: THREE.Object3D): THREE.Object3D {
 }
 
 const Y = new THREE.Vector3(0, 1, 0), X = new THREE.Vector3(1, 0, 0), Z = new THREE.Vector3(0, 0, 1), ONE = new THREE.Vector3(1, 1, 1);
+/** Shared unit ring geometries across all cars & wheels (cuts mobile GPU buffer allocations by 8x). */
+let sharedBlurRingGeo: THREE.RingGeometry | null = null;
+let sharedRotorRingGeo: THREE.RingGeometry | null = null;
 
 /**
  * Game-side material setup shared by the player, AI and remote cars:
@@ -517,7 +520,9 @@ export class CarVisual {
       m.opacityNode = st.a.mul(this.blurOp);
       this.blurMat = m;
     }
-    const ring = new THREE.Mesh(new THREE.RingGeometry(rimRadius * 0.16, rimRadius, 48, 1), this.blurMat);
+    if (!sharedBlurRingGeo) sharedBlurRingGeo = new THREE.RingGeometry(0.16, 1.0, 36, 1);
+    const ring = new THREE.Mesh(sharedBlurRingGeo, this.blurMat);
+    ring.scale.setScalar(rimRadius);
     ring.name = `wheel_blur_${node.name}`;   // 'wheel_' prefix: never dented
     ring.rotation.y = side * Math.PI / 2;
     ring.position.set(x, (box.max.y + box.min.y) / 2, (box.max.z + box.min.z) / 2);
@@ -530,7 +535,9 @@ export class CarVisual {
     const bright = vec3(2.8, 1.05, 0.22);
     rMat.colorNode = vec4(mix(cherry, bright, smoothstep(float(0.35), float(1.0), h)).mul(h), 1);
     rMat.opacityNode = h.mul(0.88);
-    const rotorGlow = new THREE.Mesh(new THREE.RingGeometry(rimRadius * 0.42, rimRadius * 0.79, 32, 1), rMat);
+    if (!sharedRotorRingGeo) sharedRotorRingGeo = new THREE.RingGeometry(0.42, 0.79, 28, 1);
+    const rotorGlow = new THREE.Mesh(sharedRotorRingGeo, rMat);
+    rotorGlow.scale.setScalar(rimRadius);
     rotorGlow.name = `wheel_rotor_glow_${node.name}`;
     rotorGlow.rotation.y = side * Math.PI / 2;
     rotorGlow.position.set(outerX - side * 0.052, (box.max.y + box.min.y) / 2, (box.max.z + box.min.z) / 2);
