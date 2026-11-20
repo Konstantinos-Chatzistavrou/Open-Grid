@@ -250,17 +250,20 @@ double TireCondition::wlf_rib_grip_factor(double rib_surface_c, const TireParams
     return wlf_grip * flash_grease;
 }
 
-void TireCondition::step_rigid_ring_belt(double fx_n, double fy_n, double radius_m, double dt) {
+void TireCondition::step_rigid_ring_belt(double fx_n, double fy_n, double radius_m, double dt, const TireParams* p) {
     if (dt <= 0.0) return;
     // Simcenter Tire 2606 MF-Swift Rigid-Ring Belt Model:
-    // Steel-belted tread ring (I_belt ~ 0.44 kg m^2, m_belt ~ 7.4 kg) suspended on elastic sidewalls
-    // relative to the alloy wheel rim:
-    //   In-plane torsional eigenfrequency:  f_nx = 1/(2 pi) * sqrt(k_ torsion / I_belt) ~ 72 Hz
-    //   Out-of-plane lateral eigenfrequency: f_ny = 1/(2 pi) * sqrt(k_lat / m_belt)     ~ 45 Hz
-    constexpr double I_belt = 0.44, k_tor = 90000.0, c_tor = 52.0;
-    constexpr double m_belt = 7.4,  k_lat = 590000.0, c_lat = 360.0;
+    // Steel-belted tread ring (m_belt from measured PAC2002 MBELT = 5.4 kg for 245/40 R18, scaled by tire width/radius)
+    // suspended on elastic sidewalls whose stiffness scales inversely with aspect ratio (shorter 30-series sidewall = stiffer):
+    //   In-plane torsional eigenfrequency:  f_nx = 1/(2 pi) * sqrt(k_torsion / I_belt) ~ 72-82 Hz
+    //   Out-of-plane lateral eigenfrequency: f_ny = 1/(2 pi) * sqrt(k_lat / m_belt)     ~ 45-52 Hz
     const double r = std::max(radius_m, 0.20);
-    const int n_sub = std::max(1, (int)std::ceil(dt / 0.0005)); // >= 2 kHz integration for 72 Hz ring mode stability
+    const double m_belt = p ? clamp(p->mbelt, 3.5, 10.5) : 5.4;
+    const double I_belt = std::max(0.28, m_belt * r * r * 0.68);
+    const double ar_stiff = p ? clamp(0.40 / std::max(p->aspect_ratio, 0.22), 0.75, 1.45) : 1.0;
+    const double k_tor = 90000.0 * ar_stiff, c_tor = 52.0 * std::sqrt(ar_stiff);
+    const double k_lat = 590000.0 * ar_stiff, c_lat = 360.0 * std::sqrt(ar_stiff);
+    const int n_sub = std::max(1, (int)std::ceil(dt / 0.0005)); // >= 2 kHz integration for 72-82 Hz ring mode stability
     const double h = dt / n_sub;
     for (int i = 0; i < n_sub; ++i) {
         const double tau_belt = fx_n * r * 0.12 - k_tor * belt_torsion_rad - c_tor * belt_torsion_vel_rads;
@@ -325,37 +328,65 @@ double TireCondition::grip_factor(const TireParams* p) const {
 
 double effective_rolling_radius(const TireParams& p, double fz) {
     if (fz <= 0 || p.vertical_stiffness <= 0) return p.radius;
-    // Pacejka Ch. 4: under vertical load change (Fz - Fz0), radial deflection changes by d_rho = (Fz - Fz0)/C_Fz,
-    // and the effective rolling radius R_e shifts by ~1/3 of the radial deflection due to belt inextensibility.
-    double d_rho = (fz - p.fz0) / p.vertical_stiffness;
-    return clamp(p.radius - (1.0 / 3.0) * d_rho, p.radius * 0.85, p.radius * 1.05);
+    // Pacejka Ch. 4 eq. 4.E7 / PAC2002 / Simcenter Tire 2606 non-linear effective rolling radius:
+    //   delta_Re(fz_norm) = rho_Fz0 * (DREFF * atan(BREFF * fz_norm) + FREFF * fz_norm),  rho_Fz0 = Fz0 / C_Fz0
+    // Anchored at p.radius (reference rolling radius at nominal load fz_norm = 1):
+    const double fz0 = std::max(p.fz0, 100.0);
+    const double rho_fz0 = fz0 / p.vertical_stiffness;
+    const double fz_norm = fz / fz0;
+    const double comp_at_fz  = rho_fz0 * (p.dreff * std::atan(p.breff * fz_norm) + p.freff * fz_norm);
+    const double comp_at_fz0 = rho_fz0 * (p.dreff * std::atan(p.breff) + p.freff);
+    return clamp(p.radius - (comp_at_fz - comp_at_fz0), p.radius * 0.85, p.radius * 1.05);
 }
 
-double effective_rolling_radius_mf62(const TireParams& p, double fz, double gamma) {
-    const double re0 = effective_rolling_radius(p, fz);
-    // MF 6.2 camber-conicity asymmetric loaded radius: under inclination gamma, the contact patch shifts toward the
-    // tilted shoulder on a cone of half-width ~0.12 m, reducing the effective rolling radius by sin^2(gamma) & |sin(gamma)|.
+double effective_rolling_radius_mf62(const TireParams& p, double fz, double gamma, double dpi, double wheel_omega_rads) {
+    // 1. MF 6.2 / Simcenter Tire 2606 pressure-dependent vertical carcass stiffness C_Fz(p) = C_Fz0 * (1 + PFZ1 * dpi):
+    const double press_stiff = clamp(1.0 + p.pfz1 * dpi, 0.55, 1.55);
+    TireParams p_eff = p;
+    p_eff.vertical_stiffness = std::max(50000.0, p.vertical_stiffness * press_stiff);
+    const double re0 = effective_rolling_radius(p_eff, fz);
+    // 2. Simcenter 2606 high-speed centrifugal steel-belt radial growth (~2-4 mm expansion at 300 km/h from MBELT = 5.4 kg):
+    const double v_rim = p.radius * std::abs(wheel_omega_rads);
+    const double centrifugal_growth = clamp(0.16 * p.mbelt * v_rim * v_rim / p_eff.vertical_stiffness, 0.0, 0.0055);
+    // 3. MF 6.2 camber-conicity asymmetric loaded radius: under inclination gamma, the contact patch shifts toward the
+    // tilted shoulder on a cone of half-width ~section_width/2, reducing effective rolling radius by sin^2(gamma) & |sin(gamma)|.
     const double s_g = std::sin(clamp(gamma, -0.45, 0.45));
-    const double camber_delta = re0 * 0.042 * s_g * s_g + 0.011 * std::abs(s_g);
-    return clamp(re0 - camber_delta, p.radius * 0.82, p.radius * 1.05);
+    const double w_scale = clamp(p.section_width_m / 0.245, 0.75, 1.45);
+    const double camber_delta = (re0 * 0.042 * s_g * s_g + 0.011 * std::abs(s_g)) * w_scale;
+    return clamp(re0 + centrifugal_growth - camber_delta, p.radius * 0.82, p.radius * 1.06);
 }
 
-void relaxation_lengths(const TireParams& p, double fz, double gamma, double& sigma_x, double& sigma_y) {
+void relaxation_lengths(const TireParams& p, double fz, double gamma, double& sigma_x, double& sigma_y, double dpi) {
     if (fz <= 0) {
         sigma_x = p.relax_x;
         sigma_y = p.relax_y;
         return;
     }
-    // Pacejka Ch. 7 stretched-string / carcass compliance theorem:
-    //   sigma_x(Fz) = K_xk(Fz) / C_Fx,   sigma_y(Fz, gamma) = K_ya(Fz, gamma) / C_Fy
-    // where C_Fx = K_xk(Fz0) / sigma_x0 and C_Fy = K_ya(Fz0, 0) / sigma_y0 are the carcass stiffnesses.
-    double dfz = dfz_of(p, fz);
-    double kx0 = std::max(kx_of(p, p.fz0, 0.0), 1.0);
-    double ky0 = std::max(ky_of(p, p.fz0, 0.0), 1.0);
-    double kx = kx_of(p, fz, dfz);
-    double ky = ky_of(p, fz, gamma);
-    sigma_x = clamp(p.relax_x * (kx / kx0), 0.03, p.relax_x * 2.5);
-    sigma_y = clamp(p.relax_y * (ky / ky0), 0.05, p.relax_y * 2.5);
+    // Pacejka Ch. 7 stretched-string compliance + PAC2002 / MF-Swift empirical PTX1..3 & PTY1..2 load/camber/pressure laws:
+    //   sigma_x(Fz) ~ (PTX1 + PTX2 * dfz) * exp(-PTX3 * dfz) * (Fz / Fz0)
+    //   sigma_y(Fz, gamma) ~ PTY1 * sin(2 * atan(Fz / (PTY2 * Fz0 * (1 + PPY2 * dpi)))) * (1 - PKY3 * |gamma|)
+    // Modulated by sidewall aspect ratio (lower-profile 30-series tires have shorter, faster relaxation lengths).
+    const double dfz = dfz_of(p, fz);
+    const double kx0 = std::max(kx_of(p, p.fz0, 0.0), 1.0);
+    const double ky0 = std::max(ky_of(p, p.fz0, 0.0), 1.0);
+    const double kx = kx_of(p, fz, dfz, dpi);
+    const double ky = ky_of(p, fz, gamma, dpi);
+    const double str_ratio_x = kx / kx0;
+    const double str_ratio_y = ky / ky0;
+
+    const double fz_ratio = fz / std::max(p.fz0, 100.0);
+    const double ptx_ref = std::max(p.ptx1, 0.2);
+    const double ptx_val = std::max(0.2, p.ptx1 + p.ptx2 * dfz) * std::exp(clamp(-p.ptx3 * dfz, -1.0, 1.0)) * fz_ratio;
+    const double emp_ratio_x = ptx_val / ptx_ref;
+
+    const double pty2_eff = std::max(0.4, p.pty2 * std::max(0.3, 1.0 + p.ppy2 * dpi));
+    const double pty_ref = std::max(0.2, std::sin(2.0 * std::atan(1.0 / std::max(p.pty2, 0.4))));
+    const double pty_val = std::sin(2.0 * std::atan(fz_ratio / pty2_eff)) * std::max(0.2, 1.0 - p.pky3 * std::abs(gamma));
+    const double emp_ratio_y = pty_val / pty_ref;
+
+    const double ar_scale = clamp(p.aspect_ratio / 0.40, 0.78, 1.22);
+    sigma_x = clamp(p.relax_x * ar_scale * (0.5 * str_ratio_x + 0.5 * emp_ratio_x), 0.03, p.relax_x * 2.5);
+    sigma_y = clamp(p.relax_y * ar_scale * (0.5 * str_ratio_y + 0.5 * emp_ratio_y), 0.05, p.relax_y * 2.5);
 }
 
 double mf_pure_fx(const TireParams& p, double kappa, double fz, double mu_scale, double gamma, double dpi) {
@@ -536,9 +567,11 @@ TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, do
     out.mz = mf_aligning_torque(p, kappa, alpha, fz, mu_scale, gamma, fx, fy_no_svyk, &out.pneumatic_trail);
     if (op.enable_mf62_hybrid) {
         // MF 6.2 camber-conicity rolling scrub moment + 3-rib (Inner/Middle/Outer) differential longitudinal force moment
+        // + PAC2002 / Simcenter 2606 gyroscopic steel-belt precession torque M_z,gyr = QTZ1 * MBELT * r * V_x * d(gamma)/dt
         const double mz_conicity = -0.024 * fz * p.radius * std::sin(gamma) * std::cos(alpha);
         const double mz_3rib = rib_diff_torque_factor * 0.082 * fx; // ~0.082 m effective half-rib lever arm
-        out.mz += mz_conicity + mz_3rib;
+        const double mz_gyr = p.qtz1 * p.mbelt * p.radius * op.rolling_speed_mps * clamp(op.gamma_rate_rads, -8.0, 8.0);
+        out.mz += mz_conicity + mz_3rib + mz_gyr;
         if (op.condition) {
             // Simcenter Tire 2606 MF-Swift 3D Tandem Elliptical Cam Enveloping longitudinal resistance over cleats/curbs
             out.fx -= fz * clamp(op.condition->enveloping_slope_tan, -0.25, 0.25) * 0.35;

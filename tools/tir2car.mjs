@@ -43,9 +43,17 @@ const r4 = (x) => +x.toPrecision(5);
 /** The converted tyre block (peak mu as fitted; --apply keeps the car's own). */
 function convert() {
   return {
-    source: `${file.split('/').pop()} (${P.PROPERTY_FILE_FORMAT ?? 'FITTYP ' + P.FITTYP}): fitted Magic Formula, converted by tools/tir2car.mjs`,
+    source: `${file.split('/').pop()} (${P.PROPERTY_FILE_FORMAT ?? 'FITTYP ' + P.FITTYP}): fitted Magic Formula + Simcenter 2606 / MF 6.2 carcass, converted by tools/tir2car.mjs`,
     fz0_n: r4(fz0),
     vertical_stiffness_n_per_m: r4(g('VERTICAL_STIFFNESS', 220000)),
+    vertical_damping_ns_per_m: r4(g('VERTICAL_DAMPING', 2000)),
+    breff: r4(g('BREFF', 8.4)),
+    dreff: r4(g('DREFF', 0.27)),
+    freff: r4(g('FREFF', 0.07)),
+    pfz1: r4(g('PFZ1', 0.72)),
+    mbelt_kg: r4(g('MBELT', 5.4)),
+    section_width_m: r4(g('WIDTH', 0.245)),
+    aspect_ratio: r4(g('ASPECT_RATIO', 0.40)),
     longitudinal: {
       C: r4(g('PCX1') * L('LCX')),
       mu: r4(mux),
@@ -53,6 +61,8 @@ function convert() {
       camber_sensitivity: r4(g('PDX3')),                    // even in gamma
       E: r4(g('PEX1') * L('LEX')), pEx2: r4(g('PEX2')), pEx3: r4(g('PEX3')), pEx4: r4(g('PEX4')),   // kappa: same sign
       slip_stiffness_per_load: r4(g('PKX1') * L('LKX')), pKx2: r4(g('PKX2')), pKx3: r4(g('PKX3')),
+      pTx1: r4(g('PTX1', 2.3657)), pTx2: r4(g('PTX2', 1.4112)), pTx3: r4(g('PTX3', 0.56626)),
+      pPx1: r4(g('PPX1', -0.3485)), pPx2: r4(g('PPX2', 0.37824)), pPx3: r4(g('PPX3', -0.09603)), pPx4: r4(g('PPX4', 0.06518)),
     },
     lateral: {
       C: r4(g('PCY1') * L('LCY')),
@@ -69,6 +79,8 @@ function convert() {
       pHy3: r4(g('PHY3')),                                  // K (alpha + pHy3 gamma): both flip -> keeps
       pVy1: 0, pVy2: 0,                                     // conicity: cancels on a car
       pVy3: r4(-g('PVY3')), pVy4: r4(-g('PVY4')),            // Fz pVy3 gamma: gamma flips, Fy doesn't -> flips
+      pTy1: r4(g('PTY1', 2.1439)), pTy2: r4(g('PTY2', 1.9829)),
+      pPy1: r4(g('PPY1', -0.6255)), pPy2: r4(g('PPY2', -0.06523)), pPy3: r4(g('PPY3', -0.16666)), pPy4: r4(g('PPY4', 0.2811)),
     },
     aligning: {
       qBz1: r4(g('QBZ1')), qBz2: r4(g('QBZ2')), qBz3: r4(g('QBZ3')),
@@ -85,6 +97,7 @@ function convert() {
       qDz6: 0, qDz7: 0,                                     // residual torque at zero slip (conicity)
       qDz8: r4(-g('QDZ8')), qDz9: r4(-g('QDZ9')),            // gamma: odd
       sSz1: 0, sSz2: r4(g('SSZ2')), sSz3: r4(-g('SSZ3')), sSz4: r4(-g('SSZ4')),
+      qTz1: r4(g('QTZ1', 0.2)),
     },
     ...(typeof P.PDYP1 === 'number' ? { turn_slip: { pDyp1: g('PDYP1'), pDyp2: g('PDYP2'), pDyp3: g('PDYP3'), pDyp4: g('PDYP4'), pKyp1: g('PKYP1', 1) } } : {}),
     ...(typeof P.NOMPRES === 'number' ? { pressure_nominal_kpa: r4(P.NOMPRES / 1000) } : {}),
@@ -97,13 +110,27 @@ const apply = opt('--apply');
 if (!apply) { console.log(JSON.stringify(tyre, null, 2)); process.exit(0); }
 
 const car = JSON.parse(fs.readFileSync(apply, 'utf8'));
-for (const [axle, ky] of [['tire_front', Number(opt('--ky-front', 1))], ['tire_rear', Number(opt('--ky-rear', 1))]]) {
+for (const [axle, ky, widthOpt, arOpt] of [
+  ['tire_front', Number(opt('--ky-front', 1)), Number(opt('--width-front', tyre.section_width_m)), Number(opt('--ar-front', tyre.aspect_ratio))],
+  ['tire_rear',  Number(opt('--ky-rear', 1)),  Number(opt('--width-rear',  tyre.section_width_m)), Number(opt('--ar-rear',  tyre.aspect_ratio))],
+]) {
   const t = car[axle];
   if (!t) continue;
   const keep = { mux: t.longitudinal.mu, muy: t.lateral.mu };
   t.source = tyre.source + (ky !== 1 ? `, cornering stiffness x${ky} for the section width` : '');
   t.fz0_n = tyre.fz0_n;
   t.vertical_stiffness_n_per_m = tyre.vertical_stiffness_n_per_m;
+  t.vertical_damping_ns_per_m = tyre.vertical_damping_ns_per_m;
+  t.breff = tyre.breff;
+  t.dreff = tyre.dreff;
+  t.freff = tyre.freff;
+  t.pfz1 = tyre.pfz1;
+  t.section_width_m = r4(widthOpt);
+  t.aspect_ratio = r4(arOpt);
+  // Scale steel belt mass physically by section width and loaded radius relative to the 245/40 R18 lab tire:
+  const widthScale = widthOpt / tyre.section_width_m;
+  const radScale = (t.radius_m || 0.327) / 0.327;
+  t.mbelt_kg = r4(tyre.mbelt_kg * (0.35 + 0.65 * widthScale) * (0.4 + 0.6 * radScale));
   // Grip and stiffness scale together (LMU and LK by the same factor): the fitted curve keeps its shape in slip, so the
   // peak stays at the fitted slip ratio / slip angle. Raising mu alone would move the peak out (a softer, slower tyre).
   const sx = keep.mux / tyre.longitudinal.mu, sy = keep.muy / tyre.lateral.mu;

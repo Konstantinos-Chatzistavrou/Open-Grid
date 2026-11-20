@@ -491,5 +491,32 @@ RS_TEST(ue5_upgrade) {
                     (ac_fast.cavity_mode_high_hz - ac_fast.cavity_mode_low_hz) > (ac_slow.cavity_mode_high_hz - ac_slow.cavity_mode_low_hz) + 40.0 &&
                     ac_fast.tread_block_pitch_hz > 900.0 &&
                     ac_fast.transient_volume_accel > ac_slow.transient_volume_accel);
+
+        // PAC2002 / Simcenter 2606 BREFF/DREFF/FREFF effective rolling radius + PFZ1 pressure stiffness + centrifugal belt growth:
+        const double re_low_p = effective_rolling_radius_mf62(tp, 6000.0, 0.0, -0.20, 0.0);
+        const double re_high_p = effective_rolling_radius_mf62(tp, 6000.0, 0.0, +0.20, 0.0);
+        const double re_300kph = effective_rolling_radius_mf62(tp, 6000.0, 0.0, 0.0, 250.0);
+        test::check("Simcenter 2606 / PAC2002: higher inflation pressure (PFZ1) and 300 km/h centrifugal belt growth (MBELT=5.4kg) increase loaded rolling radius",
+                    re_high_p > re_low_p && re_300kph > effective_rolling_radius_mf62(tp, 6000.0, 0.0, 0.0, 0.0) + 0.001);
+
+        // PAC2002 / Simcenter 2606 PTX1..3 & PTY1..2 + sidewall aspect ratio relaxation length scaling:
+        TireParams tp_low_profile = tp;
+        tp_low_profile.aspect_ratio = 0.30; // 30-series supercar tire vs 40-series GT tire
+        double sx_40 = 0, sy_40 = 0, sx_30 = 0, sy_30 = 0;
+        relaxation_lengths(tp, 4500.0, 0.0, sx_40, sy_40);
+        relaxation_lengths(tp_low_profile, 4500.0, 0.0, sx_30, sy_30);
+        test::check("30-series low-profile sidewall has shorter, faster transient relaxation length than 40-series sidewall",
+                    sx_30 < sx_40 && sy_30 < sy_40);
+
+        // PAC2002 / Simcenter 2606 QTZ1 * MBELT gyroscopic steel-belt precession aligning torque under bump camber rate:
+        TireOperating op_static, op_gyro;
+        op_static.enable_mf62_hybrid = true;
+        op_gyro.enable_mf62_hybrid = true;
+        op_gyro.rolling_speed_mps = 60.0;
+        op_gyro.gamma_rate_rads = 2.5;
+        TireForces tf_no_gyro = magic_formula(tp, 0.0, 0.04, 4200.0, 1.0, 0.02, op_static);
+        TireForces tf_gyro = magic_formula(tp, 0.0, 0.04, 4200.0, 1.0, 0.02, op_gyro);
+        test::check("PAC2002 QTZ1=0.2 & MBELT=5.4kg generate gyroscopic steel-belt precession torque M_z,gyr under bump camber rate at speed",
+                    std::abs(tf_gyro.mz - tf_no_gyro.mz) > 20.0);
     }
 }

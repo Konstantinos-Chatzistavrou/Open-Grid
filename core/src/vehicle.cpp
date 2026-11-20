@@ -386,8 +386,9 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         // ---- 15 Hz 2-DOF Unsprung Wheel-Hop & Radial Tire Carcass Dynamics
         if (unsprung_dynamics_enabled) {
             const double m_u = 42.0; // kg unsprung wheel/tire/hub/brake assembly mass
-            const double k_t = std::max(140000.0, cfg_.tire(w).vertical_stiffness); // N/m radial tire carcass stiffness
-            const double c_t = 1850.0; // N s/m radial tire carcass structural hysteresis damping
+            const double w_dpi = tire_condition_[w].dpi(cfg_.tire(w));
+            const double k_t = std::max(140000.0, cfg_.tire(w).vertical_stiffness * (1.0 + cfg_.tire(w).pfz1 * w_dpi)); // N/m radial tire carcass stiffness (MF 6.2 / Simcenter 2606 pressure-coupled)
+            const double c_t = std::max(800.0, cfg_.tire(w).vertical_damping); // N s/m radial tire carcass damping (from PAC2002 VERTICAL_DAMPING = 2000)
             // Unsprung mass sits between suspension force pushing down (susp_force[w]) and tire carcass pushing up
             const double sub_dt = std::min(dt, 0.002);
             const int u_steps = std::max(1, (int)std::ceil(dt / sub_dt));
@@ -419,7 +420,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     // ------------------------------------------------------------------ tyre kinematics
     struct Kin {
         Vec3 fwd, lat, normal{0, 0, 1}, point;
-        double vx = 0, vy = 0, load = 0, mu = 1, gamma = 0, re = 0.33, sigma_x = 0.12, sigma_y = 0.30;
+        double vx = 0, vy = 0, load = 0, mu = 1, gamma = 0, gamma_rate = 0, re = 0.33, sigma_x = 0.12, sigma_y = 0.30;
         double ffb_hydro_scale = 1.0;
     };
     std::array<Kin, 4> kin;
@@ -473,8 +474,11 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         double caster = ax.caster_deg * kPi / 180.0 + damage_.caster[w], kpi = ax.kpi_deg * kPi / 180.0;
         double side = (w % 2 == 0) ? -1.0 : 1.0;   // FL/RL = -1 (left), FR/RR = +1 (right)
         k.gamma = clamp(roll_gamma - side * susp_camber + caster * std::sin(d) - side * kpi * (1.0 - std::cos(d)), -0.35, 0.35);
-        k.re = tire_zones_enabled ? effective_rolling_radius_mf62(tp, k.load, k.gamma) : effective_rolling_radius(tp, k.load);
-        relaxation_lengths(tp, k.load, k.gamma, k.sigma_x, k.sigma_y);
+        k.gamma_rate = -side * (ax.camber_gain_rad_per_m + 2.0 * ax.camber_gain2_rad_per_m2 * dz) * comp_rate[w];
+        const double w_dpi = tire_condition_[w].dpi(tp);
+        k.re = tire_zones_enabled ? effective_rolling_radius_mf62(tp, k.load, k.gamma, w_dpi, drivetrain_.wheel_omega[w])
+                                  : effective_rolling_radius(tp, k.load);
+        relaxation_lengths(tp, k.load, k.gamma, k.sigma_x, k.sigma_y, w_dpi);
     }
 
     // ------------------------------------------------------------------ chassis telemetry
@@ -591,6 +595,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             op.phi = -yaw_rate / std::max(std::abs(k.vx), 0.5);       // turn slip: patch spin / rolling speed
             op.enable_mf62_hybrid = tire_zones_enabled;
             op.wheel_side_sign = (w % 2 == 0) ? -1.0 : 1.0;
+            op.gamma_rate_rads = k.gamma_rate;
+            op.rolling_speed_mps = k.vx;
             op.condition = &tire_condition_[w];
             TireForces f = magic_formula(tp, kappa_[w], tan_alpha_[w], k.load, k.mu, k.gamma, op);
             fx_sum[w] += f.fx;
@@ -602,7 +608,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
                 const double side_sign = (w % 2 == 0) ? -1.0 : 1.0;
                 tire_condition_[w].update_zones(slip_power, k.load, std::hypot(k.vx, k.vy), k.gamma, f.fy,
                                                 side_sign, drivetrain_.wheel_omega[w], wheel_angle_[w], h, &tp);
-                tire_condition_[w].step_rigid_ring_belt(f.fx, f.fy, k.re, h);
+                tire_condition_[w].step_rigid_ring_belt(f.fx, f.fy, k.re, h, &tp);
             } else {
                 tire_condition_[w].update(slip_power, k.load, std::hypot(k.vx, k.vy), h, &tp);
             }
