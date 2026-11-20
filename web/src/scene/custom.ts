@@ -7,181 +7,18 @@
 // y = up, z = forward) from the world position and a per-car inverse matrix (updated every frame by syncLivery).
 import * as THREE from 'three/webgpu';
 import { float, materialColor, mix, smoothstep, texture, uniform, uv, vec4 } from 'three/tsl';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { installDualLayerCarPaint, type CarPaintWgslUniforms } from '../fx/carPaintWgsl';
 /** a colour uniform as an rgb node (the typings keep 'color' and 'vec3' apart; the shader does not) */
 const rgb = (u: THREE.UniformNode<'color', THREE.Color>) => u as unknown as THREE.Node<'vec3'>;
 
-import { AERO_NAMES, BODY_NAMES } from '../parts-names';
-import { BodyFit, DIFFUSERS_FIT, FLARES_FIT, SKIRTS_FIT, SPLITTERS_FIT, exactBox, fittedDiffuser, fittedSkirt, fittedSplitter, reshaped, type FitWheel } from './parts/fit';
+import { AERO_NAMES } from '../parts-names';
+import { BodyFit, DIFFUSERS_FIT, SKIRTS_FIT, SPLITTERS_FIT, SeamPin, exactBox, fittedDiffuser, fittedSkirt, fittedSplitter, reshaped, type FitWheel } from './parts/fit';
+import { WIDEBODY, WidebodyDeformer, widebodyTrack } from './parts/widebody';
 import { RIM_SPECS } from './parts/rims';
 import { WING_SPECS } from './parts/wings';
 import { AERO_FINISHES, HEAD_TINTS, RIM_FINISHES, WINGS, cleanCustom, defaultCustom, type AeroFinish, type Custom, type HeadTint, type RimFinish, type WingKind } from '../custom-data';
 export { AERO_FINISHES, DIFFUSERS, FENDERS, FRONT_BUMPERS, GLOW_COLOURS, HEAD_TINTS, HOODS, LIVERIES, PART_COLOURS, REAR_BUMPERS, RIM_FINISHES, RIMS, SKIRTS, SPLITTERS, WINGS, cleanCustom, defaultCustom } from '../custom-data';
 export type { AeroFinish, Custom, HeadTint, RimFinish, WingKind } from '../custom-data';
-
-/**
- * Sculpted automotive widebody fender kit that truly molds into THIS car's body contour:
- * - Samples `fit.bodySideAt(y, z, side)` at every station & height so lower bumper/rocker feet NEVER float.
- * - Sweeps a smooth 7-point convex painted dome (single outward-facing winding + full continuous UVs so dual-layer
- *   metallic clearcoat, flakes, liveries & reflections match the body 100% seamlessly — ZERO normal cancellation!).
- * - Adds a crisp recessed dark carbon/matte inner wheel-arch return liner so looking into the wheel well looks factory-finished.
- * - Adds recessed dark-titanium Liberty-Walk / Rocket-Bunny rivet hardware when `p.bolts` is enabled.
- */
-function sculptedWidebodyFlares(
-  fit: BodyFit,
-  paintMat: THREE.Material,
-  linerMat: THREE.Material,
-  p: { out: number; lip: number; bolts?: boolean },
-): THREE.Object3D {
-  const g = new THREE.Group();
-  const boltGeo = p.bolts ? new THREE.CylinderGeometry(0.0055, 0.0055, 0.006, 8) : null;
-  if (boltGeo) boltGeo.rotateZ(Math.PI / 2);
-  // One mesh per material for the whole kit (4 domes, 4 liners, ~36 rivets: 44 draws -> 3), all in model space.
-  const domes: THREE.BufferGeometry[] = [], liners: THREE.BufferGeometry[] = [], bolts: THREE.BufferGeometry[] = [];
-
-  for (const w of fit.wheels) {
-    const s: 1 | -1 = w.x >= 0 ? 1 : -1;
-    const R0 = w.r + 0.048;
-    const N = 56;
-    const a0 = -0.09 * Math.PI;
-    const a1 = 1.09 * Math.PI;
-
-    // 7-point smooth painted outer dome profile (from upper inner body seam -> sculpted convex shoulder -> crisp outer lip)
-    // Each entry: [radialFrac (0=arch lip, 1=upper body seam), outFrac (0=body surface, 1=full flare outstand)]
-    const domeProf: [number, number][] = [
-      [1.00, -0.22], // tucked 22% inboard beneath stock panel (hides seam cleanly)
-      [0.88,  0.14], // smooth tangent fillet rising out of the stock fender
-      [0.68,  0.58], // convex upper shoulder sweep
-      [0.44,  0.90], // full automotive haunch bulge
-      [0.20,  1.00], // outer crown highlight line
-      [0.05,  0.98], // crisp outer arch bevel
-      [0.00,  0.86], // rolled lip edge turning inward toward the wheel well
-    ];
-    const P = domeProf.length;
-
-    const pos: number[] = [];
-    const uvArr: number[] = [];
-    const idx: number[] = [];
-
-    // Separate recessed dark inner wheel-well return liner (from rolled outer lip back into the wheel well)
-    const lPos: number[] = [];
-    const lUv: number[] = [];
-    const lIdx: number[] = [];
-
-    const clampZ = (z: number) => Math.min(fit.box.max.z - 0.02, Math.max(fit.box.min.z + 0.02, z));
-
-    for (let i = 0; i <= N; i++) {
-      const u = i / N;
-      const a = a0 + (a1 - a0) * u;
-      const ca = Math.cos(a), sa = Math.sin(a);
-      // Smooth S-curve taper to 0 at both front & rear feet so the flare melts cleanly into the bumper & rocker
-      const endT = THREE.MathUtils.smoothstep(Math.min(1, Math.min(u, 1 - u) / 0.19), 0, 1);
-      // Slightly fuller over the top crown of the arch (like real GT3 / Liberty Walk overfenders)
-      const crown = 0.72 + 0.28 * Math.sin(Math.PI * u);
-      const outMax = p.out * crown * endT;
-      const lipH = Math.max(0.055, p.lip * 1.38) * (0.45 + 0.55 * endT);
-      const rArch = R0 + 0.016 * endT;
-
-      // Painted outer dome ring
-      for (let j = 0; j < P; j++) {
-        const [rFrac, oFrac] = domeProf[j];
-        const rad = rArch + lipH * rFrac;
-        const y = Math.max(fit.ground + 0.06, w.y + sa * rad);
-        const z = clampZ(w.z + ca * rad);
-        const bodyX = fit.bodySideAt(y, z, s);
-        const dx = oFrac < 0 ? Math.max(-0.026, oFrac * Math.max(0.04, p.out) - 0.012) : outMax * oFrac;
-        const x = s * (bodyX + dx);
-        pos.push(x, y, z);
-        // Continuous automotive surface UVs (matches body flake scale)
-        uvArr.push(u * 2.2, (j / (P - 1)) * 0.55);
-      }
-
-      // Recessed inner wheel-arch liner (3 points wrapping cleanly inboard behind the lip)
-      const yLip = Math.max(fit.ground + 0.06, w.y + sa * rArch);
-      const zLip = clampZ(w.z + ca * rArch);
-      const bodyLip = fit.bodySideAt(yLip, zLip, s);
-      const xOuterLip = s * (bodyLip + outMax * 0.86);
-      const xInnerWell = s * (bodyLip - 0.045);
-      const yInnerWell = Math.max(fit.ground + 0.05, w.y + sa * (rArch - 0.014));
-      const zInnerWell = clampZ(w.z + ca * (rArch - 0.014));
-      lPos.push(xOuterLip, yLip, zLip, xInnerWell, yInnerWell, zInnerWell);
-      lUv.push(u * 2.0, 0, u * 2.0, 0.25);
-
-      // Optional Liberty-Walk / Rocket-Bunny recessed dark-titanium rivets along the upper seam
-      if (boltGeo && i >= 6 && i <= N - 6 && i % 5 === 0) {
-        const radB = rArch + lipH * 0.78;
-        const yB = Math.max(fit.ground + 0.08, w.y + sa * radB);
-        const zB = clampZ(w.z + ca * radB);
-        const bodyB = fit.bodySideAt(yB, zB, s);
-        const xB = s * (bodyB + outMax * 0.38 + 0.002);
-        bolts.push(boltGeo.clone().translate(xB, yB, zB));
-      }
-    }
-
-    // Build single-sided outward-facing triangles (NEVER duplicate reversed triangles on shared vertices!)
-    for (let i = 0; i < N; i++) {
-      const aRow = i * P, bRow = (i + 1) * P;
-      for (let j = 0; j < P - 1; j++) {
-        if (s > 0) {
-          idx.push(aRow + j, bRow + j, bRow + j + 1, aRow + j, bRow + j + 1, aRow + j + 1);
-        } else {
-          idx.push(aRow + j, bRow + j + 1, bRow + j, aRow + j, aRow + j + 1, bRow + j + 1);
-        }
-      }
-      const la = i * 2, lb = (i + 1) * 2;
-      if (s > 0) {
-        lIdx.push(la, lb, lb + 1, la, lb + 1, la + 1);
-      } else {
-        lIdx.push(la, lb + 1, lb, la, la + 1, lb + 1);
-      }
-    }
-
-    // Verify painted dome outward normal points along +side (+X on left, -X on right) at arch crown
-    const midTri = Math.floor((N / 2) * (P - 1) * 2) * 3;
-    if (midTri + 2 < idx.length) {
-      const i0 = idx[midTri] * 3, i1 = idx[midTri + 1] * 3, i2 = idx[midTri + 2] * 3;
-      const e1x = pos[i1] - pos[i0], e1y = pos[i1 + 1] - pos[i0 + 1], e1z = pos[i1 + 2] - pos[i0 + 2];
-      const e2x = pos[i2] - pos[i0], e2y = pos[i2 + 1] - pos[i0 + 1], e2z = pos[i2 + 2] - pos[i0 + 2];
-      const nx = e1y * e2z - e1z * e2y;
-      if (nx * s < 0) {
-        for (let k = 0; k < idx.length; k += 3) { const tmp = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = tmp; }
-      }
-    }
-
-    const domeGeo = new THREE.BufferGeometry();
-    domeGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    domeGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
-    domeGeo.setIndex(idx);
-    domeGeo.computeVertexNormals();
-    domes.push(domeGeo);
-
-    const linerGeo = new THREE.BufferGeometry();
-    linerGeo.setAttribute('position', new THREE.Float32BufferAttribute(lPos, 3));
-    linerGeo.setAttribute('uv', new THREE.Float32BufferAttribute(lUv, 2));
-    linerGeo.setIndex(lIdx);
-    linerGeo.computeVertexNormals();
-    liners.push(linerGeo);
-  }
-  const one = (geos: THREE.BufferGeometry[], mat: THREE.Material, name: string, receive: boolean) => {
-    if (!geos.length) return;
-    const merged = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
-    if (merged && merged !== geos[0]) for (const x of geos) x.dispose();
-    for (const geo of merged ? [merged] : geos) {   // (mismatched attributes: one mesh each, as before)
-      geo.computeBoundingSphere();
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.name = name;
-      mesh.castShadow = false;
-      mesh.receiveShadow = receive;
-      g.add(mesh);
-    }
-  };
-  one(domes, paintMat, 'fender_flare', true);
-  one(liners, linerMat, 'fender_liner', false);
-  one(bolts, linerMat, 'fender_bolt', false);
-  boltGeo?.dispose();
-  return g;
-}
 
 /**
  * Hidden garage parts (every wing, kit, bumper, hood, flare kit and rim set a car offers: hundreds of nodes) still had
@@ -266,8 +103,10 @@ export class CarCustomizer {
   getWear() { return { wear: this.wear, scuff: this.scuff, wakeSpray: this.wakeSpray }; }
   /** paint clone for imported parts: double-sided, so an inverted-winding export can never read as a black hole */
   private extraMat?: THREE.Material;
-  /** fender flares, by id: four arch lips */
-  private fenderParts: Record<string, THREE.Object3D> = {};
+  /** widebody kits: the car's own body swells around the arches (parts/widebody.ts), no added flare part */
+  private widebody!: WidebodyDeformer;
+  /** rivet heads along the arch lips for the bolt-on kits (one mesh, re-seated on the swollen surface per kit) */
+  private rivets: THREE.Mesh | null = null;
   private wheelNodes: THREE.Object3D[] = [];
   /** the body's outlines every generated part is fitted to (parts/fit.ts) */
   fit!: BodyFit;
@@ -398,11 +237,19 @@ export class CarCustomizer {
     const sm = (a0: number, b0: number, x: number) => { const k = Math.min(1, Math.max(0, (x - a0) / (b0 - a0))); return k * k * (3 - 2 * k); };
     const G = fit.ground;
     /** bumper: wider by `wide` (share), its lower edge `lip` m further out and `drop` m lower; dir +1 front, -1 rear */
+    // where each replaceable panel touches the rest of the car (parts/fit.ts SeamPin): its variants never move there
+    const isBodyMesh = (mesh: THREE.Mesh) => {
+      for (let o: THREE.Object3D | null = mesh; o && o !== model; o = o.parent) if (notBody.test(o.name) || this.stockWing.includes(o)) return false;
+      return true;
+    };
+    const pins = new Map<THREE.Object3D, SeamPin>();
+    const pinOf = (stock: THREE.Object3D) => { let p = pins.get(stock); if (!p) pins.set(stock, (p = new SeamPin(model, stock, isBodyMesh))); return p; };
     const bumper = (stock: THREE.Object3D, dir: 1 | -1, wide: number, lip: number, drop: number, chin = 0) => {
-      const bx = boxOf(stock), seam = dir > 0 ? bx.min.z : bx.max.z, len = Math.max(0.2, bx.max.z - bx.min.z);
+      const bx = boxOf(stock), seam = dir > 0 ? bx.min.z : bx.max.z, len = Math.max(0.2, bx.max.z - bx.min.z), pin = pinOf(stock);
       // each mesh keeps its own material: the grille, the mesh insert and the lamps of a bumper are not paint
       return reshaped(model, stock, null, (v) => {
-        const k = sm(0.05, 0.6, ((v.z - seam) * dir) / len);          // 0 at the seam to the fenders, 1 at the nose
+        // 0 where the bumper meets the fenders, hood, lamps or grille (wherever that seam runs on this car), 1 at the nose
+        const k = sm(0.05, 0.6, ((v.z - seam) * dir) / len) * pin.pin(v);
         const lowK = 1 - sm(0.02, 0.26, v.y - G - 0.1);               // 1 along the lower edge, 0 above the grille line
         v.x *= 1 + wide * k;
         v.z += dir * (lip * lowK * k + 0.004 * k);                    // 4 mm proud: never fights the panel it replaces
@@ -426,11 +273,12 @@ export class CarCustomizer {
     if (this.bodyStock.hood) {
       const hb = boxOf(this.bodyStock.hood), hw2 = Math.max(0.2, (hb.max.x - hb.min.x) / 2), hc = (hb.max.z + hb.min.z) / 2, hl = Math.max(0.3, (hb.max.z - hb.min.z) / 2);
       // a hood: raised by `h` over the middle `wshare` of its width, with a trough of `dip` down the centre; its rim stays flush
+      const hoodPin = pinOf(this.bodyStock.hood);
       const hood = (h: number, wshare: number, dip: number, mat: THREE.Material) => reshaped(model, this.bodyStock.hood!, mat, (v) => {
-        const u = Math.abs(v.x) / hw2, t = Math.abs(v.z - hc) / hl;
-        const edge = (1 - sm(0.72, 0.98, u)) * (1 - sm(0.7, 0.98, t));
+        const u = Math.abs(v.x) / hw2, t = Math.abs(v.z - hc) / hl, w = hoodPin.pin(v);
+        const edge = (1 - sm(0.72, 0.98, u)) * (1 - sm(0.7, 0.98, t)) * w;   // flush with the fenders, cowl and lamps
         const dome = 1 - sm(wshare * 0.45, wshare, u);
-        v.y += 0.003 + edge * (h * dome - dip * (1 - sm(0.04, 0.2, u)));
+        v.y += 0.003 * w + edge * (h * dome - dip * (1 - sm(0.04, 0.2, u)));
       });
       const HOODS_FIT: Record<string, [number, number, number, boolean]> = {
         'hood-smooth': [0.0, 1, 0, false], 'hood-vented': [0.024, 0.7, 0.03, false], 'hood-bulge': [0.03, 0.75, 0, false],
@@ -438,16 +286,8 @@ export class CarCustomizer {
       };
       for (const [id, [h, ws, dip, cf]] of Object.entries(HOODS_FIT)) addBody(id, hood(h, ws, dip, cf ? this.aeroMat : paintMat));
     }
-    // fender flares: sculpted automotive widebody arches + recessed inner wheel-well liners + optional rivets
-    const flareLinerMat = new THREE.MeshStandardMaterial({ color: 0x0e1014, roughness: 0.72, metalness: 0.15, side: THREE.DoubleSide, name: 'widebody_liner' });
-    for (const spec of BODY_NAMES) {
-      if (spec.kind !== 'fender') continue;
-      const g = sculptedWidebodyFlares(fit, paintMat, flareLinerMat, FLARES_FIT[spec.id] ?? { out: 0.03, lip: 0.05 });
-      g.name = 'fender_' + spec.id;
-      g.visible = false;
-      this.fenderParts[spec.id] = g;
-      model.add(g);
-    }
+    // widebody: built at prepareWidebody() (after the car's draw-call merge), applied per kit in showOptional()
+    this.widebody = new WidebodyDeformer(fit);
     // rims: a generated face per wheel, parented to the wheel node so it steers and spins with it
     this.rimMat = new THREE.MeshPhysicalMaterial({ name: 'rim_generated', color: 0x9aa0aa, metalness: 1, roughness: 0.2, clearcoat: 0.4 });
     // The size comes from the wheel itself: the model's own rim (its 'rim' material meshes), else 70 % of the tyre.
@@ -505,13 +345,67 @@ export class CarCustomizer {
   }
 
   /**
+   * After the car's draw-call merge (CarVisual), before the load-time warm-up: the body meshes the widebody field reaches
+   * get their own float geometry (parts/widebody.ts), and the rivet mesh is built. Never the wheels, calipers, interior,
+   * driver, glass-only cabin parts above the beltline (the field is 0 there anyway), wings or the underglow.
+   */
+  prepareWidebody() {
+    const model = this.model, skipNodes = new Set<THREE.Object3D>([...this.wheelNodes, this.glow, ...this.stockWing, ...(Object.values(this.wings).filter(Boolean) as THREE.Object3D[])]);
+    const skipName = /caliper|interior|seat|dashboard|steering|driver|helmet|shadow|blur|beam|flame|underglow|^wheel/i;
+    this.widebody.prepare(model, (m) => {
+      for (let o: THREE.Object3D | null = m; o && o !== model; o = o.parent) if (skipNodes.has(o) || skipName.test(o.name)) return false;
+      return true;
+    });
+    // rivets: 9 per arch, one merged mesh in dark anodised hardware
+    const head = new THREE.CylinderGeometry(0.0062, 0.0068, 0.005, 10, 1);
+    head.rotateZ(Math.PI / 2);
+    const pts = this.widebody.rivetPoints(), per = head.attributes.position.count, idx = head.index!.array;
+    const P = new Float32Array(pts.length * per * 3), Nn = new Float32Array(pts.length * per * 3), I = new Uint16Array(pts.length * idx.length);
+    pts.forEach((_, k) => { for (let i = 0; i < idx.length; i++) I[k * idx.length + i] = idx[i] + k * per; });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(Nn, 3));
+    g.setIndex(new THREE.BufferAttribute(I, 1));
+    g.userData.head = head;
+    const mat = new THREE.MeshStandardMaterial({ name: 'widebody_rivet', color: 0x2a2d33, metalness: 0.85, roughness: 0.32 });
+    this.rivets = new THREE.Mesh(g, mat);
+    this.rivets.name = 'fender_rivets';   // a click on one opens the fenders tab (main.ts partTab)
+    this.rivets.castShadow = false;
+    this.rivets.visible = false;
+    model.add(this.rivets);
+    freezeWhenHidden(this.rivets);
+    this.seatRivets();
+    if (this.warm > 0) { this.rivets.visible = true; this.rivets.scale.setScalar(1e-4); }   // compiled with the other optional parts
+  }
+
+  /** put every rivet head on the arch lip of the body as it is now (the field depends on the kit) */
+  private seatRivets() {
+    const r = this.rivets;
+    if (!r) return;
+    const head = r.geometry.userData.head as THREE.BufferGeometry, hp = head.attributes.position, hn = head.attributes.normal;
+    const pts = this.widebody.rivetPoints(), per = hp.count;
+    const P = r.geometry.attributes.position.array as Float32Array, N = r.geometry.attributes.normal.array as Float32Array;
+    pts.forEach(([x, y, z, s], k) => {
+      for (let i = 0; i < per; i++) {
+        const o = (k * per + i) * 3;
+        P[o] = x + s * (hp.getX(i) + 0.001); P[o + 1] = y + hp.getY(i); P[o + 2] = z + hp.getZ(i);   // half sunk into the panel
+        N[o] = s * hn.getX(i); N[o + 1] = hn.getY(i); N[o + 2] = hn.getZ(i);
+      }
+    });
+    r.geometry.attributes.position.needsUpdate = true;
+    r.geometry.attributes.normal.needsUpdate = true;
+    r.geometry.computeBoundingSphere();
+  }
+
+  /**
    * Every node this customizer shows, hides or moves, and every part it built: the player's car keeps these out of its
    * draw-call merge (CarVisual), so a garage choice still toggles exactly the meshes it did.
    */
   ownedNodes(): THREE.Object3D[] {
     const out: THREE.Object3D[] = [...this.stockWing, ...this.stockPanels.splitter, ...this.stockPanels.skirt, ...this.rimMeshes, this.glow];
     for (const o of [this.bodyStock.front, this.bodyStock.rear, this.bodyStock.hood]) if (o) out.push(o);
-    for (const o of [...Object.values(this.wings), ...Object.values(this.kits), ...Object.values(this.bodyParts), ...Object.values(this.fenderParts)]) if (o) out.push(o);
+    for (const o of [...Object.values(this.wings), ...Object.values(this.kits), ...Object.values(this.bodyParts)]) if (o) out.push(o);
+    if (this.rivets) out.push(this.rivets);
     for (const list of Object.values(this.wheelRims)) out.push(...list);
     return out;
   }
@@ -610,7 +504,7 @@ export class CarCustomizer {
     this.showOptional();
   }
 
-  private optional() { return [...(Object.values(this.wings) as THREE.Object3D[]), this.glow]; }
+  private optional() { return [...(Object.values(this.wings) as THREE.Object3D[]), this.glow, ...(this.rivets ? [this.rivets] : [])]; }
   private showOptional() {
     if (this.warm > 0) return;   // still warming: stay drawn, tiny
     const c = this.current;
@@ -625,7 +519,9 @@ export class CarCustomizer {
     for (const [k, list] of Object.entries(this.wheelRims)) for (const r of list) r.visible = c.rims === k;
     for (const m of this.rimMeshes) m.visible = c.rims === 'stock';
     for (const [k, g] of Object.entries(this.bodyParts)) g.visible = k === c.frontB || k === c.rearB || k === c.hood;
-    for (const [k, g] of Object.entries(this.fenderParts)) g.visible = k === c.fenders;
+    const wb = WIDEBODY[c.fenders] ?? null;
+    this.widebody.apply(wb);
+    if (this.rivets) { this.rivets.visible = !!wb?.bolts; if (wb?.bolts) this.seatRivets(); }
     // the stock panel makes way only for a replacement this car really has (an option without one keeps the stock panel)
     if (this.bodyStock.front) this.bodyStock.front.visible = !this.bodyParts[c.frontB];
     if (this.bodyStock.rear) this.bodyStock.rear.visible = !this.bodyParts[c.rearB];
@@ -645,8 +541,7 @@ export class CarCustomizer {
 
   /** Outward wheel track spacer (m) matching the currently equipped widebody kit so wheels sit flush inside the arches. */
   getWidebodyTrackOffset(): number {
-    const f = FLARES_FIT[this.current.fenders];
-    return f ? Math.min(0.056, f.out * 0.72) : 0;
+    return widebodyTrack(WIDEBODY[this.current.fenders]);
   }
 
   /** Optional callback notified whenever widebody track offset changes (wired by CarVisual). */
