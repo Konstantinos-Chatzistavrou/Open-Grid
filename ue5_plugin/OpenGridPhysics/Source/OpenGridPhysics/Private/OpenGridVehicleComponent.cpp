@@ -25,6 +25,10 @@ void UOpenGridVehicleComponent::BeginPlay()
     Vehicle_->unsprung_dynamics_enabled = true;
     Vehicle_->tire_zones_enabled = true;
     Vehicle_->aero_wake().yaw_aero_enabled = true;
+    Vehicle_->chassis_dynamics().chassis_flex_enabled = true;
+    Vehicle_->chassis_dynamics().active_yaw_control_enabled = true;
+    Vehicle_->chassis_dynamics().active_aero_enabled = true;
+    Vehicle_->chassis_dynamics().brake_fluid_boil_enabled = true;
     CrushNodeWeights.Init(0.0f, 8);
 
     if (bEnableSimHubUdp)
@@ -141,6 +145,20 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     bGearGrind = Out.gear_grind;
     bShiftCutActive = Out.shift_cut_active;
     DrivelineClunkNm = static_cast<float>(Out.driveline_clunk_nm);
+    ChassisTwistDeg = static_cast<float>(Out.chassis_twist_deg);
+    AycYawMomentNm = static_cast<float>(Out.ayc_yaw_moment_nm);
+    bDrsActive = Out.drs_active;
+    bAirbrakeActive = Out.airbrake_active;
+    BrakeVaporLockSponge = static_cast<float>(Out.brake_vapor_lock_sponge);
+
+    const rs::EngineAcousticState Acoustics = rs::compute_engine_acoustics(
+        rs::EngineAcousticLayout::Inline6, Out.engine_rpm, Out.throttle_applied,
+        Out.boost_bar, Out.bov_venting, Out.shift_cut_active, Out.gear, Out.speed);
+    FundamentalFiringHz = static_cast<float>(Acoustics.fundamental_firing_hz);
+    TurboImpellerRpm = static_cast<float>(Acoustics.turbo_impeller_rpm);
+    TurboWhistleHz = static_cast<float>(Acoustics.turbo_whistle_hz);
+    TransmissionWhineHz = static_cast<float>(Acoustics.transmission_whine_hz);
+    OverrunPopIntensity = static_cast<float>(Acoustics.overrun_pop_intensity);
 
     if (CrushNodeWeights.Num() != 8) CrushNodeWeights.SetNumZeroed(8);
     for (int32 i = 0; i < 8; ++i)

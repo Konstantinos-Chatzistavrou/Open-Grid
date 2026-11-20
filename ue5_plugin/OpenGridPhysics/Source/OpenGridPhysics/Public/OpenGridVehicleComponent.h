@@ -9,6 +9,7 @@
 #include "rs/config.hpp"
 #include "rs/vehicle.hpp"
 #include "rs/telemetry.hpp"
+#include "rs/pinnacle.hpp"
 #include "rs/ue5_bridge.hpp"
 #include "OpenGridVehicleComponent.generated.h"
 
@@ -105,6 +106,37 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float DrivelineClunkNm = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float ChassisTwistDeg = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float AycYawMomentNm = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    bool bDrsActive = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    bool bAirbrakeActive = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float BrakeVaporLockSponge = 0.0f;
+
+    // ---- MetaSounds Physical Engine & Turbo Acoustic Outputs -------------------------------------------
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Acoustics")
+    float FundamentalFiringHz = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Acoustics")
+    float TurboImpellerRpm = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Acoustics")
+    float TurboWhistleHz = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Acoustics")
+    float TransmissionWhineHz = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Acoustics")
+    float OverrunPopIntensity = 0.0f;
 
     /** 8-Node Normalized Structural Crush Weights (0..1) for UE5 Skeletal Mesh Morph Targets (FL, FrontCenter, FR, Left, Right, RL, RearCenter, RR). */
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")

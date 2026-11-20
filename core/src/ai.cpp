@@ -135,12 +135,116 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
         }
     }
     if (!braking_for_traffic) avoid_ -= sign(avoid_) * std::min(std::abs(avoid_), 0.6 * dt);
+
+    // ---- AAA proactive AI racecraft: slipstream tuck, slingshot pass, defensive inside blocking, pressure lockup
+    tucking_slipstream = false;
+    slingshot_passing = false;
+    defending_inside = false;
+    under_pressure_lockup = false;
+    double base_lat = p_.lane_offset;
+    if (p_.proactive_racecraft) {
+        double lead_gap = 1e9, lead_lat = 0.0, lead_speed = 0.0;
+        double chase_gap = 1e9, chase_lat = 0.0;
+        double alongside_lat = 0.0;
+        bool has_alongside = false;
+        for (const OtherCar& o : others) {
+            if (length(o.position - s.position) > 100.0) continue;
+            Route::Projection op = route_.project(o.position, hint_);
+            double ahead_dist = route_.delta(pr.s, op.s);
+            RouteSample at_o = route_.at(op.s);
+            if (std::abs(op.lateral) > std::max(at_o.width_left, at_o.width_right) + 2.0) continue;
+            if (length(o.position - s.position) > std::abs(ahead_dist) + 12.0) continue;
+            if (ahead_dist > 0.5 && ahead_dist <= 40.0) {
+                if (ahead_dist < lead_gap) {
+                    lead_gap = ahead_dist;
+                    lead_lat = op.lateral;
+                    lead_speed = dot(o.velocity, route_.tangent(op.s));
+                }
+            } else if (ahead_dist >= -22.0 && ahead_dist < -0.5) {
+                double c_gap = -ahead_dist;
+                if (c_gap < chase_gap) {
+                    chase_gap = c_gap;
+                    chase_lat = op.lateral;
+                }
+            }
+            if (ahead_dist >= -5.5 && ahead_dist <= 0.5 && std::abs(pr.lateral) > 1.0) {
+                has_alongside = true;
+                alongside_lat = op.lateral;
+            }
+        }
+        (void)chase_lat;
+
+        RouteSample corner_sample = route_.at(pr.s + 35.0);
+        RouteSample here_sample = route_.at(pr.s);
+        double corner_k = corner_sample.curvature;
+        if (std::abs(corner_k) <= 0.008) {
+            RouteSample mid_sample = route_.at(pr.s + 20.0);
+            if (std::abs(mid_sample.curvature) > std::abs(corner_k)) corner_k = mid_sample.curvature;
+        }
+        const double route_v = std::min(speed_profile(pr.s), speed_profile(pr.s + std::max(v, 0.0) * 0.5));
+
+        // 1. Slipstream Tuck: straight ahead and 16 < lead_gap <= 38 m
+        if (std::abs(corner_sample.curvature) < 0.004 && lead_gap > 16.0 && lead_gap <= 38.0) {
+            tucking_slipstream = true;
+            base_lat = lead_lat;
+            avoid_ = 0.0;
+            target = std::max(target, std::min(route_v, lead_speed + 4.0));
+        }
+
+        // 2. Slingshot Pass: lead_gap <= 16 m and road width allows passing
+        const bool can_pass = (here_sample.width_left + here_sample.width_right) >= 5.3;
+        if (lead_gap <= 16.0 && can_pass) {
+            slingshot_passing = true;
+            tucking_slipstream = false;
+            const double room_l = here_sample.width_left - lead_lat;
+            const double room_r = here_sample.width_right + lead_lat;
+            double pass_dir = 1.0;
+            if (std::abs(corner_k) > 0.004 && ((corner_k > 0.0 ? room_l : room_r) >= 2.0)) {
+                pass_dir = sign(corner_k);
+            } else if (std::abs(room_l - room_r) > 0.15) {
+                pass_dir = (room_l > room_r) ? 1.0 : -1.0;
+            } else if (std::abs(pr.lateral - lead_lat) > 0.1) {
+                pass_dir = (pr.lateral >= lead_lat) ? 1.0 : -1.0;
+            }
+            base_lat = lead_lat + pass_dir * 2.2;
+            avoid_ = 0.0;
+            target = std::max(target, std::min(route_v, std::max(lead_speed, v) + 4.5));
+            if (lead_gap > 5.0 || std::abs(pr.lateral - lead_lat) > 1.4) {
+                braking_for_traffic = false;
+            }
+        }
+
+        // 3. Defensive Inside-Line Blocking: clear ahead, attacker < 18 m behind, corner approaching
+        if (lead_gap > 20.0 && chase_gap < 18.0 && std::abs(corner_k) > 0.008) {
+            defending_inside = true;
+            tucking_slipstream = false;
+            base_lat = sign(corner_k) * 1.65;
+            avoid_ = 0.0;
+        }
+
+        // Hold passing lane while clearing a car alongside
+        if (!tucking_slipstream && !slingshot_passing && !defending_inside && has_alongside) {
+            base_lat = alongside_lat + (pr.lateral >= alongside_lat ? 1.0 : -1.0) * 2.2;
+        }
+
+        // 4. Human-Like Tailgating Pressure & Late-Braking Lockup
+        if (chase_gap < 10.0) {
+            pressure_level = clamp(pressure_level + dt * 0.28 * (0.5 + p_.mistake_susceptibility), 0.0, 1.0);
+        } else {
+            pressure_level = clamp(pressure_level - dt * 0.15, 0.0, 1.0);
+        }
+        if (pressure_level > 0.65 &&
+            (target < v - 2.5 || (std::abs(corner_k) > 0.008 && speed_profile(pr.s + 35.0) < v - 2.5 && target < v - 0.5))) {
+            under_pressure_lockup = true;
+        }
+    }
     target_speed = target;
 
     // ---- steering: pure pursuit to a point Ld ahead on the offset centreline
     double ld = clamp(3.5 + 0.4 * std::max(v, 0.0), 5.0, 30.0);   // short at low speed: less corner cutting
     RouteSample ahead = route_.at(pr.s + ld);
-    double lat = clamp(p_.lane_offset + avoid_, -(ahead.width_right - 1.2), ahead.width_left - 1.2);
+    double lat = clamp(base_lat + avoid_, -(ahead.width_right - 1.2), ahead.width_left - 1.2);
+    active_lateral_target = lat;
     Vec3 tp = ahead.p + route_.left(pr.s + ld) * lat;
     Vec3 local = s.orientation.inv_rotate(tp - s.position);
     double eta = std::atan2(local.y, local.x);
@@ -150,8 +254,9 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
 
     // ---- pedals: desired acceleration proportional to the speed error
     double a_des = clamp(1.5 * (target - v), -10.0, 8.0);
-    if (braking_for_traffic && target <= 0.0) {
+    if (under_pressure_lockup || (braking_for_traffic && target <= 0.0)) {
         out.raw.brake = 1.0;
+        out.raw.throttle = 0.0;
     } else if (a_des >= 0) {
         out.raw.throttle = clamp(a_des / 4.0 + (v > 5 ? 0.1 : 0.3), 0.0, 1.0);
     } else {
