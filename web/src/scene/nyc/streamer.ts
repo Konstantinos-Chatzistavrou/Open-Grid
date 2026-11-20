@@ -18,6 +18,7 @@ import { Breaches } from './breach';
 import { NycProps, type BuildingColliderBox } from './props';
 import { applyNycAtmosphere, type NycAtmosphere } from './atmosphere';
 import { generateProceduralNycTile, type ProceduralNycTileData } from './infiniteNyc';
+import { filterPropsToPavement } from './pavementFilter';
 import { CityBatcher } from './batch';
 import { ensureMeshoptClusterizer } from '../../fx/meshletCuller';
 
@@ -405,6 +406,7 @@ export class NycStreamer {
           this.stat.loaded++; this.stat.loadMs += performance.now() - t0;
           this.queue.push({ tile: t, kind: 'far', gen, cost: 0.3, run: () => this.commitFar(t) });
         } else {
+          const filteredProps = filterPropsToPavement(pd.groundGroup, pd.bldGroup, pd.props, t.ix, t.iy);
           const grp = new THREE.Group();
           const meshes: THREE.Mesh[] = [];
           for (const [g, part] of [[pd.groundGroup, 'ground'], [pd.bldGroup, 'bld']] as const) {
@@ -420,7 +422,7 @@ export class NycStreamer {
           grp.visible = true; t.group.add(grp); grp.updateMatrixWorld(true); grp.matrixWorldAutoUpdate = false; this.attach(t);
         } });
           for (const m of meshes) this.queue.push({ tile: t, kind: 'near', gen, cost: 0.8, run: () => this.reveal(t, m) });
-          this.queue.push({ tile: t, kind: 'near', gen, cost: 0.2, run: () => this.finishNear(t, pd.props) });
+          this.queue.push({ tile: t, kind: 'near', gen, cost: 0.2, run: () => this.finishNear(t, filteredProps) });
         }
       });
       return;
@@ -452,6 +454,8 @@ export class NycStreamer {
       Promise.all([glb('ground'), glb('bld'), json('props.json', t.has.props)]).then(([gg, bb, props]) => {
         done();
         if (t.gen.near !== gen) { for (const g of [gg, bb]) g && this.disposeObject(g.scene); return; }
+        // Filter & snap all tile props strictly onto real pavement/park triangles BEFORE prepare() swaps material names!
+        const cleanProps = filterPropsToPavement(gg?.scene, bb?.scene, props, t.ix, t.iy);
         const grp = new THREE.Group();
         const meshes: THREE.Mesh[] = [];
         for (const [g, part] of [[gg, 'ground'], [bb, 'bld']] as const) {
@@ -476,7 +480,7 @@ export class NycStreamer {
           grp.visible = true; t.group.add(grp); grp.updateMatrixWorld(true); grp.matrixWorldAutoUpdate = false; this.attach(t);
         } });
         for (const m of meshes) this.queue.push({ tile: t, kind: 'near', gen, cost: 0.8, run: () => this.reveal(t, m) });
-        this.queue.push({ tile: t, kind: 'near', gen, cost: 0.2, run: () => this.finishNear(t, props) });
+        this.queue.push({ tile: t, kind: 'near', gen, cost: 0.2, run: () => this.finishNear(t, cleanProps) });
       }).catch(fail);
     }
   }
