@@ -79,6 +79,19 @@ struct WheelOutput {
     double brake_mu = 1;             // pad friction relative to its working range (cold / fading < 1)
     double carcass_deflection_m = 0; // m, radial tyre carcass compression under vertical load
     double unsprung_vel_mps = 0;     // m/s, vertical wheel-hop velocity of the unsprung hub/wheel mass
+    double brake_fluid_temp_c = 45.0;// C, caliper DOT 4 brake fluid temperature (vapor lock / spongy pedal > 260 C)
+    double brake_pad_wear = 0.0;     // 0..1 progressive brake pad friction lining wear
+};
+
+// Chassis torsional stiffness (frame twist between front & rear strut towers), Active Torque-Vectoring E-Diff (AYC),
+// Active Aerodynamics (DRS low-drag straight mode + 35-deg braking Airbrake), and DOT 4 Brake Fluid Vapor-Lock config.
+struct ChassisDynamicsConfig {
+    bool chassis_flex_enabled = false;
+    double torsional_stiffness_nm_per_deg = 22000.0; // stock street unibody ~22k N m/deg; Strut Bar + Roll Cage ~48k N m/deg
+    bool active_yaw_control_enabled = false;         // Active Torque-Vectoring E-Diff / AYC
+    double ayc_max_yaw_moment_nm = 1450.0;           // peak pro-rotation torque-vectoring yaw moment (N m)
+    bool active_aero_enabled = false;                // DRS straight-line low-drag (-14% drag > 180 km/h) + Braking Airbrake (+22% rear downforce)
+    bool brake_fluid_boil_enabled = false;           // DOT 4 caliper fluid boiling (> 260 C) causes vapor-lock spongy brake pressure loss
 };
 
 // Aerodynamic slipstream (drafting tow), turbulent dirty-air front downforce loss, and drift yaw-angle aero scaling.
@@ -119,6 +132,11 @@ struct VehicleOutput {
     double driveline_clunk_nm = 0.0;
     double slipstream_drag_scale = 1.0;
     double dirty_air_downforce_scale = 1.0;
+    double chassis_twist_deg = 0.0;          // frame twist angle between front and rear axles (deg)
+    double ayc_yaw_moment_nm = 0.0;          // Active Torque-Vectoring E-Diff pro-rotation yaw moment (N m)
+    bool drs_active = false;                 // Active Aero low-drag mode active
+    bool airbrake_active = false;            // Active Aero high-downforce braking airbrake active
+    double brake_vapor_lock_sponge = 0.0;    // 0..0.55 brake line pressure loss from boiling caliper fluid (> 260 C)
 };
 
 // Physical effect multipliers (filled from DamageModel each tick when damage is enabled).
@@ -155,6 +173,8 @@ public:
     const EngineSystemState& engine_systems() const { return drivetrain_.systems; }
     AeroWakeState& aero_wake() { return aero_wake_; }
     const AeroWakeState& aero_wake() const { return aero_wake_; }
+    ChassisDynamicsConfig& chassis_dynamics() { return chassis_dyn_; }
+    const ChassisDynamicsConfig& chassis_dynamics() const { return chassis_dyn_; }
     /** Compute aerodynamic slipstream drag reduction (up to -28%) and dirty-air front downforce loss (up to -30%) behind lead cars. */
     static AeroWakeState compute_slipstream_wake(const Vec3& my_pos, const Vec3& my_fwd, const std::vector<Vec3>& lead_car_positions);
 
@@ -194,8 +214,12 @@ private:
 public:
     /** Tests / tooling: set every brake disc to this temperature (C); reset_motion puts them back to warm. */
     void set_brake_temperature(double c) { disc_temp_.fill(c); disc_init_ = true; }
+    void set_brake_fluid_temperature(double c) { fluid_temp_.fill(c); }
 private:
     bool disc_init_ = false;
+    std::array<double, 4> fluid_temp_{45.0, 45.0, 45.0, 45.0}; // caliper DOT 4 brake fluid temperature, C
+    std::array<double, 4> pad_wear_{};                         // 0..1 brake pad friction material wear
+    ChassisDynamicsConfig chassis_dyn_{};
     std::array<double, 2> prev_axle_fy_{};
     std::array<double, 4> prev_fx_{};       // last step's tyre Fx per wheel (anti-dive / anti-squat link forces)
     std::array<double, 4> dz_{};            // suspension compression from static per wheel, m (+ = bump; kinematics)

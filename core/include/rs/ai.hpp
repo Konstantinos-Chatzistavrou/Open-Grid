@@ -33,6 +33,8 @@ struct AIParams {
     double headway = 0.6;          // s, following distance it tries to keep at speed
     double lane_offset = 0.0;      // m, preferred lateral position (+ = left of centreline)
     double aggression = 0.5;       // 0..1: how late it brakes for traffic, how hard it swerves
+    bool proactive_racecraft = false;       // enables slipstream tuck, slingshot pass, defensive inside blocking, and pressure mistakes
+    double mistake_susceptibility = 0.25;   // 0..1: how easily tailgating pressure causes a late-braking overshoot
 };
 
 struct AIOutput {
@@ -48,6 +50,12 @@ public:
     // telemetry
     double route_s = 0, target_speed = 0, gap_ahead = 1e9;
     bool braking_for_traffic = false, recovering = false;
+    bool tucking_slipstream = false;
+    bool slingshot_passing = false;
+    bool defending_inside = false;
+    double pressure_level = 0.0;
+    bool under_pressure_lockup = false;
+    double active_lateral_target = 0.0;
     double speed_profile(double s) const;
 
 private:

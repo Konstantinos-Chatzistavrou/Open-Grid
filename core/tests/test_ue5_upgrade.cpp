@@ -277,4 +277,61 @@ RS_TEST(ue5_upgrade) {
                     sim_w.vehicle.damage_model().caster_offset(FL) < -0.004 &&
                     sim_w.vehicle.damage_model().wheel_bearing_drag_nm(FL) > 1.0);
     }
+
+    // 12. Chassis Torsional Flex (Strut Bar / Roll Cage Stiffening) & Active Torque-Vectoring E-Diff (AYC)
+    {
+        Simulation sim_soft_ch(cfg, flat);
+        Simulation sim_cage_ch(cfg, flat);
+        sim_soft_ch.vehicle.chassis_dynamics().chassis_flex_enabled = true;
+        sim_soft_ch.vehicle.chassis_dynamics().torsional_stiffness_nm_per_deg = 12000.0; // fatigued unibody
+        sim_cage_ch.vehicle.chassis_dynamics().chassis_flex_enabled = true;
+        sim_cage_ch.vehicle.chassis_dynamics().torsional_stiffness_nm_per_deg = 48000.0; // Strut Bar + Roll Cage
+        sim_cage_ch.vehicle.chassis_dynamics().active_yaw_control_enabled = true;
+
+        sim_soft_ch.reset({}, 0.0, 26.0, 3);
+        sim_cage_ch.reset({}, 0.0, 26.0, 3);
+
+        DriverInput turn;
+        turn.steer = 0.45;
+        turn.throttle = 0.75;
+        turn.gear = 3;
+        turn.auto_clutch = true;
+
+        for (int i = 0; i < 90; ++i) {
+            sim_soft_ch.step(turn);
+            sim_cage_ch.step(turn);
+        }
+        test::check("roll-caged chassis twists less under cornering load than fatigued unibody",
+                    std::abs(sim_cage_ch.last.chassis_twist_deg) < std::abs(sim_soft_ch.last.chassis_twist_deg));
+        test::check("Active Torque-Vectoring E-Diff (AYC) generates pro-rotation yaw moment in corners",
+                    std::abs(sim_cage_ch.last.ayc_yaw_moment_nm) > 10.0);
+    }
+
+    // 13. Active Aerodynamics (DRS Low-Drag Straight Mode + 35-Deg Braking Airbrake) & DOT 4 Brake Fluid Vapor Lock
+    {
+        Simulation sim_aero(cfg, flat);
+        sim_aero.vehicle.chassis_dynamics().active_aero_enabled = true;
+        sim_aero.vehicle.chassis_dynamics().brake_fluid_boil_enabled = true;
+        sim_aero.reset({}, 0.0, 56.0, 5); // 201.6 km/h
+
+        DriverInput fast_straight;
+        fast_straight.throttle = 1.0;
+        fast_straight.gear = 5;
+        fast_straight.auto_clutch = true;
+        sim_aero.step(fast_straight);
+        test::check("Active Aero engages DRS low-drag wing above 180 km/h on straight WOT",
+                    sim_aero.last.drs_active && !sim_aero.last.airbrake_active && sim_aero.last.slipstream_drag_scale < 0.90);
+
+        // Overheat caliper brake fluid past DOT 4 boiling point (295 C > 260 C) and slam brakes
+        sim_aero.vehicle.set_brake_fluid_temperature(295.0);
+        DriverInput hard_brake;
+        hard_brake.brake = 1.0;
+        hard_brake.gear = 5;
+        hard_brake.auto_clutch = true;
+        sim_aero.step(hard_brake);
+        test::check("Active Aero deploys high-downforce Airbrake under hard high-speed braking",
+                    sim_aero.last.airbrake_active && !sim_aero.last.drs_active && sim_aero.last.slipstream_drag_scale > 1.15);
+        test::check("boiled DOT 4 caliper fluid (> 260 C) causes vapor-lock spongy brake pressure loss",
+                    sim_aero.last.brake_vapor_lock_sponge > 0.20);
+    }
 }

@@ -19,3 +19,4 @@
 #include "../../../../../core/src/cops.cpp"
 #include "../../../../../core/src/authority.cpp"
 #include "../../../../../core/src/gameplay.cpp"
+#include "../../../../../core/src/pinnacle.cpp"

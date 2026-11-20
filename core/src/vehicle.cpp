@@ -41,6 +41,8 @@ void Vehicle::reset_motion(double v, int gear) {
         wheel_angle_[w] = 0.0;
         unsprung_z_[w] = 0.0;
         unsprung_vz_[w] = 0.0;
+        fluid_temp_[w] = 45.0;
+        pad_wear_[w] = 0.0;
     }
     disc_init_ = true;
     const auto& g = cfg_.drivetrain.gear_ratios;
@@ -243,7 +245,14 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         }
         int other = w ^ 1;                              // FL<->FR, RL<->RR
         double other_comp = touching[other] ? comp[other] : 0.0;
-        f += ax.anti_roll_rate * (comp[w] - other_comp);
+        double arb_eff = 1.0;
+        if (chassis_dyn_.chassis_flex_enabled) {
+            // Finite chassis torsional stiffness (N m/deg) between front and rear strut towers attenuates ARB roll transfer
+            const double k_ch = std::max(4000.0, chassis_dyn_.torsional_stiffness_nm_per_deg);
+            const double k_arb_deg = (ax.anti_roll_rate * ax.track * ax.track) * (kPi / 180.0);
+            arb_eff = k_ch / (k_ch + k_arb_deg);
+        }
+        f += ax.anti_roll_rate * arb_eff * (comp[w] - other_comp);
         // Anti-dive / anti-squat / anti-lift: the links' side-view geometry carries part of the longitudinal load
         // transfer straight into the body (F = anti * Fx * h_cg / L along body up), so the springs see less of it and
         // the body pitches less; the wheel's load is unchanged in the steady state. Front: braking (Fx < 0) pushes up
@@ -278,6 +287,12 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         }
     }
     for (int w = 0; w < 4; ++w) dz_[w] = touching[w] ? comp[w] - cfg_.wheels[w].static_compression : dz_[w] * 0.9;
+    if (chassis_dyn_.chassis_flex_enabled) {
+        const double front_roll_m = (susp_force[FR] - susp_force[FL]) * 0.5 * cfg_.front.track;
+        const double rear_roll_m = (susp_force[RR] - susp_force[RL]) * 0.5 * cfg_.rear.track;
+        const double k_ch = std::max(4000.0, chassis_dyn_.torsional_stiffness_nm_per_deg);
+        out.chassis_twist_deg = clamp((front_roll_m - rear_roll_m) / k_ch, -6.0, 6.0);
+    }
 
     // ------------------------------------------------------------------ tyre kinematics
     struct Kin {
@@ -460,7 +475,13 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             } else {
                 abs_pressure_[w] = 1.0;
             }
-            din.brake_scale[w] = abs_pressure_[w];
+            double vapor_scale = 1.0;
+            if (chassis_dyn_.brake_fluid_boil_enabled && fluid_temp_[w] > 260.0) {
+                const double sponge = clamp((fluid_temp_[w] - 260.0) / 85.0, 0.0, 0.55);
+                vapor_scale = 1.0 - sponge;
+                out.brake_vapor_lock_sponge = std::max(out.brake_vapor_lock_sponge, sponge);
+            }
+            din.brake_scale[w] = abs_pressure_[w] * vapor_scale;
             din.extra_brake[w] = esc_brake[w];
         }
         // ---- ASSIST: TC. Cut engine torque in proportion to driven-wheel slip above target,
@@ -489,6 +510,11 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
                               + 0.55 * 5.670e-8 * area * (tk * tk * tk * tk - ta * ta * ta * ta);
             disc_temp_[w] = clamp(disc_temp_[w] + h * (heat - cool) / cap, 0.0, 1100.0);
             din.pad_mu[w] = brake_pad_mu(disc_temp_[w]);
+            // Caliper DOT 4 brake fluid heat soak from hot rotor through pad + convective airflow cooling
+            const double d_fluid = 0.025 * std::max(0.0, disc_temp_[w] - fluid_temp_[w])
+                                 - (0.012 + 0.0015 * v_car) * (fluid_temp_[w] - 40.0);
+            fluid_temp_[w] = clamp(fluid_temp_[w] + h * d_fluid, 20.0, 360.0);
+            pad_wear_[w] = clamp(pad_wear_[w] + heat * 2.5e-10 * h, 0.0, 1.0);
         }
     }
     for (int w = 0; w < 4; ++w) {
@@ -513,6 +539,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         wo.condition = tire_condition_[w];
         wo.brake_temp_c = disc_temp_[w];
         wo.brake_mu = brake_pad_mu(disc_temp_[w]);
+        wo.brake_fluid_temp_c = fluid_temp_[w];
+        wo.brake_pad_wear = pad_wear_[w];
         if (!touching[w]) continue;
         const Kin& k = kin[w];
         double fx = fx_sum[w] / n_sub, fy = fy_sum[w] / n_sub, mz = mz_sum[w] / n_sub;
@@ -564,15 +592,30 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
 
     prev_axle_fy_ = axle_fy;
 
+    // ---- Active Torque-Vectoring E-Diff / Active Yaw Control (AYC)
+    if (chassis_dyn_.active_yaw_control_enabled && out.speed > 4.0 && input_.throttle > 0.12 && (touching[RL] || touching[RR])) {
+        const double yaw_err = as.yaw_rate_ref - yaw_rate;
+        out.ayc_yaw_moment_nm = clamp(yaw_err * 2600.0 * input_.throttle,
+                                      -chassis_dyn_.ayc_max_yaw_moment_nm,
+                                      chassis_dyn_.ayc_max_yaw_moment_nm);
+        torque += up * out.ayc_yaw_moment_nm;
+    }
+
     // ------------------------------------------------------------------ aerodynamics
-    // Drag:      F = -1/2 rho CdA |v| v * slipstream_drag_scale * yaw_drag_mult
-    // Downforce: F = 1/2 rho ClA v_x^2, split between the axles by aero balance (with dirty-air front loss & yaw stall).
+    // Drag:      F = -1/2 rho CdA |v| v * slipstream_drag_scale * yaw_drag_mult * active_aero_drag_mult
+    // Downforce: F = 1/2 rho ClA v_x^2, split between the axles by aero balance (with dirty-air front loss, yaw stall & Active Aero).
     const AeroParams& a = cfg_.aero;
     double v = length(s.velocity);
+    out.drs_active = chassis_dyn_.active_aero_enabled && out.speed > 50.0 && input_.throttle > 0.75
+                   && input_.brake < 0.05 && std::abs(input_.steer) < 0.12;
+    out.airbrake_active = chassis_dyn_.active_aero_enabled && out.speed > 22.0 && input_.brake > 0.55;
+    const double active_drag_mult = out.drs_active ? 0.86 : (out.airbrake_active ? 1.24 : 1.0);
+    const double active_rear_down_mult = out.drs_active ? 0.82 : (out.airbrake_active ? 1.22 : 1.0);
+
     const double sin_beta = std::sin(clamp(out.sideslip, -1.2, 1.2));
     const double yaw_drag_mult = aero_wake_.yaw_aero_enabled ? (1.0 + 0.35 * sin_beta * sin_beta) : 1.0;
     const double yaw_rear_down_mult = aero_wake_.yaw_aero_enabled ? (1.0 - 0.30 * sin_beta * sin_beta) : 1.0;
-    const double eff_drag_scale = clamp(aero_wake_.drag_scale, 0.65, 1.2) * yaw_drag_mult;
+    const double eff_drag_scale = clamp(aero_wake_.drag_scale, 0.65, 1.2) * yaw_drag_mult * active_drag_mult;
     const double eff_front_down_scale = clamp(aero_wake_.dirty_air_front_downforce_scale, 0.55, 1.1);
 
     force += s.velocity * (-0.5 * a.air_density * a.drag_area * damage_.aero_drag * eff_drag_scale * v);
@@ -585,7 +628,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     Vec3 p_front = s.position + s.orientation.rotate({cfg_.dist_cg_front, 0, 0});
     Vec3 p_rear = s.position + s.orientation.rotate({-cfg_.dist_cg_rear, 0, 0});
     Vec3 f_front = up * (-down * balance * eff_front_down_scale);
-    Vec3 f_rear = up * (-down * (1 - balance) * yaw_rear_down_mult);
+    Vec3 f_rear = up * (-down * (1 - balance) * yaw_rear_down_mult * active_rear_down_mult);
     force += f_front + f_rear;
     torque += cross(p_front - s.position, f_front) + cross(p_rear - s.position, f_rear);
 
