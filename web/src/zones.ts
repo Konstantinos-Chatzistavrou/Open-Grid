@@ -322,6 +322,13 @@ export class CityZones {
       return;
     }
 
+    // Distance-cull far checkpoint/zone gate meshes (saves draw calls when gates are > 260 m away across the city)
+    for (const ch of this.root.children) {
+      const dx = ch.position.x - playerPos.x;
+      const dz = ch.position.z - playerPos.z;
+      ch.visible = dx * dx + dz * dz < 260 * 260;
+    }
+
     // 1. Update active Drift Zone scoring
     if (this.activeDrift) {
       const d = this.activeDrift;
