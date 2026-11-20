@@ -1,0 +1,11 @@
+# Unreal Engine binary assets are stored with Git LFS. Install git-lfs (`git lfs install`) before the first commit
+# under ue5/Content, and check the GitHub account's LFS storage and bandwidth quota: Unreal content grows fast.
+ue5/Content/**/*.uasset filter=lfs diff=lfs merge=lfs -text
+ue5/Content/**/*.umap filter=lfs diff=lfs merge=lfs -text
+ue5/Content/**/*.ubulk filter=lfs diff=lfs merge=lfs -text
+ue5/Content/**/*.uexp filter=lfs diff=lfs merge=lfs -text
+ue5/SourceArt/** filter=lfs diff=lfs merge=lfs -text
+
+# Never try to merge or diff these as text, wherever they appear
+*.uasset binary
+*.umap binary

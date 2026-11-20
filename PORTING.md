@@ -17,10 +17,10 @@ Keep this current as phases land.
 ## Engine-specific (rebuild per engine)
 | Area | Godot implementation | Unreal equivalent to build |
 |---|---|---|
-| Wheel raycasts + force application | `godot_ext/src/rs_vehicle.cpp` (RSVehicle : RigidBody3D, 240 Hz Jolt) | C++ actor component calling the core |
-| Car assembly from data (model, CG offset, collision box, wheel nodes) | `game/scripts/car_factory.gd` + `data/cars/*.visual.json` | Blueprint/factory reading the same visual JSON |
+| Wheel raycasts + force application | `godot_ext/src/rs_vehicle.cpp` (RSVehicle : RigidBody3D, 240 Hz Jolt) | written, not yet compiled in Unreal: `ue5_plugin/.../UOpenGridVehicleComponent` (async physics at 240 Hz, ground planes traced per frame) |
+| Car assembly from data (model, CG offset, collision box, wheel nodes) | `game/scripts/car_factory.gd` + `data/cars/*.visual.json` | written: `ue5/Source/OpenGrid/OpenGridCarPawn` reads the same visual JSON; models via `tools/ue5/export_cars_for_ue.mjs` |
 | Surface type lookup | collider meta `surface` (set by track import) | physical material / tag on the collider |
-| Axis conversion (core Z-up RH <-> engine) | one function in `godot_ext/` | one function in the Unreal component |
+| Axis conversion (core Z-up RH <-> engine) | one function in `godot_ext/` | done: `core/include/rs/ue5_bridge.hpp`, tested in `core/tests/test_ue5_bridge.cpp` |
 | Scenes, camera, input mapping, UI, debug overlay | `game/` (GDScript) | Blueprints/UMG |
 | Materials, lightmaps, reflection probes, post-process | Godot resources, regenerable | Re-author from `assets_source/` |
 | Mesh LOD, visibility ranges, occlusion culling | Godot settings | Unreal LOD/HLOD/culling |

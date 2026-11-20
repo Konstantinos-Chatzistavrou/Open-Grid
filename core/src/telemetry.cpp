@@ -7,7 +7,20 @@
 
 #if defined(__EMSCRIPTEN__)
   // Browser WASM build: UDP transport is handled by WebSocket -> tools/simhub_udp_bridge.mjs
+#elif defined(_WIN32) && defined(RS_UNREAL)
+  // Inside an Unreal module: Windows headers must be wrapped like this or their types and macros clash with the
+  // engine's. RS_UNREAL comes from ue5_plugin/.../OpenGridPhysics.Build.cs.
+  #include "Windows/AllowWindowsPlatformTypes.h"
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
+  #include "Windows/HideWindowsPlatformTypes.h"
 #elif defined(_WIN32)
+  #ifndef NOMINMAX
+    #define NOMINMAX            // windows.h min/max macros would break std::min / std::max below
+  #endif
+  #ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+  #endif
   #include <winsock2.h>
   #include <ws2tcpip.h>
 #else

@@ -1,0 +1,29 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.8",
+	"Category": "",
+	"Description": "OpenGrid street racing: Unreal Engine 5 front end for the rs_core physics in ../core",
+	"Modules": [
+		{
+			"Name": "OpenGrid",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "OpenGridPhysics",
+			"Enabled": true
+		},
+		{
+			"Name": "EnhancedInput",
+			"Enabled": true
+		}
+	],
+	"AdditionalPluginDirectories": [
+		"../ue5_plugin"
+	]
+}

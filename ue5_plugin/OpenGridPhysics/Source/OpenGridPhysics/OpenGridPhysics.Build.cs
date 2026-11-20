@@ -1,6 +1,6 @@
-// Apache-2.0 — OpenGrid Unreal Engine 5 Build Rules (UnrealBuildTool)
-using UnrealBuildTool;
+// Apache-2.0 — OpenGrid Unreal Engine 5 build rules (UnrealBuildTool)
 using System.IO;
+using UnrealBuildTool;
 
 public class OpenGridPhysics : ModuleRules
 {
@@ -8,12 +8,16 @@ public class OpenGridPhysics : ModuleRules
     {
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
         CppStandard = CppStandardVersion.Cpp20;
-        bEnableExceptions = true;
+        bEnableExceptions = true;   // nlohmann::json and the car-spec loader report errors by throwing
+        bUseUnity = false;          // RsCoreUnity.cpp is already one unit; merging it with the component risks name clashes
 
-        // Point directly to rs_core headers and vendored nlohmann/json
-        string CoreRoot = Path.GetFullPath(Path.Combine(ModuleDirectory, "../../../../core"));
+        // rs_core is not copied into the plugin: find the repo's core/ folder above this module, wherever the plugin
+        // sits (ue5_plugin/ next to core/, or a project's Plugins/ folder inside the repo).
+        string CoreRoot = FindCoreRoot(ModuleDirectory);
         PublicIncludePaths.Add(Path.Combine(CoreRoot, "include"));
         PrivateIncludePaths.Add(Path.Combine(CoreRoot, "third_party"));
+        PrivateIncludePaths.Add(CoreRoot);   // RsCoreUnity.cpp includes "src/*.cpp"
+        PrivateDefinitions.Add("RS_UNREAL=1");
 
         PublicDependencyModuleNames.AddRange(new string[]
         {
@@ -23,5 +27,26 @@ public class OpenGridPhysics : ModuleRules
             "PhysicsCore",
             "Chaos"
         });
+
+        if (Target.Platform == UnrealTargetPlatform.Win64)
+        {
+            PublicSystemLibraries.Add("ws2_32.lib");   // SimHub UDP telemetry (core/src/telemetry.cpp)
+        }
+    }
+
+    private static string FindCoreRoot(string Start)
+    {
+        DirectoryInfo Dir = new DirectoryInfo(Start);
+        while (Dir != null)
+        {
+            string Candidate = Path.Combine(Dir.FullName, "core");
+            if (File.Exists(Path.Combine(Candidate, "CMakeLists.txt")) && Directory.Exists(Path.Combine(Candidate, "include", "rs")))
+            {
+                return Candidate;
+            }
+            Dir = Dir.Parent;
+        }
+        throw new BuildException("OpenGridPhysics: no core/ folder (core/CMakeLists.txt + core/include/rs) above " + Start +
+                                 ". Keep the plugin inside the Racing-Game repo.");
     }
 }
