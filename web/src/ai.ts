@@ -662,7 +662,7 @@ export class AiTraffic {
     for (let i = 0; i < this.cars.length; i++) {
       const c = this.cars[i];
       const dx = p.x - c.pos.x, dz = p.z - c.pos.z;
-      if (dx * dx + dz * dz > 36) continue;   // > 6 m away: cannot touch (skips WASM contactPair closure)
+      if (dx * dx + dz * dz > 64) continue;   // > 8 m apart: cannot touch (two 4.9 m cars touch up to ~5.9 m apart; skips the WASM contactPair)
       let touching = false;
       this.pw.world.contactPair(playerCollider, c.collider, (m) => { if (m.numContacts() > 0) touching = true; });
       if (touching) { hit = c; break; }

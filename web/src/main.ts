@@ -1022,6 +1022,7 @@ async function main() {
   city.props.warmup(true);
   nyc?.breaches.warmup(true, pos);   // room / rubble / portal materials compiled now, not at the first crash
   damage.warmup(true);
+  visual.warmupFlames(true);   // exhaust flame pipelines now, not at the first backfire
   visual.update(pos, quat, car.out);
   if (ai.cars.length && !potato) {   // potato compiles the rivals at the first race start (compileRivals), not here
     const yaw = Math.atan2(Math.cos(s0.heading), -Math.sin(s0.heading));
@@ -1070,6 +1071,7 @@ async function main() {
   nyc?.breaches.warmup(false);
   nyc?.endWarm();
   damage.warmup(false);
+  visual.warmupFlames(false);
   city.update(camera, true);
   if (webgpu) await (renderer.backend as unknown as { device: GPUDevice }).device.queue.onSubmittedWorkDone();
   const pipelinesAtStart =(renderer as unknown as { _pipelines: { caches: Map<string, unknown> } })._pipelines.caches.size;
@@ -3252,6 +3254,12 @@ async function main() {
         updateMirror(now);
         post.syncRoadReflection(camera, pos.y - visual.cg.y);
       }
+      // One scene-graph walk per drawn frame: three walks the WHOLE scene in every render() call (main pass, planar road
+      // reflection, mirror, headlight shadow maps, probe face, split-screen views). Everything has moved for this frame by
+      // now, and the extra cameras update their own matrices, so the later walks only repeated the first.
+      scene.updateMatrixWorld();
+      scene.matrixWorldAutoUpdate = false;
+      try {
       if (inGarage) showPost!.render();
       else if (splitActive && driving() && p2Cam && p2Car) {
         // Dual-viewport local 2-Player Split-Screen (works identically on WebGPU & WebGL 2 across all browsers/TVs)
@@ -3283,6 +3291,7 @@ async function main() {
       prof.post += performance.now() - tPost;
       // never while the garage is up: the probe's cube render rebuilds ShadowNodes and destroys the sun's shadow map
       if (screenNone() && post.preset !== 'low' && post.preset !== 'medium') probe?.update(pos, visual.root);
+      } finally { scene.matrixWorldAutoUpdate = true; }   // every other render (loading, warm-up, tools) walks as before
       hud.rendered(now);
       if (now - statsAt > 1000) {   // draw calls are per frame; the texture scan is cached for 10 s
         statsAt = now;
