@@ -5,7 +5,7 @@
 // (Wall breaches are geometry + a depth portal, breach.ts: the facade shader never changes.)
 import * as THREE from 'three/webgpu';
 import {
-  attribute, uv, positionView, positionWorld, cameraPosition, normalWorld, frontFacing, uniform,
+  attribute, uv, positionView, positionWorld, cameraPosition, normalWorld, frontFacing, uniform, time,
   float, vec2, vec3, select, mix, step, smoothstep, clamp, floor, fract, mod, abs, min, max,
   sin, cos, dot, length, pow, fwidth, texture, bumpMap, reflect,
 } from 'three/tsl';
@@ -324,8 +324,12 @@ function facadeGraph() {
   const crownBand = smoothstep(0.68, 0.96, topFrac).mul(isLandmark.add(step(120.0, v).mul(0.35)));
   const crownCol = mix(v3(1.0, 0.76, 0.44), v3(0.55, 0.78, 1.0), step(0.55, fract(seed.mul(19.3))));
   const crownGlow = crownCol.mul(crownBand).mul(float(1).sub(win.mul(0.5))).mul(0.38);
+  // 1:1 Midtown FAA rooftop red aviation obstruction beacons on towers > 95 m
+  const faaPulse = smoothstep(0.35, 0.95, sin(time.mul(2.4).add(seed.mul(19.0))).mul(0.5).add(0.5));
+  const faaPos = step(95.0, v).mul(smoothstep(0.955, 0.992, topFrac)).mul(step(0.88, fract(u.mul(0.11).add(seed))));
+  const faaBeacon = v3(2.8, 0.08, 0.04).mul(faaPos).mul(faaPulse);
   const extEmissive = mix(emUpper, gEm, gAA).mul(night)
-    .add(glow.mul(night)).add(crownGlow.mul(night)).add(refl.mul(night.mul(0.85).add(0.25)));
+    .add(glow.mul(night)).add(crownGlow.mul(night)).add(faaBeacon.mul(night)).add(refl.mul(night.mul(0.85).add(0.25)));
   const extColor = albedo.mul(ao.mul(aoG));
   const extRough = mix(mix(0.88, 0.68, float(1).sub(isBrick)), mix(0.09, 0.035, k3), winMask);
   const extMetal = mix(float(0.0), mix(0.22, 0.45, k3), winMask);
@@ -411,16 +415,24 @@ function farFacadeGraph() {
   const crownBand = smoothstep(0.68, 0.96, topFrac).mul(isLandmark.add(step(120.0, v).mul(0.35)));
   const crownCol = mix(v3(1.0, 0.76, 0.44), v3(0.55, 0.78, 1.0), step(0.55, fract(seed.mul(19.3))));
   const crownGlow = crownCol.mul(crownBand).mul(float(1).sub(win.mul(0.5))).mul(0.38);
+  const faaPulse = smoothstep(0.35, 0.95, sin(time.mul(2.4).add(seed.mul(19.0))).mul(0.5).add(0.5));
+  const faaPos = step(95.0, v).mul(smoothstep(0.955, 0.992, topFrac)).mul(step(0.88, fract(u.mul(0.11).add(seed))));
+  const faaBeacon = v3(2.8, 0.08, 0.04).mul(faaPos).mul(faaPulse);
 
-  const emissive = emWin.mul(night).add(glow.mul(night)).add(crownGlow.mul(night)).add(refl.mul(night.mul(0.85).add(0.25)));
+  const emissive = emWin.mul(night).add(glow.mul(night)).add(crownGlow.mul(night)).add(faaBeacon.mul(night)).add(refl.mul(night.mul(0.85).add(0.25)));
   const color = albedo.mul(ao);
   const rough = mix(float(0.78), mix(0.09, 0.035, k3), win);
   const metal = mix(float(0.0), mix(0.22, 0.45, k3), win);
   return { color, emissive, rough, metal };
 }
 
+/** Mobile/potato phone optimization: swaps per-pixel 3D ray-box facade for the 5x faster LOD1 facade shader. */
+let mobileFacadeLite = false;
+export function setMobileFacadeMode(lite: boolean) { mobileFacadeLite = lite; }
+
 /** Standard opaque `FrontSide` facade material for near tiles (full GPU backface culling + Early-Z occlusion). */
 export function createFacadeMaterial(): THREE.Material {
+  if (mobileFacadeLite) return createFarFacadeMaterial();
   const g = facadeGraph();
   const m = new THREE.MeshStandardNodeMaterial();
   m.name = 'nyc-facade';

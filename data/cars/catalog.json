@@ -63,6 +63,24 @@
       "physics": "cars/basilisk_v12.json",
       "visual": "cars/basilisk_v12.visual.json",
       "paint": "#1f8a3a"
+    },
+    {
+      "id": "tornado_gt",
+      "price": 175000,
+      "name": "Tornado GT",
+      "tag": "Mid-engine twin-turbo hybrid AWD supercar: pearl white, crimson roof & razor-sharp balance.",
+      "physics": "cars/tornado_gt.json",
+      "visual": "cars/tornado_gt.visual.json",
+      "paint": "#e8ecf0"
+    },
+    {
+      "id": "tornado_gt3",
+      "price": 295000,
+      "name": "Tornado GT3 #44",
+      "tag": "Carbon-widebody Time Attack GT3: dive planes, fender louvers, roof snorkel & swan-neck wing.",
+      "physics": "cars/tornado_gt3.json",
+      "visual": "cars/tornado_gt3.visual.json",
+      "paint": "#e8ecf0"
     }
   ]
 }

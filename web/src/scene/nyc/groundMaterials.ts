@@ -108,13 +108,20 @@ function sidewalk() {
   const wearLo = n01(P.mul(0.05).add(vec2(2.0, 8.0)));
   const wearMid = n01(P.mul(0.31));
   const speck = n01(P.mul(17.0));
-  const damp = step(0.76, cellHash(id.add(vec2(5.0, 1.0)))).mul(0.8).add(smoothstep(0.62, 0.8, wearMid).mul(0.5));   // slabs that stayed wet
+  const damp = step(0.76, cellHash(id.add(vec2(5.0, 1.0)))).mul(0.8).add(smoothstep(0.62, 0.8, wearMid).mul(0.5)).mul(mix(0.45, 1.35, roadWetnessU));
+  // 1:1 NYC Midtown subway sidewalk ventilation grates (1.52 m x 1.52 m iron bar grates embedded near curbs where ao < 0.90)
+  const grateCell = step(0.88, cellHash(id.add(vec2(23.0, 41.0)))).mul(step(ao, 0.90));
+  const grateInset = step(0.08, f.x).mul(step(f.x, 0.92)).mul(step(0.06, f.y)).mul(step(f.y, 0.94));
+  const grateBars = step(0.45, fract(R.x.mul(22.0))).max(step(0.84, fract(R.y.mul(5.5))));
+  const isGrate = grateCell.mul(grateInset).mul(near);
   let albedo: any = vec3(0.165, 0.162, 0.158).mul(tint).mul(mix(0.78, 1.12, wearLo)).mul(float(0.92).add(speck.mul(0.16).mul(near)));
-  albedo = albedo.mul(mix(1.0, 0.42, jointV)).mul(mix(1.0, 0.68, clamp(damp, 0, 1))).mul(mix(0.48, 1.0, ao));
-  m.colorNode = albedo;
-  const rough = mix(float(0.72).sub(speck.mul(0.15)), float(0.28), clamp(damp, 0, 1));
-  m.roughnessNode = mix(rough, float(0.9), jointV);
-  m.normalNode = bumpMap(speck.mul(0.15).sub(joint.mul(0.8)), near.mul(0.32));
+  albedo = albedo.mul(mix(1.0, 0.42, jointV)).mul(mix(1.0, 0.62, clamp(damp, 0, 1))).mul(mix(0.48, 1.0, ao));
+  const grateCol = mix(vec3(0.008, 0.009, 0.011), vec3(0.095, 0.092, 0.088), grateBars);
+  m.colorNode = mix(albedo, grateCol, isGrate);
+  const rough = mix(float(0.72).sub(speck.mul(0.15)), float(0.22), clamp(damp, 0, 1));
+  m.roughnessNode = mix(mix(rough, float(0.9), jointV), mix(float(0.95), float(0.32), grateBars), isGrate);
+  m.metalnessNode = isGrate.mul(grateBars).mul(0.72);
+  m.normalNode = bumpMap(speck.mul(0.15).sub(joint.mul(0.8)).add(isGrate.mul(grateBars.sub(0.5)).mul(0.85)), near.mul(0.34));
   return m;
 }
 
@@ -122,10 +129,16 @@ function curb() {
   const m = std(0.62);
   const top = step(0.5, normalWorld.y);
   const s = n01(P.mul(6.0));
-  const grime = mix(0.45, 1.0, smoothstep(0.0, 0.14, abs(P.y)));    // faces: UV v = height above the road (m)
+  // 1:1 NYC granite curb blocks (1.8 m stone joints + steel-faced corner edge strip gleaming under headlights)
+  const stoneJoint = float(1).sub(smoothstep(0.004, 0.018, min(fract(P.x.div(1.8)), float(1).sub(fract(P.x.div(1.8)))).mul(1.8)));
+  const steelLip = smoothstep(0.11, 0.145, abs(P.y)).mul(float(1).sub(top));
+  const grime = mix(0.42, 1.0, smoothstep(0.0, 0.14, abs(P.y)));    // faces: UV v = height above the road (m)
   const gradient = mix(grime, float(1.0), top);
-  m.colorNode = vec3(0.34, 0.335, 0.32).mul(vc.rgb).mul(mix(0.8, 1.15, s)).mul(gradient);
-  m.roughnessNode = float(0.6).add(s.mul(0.2));
+  let col: any = vec3(0.34, 0.335, 0.32).mul(vc.rgb).mul(mix(0.8, 1.15, s)).mul(gradient).mul(mix(1.0, 0.55, stoneJoint.mul(near)));
+  col = mix(col, vec3(0.42, 0.43, 0.45), steelLip.mul(0.7)).mul(mix(1.0, 0.72, roadWetnessU));
+  m.colorNode = col;
+  m.roughnessNode = mix(float(0.6).add(s.mul(0.2)).mul(mix(1.05, 0.52, roadWetnessU)), float(0.24), steelLip);
+  m.metalnessNode = steelLip.mul(0.78);
   return m;
 }
 

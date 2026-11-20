@@ -23,7 +23,7 @@ import { setGroundGrid } from './scene/nyc/groundMaterials';
 import { setSignCity } from './scene/nyc/signAtlas';
 import { CITIES, currentCity, saveCity } from './cities';
 import { StreetObstacles, type PoleHit } from './scene/nyc/obstacles';
-import { setGroundWetness } from './scene/nyc';
+import { setGroundWetness, setMobileFacadeMode } from './scene/nyc';
 import { drawEarly, type BreachSpec, type WallHit } from './scene/nyc/breach';
 import { CarVisual, type CarVisualConfig } from './scene/car';
 import { initLoaders } from './scene/loaders';
@@ -365,8 +365,8 @@ async function main() {
   const turboStageOf = () => {
     if (specClass) return 0;
     const eng = engineOf(nr, sel.car);
-    if (eng.turbo === 'twin_turbo') return 3;
-    if (eng.turbo === 'big_single') return 2;
+    if (eng.turbo === 'twin_turbo' || sel.car === 'tornado_gt3') return 3;
+    if (eng.turbo === 'big_single' || sel.car === 'tornado_gt') return 2;
     if (eng.turbo === 'twin_scroll' || eng.swap === 'v8_twin_turbo') return 1;
     return 0;
   };
@@ -374,6 +374,7 @@ async function main() {
   let core = new CoreCar(coreJson());
   core.setTurboStage(turboStageOf());
   const pw = new PhysicsWorld();
+  if (potato) setMobileFacadeMode(true);
   const nyc = useNyc ? new NycStreamer(scene, renderer, pw, camera, {
     base: cityInfo.base,
     surfaces: core.info.surfaces,
@@ -516,6 +517,7 @@ async function main() {
   let shape = shapeOf(visualCfg);
   visual.renderDt = capInterval ? capInterval / 1000 : 1 / 60;
   let car = new CarBody(pw, core, shape, visual.cg);
+  car.usePatchRays = !(isTouch || potato);
 
   // Rapier only indexes new colliders for queries during a step: step once so the spawn probe
   // below can see the city (without this the first spawn misses the road and drops 3 m).
@@ -675,6 +677,7 @@ async function main() {
   /** test/dev hook: the headless probes set the dial directly */
   const setHeat = (n: number) => { heat.level = Math.max(0, Math.min(HEAT_MAX, n)); heat.lastGain = Date.now(); renderHeat(); menu.heat = heat.level; return heat.level; };
   const audio = new GameAudio();
+  audio.lowPower = isTouch || potato;
   audio.prepare();   // the audio device opens now (behind the loading screen), not on the first key press
   let damage = new DamageVisuals(visual, visualCfg, pw, scene);
   let rumbleKj = 0;   // crash energy for the pad's rumble this frame
@@ -1874,6 +1877,7 @@ async function main() {
     core = new CoreCar(coreJson());
     core.setTurboStage(turboStageOf());
     car = new CarBody(pw, core, shape, visual.cg);
+    car.usePatchRays = !(isTouch || potato);
     rig.setTarget(car.body, core.info.redline);
     drivingLine.setCar(applyMods(physics[sel.car], modsOf(sel)));
   };

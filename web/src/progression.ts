@@ -30,6 +30,8 @@ export const CAR_REQ: Record<string, Req> = {
   hayate: { spLevel: 3, mpLevel: 3, price: 38_000 },
   basilisk_v12: { spLevel: 18, mpLevel: 15, price: 210_000 },
   strix_gt7: { spLevel: 25, mpLevel: 20, price: 260_000 },
+  tornado_gt: { spLevel: 1, mpLevel: 12, price: 175_000 },
+  tornado_gt3: { spLevel: 1, mpLevel: 22, price: 295_000 },
 };
 export const STARTER_CAR = 'vela_gt';
 /** Upgrade stages 1..3 per part. */
@@ -55,7 +57,10 @@ export const SKIN_REQ: Record<string, Req> = {
 export const levelUpCredits = (newLevel: number) => 2_000 + newLevel * 500;
 
 /** Car top speeds (km/h, core/tests/test_characters.cpp) for the server's plausibility check, with full engine upgrades. */
-export const CAR_VMAX_KMH: Record<string, number> = { vela_gt: 288, kestrel_gt: 269, harrier_gt: 300 };
+export const CAR_VMAX_KMH: Record<string, number> = {
+  vela_gt: 288, kestrel_gt: 269, harrier_gt: 300, k_concept: 295, hayate: 258,
+  basilisk_v12: 332, strix_gt7: 345, tornado_gt: 318, tornado_gt3: 325,
+};
 
 // ---- race rewards ----------------------------------------------------------------------------------------------------
 const LAP_FACTOR: Record<number, number> = { 1: 1, 3: 2.4, 5: 3.6, 10: 6.5 };

@@ -60,13 +60,19 @@ export class GameAudio {
   private pitchMul = 1.0;
   private revUntil = 0;
   muted = false;
+  /** Low-power mobile/potato audio mode: skips heavy stereo FFT ConvolverNode reverb to save phone ARM CPU. */
+  lowPower = false;
 
   /** Unique engine sound profile per car (V8 / Flat-6 / Twin-Turbo V6 / V10 / V12 firing ratios). */
   setCarProfile(carId: string) {
     const map: Record<string, number> = {
       vela_gt: 1.00,
+      k_concept: 1.06,
+      hayate: 0.96,
       kestrel_gt: 1.14,
       harrier_gt: 0.91,
+      tornado_gt: 1.18,
+      tornado_gt3: 1.36,
       strix_gt7: 1.28,
       basilisk_v12: 1.48,
     };
@@ -327,22 +333,24 @@ export class GameAudio {
     oGear.connect(gearFilter).connect(gearGain).connect(g);
     oGear.start();
 
-    // Environmental wall/tunnel acoustic reverb convolver (0.9s stereo impulse response)
-    const irLen = Math.floor(ctx.sampleRate * 0.9);
-    const irBuf = ctx.createBuffer(2, irLen, ctx.sampleRate);
-    for (let ch = 0; ch < 2; ch++) {
-      const data = irBuf.getChannelData(ch);
-      for (let i = 0; i < irLen; i++) {
-        const dec = Math.pow(1 - i / irLen, 2.6);
-        data[i] = (Math.random() * 2 - 1) * dec * (i < 900 ? 0.85 : 0.45);
+    // Environmental wall/tunnel acoustic reverb convolver (skipped on low-power phones to save ARM FFT CPU)
+    if (!this.lowPower) {
+      const irLen = Math.floor(ctx.sampleRate * 0.9);
+      const irBuf = ctx.createBuffer(2, irLen, ctx.sampleRate);
+      for (let ch = 0; ch < 2; ch++) {
+        const data = irBuf.getChannelData(ch);
+        for (let i = 0; i < irLen; i++) {
+          const dec = Math.pow(1 - i / irLen, 2.6);
+          data[i] = (Math.random() * 2 - 1) * dec * (i < 900 ? 0.85 : 0.45);
+        }
       }
+      const conv = ctx.createConvolver();
+      conv.buffer = irBuf;
+      const revSend = ctx.createGain();
+      revSend.gain.value = 0;
+      revSend.connect(conv).connect(this.out!);
+      this.reverbSend = revSend;
     }
-    const conv = ctx.createConvolver();
-    conv.buffer = irBuf;
-    const revSend = ctx.createGain();
-    revSend.gain.value = 0;
-    revSend.connect(conv).connect(this.out!);
-    this.reverbSend = revSend;
 
     // Surface-specific rolling tire noise (wet asphalt spray hiss vs dry hum vs gravel crunch)
     const rSrc = ctx.createBufferSource();
@@ -382,7 +390,7 @@ export class GameAudio {
       .connect(lp)
       .connect(g)
       .connect(this.out!);
-    g.connect(revSend);
+    if (this.reverbSend) g.connect(this.reverbSend);
 
     this.startAdaptiveMusic();
 
