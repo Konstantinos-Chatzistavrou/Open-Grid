@@ -56,55 +56,65 @@ export class Dents {
       const active = count.mul(on);
       const p = toModel.mul(vec4(positionLocal, 1)).xyz.toVar();
       const n = toModel.mul(vec4(normalLocal, 0)).xyz.normalize().toVar();
-      const disp = vec3(0).toVar(), tilt = vec3(0).toVar();
-      Loop({ start: 0, end: active, type: 'int', condition: '<' }, ({ i }: { i: THREE.Node }) => {
-        const a = ptU.element(i) as unknown as THREE.Node<'vec4'>, b = dirU.element(i) as unknown as THREE.Node<'vec4'>;
-        const d = p.sub(a.xyz);
-        const R2 = b.w.mul(b.w);
-        const q = d.dot(d).div(R2);                                   // (r / R)^2
-        If(q.lessThan(1), () => {
-          const s = float(1).sub(q), w = s.mul(s);                     // (1 - (r/R)^2)^2: zero slope at the edge
-          // Inward along the normal, blended with the crash direction: pure -normal would dent a
-          // bonnet straight down in a frontal hit. (0.6 c - 0.4 n never vanishes for unit vectors.)
-          const push = b.xyz.mul(0.6).sub(n.mul(0.4)).normalize();
-          const side = vec3(b.z.negate(), 0, b.x);                     // crash dir x up: crumple wrinkles
-          const h = sin(p.x.mul(41).add(p.y.mul(17))).mul(cos(p.z.mul(29)));
-          disp.addAssign(push.mul(a.w.mul(w)).add(side.mul(h.mul(a.w).mul(0.18).mul(w))));
-          tilt.addAssign(d.mul(s.mul(a.w).mul(-4).div(R2)));          // depth * grad w (toward the centre)
+      const outPos = positionLocal.toVar();
+      // Undamaged car (no dent slots in use, no zone crush): everything below adds exactly zero, so skip it per vertex
+      // (the dent loop, 4 wheel-arch sqrt + smoothstep, 2 crumple zones with 3 trig each, the clamp and the normal
+      // rebuild). Uniform branch (count/crush/on are per draw), vertex stage: no derivatives involved. Same result:
+      // toLocal(toModel p) == p and the rebuilt normal is normalize(normalLocal) when nothing moves.
+      If(active.greaterThan(0).or(crush.x.notEqual(0)).or(crush.y.notEqual(0)), () => {
+        const disp = vec3(0).toVar(), tilt = vec3(0).toVar();
+        Loop({ start: 0, end: active, type: 'int', condition: '<' }, ({ i }: { i: THREE.Node }) => {
+          const a = ptU.element(i) as unknown as THREE.Node<'vec4'>, b = dirU.element(i) as unknown as THREE.Node<'vec4'>;
+          const d = p.sub(a.xyz);
+          const R2 = b.w.mul(b.w);
+          const q = d.dot(d).div(R2);                                   // (r / R)^2
+          If(q.lessThan(1), () => {
+            const s = float(1).sub(q), w = s.mul(s);                     // (1 - (r/R)^2)^2: zero slope at the edge
+            // Inward along the normal, blended with the crash direction: pure -normal would dent a
+            // bonnet straight down in a frontal hit. (0.6 c - 0.4 n never vanishes for unit vectors.)
+            const push = b.xyz.mul(0.6).sub(n.mul(0.4)).normalize();
+            const side = vec3(b.z.negate(), 0, b.x);                     // crash dir x up: crumple wrinkles
+            const h = sin(p.x.mul(41).add(p.y.mul(17))).mul(cos(p.z.mul(29)));
+            disp.addAssign(push.mul(a.w.mul(w)).add(side.mul(h.mul(a.w).mul(0.18).mul(w))));
+            tilt.addAssign(d.mul(s.mul(a.w).mul(-4).div(R2)));          // depth * grad w (toward the centre)
+          });
         });
+        // Attenuate inward denting around the 4 wheel wells so crumpled fenders never collapse through spinning tyres
+        const archMask = float(1).toVar();
+        for (let k = 0; k < 4; k++) {
+          const wh = wheelU.element(k) as unknown as THREE.Node<'vec4'>;
+          const dx = p.x.sub(wh.x).div(0.24);
+          const dy = p.y.sub(wh.y).div(wh.w);
+          const dz = p.z.sub(wh.z).div(wh.w);
+          const ed = dx.mul(dx).add(dy.mul(dy)).add(dz.mul(dz)).sqrt();
+          archMask.assign(archMask.min(smoothstep(float(0.92), float(1.48), ed)));
+        }
+        // Whole-zone crumple. A crush of c metres at the front shortens the front end by c over a zone that grows with it
+        // (0.9 + 1.2 c m back from the bumper), the panels wrinkle across it, and the bonnet (upper surfaces) buckles up
+        // into a ridge while the underside folds down: what a crumple zone looks like after a wall. Same at the rear.
+        const crumple = vec3(0).toVar();
+        for (const [cz, end, dirZ] of [[crush.x, bounds.y, -1], [crush.y, bounds.x, 1]] as const) {
+          const L = float(0.9).add(cz.mul(1.2));
+          const along = end.sub(p.z).mul(-dirZ).div(L).clamp(0, 1);       // 0 at the bumper -> 1 at the end of the zone
+          const zone = float(1).sub(along).mul(step(float(1e-4), cz));
+          const s = smoothstep(float(0), float(1), zone);
+          const upper = smoothstep(bounds.w.sub(0.1), bounds.w.add(0.35), p.y);
+          const buckle = sin(along.mul(3.1416)).mul(cz.mul(0.32)).mul(upper.mul(1.3).sub(0.3));
+          const wrinkle = sin(p.z.mul(17).add(p.y.mul(9))).mul(cz.mul(0.07)).mul(s);
+          crumple.addAssign(vec3(wrinkle.mul(p.x.sign()), buckle, cz.mul(s).mul(dirZ)));
+          // lighting reads the buckle: tilt the normal along the slope of the ridge (d buckle / dz)
+          tilt.addAssign(vec3(0, 0, cos(along.mul(3.1416)).mul(3.1416).div(L).mul(cz.mul(0.32)).mul(upper.mul(1.3).sub(0.3)).mul(dirZ)));
+        }
+        const maxDisp = float(0.6);
+        const total = disp.add(crumple);
+        const clamped = total.mul(maxDisp.div(total.length().max(maxDisp))).mul(archMask);
+        const t = tilt.mul(archMask).sub(n.mul(tilt.mul(archMask).dot(n)));   // tangential part only
+        normalLocal.assign(toLocal.mul(vec4(n.add(t.mul(float(1.5).div(t.length().max(1.5)))), 0)).xyz.normalize());
+        outPos.assign(toLocal.mul(vec4(p.add(clamped), 1)).xyz);
+      }).Else(() => {
+        normalLocal.assign(normalLocal.normalize());
       });
-      // Attenuate inward denting around the 4 wheel wells so crumpled fenders never collapse through spinning tyres
-      const archMask = float(1).toVar();
-      for (let k = 0; k < 4; k++) {
-        const wh = wheelU.element(k) as unknown as THREE.Node<'vec4'>;
-        const dx = p.x.sub(wh.x).div(0.24);
-        const dy = p.y.sub(wh.y).div(wh.w);
-        const dz = p.z.sub(wh.z).div(wh.w);
-        const ed = dx.mul(dx).add(dy.mul(dy)).add(dz.mul(dz)).sqrt();
-        archMask.assign(archMask.min(smoothstep(float(0.92), float(1.48), ed)));
-      }
-      // Whole-zone crumple. A crush of c metres at the front shortens the front end by c over a zone that grows with it
-      // (0.9 + 1.2 c m back from the bumper), the panels wrinkle across it, and the bonnet (upper surfaces) buckles up
-      // into a ridge while the underside folds down: what a crumple zone looks like after a wall. Same at the rear.
-      const crumple = vec3(0).toVar();
-      for (const [cz, end, dirZ] of [[crush.x, bounds.y, -1], [crush.y, bounds.x, 1]] as const) {
-        const L = float(0.9).add(cz.mul(1.2));
-        const along = end.sub(p.z).mul(-dirZ).div(L).clamp(0, 1);       // 0 at the bumper -> 1 at the end of the zone
-        const zone = float(1).sub(along).mul(step(float(1e-4), cz));
-        const s = smoothstep(float(0), float(1), zone);
-        const upper = smoothstep(bounds.w.sub(0.1), bounds.w.add(0.35), p.y);
-        const buckle = sin(along.mul(3.1416)).mul(cz.mul(0.32)).mul(upper.mul(1.3).sub(0.3));
-        const wrinkle = sin(p.z.mul(17).add(p.y.mul(9))).mul(cz.mul(0.07)).mul(s);
-        crumple.addAssign(vec3(wrinkle.mul(p.x.sign()), buckle, cz.mul(s).mul(dirZ)));
-        // lighting reads the buckle: tilt the normal along the slope of the ridge (d buckle / dz)
-        tilt.addAssign(vec3(0, 0, cos(along.mul(3.1416)).mul(3.1416).div(L).mul(cz.mul(0.32)).mul(upper.mul(1.3).sub(0.3)).mul(dirZ)));
-      }
-      const maxDisp = float(0.6);
-      const total = disp.add(crumple);
-      const clamped = total.mul(maxDisp.div(total.length().max(maxDisp))).mul(archMask);
-      const t = tilt.mul(archMask).sub(n.mul(tilt.mul(archMask).dot(n)));   // tangential part only
-      normalLocal.assign(toLocal.mul(vec4(n.add(t.mul(float(1.5).div(t.length().max(1.5)))), 0)).xyz.normalize());
-      return toLocal.mul(vec4(p.add(clamped), 1)).xyz;
+      return outPos;
     })() as unknown as THREE.Node;
   }
 

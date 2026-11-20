@@ -465,9 +465,29 @@ export class GpuMeshletCuller {
 
   /**
    * Dispatch the WebGPU compute culling pass (reset + frustum/cone cull + index stream compaction).
-   * Call once per frame before rendering the scene.
+   * Call once per frame before rendering the scene. Several cullers: collect with prepareCull() and dispatch them in one
+   * renderer.compute([...]) call (one compute pass and one queue.submit instead of two per culler).
    */
   cull(renderer: THREE.WebGPURenderer, camera: THREE.Camera, worldMatrix?: THREE.Matrix4, maxDist = 0) {
+    const nodes: THREE.ComputeNode[] = [];
+    this.prepareCull(renderer, camera, worldMatrix, maxDist, nodes, nodes);
+    if (nodes.length) renderer.compute(nodes);
+  }
+
+  /**
+   * Set this culler's per-camera uniforms and push its compute nodes (the reset always, the cull pass only with live
+   * meshlets) onto `resets` / `culls`, for the caller to dispatch in ONE renderer.compute([...resets, ...culls]).
+   * three r186 records an array of compute nodes into a single compute pass (WebGPU inserts the barriers between its
+   * dispatches), so every reset lands before every cull. The cull dispatch covers the live meshlets, not the capacity.
+   */
+  prepareCull(
+    renderer: THREE.WebGPURenderer,
+    camera: THREE.Camera,
+    worldMatrix: THREE.Matrix4 | undefined,
+    maxDist: number,
+    resets: THREE.ComputeNode[],
+    culls: THREE.ComputeNode[],
+  ) {
     if (!this.resetCompute || !this.cullCompute) return;
 
     // Ensure `visibleIdxAttr` is created with GPUBufferUsage.INDEX | GPUBufferUsage.STORAGE BEFORE the first compute dispatch!
@@ -503,9 +523,12 @@ export class GpuMeshletCuller {
     this.uMaxDist.value = maxDist;
     this.uActiveMeshlets.value = this.activeMeshlets;
 
-    renderer.compute(this.resetCompute);
+    resets.push(this.resetCompute);
     if (this.activeMeshlets > 0) {
-      renderer.compute(this.cullCompute);
+      // ComputeNode.count is re-read at every dispatch (r186 backend recomputes the workgroup count when it changes and
+      // the generated `instanceIndex >= count` guard reads it from a uniform); the shader also checks uActiveMeshlets.
+      this.cullCompute.count = this.activeMeshlets;
+      culls.push(this.cullCompute);
     }
   }
 
@@ -597,9 +620,10 @@ export async function loadMeshletAsset(
     cullers,
     cull(renderer, camera, maxDist = 0) {
       group.updateMatrixWorld(true);
-      for (const { mesh, culler } of cullers) {
-        culler.cull(renderer, camera, mesh.matrixWorld, maxDist);
-      }
+      const resets: THREE.ComputeNode[] = [], culls: THREE.ComputeNode[] = [];
+      for (const { mesh, culler } of cullers) culler.prepareCull(renderer, camera, mesh.matrixWorld, maxDist, resets, culls);
+      for (const c of culls) resets.push(c);
+      if (resets.length) renderer.compute(resets);   // one compute pass for every group
     },
     async readStats(renderer) {
       const acc: MeshletBatchGpuStats = { meshletCount: 0, visibleMeshlets: 0, frustumCulled: 0, coneCulled: 0, visibleIndices: 0, totalIndices: 0 };

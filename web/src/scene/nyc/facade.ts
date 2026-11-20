@@ -5,6 +5,7 @@
 // (Wall breaches are geometry + a depth portal, breach.ts: the facade shader never changes.)
 import * as THREE from 'three/webgpu';
 import {
+  Fn, If, dFdx, dFdy,
   attribute, uv, positionView, positionWorld, cameraPosition, normalWorld, frontFacing, uniform, time,
   float, vec2, vec3, select, mix, step, smoothstep, clamp, floor, fract, mod, abs, min, max,
   sin, cos, dot, length, pow, fwidth, texture, bumpMap, reflect,
@@ -64,6 +65,86 @@ function rayBoxRoom(uWin: any, vWin: any, rayX: any, rayY: any, rayZ: any, depth
   const roomAO = mix(0.18, 1.0, min(edgeX, edgeY).mul(edgeZ));
 
   return { hitX, hitY, hitZ, midX, midY, inMid, onCeil, onFloor, onSide, onBack, roomAO };
+}
+
+/**
+ * Upper-floor window light: the 3D room behind each lit window (ceiling fixtures, walls, desks, monitors, curtains,
+ * blinds). `E` holds only vars materialized before the branch (see facadeGraph): nothing here may use derivatives.
+ */
+function upperRoomEmissive(E: any) {
+  const ceilGridX = fract(E.hitX.mul(mix(1.0, 2.0, E.office)).add(E.h1.mul(0.3)));
+  const ceilGridZ = fract(E.hitZ.mul(2.0));
+  const officeTroffer = pulse(ceilGridX, float(0.22), float(0.78), float(0.08)).mul(pulse(ceilGridZ, float(0.18), float(0.82), float(0.08)));
+  const homePendant = float(1).sub(smoothstep(0.06, 0.34, length(vec2(E.hitX.sub(0.5), E.hitZ.sub(0.45)))));
+  const ceilFixture = mix(homePendant, officeTroffer, E.office).mul(E.onCeil);
+  const ceilPlenum = E.onCeil.mul(0.32);
+
+  const wallAccent = mix(v3(0.95, 0.88, 0.78), select(E.h3.lessThan(0.35), v3(0.72, 0.82, 0.95), select(E.h3.lessThan(0.7), v3(0.98, 0.76, 0.56), v3(0.85, 0.92, 0.86))), float(0.45));
+  const sideShelves = mix(0.76, 1.0, smoothstep(0.12, 0.28, fract(E.hitY.mul(3.0).add(E.h2))));
+  const backPanel = pulse(E.hitX, float(0.18), float(0.82), float(0.06)).mul(pulse(E.hitY, float(0.38), float(0.80), float(0.06)));
+  const backSurf = E.onBack.mul(mix(0.56, 0.74, backPanel.mul(step(0.35, E.h3)))).mul(E.zAtten);
+  const sideSurf = E.onSide.mul(0.48).mul(sideShelves).mul(E.zAtten);
+
+  const deskX0 = E.h1.mul(0.35).add(0.12);
+  const midDesk = pulse(E.midX, deskX0, deskX0.add(0.42), float(0.06)).mul(float(1).sub(smoothstep(0.24, 0.36, E.midY))).mul(E.inMid);
+  const monitorGlow = pulse(E.midX, deskX0.add(0.08), deskX0.add(0.32), float(0.04))
+    .mul(pulse(E.midY, float(0.32), float(0.52), float(0.04))).mul(E.inMid).mul(step(0.45, E.h4));
+
+  const wallSurf = backSurf.add(sideSurf).add(ceilPlenum).add(E.floorBounce).mul(float(1).sub(midDesk.mul(0.42)));
+
+  const warm = mix(v3(1.0, 0.68, 0.38), v3(1.0, 0.86, 0.66), clamp(E.h2.mul(1.8), 0, 1));
+  const cool = select(E.h2.greaterThan(0.92), v3(0.45, 0.68, 1.0), v3(0.82, 0.91, 1.0));
+  const lightCol = mix(warm, cool, step(float(0.72).sub(E.office.mul(0.28)), E.h2)).mul(wallAccent);
+
+  const curtain = step(0.68, E.h4).mul(float(1).sub(E.office));
+  const wlx = select(E.h3.greaterThan(0.5), E.uWin, float(1).sub(E.uWin));
+  const curt = mix(1.0, smoothstep(0.08, 0.42, wlx).mul(0.82).add(0.18), curtain);
+  const hasBlinds = step(0.64, E.h4).mul(E.office);
+  const blindDrop = smoothstep(float(1).sub(E.h2.mul(0.55).add(0.15)), float(1).sub(E.h2.mul(0.55).add(0.11)), E.wl);
+  const blindSlats = mix(0.35, 0.92, step(0.35, fract(E.fy.mul(22.0))));
+  const blinds = mix(1.0, mix(1.0, blindSlats, blindDrop), hasBlinds.mul(E.dfade));
+
+  const roomLuminance = wallSurf.add(ceilFixture.mul(1.25)).add(monitorGlow.mul(0.85)).mul(E.roomAO);
+  const unlitRoom = wallSurf.mul(0.08).add(ceilFixture.mul(0.04)).mul(E.roomAO);
+  const lamp = mix(unlitRoom, roomLuminance.mul(E.h3.mul(0.38).add(0.64)), E.litOn).mul(curt).mul(blinds);
+  const litAvg = E.litFrac.mul(0.28);
+  const lit = mix(litAvg, lamp, E.dfade);
+  const emWin = lightCol.mul(E.win).mul(lit).mul(WINDOW_EM);
+  return emWin.mul(float(1).sub(E.rail.mul(0.8)).sub(E.munt.mul(0.8)));
+}
+
+/**
+ * Ground-floor storefront light: the shop interior behind the glass (ceiling spots, shelves, counters, lobby) and the
+ * neon sign. Same contract as upperRoomEmissive; the sign atlas is sampled with explicit gradients (textureSampleGrad).
+ */
+function storefrontEmissive(E: any) {
+  const nSpots = floor(E.hs3.mul(3.0)).add(2.0);
+  const spX = fract(E.hitX.mul(nSpots).add(E.hs.mul(0.25))).sub(0.5);
+  const spZ = fract(E.hitZ.mul(2.0)).sub(0.5);
+  const shopCeilLights = float(1).sub(smoothstep(0.05, 0.28, length(vec2(spX, spZ)))).mul(E.onCeil);
+  const shopCeilPlenum = E.onCeil.mul(0.30);
+
+  const wallSpotPool = float(1).sub(smoothstep(0.08, 0.52, length(vec2(fract(E.hitX.mul(2.0)).sub(0.5), E.hitY.sub(0.62)))));
+  const shelfRows = mix(0.74, 1.0, smoothstep(0.12, 0.32, fract(E.hitY.mul(4.0).add(E.hs3))));
+  const shopBackLit = E.onBack.mul(mix(0.52, 0.78, wallSpotPool.mul(0.65).add(0.35)).mul(mix(1.0, shelfRows, step(0.45, E.hs2)))).mul(E.zAtten);
+  const shopSideLit = E.onSide.mul(0.46).mul(shelfRows).mul(E.zAtten);
+
+  const cntX0 = E.hs.mul(0.28).add(0.14);
+  const midCounter = pulse(E.midX, cntX0, cntX0.add(0.46), float(0.06))
+    .mul(float(1).sub(smoothstep(0.20, 0.32, E.midY))).mul(E.inMid);
+  const midCaseGlow = pulse(E.midX, cntX0.add(0.06), cntX0.add(0.40), float(0.04))
+    .mul(pulse(E.midY, float(0.18), float(0.28), float(0.03))).mul(E.inMid).mul(step(0.4, E.hs3));
+
+  const shopWallLit = shopBackLit.add(shopSideLit).add(shopCeilPlenum).mul(float(1).sub(midCounter.mul(0.38)));
+  const shop3D = shopWallLit.add(E.floorBounce).add(shopCeilLights.mul(1.15)).add(midCaseGlow.mul(0.65)).mul(E.roomAO);
+
+  const shopCol = select(E.hs2.lessThan(0.32), v3(1.0, 0.78, 0.50),
+    select(E.hs2.lessThan(0.64), v3(0.98, 0.90, 0.78),
+      select(E.hs2.lessThan(0.85), v3(0.78, 0.90, 1.0), v3(1.0, 0.64, 0.42))));
+  const signTexCol = texture(E.atlas, E.signUV).grad(E.signDx, E.signDy).rgb;
+
+  const lobbyGlow = shop3D.mul(E.lobby).mul(0.78);
+  return shopCol.mul(E.shopGlass).mul(E.open.mul(shop3D).add(lobbyGlow)).mul(E.frame).mul(SHOP_EM).add(signTexCol.mul(E.sign).mul(SIGN_EM));
 }
 
 function facadeGraph() {
@@ -203,72 +284,9 @@ function facadeGraph() {
     mix(roomDepth, shopDepth, isGround),
   );
 
-  // Upper-floor room interior shading
-  const ceilGridX = fract(rm.hitX.mul(mix(1.0, 2.0, office)).add(h1.mul(0.3)));
-  const ceilGridZ = fract(rm.hitZ.mul(2.0));
-  const officeTroffer = pulse(ceilGridX, float(0.22), float(0.78), float(0.08)).mul(pulse(ceilGridZ, float(0.18), float(0.82), float(0.08)));
-  const homePendant = float(1).sub(smoothstep(0.06, 0.34, length(vec2(rm.hitX.sub(0.5), rm.hitZ.sub(0.45)))));
-  const ceilFixture = mix(homePendant, officeTroffer, office).mul(rm.onCeil);
-  const ceilPlenum = rm.onCeil.mul(0.32);
-
+  // Shared by the upper-floor rooms and the storefronts (both read the one ray-box trace `rm`)
   const zAtten = float(1.04).sub(rm.hitZ.mul(0.36));
-  const wallAccent = mix(v3(0.95, 0.88, 0.78), select(h3.lessThan(0.35), v3(0.72, 0.82, 0.95), select(h3.lessThan(0.7), v3(0.98, 0.76, 0.56), v3(0.85, 0.92, 0.86))), float(0.45));
-  const sideShelves = mix(0.76, 1.0, smoothstep(0.12, 0.28, fract(rm.hitY.mul(3.0).add(h2))));
-  const backPanel = pulse(rm.hitX, float(0.18), float(0.82), float(0.06)).mul(pulse(rm.hitY, float(0.38), float(0.80), float(0.06)));
-  const backSurf = rm.onBack.mul(mix(0.56, 0.74, backPanel.mul(step(0.35, h3)))).mul(zAtten);
-  const sideSurf = rm.onSide.mul(0.48).mul(sideShelves).mul(zAtten);
   const floorBounce = rm.onFloor.mul(mix(0.22, 0.44, float(1).sub(rm.hitZ)));
-
-  const deskX0 = h1.mul(0.35).add(0.12);
-  const midDesk = pulse(rm.midX, deskX0, deskX0.add(0.42), float(0.06)).mul(float(1).sub(smoothstep(0.24, 0.36, rm.midY))).mul(rm.inMid);
-  const monitorGlow = pulse(rm.midX, deskX0.add(0.08), deskX0.add(0.32), float(0.04))
-    .mul(pulse(rm.midY, float(0.32), float(0.52), float(0.04))).mul(rm.inMid).mul(step(0.45, h4));
-
-  const wallSurf = backSurf.add(sideSurf).add(ceilPlenum).add(floorBounce).mul(float(1).sub(midDesk.mul(0.42)));
-
-  const warm = mix(v3(1.0, 0.68, 0.38), v3(1.0, 0.86, 0.66), clamp(h2.mul(1.8), 0, 1));
-  const cool = select(h2.greaterThan(0.92), v3(0.45, 0.68, 1.0), v3(0.82, 0.91, 1.0));
-  const lightCol = mix(warm, cool, step(float(0.72).sub(office.mul(0.28)), h2)).mul(wallAccent);
-
-  const curtain = step(0.68, h4).mul(float(1).sub(office));
-  const wlx = select(h3.greaterThan(0.5), uWin, float(1).sub(uWin));
-  const curt = mix(1.0, smoothstep(0.08, 0.42, wlx).mul(0.82).add(0.18), curtain);
-  const hasBlinds = step(0.64, h4).mul(office);
-  const blindDrop = smoothstep(float(1).sub(h2.mul(0.55).add(0.15)), float(1).sub(h2.mul(0.55).add(0.11)), wl);
-  const blindSlats = mix(0.35, 0.92, step(0.35, fract(fy.mul(22.0))));
-  const blinds = mix(1.0, mix(1.0, blindSlats, blindDrop), hasBlinds.mul(dfade));
-
-  const roomLuminance = wallSurf.add(ceilFixture.mul(1.25)).add(monitorGlow.mul(0.85)).mul(rm.roomAO);
-  const unlitRoom = wallSurf.mul(0.08).add(ceilFixture.mul(0.04)).mul(rm.roomAO);
-  const lamp = mix(unlitRoom, roomLuminance.mul(h3.mul(0.38).add(0.64)), litOn).mul(curt).mul(blinds);
-  const litAvg = litFrac.mul(0.28);
-  const lit = mix(litAvg, lamp, dfade);
-  const emWin = lightCol.mul(win).mul(lit).mul(WINDOW_EM);
-
-  // Ground-floor retail storefront 3D room shading (reuses `rm`)
-  const nSpots = floor(hs3.mul(3.0)).add(2.0);
-  const spX = fract(rm.hitX.mul(nSpots).add(hs.mul(0.25))).sub(0.5);
-  const spZ = fract(rm.hitZ.mul(2.0)).sub(0.5);
-  const shopCeilLights = float(1).sub(smoothstep(0.05, 0.28, length(vec2(spX, spZ)))).mul(rm.onCeil);
-  const shopCeilPlenum = rm.onCeil.mul(0.30);
-
-  const wallSpotPool = float(1).sub(smoothstep(0.08, 0.52, length(vec2(fract(rm.hitX.mul(2.0)).sub(0.5), rm.hitY.sub(0.62)))));
-  const shelfRows = mix(0.74, 1.0, smoothstep(0.12, 0.32, fract(rm.hitY.mul(4.0).add(hs3))));
-  const shopBackLit = rm.onBack.mul(mix(0.52, 0.78, wallSpotPool.mul(0.65).add(0.35)).mul(mix(1.0, shelfRows, step(0.45, hs2)))).mul(zAtten);
-  const shopSideLit = rm.onSide.mul(0.46).mul(shelfRows).mul(zAtten);
-
-  const cntX0 = hs.mul(0.28).add(0.14);
-  const midCounter = pulse(rm.midX, cntX0, cntX0.add(0.46), float(0.06))
-    .mul(float(1).sub(smoothstep(0.20, 0.32, rm.midY))).mul(rm.inMid);
-  const midCaseGlow = pulse(rm.midX, cntX0.add(0.06), cntX0.add(0.40), float(0.04))
-    .mul(pulse(rm.midY, float(0.18), float(0.28), float(0.03))).mul(rm.inMid).mul(step(0.4, hs3));
-
-  const shopWallLit = shopBackLit.add(shopSideLit).add(shopCeilPlenum).mul(float(1).sub(midCounter.mul(0.38)));
-  const shop3D = shopWallLit.add(floorBounce).add(shopCeilLights.mul(1.15)).add(midCaseGlow.mul(0.65)).mul(rm.roomAO);
-
-  const shopCol = select(hs2.lessThan(0.32), v3(1.0, 0.78, 0.50),
-    select(hs2.lessThan(0.64), v3(0.98, 0.90, 0.78),
-      select(hs2.lessThan(0.85), v3(0.78, 0.90, 1.0), v3(1.0, 0.64, 0.42))));
 
   const signY = cov(v.sub(gf.sub(1.18)), fw.y).mul(cov(gf.sub(0.36).sub(v), fw.y));
   const signX = cov(sf.sub(0.16), swx).mul(cov(float(0.84).sub(sf), swx));
@@ -279,7 +297,6 @@ function facadeGraph() {
   const su = clamp(sf.sub(0.16).div(0.68), 0.02, 0.98);
   const sv = clamp(v.sub(gf.sub(1.18)).div(0.82), 0.05, 0.95);
   const signAtlasUV = vec2(signCol.mul(0.5).add(su.mul(0.5)), float(0.25).sub(signRow.add(float(1.0).sub(sv)).mul(0.0625)));
-  const signTexCol = texture(atlas, signAtlasUV).rgb;
 
   const ribs = step(0.5, fract(v.mul(8.0))).mul(0.22).add(0.78);
   const cornice = cov(v.sub(gf.sub(0.28)), fw.y).mul(cov(gf.sub(v), fw.y));
@@ -291,8 +308,31 @@ function facadeGraph() {
   const transom = float(1).sub(cov(abs(v.sub(2.62)).sub(0.035), fw.y)).mul(0.88);
   const mullion = float(1).sub(cov(abs(sf.sub(0.5)).mul(sbw).sub(0.028), fw.x)).mul(0.85);
   const frame = float(1).sub(max(transom, mullion));
-  const lobbyGlow = shop3D.mul(lobby).mul(0.78);
-  const gEm = shopCol.mul(shopGlass).mul(open.mul(shop3D).add(lobbyGlow)).mul(frame).mul(SHOP_EM).add(signTexCol.mul(sign).mul(SIGN_EM));
+
+  // Window-room light (upper floors) and storefront light (ground floor) are each evaluated only where they show: the
+  // emissive used to compute BOTH for every pixel and mix them by gAA (0 above the ground floor, 1 below, a ~1 px ramp
+  // at the cornice line). Pixels in that ramp run both branches, so the result is identical everywhere.
+  // WGSL rule: no implicit derivatives inside the (per-pixel) branches - every input that uses fwidth (fw: win, rail,
+  // munt, shopGlass, sign, frame, gAA) and the sign atlas UV gradients are materialized as vars before them, and the
+  // atlas is read with explicit gradients. Inputs shared by both branches are vars too, so they are computed once.
+  const emissiveSplit = Fn(() => {
+    const E = {
+      hitX: rm.hitX.toVar(), hitY: rm.hitY.toVar(), hitZ: rm.hitZ.toVar(), midX: rm.midX.toVar(), midY: rm.midY.toVar(),
+      inMid: rm.inMid.toVar(), onCeil: rm.onCeil.toVar(), onSide: rm.onSide.toVar(), onBack: rm.onBack.toVar(), roomAO: rm.roomAO.toVar(),
+      zAtten: zAtten.toVar(), floorBounce: floorBounce.toVar(),
+      // upper floors
+      h1: h1.toVar(), h2: h2.toVar(), h3: h3.toVar(), h4, office: office.toVar(), litOn, litFrac,
+      uWin: uWin.toVar(), wl: wl.toVar(), fy: fy.toVar(), dfade: dfade.toVar(), win: win.toVar(), rail: rail.toVar(), munt: munt.toVar(),
+      // storefronts
+      hs: hs.toVar(), hs2: hs2.toVar(), hs3, lobby, open: open.toVar(), shopGlass: shopGlass.toVar(), sign: sign.toVar(), frame: frame.toVar(),
+      atlas, signUV: signAtlasUV.toVar(), signDx: dFdx(signAtlasUV).toVar(), signDy: dFdy(signAtlasUV).toVar(),
+    };
+    const g = gAA.toVar();
+    const eU = vec3(0).toVar(), eG = vec3(0).toVar();
+    If(g.lessThan(1), () => { eU.assign(upperRoomEmissive(E)); });
+    If(g.greaterThan(0), () => { eG.assign(storefrontEmissive(E)); });
+    return mix(eU, eG, g);
+  })();
 
   // ---- 3D World-Space Exterior Architectural Glass Reflections -----------------------------------------------------------------------
   const paneWarp = sin(fx.mul(3.14159)).mul(sin(wl.mul(3.14159))).mul(h2.sub(0.5)).mul(0.06);
@@ -315,7 +355,6 @@ function facadeGraph() {
   const upperAlb = mix(upperWall, glassKind, win.mul(float(1).sub(rail.mul(0.7)).sub(munt.mul(0.7))));
   const albedo = mix(upperAlb, gAlb, gAA);
   const aoG = mix(0.62, 1.0, smoothstep(0.0, 5.0, v));
-  const emUpper = emWin.mul(float(1).sub(rail.mul(0.8)).sub(munt.mul(0.8)));
   const winMask = mix(win, clamp(shopGlass.add(sign), 0, 1), gAA);
   const night = facadeNight;
   const glow = upperWall.mul(float(1).sub(smoothstep(0.0, 28.0, v)).mul(0.14).add(0.055)).mul(float(1).sub(winMask)).mul(float(1).sub(k3.mul(0.5)));
@@ -328,7 +367,7 @@ function facadeGraph() {
   const faaPulse = smoothstep(0.35, 0.95, sin(time.mul(2.4).add(seed.mul(19.0))).mul(0.5).add(0.5));
   const faaPos = step(95.0, v).mul(smoothstep(0.955, 0.992, topFrac)).mul(step(0.88, fract(u.mul(0.11).add(seed))));
   const faaBeacon = v3(2.8, 0.08, 0.04).mul(faaPos).mul(faaPulse);
-  const extEmissive = mix(emUpper, gEm, gAA).mul(night)
+  const extEmissive = emissiveSplit.mul(night)
     .add(glow.mul(night)).add(crownGlow.mul(night)).add(faaBeacon.mul(night)).add(refl.mul(night.mul(0.85).add(0.25)));
   const extColor = albedo.mul(ao.mul(aoG));
   const extRough = mix(mix(0.88, 0.68, float(1).sub(isBrick)), mix(0.09, 0.035, k3), winMask);

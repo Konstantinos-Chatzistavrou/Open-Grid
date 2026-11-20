@@ -558,6 +558,11 @@ export class NycStreamer {
   private commitFar(t: Tile) {
     const g = t.farGroup!;
     t.group.add(g);
+    // Same static freeze as the near groups: nothing in a far tile moves (prepare() baked it, the tile root is identity),
+    // so compute the world matrices once and keep Object3D.updateMatrixWorld from walking ~60 far tiles every frame.
+    // Visibility (hideFarIfNear) is a flag, not a matrix: unaffected. Far tiles stay per-tile meshes on purpose (see
+    // batch.ts): one batch could not hide a single tile, and on WebGL 2 it would lose the per-tile frustum culling.
+    g.updateMatrixWorld(true); g.matrixWorldAutoUpdate = false;
     this.attach(t);
     g.traverse((o) => { if ((o as THREE.Mesh).isMesh) this.reveal(t, o as THREE.Mesh); });
     t.far = 3;

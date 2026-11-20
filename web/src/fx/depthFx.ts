@@ -125,7 +125,11 @@ export class DepthFx {
       // Distance attenuation so very far horizon reflections blend gently into fog
       const distFade = float(1).sub(smoothstep(float(45), float(180), vPos.z.negate()));
       const ssrHit = (this.node.a as unknown as THREE.Node<'float'>).clamp(0, 1);
-      const planarWeight = wet
+      // `wet` as already rendered into the normals target's alpha (the SSR weight; same resolution as the SSR term it
+      // complements). Re-evaluating the node here would redo the depth-normal reconstruction (9 depth loads + view
+      // positions), the up test and the fresnel per pixel in the full-resolution tone-map pass and in bloom's high pass.
+      const wetRendered = (this.normals as unknown as { a: THREE.Node<'float'> }).a;
+      const planarWeight = wetRendered
         .mul(inBounds)
         .mul(distFade)
         .mul(float(1).sub(ssrHit.mul(0.68)))

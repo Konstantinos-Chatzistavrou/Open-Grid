@@ -103,6 +103,14 @@ export class ClusteredLightPacker {
 
   private readonly tmpPos: [number, number, number] = [0, 0, 0];
   private readonly tmpTgt: [number, number, number] = [0, 0, 0];
+  /** Reused by pack() (it runs once per lit scene pass, several times a frame): no per-call object or closure. */
+  private readonly scratchLight: ClusterLightInput = {
+    kind: 'point',
+    posX: 0, posY: 0, posZ: 0,
+    r: 1, g: 1, b: 1,
+    intensity: 0, range: 0, decay: 2,
+  };
+  private readonly byViewZ = (a: number, b: number) => this.sViewZ[a] - this.sViewZ[b];
 
   readonly stats: ClusteredForwardStats;
 
@@ -169,12 +177,7 @@ export class ClusteredLightPacker {
     const maxL = this.cfg.maxLights;
     const NZ = this.cfg.zSlices;
 
-    const scratchLight: ClusterLightInput = {
-      kind: 'point',
-      posX: 0, posY: 0, posZ: 0,
-      r: 1, g: 1, b: 1,
-      intensity: 0, range: 0, decay: 2,
-    };
+    const scratchLight = this.scratchLight;
 
     let activeCount = 0;
     let pointCount = 0;
@@ -257,8 +260,7 @@ export class ClusteredLightPacker {
     }
 
     this.sortOrder.length = activeCount;
-    const vz = this.sViewZ;
-    this.sortOrder.sort((a, b) => vz[a] - vz[b]);
+    this.sortOrder.sort(this.byViewZ);
 
     for (let i = 0; i < activeCount; i++) {
       const s = this.sortOrder[i];
