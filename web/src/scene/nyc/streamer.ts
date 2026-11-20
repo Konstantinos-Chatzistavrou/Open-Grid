@@ -147,6 +147,9 @@ export class NycStreamer {
   /** ?batchcity=1: every near tile's geometry goes into one buffer per material (docs/raw_city_pass.md) */
   private batcher: CityBatcher | null = null;
   private centre = new THREE.Vector3();
+  /** Tile-indexed road centerline points from map.json: used to skip stray building OBBs & interior walls that cut across drivable roads. */
+  private roadPtsByTile = new Map<string, number[]>();
+  private cityInnerBounds = { minX: -Infinity, maxX: Infinity, minY: -Infinity, maxY: Infinity };
 
   constructor(private scene: THREE.Scene, private renderer: THREE.WebGPURenderer, private pw: PhysicsWorld, private camera: THREE.Camera, opts: NycOptions) {
     this.o = {
@@ -217,18 +220,25 @@ export class NycStreamer {
   private async init() {
     this.o.onProgress?.(0.08);
     if (this.batcher?.useMeshlets) await ensureMeshoptClusterizer();
-    const [idx, mats, props] = await Promise.all([
+    const [idx, mapJson, mats, props] = await Promise.all([
       // revalidated on every start: the index names the tile set's version (see url())
       fetch(this.o.base + 'index.json', { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error(`NYC tiles missing (${r.status} ${this.o.base}index.json): run python3 tools/nyc/stub_tiles.py or build_tiles.py`); return r.json() as Promise<IndexJson>; }),
+      fetch(this.o.base + 'map.json').then((r) => (r.ok ? r.json() : null)).catch(() => null),
       loadNycMaterials(), createNycProps(this.scene, this.camera),
     ]);
     this.index = idx; this.mats = mats; this.props = props;
     this.ver = (idx as { version?: string }).version ? `?v=${(idx as { version?: string }).version}` : '';
     if (props instanceof NycProps) props.treeDensity = this.o.treeDensity;
+    this.indexRoadCenterlines(mapJson);
     this.o.onProgress?.(0.2);
     console.info(`nyc: ${Object.keys(idx.tiles).length} tiles, materials ${mats.source}, props ${props ? 'real' : 'none'}`);
+    let minIx = Infinity, maxIx = -Infinity, minIy = Infinity, maxIy = -Infinity;
     for (const [key, t] of Object.entries(idx.tiles)) {
       const [ix, iy] = key.split('_').map(Number);
+      if (ix < minIx) minIx = ix;
+      if (ix > maxIx) maxIx = ix;
+      if (iy < minIy) minIy = iy;
+      if (iy > maxIy) maxIy = iy;
       const f = t.files ?? [];
       const bb = t.bbox ?? [ix * TILE, iy * TILE, (ix + 1) * TILE, (iy + 1) * TILE, 150];
       const group = new THREE.Group();
@@ -241,6 +251,15 @@ export class NycStreamer {
         box: new THREE.Box3(new THREE.Vector3(bb[0], -5, -bb[3]), new THREE.Vector3(bb[2], Math.max(20, bb[4] + 10), -bb[1])),
         cx: (bb[0] + bb[2]) / 2, cz: -(bb[1] + bb[3]) / 2,
       });
+    }
+    if (Number.isFinite(minIx)) {
+      const margin = 48;
+      this.cityInnerBounds = {
+        minX: minIx * TILE + margin,
+        maxX: (maxIx + 1) * TILE - margin,
+        minY: minIy * TILE + margin,
+        maxY: (maxIy + 1) * TILE - margin,
+      };
     }
     this.spawn = await this.findSpawn();
     // prime: everything around the spawn, no budget, until the queue is dry
@@ -545,9 +564,55 @@ export class NycStreamer {
     this.hideFarIfNear(t);
   }
 
+  /** Sample every drivable road edge in map.json into tile buckets (~5 m spacing) to guard against stray road-blocking colliders. */
+  private indexRoadCenterlines(mapJson: unknown) {
+    this.roadPtsByTile.clear();
+    const m = mapJson as { nodes?: [number, number][]; edges?: { a: number; b: number }[] } | null;
+    if (!m?.nodes?.length || !m?.edges?.length) return;
+    const nodes = m.nodes;
+    const addPt = (x: number, y: number) => {
+      const key = `${Math.floor(x / TILE)}_${Math.floor(y / TILE)}`;
+      let arr = this.roadPtsByTile.get(key);
+      if (!arr) { arr = []; this.roadPtsByTile.set(key, arr); }
+      arr.push(x, y);
+    };
+    for (let i = 0; i < m.edges.length; i++) {
+      const e = m.edges[i];
+      const a = nodes[e.a], b = nodes[e.b];
+      if (!a || !b) continue;
+      const dx = b[0] - a[0], dy = b[1] - a[1];
+      const dist = Math.hypot(dx, dy);
+      const steps = Math.max(2, Math.ceil(dist / 5));
+      for (let k = 1; k < steps; k++) {
+        const f = k / steps;
+        addPt(a[0] + dx * f, a[1] + dy * f);
+      }
+    }
+  }
+
+  /** True when a collider OBB swallows an active road centerline point (with `inset` margin; positive = stricter inside check). */
+  private blocksRoadCenterline(t: Tile, b: ColBox, inset: number): boolean {
+    const pts = this.roadPtsByTile.get(t.key);
+    if (!pts || !pts.length) return false;
+    const hx = b.hx - inset, hy = b.hy - inset;
+    if (hx <= 0.15 || hy <= 0.15) return false;
+    const rad = Math.hypot(b.hx, b.hy) + 1;
+    const rad2 = rad * rad;
+    const cos = Math.cos(-b.yaw), sin = Math.sin(-b.yaw);
+    for (let i = 0; i < pts.length; i += 2) {
+      const dx = pts[i] - b.cx, dy = pts[i + 1] - b.cy;
+      if (dx * dx + dy * dy > rad2) continue;
+      const lx = dx * cos - dy * sin;
+      const ly = dx * sin + dy * cos;
+      if (Math.abs(lx) <= hx && Math.abs(ly) <= hy) return true;
+    }
+    return false;
+  }
+
   private queueColliders(t: Tile, gen: number, c: ColJson | null) {
     const ground = c?.ground ?? 0;
-    const bs = c?.buildings ?? [];
+    // Drop concave-courtyard / overpass / arch building OBBs whose box physically swallows an active road centerline
+    const bs = (c?.buildings ?? []).filter((b) => !this.blocksRoadCenterline(t, b, 0.65));
     t.buildingCols = [];
     this.props?.setTileBuildings?.(t.key, bs, ground);
     const S = this.o.surfaces;
@@ -575,7 +640,12 @@ export class NycStreamer {
         }
       } });
     }
-    const ws = c?.walls ?? [];
+    // Keep outer map-edge walls intact, but drop stray interior riverbank/bridge walls that cut across an active road
+    const ib = this.cityInnerBounds;
+    const ws = (c?.walls ?? []).filter((w) => {
+      const isInterior = w.cx > ib.minX && w.cx < ib.maxX && w.cy > ib.minY && w.cy < ib.maxY;
+      return !isInterior || !this.blocksRoadCenterline(t, w, -0.25);
+    });
     if (ws.length) this.queue.push({ tile: t, kind: 'col', gen, cost: 0.2, run: () => {
       for (const b of ws) {
         q.setFromAxisAngle(Y, b.yaw);
@@ -821,6 +891,9 @@ export class NycStreamer {
       const m = new THREE.Mesh(g, mat);
       m.receiveShadow = this.o.receiveShadow; m.castShadow = false;
       m.position.set(this.spawn.x, 0, -this.spawn.y);
+      // Raw quantized vertices without the glTF node transform: shrink to a speck so a missed endWarm() can never
+      // draw a giant stray wall across the spawn road (scale does not change the pipeline being warmed).
+      m.scale.setScalar(1e-4);
       m.frustumCulled = false;
       this.scene.add(m);
       this.warmMeshes.push(m);
