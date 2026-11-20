@@ -168,4 +168,64 @@ RS_TEST(authority) {
                     delta_large.needs_snap && near_val(delta_large.pos_correction_cm.x, 500.0) &&
                         near_val(delta_large.blend_alpha, 1.0));
     }
+
+    // 6. AntiBotAnalyzer: realistic human cornering trace (smooth sinusoidal steering + natural slip
+    //    variation 0.08..0.17 rad) is not flagged as a bot and has bot_confidence_0_to_1 < 0.35.
+    {
+        AntiBotAnalyzer human_analyzer;
+        constexpr int kFrames = 240;  // 1.0 s at 240 Hz
+        for (int i = 0; i < kFrames; ++i) {
+            const double t = static_cast<double>(i) / 240.0;
+            BotTelemetryFrame f{};
+            f.time_s = t;
+            f.steer = 0.45 * std::sin(2.0 * 3.14159265358979323846 * 0.8 * t);
+            f.throttle = 0.75;
+            f.brake = 0.0;
+            // Natural slip variation across 0.08..0.17 rad
+            f.front_slip_angle_rad = 0.125 + 0.045 * std::sin(2.0 * 3.14159265358979323846 * 1.3 * t);
+            f.optimal_slip_angle_rad = 0.14;
+            f.yaw_accel_rads2 = 1.2 * std::cos(2.0 * 3.14159265358979323846 * 0.8 * t);
+            human_analyzer.record_frame(f);
+        }
+
+        BotAnalysisReport human_rep = human_analyzer.analyze();
+        test::check("realistic human cornering trace not flagged as bot",
+                    human_analyzer.frame_count() == 240 && !human_rep.flagged_as_bot &&
+                        human_rep.violation == CheatViolation::None &&
+                        human_rep.bot_confidence_0_to_1 < 0.35);
+    }
+
+    // 7. AntiBotAnalyzer: TAS / Autosteer / Macro bot trace (front slip locked at 0.1400 +- 0.0005 rad,
+    //    240 Hz sawtooth steering micro-corrections +-0.06, and instant 0-ms counter-steer) is flagged
+    //    with CheatViolation::AutosteerOrMacroBot and bot_confidence_0_to_1 > 0.75.
+    {
+        AntiBotAnalyzer bot_analyzer;
+        constexpr int kFrames = 240;  // 1.0 s at 240 Hz
+        double steer_val = 0.35;
+        for (int i = 0; i < kFrames; ++i) {
+            const double t = static_cast<double>(i) / 240.0;
+            const double sign = (i % 2 == 0) ? 1.0 : -1.0;
+            steer_val += sign * 0.06;  // 240 Hz sawtooth micro-corrections (+0.06, -0.06)
+
+            BotTelemetryFrame f{};
+            f.time_s = t;
+            f.steer = steer_val;
+            f.throttle = 1.0;
+            f.brake = 0.0;
+            f.front_slip_angle_rad = 0.1400 + sign * 0.0005;  // Locked at peak Pacejka slip angle
+            f.optimal_slip_angle_rad = 0.14;
+            // Sudden yaw acceleration spike opposed on the exact same tick (0 ms lag) by counter-steer delta
+            f.yaw_accel_rads2 = -sign * 4.5;
+            bot_analyzer.record_frame(f);
+        }
+
+        BotAnalysisReport bot_rep = bot_analyzer.analyze();
+        test::check("TAS / Autosteer / Macro bot trace flagged with AutosteerOrMacroBot",
+                    bot_rep.flagged_as_bot &&
+                        bot_rep.violation == CheatViolation::AutosteerOrMacroBot &&
+                        bot_rep.bot_confidence_0_to_1 > 0.75 &&
+                        bot_rep.slip_lock_precision_score > 0.85 &&
+                        bot_rep.sawtooth_macro_score > 0.85 &&
+                        bot_rep.zero_latency_reflex_score > 0.85);
+    }
 }

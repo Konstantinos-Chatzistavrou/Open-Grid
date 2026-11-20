@@ -334,4 +334,36 @@ RS_TEST(ue5_upgrade) {
         test::check("boiled DOT 4 caliper fluid (> 260 C) causes vapor-lock spongy brake pressure loss",
                     sim_aero.last.brake_vapor_lock_sponge > 0.20);
     }
+
+    // 14. 4-Wheel Asymmetric Split-Mu Hydroplaning & Braking Yaw Pull
+    {
+        Vehicle veh(cfg);
+        veh.reset_motion(62.0, 6); // 223.2 km/h high-speed wet highway puddle hit
+        ChassisState s;
+        s.position = {0, 0, cfg.cg_height};
+        s.velocity = {62.0, 0, 0};
+
+        auto rays = veh.wheel_rays(s);
+        std::array<WheelContact, 4> contacts;
+        for (int w = 0; w < 4; ++w) {
+            contacts[w] = flat->raycast(rays[w]);
+            // Left wheels (FL=0, RL=2) hit a 5.5 mm standing water puddle; right wheels (FR=1, RR=3) are on dry asphalt
+            contacts[w].water_depth_mm = (w % 2 == 0) ? 5.5 : 0.0;
+        }
+
+        DriverInput brake_in;
+        brake_in.brake = 0.85;
+        brake_in.gear = 6;
+        brake_in.auto_clutch = true;
+        veh.set_input(brake_in);
+
+        VehicleOutput out;
+        for (int i = 0; i < 15; ++i) out = veh.update(s, contacts, 1.0 / 240.0);
+
+        test::check("left wheels in 5.5 mm standing puddle hydroplane while right wheels stay planted",
+                    out.wheels[FL].hydroplaning_lift > 0.25 && out.wheels[FR].hydroplaning_lift == 0.0 &&
+                    out.wheels[FL].load < out.wheels[FR].load * 0.78);
+        test::check("asymmetric left-puddle braking induces split-mu yaw torque pulling toward dry right side",
+                    out.torque.z < -250.0);
+    }
 }

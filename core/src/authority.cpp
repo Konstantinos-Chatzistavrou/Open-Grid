@@ -232,4 +232,114 @@ Ue5ReconciliationDelta AuthorityServerSim::compute_ue5_reconciliation(const Chas
     return delta;
 }
 
+void AntiBotAnalyzer::reset() {
+    frames_.clear();
+}
+
+void AntiBotAnalyzer::record_frame(const BotTelemetryFrame& frame) {
+    frames_.push_back(frame);
+}
+
+BotAnalysisReport AntiBotAnalyzer::analyze() const {
+    BotAnalysisReport report{};
+    const std::size_t n = frames_.size();
+    if (n < 4) {
+        return report;
+    }
+
+    // 1. Slip-lock precision score across cornering frames (|front_slip_angle_rad| > 0.05)
+    std::vector<double> norm_slips;
+    norm_slips.reserve(n);
+    for (const auto& f : frames_) {
+        const double abs_slip = std::fabs(f.front_slip_angle_rad);
+        if (abs_slip > 0.05) {
+            const double opt = std::max(std::fabs(f.optimal_slip_angle_rad), 0.02);
+            norm_slips.push_back(abs_slip / opt);
+        }
+    }
+
+    if (norm_slips.size() >= 4) {
+        double sum = 0.0;
+        for (double r : norm_slips) {
+            sum += r;
+        }
+        const double mean_r = sum / static_cast<double>(norm_slips.size());
+
+        double sq_sum = 0.0;
+        for (double r : norm_slips) {
+            const double diff = r - mean_r;
+            sq_sum += diff * diff;
+        }
+        const double std_r = std::sqrt(sq_sum / static_cast<double>(norm_slips.size()));
+
+        const double mean_err = std::fabs(mean_r - 1.0);
+        // Mean normalized slip in [0.94, 1.06] yields high mean_factor (1.0 near 1.0, tapering to 0 at 0.12 error)
+        const double mean_factor =
+            (mean_err <= 0.06) ? rs::clamp(1.0 - (mean_err / 0.18), 0.0, 1.0)
+                               : rs::clamp((0.12 - mean_err) / 0.06, 0.0, 0.67);
+        // Standard deviation < 0.015 rises up to 1.0
+        const double std_factor = rs::clamp((0.025 - std_r) / (0.025 - 0.005), 0.0, 1.0);
+        report.slip_lock_precision_score = rs::clamp(mean_factor * std_factor, 0.0, 1.0);
+    }
+
+    // 2. Sawtooth macro score: consecutive frame-to-frame steering derivative sign reversals
+    //    ((ds_k * ds_{k-1} < 0) && |ds_k| > 0.03)
+    std::size_t active_steer_frames = 0;
+    std::size_t sawtooth_reversals = 0;
+    for (std::size_t k = 1; k < n; ++k) {
+        const double ds_k = frames_[k].steer - frames_[k - 1].steer;
+        if (std::fabs(frames_[k].steer) > 1e-3 || std::fabs(ds_k) > 1e-3) {
+            ++active_steer_frames;
+        }
+        if (k >= 2) {
+            const double ds_prev = frames_[k - 1].steer - frames_[k - 2].steer;
+            if ((ds_k * ds_prev < 0.0) && (std::fabs(ds_k) > 0.03)) {
+                ++sawtooth_reversals;
+            }
+        }
+    }
+
+    if (active_steer_frames > 0) {
+        const double reversal_rate =
+            static_cast<double>(sawtooth_reversals) / static_cast<double>(active_steer_frames);
+        // If reversal rate exceeds 35% of active steering frames, score rises up to 1.0
+        report.sawtooth_macro_score = rs::clamp((reversal_rate - 0.10) / (0.45 - 0.10), 0.0, 1.0);
+    }
+
+    // 3. Zero-latency reflex score: frames where |yaw_accel_rads2| > 2.5 with strong opposite
+    //    counter-steer rate on the exact same tick (0 ms lag)
+    std::size_t yaw_spike_frames = 0;
+    std::size_t zero_lag_counter_frames = 0;
+    for (std::size_t k = 1; k < n; ++k) {
+        const double yaw_acc = frames_[k].yaw_accel_rads2;
+        if (std::fabs(yaw_acc) > 2.5) {
+            ++yaw_spike_frames;
+            const double ds_k = frames_[k].steer - frames_[k - 1].steer;
+            if ((ds_k * yaw_acc < 0.0) && (std::fabs(ds_k) > 0.025)) {
+                ++zero_lag_counter_frames;
+            }
+        }
+    }
+
+    if (yaw_spike_frames > 0) {
+        const double corr_ratio =
+            static_cast<double>(zero_lag_counter_frames) / static_cast<double>(yaw_spike_frames);
+        report.zero_latency_reflex_score = rs::clamp(corr_ratio / 0.50, 0.0, 1.0);
+    }
+
+    // Combine into bot_confidence_0_to_1
+    report.bot_confidence_0_to_1 = rs::clamp(
+        0.45 * report.slip_lock_precision_score +
+        0.35 * report.sawtooth_macro_score +
+        0.20 * report.zero_latency_reflex_score,
+        0.0, 1.0);
+
+    report.flagged_as_bot = (report.bot_confidence_0_to_1 >= 0.65) ||
+                            (report.slip_lock_precision_score >= 0.85) ||
+                            (report.sawtooth_macro_score >= 0.85);
+    report.violation = report.flagged_as_bot ? CheatViolation::AutosteerOrMacroBot : CheatViolation::None;
+
+    return report;
+}
+
 }  // namespace rs

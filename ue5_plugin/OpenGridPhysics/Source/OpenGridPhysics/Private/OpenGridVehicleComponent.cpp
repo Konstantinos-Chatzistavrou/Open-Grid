@@ -31,6 +31,10 @@ void UOpenGridVehicleComponent::BeginPlay()
     Vehicle_->chassis_dynamics().brake_fluid_boil_enabled = true;
     CrushNodeWeights.Init(0.0f, 8);
 
+    const rs::PerformanceIndexReport PiReport = rs::compute_performance_index(Config_);
+    PerformanceIndex = PiReport.pi;
+    VirtualBenchmarkLapSeconds = static_cast<float>(PiReport.virtual_benchmark_lap_s);
+
     if (bEnableSimHubUdp)
     {
         UdpSender_.open("127.0.0.1", 20777);
@@ -188,4 +192,25 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
 bool UOpenGridVehicleComponent::ExportMotecLog(const FString& OutputBasePath)
 {
     return MotecLogger_.write_files(TCHAR_TO_UTF8(*OutputBasePath));
+}
+
+void UOpenGridVehicleComponent::ApplyBopEqualizer(int32 TargetPi)
+{
+    const rs::BopAdjustment Bop = rs::compute_bop_equalizer(Config_, TargetPi);
+    Config_ = Bop.balanced_config;
+    PerformanceIndex = Bop.balanced_report.pi;
+    VirtualBenchmarkLapSeconds = static_cast<float>(Bop.balanced_report.virtual_benchmark_lap_s);
+    Vehicle_ = MakeUnique<rs::Vehicle>(Config_);
+    Vehicle_->engine_systems().turbo_stage = TurboStage;
+    Vehicle_->engine_systems().wear_enabled = true;
+    Vehicle_->engine_systems().fuel_consumption_enabled = true;
+    Vehicle_->engine_systems().torsional_compliance_enabled = true;
+    Vehicle_->engine_systems().dog_box_flat_shift_cut = true;
+    Vehicle_->unsprung_dynamics_enabled = true;
+    Vehicle_->tire_zones_enabled = true;
+    Vehicle_->aero_wake().yaw_aero_enabled = true;
+    Vehicle_->chassis_dynamics().chassis_flex_enabled = true;
+    Vehicle_->chassis_dynamics().active_yaw_control_enabled = true;
+    Vehicle_->chassis_dynamics().active_aero_enabled = true;
+    Vehicle_->chassis_dynamics().brake_fluid_boil_enabled = true;
 }
