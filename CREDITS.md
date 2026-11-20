@@ -124,3 +124,23 @@ represents or is endorsed by any real manufacturer.
 ## Fonts
 - **Barlow** and **Barlow Condensed** by Jeremy Tribby, SIL Open Font License 1.1
   (https://github.com/jpt/barlow). Latin subsets in `web/public/fonts/`, unmodified.
+
+- **Valenza Corsa V12** (`valenza_corsa`, marque `valenza`): Original OpenGrid Parametric Sculpt (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Valenza Fiamma V8** (`valenza_fiamma`, marque `valenza`): Original OpenGrid Parametric Sculpt (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Kronos Taurus V12** (`kronos_taurus`, marque `kronos`): Original OpenGrid Parametric Sculpt (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Kronos Fulmine V10** (`kronos_fulmine`, marque `kronos`): Original OpenGrid Parametric Sculpt (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Falcorn 9R GT** (`falcorn_9r`, marque `falcorn`): Original OpenGrid Parametric Sculpt (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Aether Solis 765** (`aether_solis`, marque `aether`): Original OpenGrid Parametric Sculpt (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Aether Borealis R** (`aether_borealis`, marque `aether`): Original OpenGrid Parametric Sculpt (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Kaze Ryujin Z-Spec** (`kaze_ryujin`, marque `kaze`): Original OpenGrid Parametric Sculpt (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Kaze Kurogane 7R** (`kaze_kurogane`, marque `kaze`): Original OpenGrid Parametric Sculpt (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Falcorn Hellhound SC** (`falcorn_hellhound`, marque `falcorn`): Original OpenGrid Parametric Sculpt (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.

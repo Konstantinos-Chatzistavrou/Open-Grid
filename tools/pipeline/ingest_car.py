@@ -120,38 +120,66 @@ def build_physics_json(car_id, name, base_id, power_scale, mass_kg, drivetrain):
     return out_path
 
 
-def build_visual_json(car_id, meta, paint_mat_name):
+def hex_to_rgb01(hx: str):
+    h = hx.lstrip("#")
+    if len(h) != 6:
+        return [0.75, 0.12, 0.12]
+    return [round(int(h[i : i + 2], 16) / 255.0, 3) for i in (0, 2, 4)]
+
+
+def build_visual_json(car_id, name, meta, paint_mat_name, paint_hex):
     mn = meta["bounds_gltf"]["min"]
     mx = meta["bounds_gltf"]["max"]
     sx = round(max(1.6, mx[0] - mn[0]), 3)
     sy = round(max(0.9, mx[1] - mn[1]), 3)
     sz = round(max(3.6, mx[2] - mn[2]), 3)
     cx = round((mn[0] + mx[0]) * 0.5, 3)
-    cy = round((mn[1] + mx[1]) * 0.5, 3)
     cz = round((mn[2] + mx[2]) * 0.5, 3)
+    names = set(meta.get("node_names", []))
+    pick = lambda lst: [n for n in lst if n in names]
+    detach = {}
+    for k, zone, thr in (
+        ("bumper_front", "front", 0.7),
+        ("bumper_rear", "rear", 0.7),
+        ("mirror_L", "left", 0.45),
+        ("mirror_R", "right", 0.45),
+    ):
+        if k in names:
+            detach[k] = [zone, thr]
     vis = {
         "schema": "car_visual/1",
+        "name": name,
+        "physics": f"cars/{car_id}.json",
         "model": f"res://assets/cars/v5/{car_id}_hero.glb",
         "lod_model": "res://assets/cars/v3/vela_gt_traffic.glb",
         "paint_material": paint_mat_name,
-        "cg_in_model_m": [0.0, round(mn[1] + sy * 0.36, 3), 0.0],
-        "collision_box": {
-            "size_m": [sx, round(sy * 0.72, 3), sz],
-            "centre_in_model_m": [cx, round(mn[1] + sy * 0.44, 3), cz],
-            "end_lift_m": 0.14,
-            "end_lift_start_m": round(sz * 0.36, 3),
+        "default_paint": hex_to_rgb01(paint_hex),
+        "cg_in_model_m": [0.0, round(mn[1] + sy * 0.36, 3), -0.15],
+        "wheel_nodes": {
+            "fl": "wheel_FL", "fr": "wheel_FR", "rl": "wheel_RL", "rr": "wheel_RR",
         },
-        "wheels": {
-            "FL": "wheel_FL", "FR": "wheel_FR", "RL": "wheel_RL", "RR": "wheel_RR",
+        "wheel_visual_offset_m": 0,
+        "collision_box": {
+            "size_m": [sx, round(sy * 0.64, 3), sz],
+            "centre_in_model_m": [cx, round(mn[1] + sy * 0.50, 3), cz],
+            "end_lift_m": 0.12,
+            "end_lift_start_m": round(sz * 0.38, 3),
         },
         "headlights": [
-            [round(sx * 0.36, 3), round(mn[1] + sy * 0.46, 3), round(mx[2] - 0.12, 3)],
-            [round(-sx * 0.36, 3), round(mn[1] + sy * 0.46, 3), round(mx[2] - 0.12, 3)],
+            [round(-sx * 0.34, 3), round(mn[1] + sy * 0.44, 3), round(mx[2] - 0.18, 3)],
+            [round(sx * 0.34, 3), round(mn[1] + sy * 0.44, 3), round(mx[2] - 0.18, 3)],
         ],
         "driver_seat_m": [0.34, round(mn[1] + sy * 0.24, 3), -0.22],
         "driver_scale": 0.92,
-        "panels": {"front": [], "rear": [], "left": [], "right": []},
-        "detachable": {},
+        "panels": {
+            "front": pick(["bumper_front", "hood", "grille", "nose_vbar", "drl_L", "drl_R"]),
+            "rear": pick(["bumper_rear", "taillight_bar", "taillight_L", "taillight_R", "diffuser"]),
+            "left": pick(["door_L", "fender_L", "quarter_L", "mirror_L"]),
+            "right": pick(["door_R", "fender_R", "quarter_R", "mirror_R"]),
+        },
+        "detachable": detach,
+        "front_lights": meta.get("front_lights", []),
+        "rear_lights": meta.get("rear_lights", []),
         "exhaust_nozzles": meta.get("exhaust_nozzles", []),
     }
     out_path = os.path.join(DATA_CARS, f"{car_id}.visual.json")
@@ -227,6 +255,7 @@ def main():
     p.add_argument("--length-m", type=float, default=4.45, help="Normalized target car length (m, 0 = keep)")
     p.add_argument("--rotate-y-deg", type=float, default=0.0, help="Rotate source model around Y before export")
     p.add_argument("--spoiler-boxes", default="", help="Optional JSON list of glTF boxes to separate merged stock spoiler")
+    p.add_argument("--no-restyle", action="store_true", help="Skip FFD restyle (for already-original OpenGrid sculpted meshes)")
     p.add_argument("--blender", default=None)
     p.add_argument("--skip-validate", action="store_true")
     args = p.parse_args()
@@ -242,7 +271,7 @@ def main():
             "length_m": args.length_m,
             "rotate_y_deg": args.rotate_y_deg,
             "spoiler_boxes": json.loads(args.spoiler_boxes) if args.spoiler_boxes else [],
-            "restyle": {"nose_len": 0.035, "nose_taper": -0.025, "roof_drop": -0.02, "haunch": 0.03},
+            "restyle": None if args.no_restyle else {"nose_len": 0.035, "nose_taper": -0.025, "roof_drop": -0.02, "haunch": 0.03},
         }
         spec_path = os.path.join(tmp, "spec.json")
         with open(spec_path, "w") as f:
@@ -278,7 +307,7 @@ def main():
 
         # Stage 3: Generate physics + visual JSON + catalog + credits
         build_physics_json(args.id, args.name, args.base, args.power_scale, args.mass, args.drivetrain)
-        build_visual_json(args.id, meta, args.paint_material)
+        build_visual_json(args.id, args.name, meta, args.paint_material, args.paint)
         upsert_catalog(args)
         append_credits(args)
 

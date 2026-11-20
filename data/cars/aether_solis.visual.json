@@ -1,0 +1,148 @@
+{
+  "schema": "car_visual/1",
+  "name": "Aether Solis 765",
+  "physics": "cars/aether_solis.json",
+  "model": "res://assets/cars/v5/aether_solis_hero.glb",
+  "lod_model": "res://assets/cars/v3/vela_gt_traffic.glb",
+  "paint_material": "paint",
+  "default_paint": [
+    1.0,
+    0.271,
+    0.0
+  ],
+  "cg_in_model_m": [
+    0.0,
+    0.451,
+    -0.15
+  ],
+  "wheel_nodes": {
+    "fl": "wheel_FL",
+    "fr": "wheel_FR",
+    "rl": "wheel_RL",
+    "rr": "wheel_RR"
+  },
+  "wheel_visual_offset_m": 0,
+  "collision_box": {
+    "size_m": [
+      2.022,
+      0.801,
+      4.56
+    ],
+    "centre_in_model_m": [
+      0.0,
+      0.626,
+      0.0
+    ],
+    "end_lift_m": 0.12,
+    "end_lift_start_m": 1.733
+  },
+  "headlights": [
+    [
+      -0.687,
+      0.551,
+      2.1
+    ],
+    [
+      0.687,
+      0.551,
+      2.1
+    ]
+  ],
+  "driver_seat_m": [
+    0.34,
+    0.3,
+    -0.22
+  ],
+  "driver_scale": 0.92,
+  "panels": {
+    "front": [
+      "bumper_front",
+      "hood",
+      "grille",
+      "drl_L",
+      "drl_R"
+    ],
+    "rear": [
+      "bumper_rear",
+      "taillight_bar",
+      "diffuser"
+    ],
+    "left": [
+      "door_L",
+      "fender_L",
+      "quarter_L",
+      "mirror_L"
+    ],
+    "right": [
+      "door_R",
+      "fender_R",
+      "quarter_R",
+      "mirror_R"
+    ]
+  },
+  "detachable": {
+    "bumper_front": [
+      "front",
+      0.7
+    ],
+    "bumper_rear": [
+      "rear",
+      0.7
+    ],
+    "mirror_L": [
+      "left",
+      0.45
+    ],
+    "mirror_R": [
+      "right",
+      0.45
+    ]
+  },
+  "front_lights": [
+    "beam_L_0",
+    "beam_R_0",
+    "drl_L",
+    "drl_R"
+  ],
+  "rear_lights": [
+    "taillight_bar"
+  ],
+  "exhaust_nozzles": [
+    {
+      "x": -0.212,
+      "y": 0.621,
+      "z": -2.203,
+      "r": 0.055
+    },
+    {
+      "x": -0.104,
+      "y": 0.62,
+      "z": -2.203,
+      "r": 0.055
+    },
+    {
+      "x": -0.056,
+      "y": 0.622,
+      "z": -2.203,
+      "r": 0.055
+    },
+    {
+      "x": 0.104,
+      "y": 0.62,
+      "z": -2.203,
+      "r": 0.055
+    },
+    {
+      "x": 0.056,
+      "y": 0.622,
+      "z": -2.203,
+      "r": 0.055
+    },
+    {
+      "x": 0.212,
+      "y": 0.621,
+      "z": -2.203,
+      "r": 0.055
+    }
+  ]
+}
