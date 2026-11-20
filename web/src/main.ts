@@ -76,7 +76,7 @@ import { assetUrl, loadGLTF } from './scene/loaders';
 import { Identity } from './identity';
 import { usernameError } from './username';
 import { formatLap } from './hud';
-import { autoCap, benchClose, benchProgress, benchResults, measureRefresh, recommend, stats, type BenchReport, type PhaseResult, type SoakWindow } from './bench';
+import { autoCap, measureRefresh } from './bench';
 
 const params = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d);
@@ -1217,7 +1217,6 @@ async function main() {
   g.__game = { city, nyc, ai, visual, audio, rig, damage, trace, input, renderer, camera, scene, post, THREE, grade: GRADE, heat, setHeat, cops, stats: () => frameStats(scene, renderer), texStats: () => sceneTextureStats(scene, 0),
     get car() { return car; }, get core() { return core; }, get state() { return state; }, ticksNow: () => ticks, routeSamples: route.samples, menu: () => menu, sel,
     get party() { return party; }, get remote() { return remote; }, streetProps, obstacles, standings: () => standings(), get lap() { return lap; },
-    bench: (soak = false) => runBench(soak),
     setPreset: (name: PresetName) => { setPreset(PRESET_ORDER.indexOf(name)); setExtra(); },
     garage, showPost, probe, get inGarage() { return inGarage; },
     setScale: (x: number) => { scale = x; post.setScale(x); setExtra(); },
@@ -1228,67 +1227,7 @@ async function main() {
       list: pw.world.bodies.getAll().map((b) => `${b === car.body ? 'car' : b.isKinematic() ? 'ai' : 'debris'}:${b.isSleeping() ? 'asleep' : 'awake'}`).join(' ') }),
     info: () => ({ pos: car.body.translation(), speed: car.out[OUT.speed], rpm: car.out[OUT.rpm], gear: car.out[OUT.gear] }) };
 
-  // --- benchmark (bench.ts): scripted drive along the route, per preset: uncapped, then at the cap; optional soak ------------
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  const bench = { active: false, uncap: false, dist: 0, speed: 26, dy: 0, stamps: [] as number[], cb: [] as number[], gpu: [] as number[], pending: false, ts: false };
-  const benchPos = new THREE.Vector3();
-  const benchStep = (frame: number) => {   // from the loop: the car is PLACED on the route each frame (same load every run, no physics noise)
-    bench.dist += bench.speed * frame;
-    const smp = route.samples[Math.floor(bench.dist / 2) % route.samples.length];
-    benchPos.set(smp.x, smp.z + bench.dy, -smp.y);
-    car.place(benchPos, Math.atan2(Math.cos(smp.heading), -Math.sin(smp.heading)), bench.speed);
-  };
-  const runBench = async (soak: boolean): Promise<BenchReport | null> => {
-    if (state !== 'title' || bench.active) return null;
-    const keepIdx = presetIdx, keepAdaptive = adaptive;
-    adaptive = false;
-    menu.show('none'); resetCar(); setState('race'); hud.show(); audio.muted = true;
-    bench.dy = car.body.translation().y - s0.z; bench.dist = 0;
-    bench.ts = (renderer as unknown as { hasFeature(f: string): boolean }).hasFeature('timestamp-query');
-    (renderer.backend as unknown as { trackTimestamp: boolean }).trackTimestamp = bench.ts;
-    bench.active = true;
-    const benchCap = capFps || autoCap(hz, isTouch ? 60 : 60);
-    const benchCapInterval = 1000 / benchCap;
-    const collect = async (ms: number, uncap: boolean) => {
-      bench.uncap = uncap; bench.stamps = []; bench.cb = []; bench.gpu = [];
-      await sleep(ms);
-      return stats(bench.stamps.slice(), bench.cb.slice(), bench.gpu.slice(), uncap ? 0 : benchCapInterval);
-    };
-    const phases: PhaseResult[] = [];
-    for (const [i, name] of PRESET_ORDER.entries()) {
-      setPreset(i); setExtra();
-      benchProgress(`${name} (${i + 1}/${PRESET_ORDER.length}): warming up`);
-      bench.uncap = true; await sleep(2000);
-      benchProgress(`${name} (${i + 1}/${PRESET_ORDER.length}): uncapped (what the device can do)`);
-      const open = await collect(5000, true);
-      benchProgress(`${name} (${i + 1}/${PRESET_ORDER.length}): locked at ${benchCap} fps`);
-      const capped = await collect(8000, false);
-      phases.push({ preset: name, open, capped });
-    }
-    const recommended = recommend(phases, benchCap);
-    let soakRes: BenchReport['soak'];
-    if (soak) {
-      setPreset(PRESET_ORDER.indexOf(recommended as PresetName)); setExtra();
-      const windows: SoakWindow[] = [], total = num('soak', 300) * 1000, step = 15000;
-      for (let t = 0; t < total; t += step) {
-        benchProgress(`soak ${recommended}: ${Math.round(t / 1000)} / ${Math.round(total / 1000)} s`);
-        const st = await collect(step, false);
-        windows.push({ t: t / 1000, fps: st.fps, late: st.late, p99: st.p99 });
-      }
-      soakRes = { preset: recommended, windows };
-    }
-    bench.active = false; bench.uncap = false;
-    setPreset(keepIdx); adaptive = keepAdaptive; setExtra();
-    hud.hide(); audio.muted = true; resetCar(); setState('title'); menu.show('title');
-    benchClose();
-    const info = await navigator.gpu?.requestAdapter().then((a) => (a as unknown as { info?: { description?: string; vendor?: string; architecture?: string } } | null)?.info).catch(() => undefined);
-    const report: BenchReport = {
-      when: new Date().toISOString(), ua: navigator.userAgent, screen: [innerWidth, innerHeight], dpr: devicePixelRatio, hz, cap: capFps, scale, timestamps: bench.ts,
-      gpu: info ? (info.description || [info.vendor, info.architecture].filter(Boolean).join(' ')) || 'unknown GPU' : 'unknown GPU', phases, recommended, soak: soakRes,
-    };
-    benchResults(report, (p) => { setPreset(PRESET_ORDER.indexOf(p as PresetName)); setExtra(); menu.setTuning(false, `Graphics set from the benchmark: ${p}`); });
-    return report;
-  };
 
   // --- front end: title -> garage -> session -------------------------------------------------
   let garagePreloaded = false;
@@ -1346,7 +1285,6 @@ async function main() {
     resume: () => resume(),
     restart: () => { menu.show('none'); if (raceLaps() > 0) void beginRace(); else { resetCar(); setState('race'); audio.muted = false; prev = performance.now(); } },
     quit: (to) => quitSession(party ? 'lobby' : to),
-    bench: (soak) => void runBench(soak),
     screen: (sc: Screen) => {
       if (sc === 'garage') { orbit.dist = 6.6; orbit.el = 0.17; }   // whole car in frame, just above the belt line
       if (sc === 'title' || sc === 'garage' || sc === 'modes' || sc === 'lobby') setState(sc);
@@ -2443,14 +2381,50 @@ async function main() {
   (g.__game as { orbit?: typeof orbit; nyc?: typeof nyc }).orbit = orbit;
   (g.__game as { orbit?: typeof orbit; nyc?: typeof nyc }).nyc = nyc;
   const dom = renderer.domElement;
-  dom.addEventListener('pointerdown', (e) => { partDownX = e.clientX; partDownY = e.clientY; if (driving()) return; orbit.drag = true; orbit.x = e.clientX; orbit.y = e.clientY; dom.setPointerCapture(e.pointerId); });
+  // Interactive AAA free-look camera while driving (mouse OR touch drag on open canvas, wheel zoom, double-tap/right-click recenter)
+  const driveLook = { active: false, pid: -1, x: 0, y: 0, downX: 0, downY: 0, lastTapAt: 0 };
+  dom.addEventListener('contextmenu', (e) => {
+    if (driving() && !photoMode.active && !replay.active) { e.preventDefault(); rig.resetFreeLook(); }
+  });
+  dom.addEventListener('pointerdown', (e) => {
+    partDownX = e.clientX; partDownY = e.clientY;
+    if (driving()) {
+      if (photoMode.active || replay.active) return;
+      if (e.button === 2) { rig.resetFreeLook(); return; }
+      driveLook.active = true; driveLook.pid = e.pointerId;
+      driveLook.x = driveLook.downX = e.clientX;
+      driveLook.y = driveLook.downY = e.clientY;
+      rig.beginFreeLook();
+      try { dom.setPointerCapture(e.pointerId); } catch { /* synthetic event */ }
+      return;
+    }
+    orbit.drag = true; orbit.x = e.clientX; orbit.y = e.clientY;
+    try { dom.setPointerCapture(e.pointerId); } catch { /* synthetic event */ }
+  });
   dom.addEventListener('pointermove', (e) => {
+    if (driveLook.active && e.pointerId === driveLook.pid) {
+      rig.dragFreeLook(e.clientX - driveLook.x, e.clientY - driveLook.y);
+      driveLook.x = e.clientX; driveLook.y = e.clientY;
+      return;
+    }
     if (!orbit.drag) return;
     orbit.az -= (e.clientX - orbit.x) * 0.008;
     orbit.el = Math.min(0.7, Math.max(0.03, orbit.el + (e.clientY - orbit.y) * 0.004));
     orbit.x = e.clientX; orbit.y = e.clientY;
   });
-  const endDrag = () => { orbit.drag = false; };
+  const endDrag = (e?: PointerEvent) => {
+    if (driveLook.active && (!e || e.pointerId === driveLook.pid)) {
+      const moved = e ? Math.hypot(e.clientX - driveLook.downX, e.clientY - driveLook.downY) : 99;
+      driveLook.active = false; driveLook.pid = -1;
+      rig.endFreeLook();
+      if (moved < 8) {
+        const now = performance.now();
+        if (now - driveLook.lastTapAt < 300) { rig.resetFreeLook(); driveLook.lastTapAt = 0; }
+        else driveLook.lastTapAt = now;
+      }
+    }
+    orbit.drag = false;
+  };
   // Garage: a click (not a drag) on a part of the 3D car opens the matching customization tab
   let partDownX = 0, partDownY = 0;
   const partRay = new THREE.Raycaster(), partNdc = new THREE.Vector2();
@@ -2475,9 +2449,15 @@ async function main() {
     for (let p = hit.object.parent; p && p !== visual.model; p = p.parent) names += ` ${p.name}`;
     menu.openGarageTab(partTab(names));
   });
-  dom.addEventListener('pointerup', endDrag);
-  dom.addEventListener('pointercancel', endDrag);
-  dom.addEventListener('wheel', (e) => { if (!driving()) orbit.dist = Math.min(inGarage ? 7.6 : 11, Math.max(inGarage ? 3.6 : 4.5, orbit.dist + e.deltaY * 0.004)); }, { passive: true });
+  dom.addEventListener('pointerup', (e) => endDrag(e));
+  dom.addEventListener('pointercancel', (e) => endDrag(e));
+  dom.addEventListener('wheel', (e) => {
+    if (driving()) {
+      if (!photoMode.active && !replay.active) rig.zoomFreeLook(e.deltaY);
+      return;
+    }
+    orbit.dist = Math.min(inGarage ? 7.6 : 11, Math.max(inGarage ? 3.6 : 4.5, orbit.dist + e.deltaY * 0.004));
+  }, { passive: true });
   const tmpT = new THREE.Vector3(), tmpP = new THREE.Vector3(), tmpR = new THREE.Vector3(), tmpD = new THREE.Vector3();
   const envV = new THREE.Vector3(), envFrom = new THREE.Vector3(), envTo = new THREE.Vector3();
   let envAudioAt = 0;
@@ -2487,21 +2467,27 @@ async function main() {
    */
   const placeShowroom = (dt: number, carPos: THREE.Vector3) => {
     if (!orbit.drag && performance.now() > orbit.holdUntil) orbit.az += dt * (state === 'title' ? 0.16 : 0.08);
-    const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+    const w = window.innerWidth, h = Math.max(1, window.innerHeight);
+    const aspect = w / h;
     const portrait = aspect < 0.92;
-    const phoneLandscape = !portrait && (window.innerHeight <= 540 || (window.innerWidth <= 1000 && matchMedia('(pointer: coarse)').matches));
-    // Frame the hero car in the exact open stage of each screen layout:
-    // - Portrait phones: dead center (0 shift) so the car sits cleanly in the middle window
-    // - Phone landscape garage: shift slightly left (+0.55) to center in the open 69% left stage beside the right drawer
-    // - Desktop title: car right of the left menu rail (+1.55); desktop garage: subtle offset (-0.30)
+    const phoneLandscape = !portrait && (h <= 540 || (w <= 1000 && matchMedia('(pointer: coarse)').matches));
+    const compactDesktop = !portrait && !phoneLandscape && w <= 1320;
+    const drawerOpen = menu.garageDrawerOpen;
+    // Frame the hero car cleanly away from every UI panel (note: lookAt subtracts `orbit.shift * right`,
+    // so POSITIVE shift moves the car RIGHT of the left Title rail, and NEGATIVE shift moves the car LEFT
+    // away from the right-hand Garage customization drawer!):
     const targetShift = portrait ? 0
       : state === 'title' ? (phoneLandscape ? 1.05 : 1.55)
-      : state === 'garage' ? (phoneLandscape ? 0.55 : -0.30)
+      : state === 'garage' ? (drawerOpen ? (phoneLandscape ? -1.35 : compactDesktop ? -0.95 : -0.58) : 0)
       : 0;
-    orbit.shift += (targetShift - orbit.shift) * (1 - Math.exp(-dt * 4));
-    if (inGarage) tmpT.set(0, portrait ? 0.42 : 0.58, 0); else tmpT.copy(carPos).add(tmpD.set(0, 0.25, 0));
+    orbit.shift += (targetShift - orbit.shift) * (1 - Math.exp(-dt * 4.5));
+    // In portrait Garage with bottom drawer open, aim slightly lower so the car sits high in the clear upper window
+    const garageY = portrait && drawerOpen ? 0.08 : portrait ? 0.40 : 0.58;
+    if (inGarage) tmpT.set(0, garageY, 0); else tmpT.copy(carPos).add(tmpD.set(0, 0.25, 0));
     const baseDist = inGarage ? Math.min(7.6, Math.max(3.2, orbit.dist)) : orbit.dist;
-    const dist = portrait ? Math.min(inGarage ? 8.2 : 11.5, baseDist * 1.24) : baseDist;
+    const dist = portrait ? Math.min(inGarage ? 8.4 : 11.5, baseDist * 1.24)
+      : phoneLandscape && state === 'garage' && drawerOpen ? Math.min(8.0, baseDist * 1.12)
+      : baseDist;
     const ce = Math.cos(orbit.el);
     tmpP.set(Math.sin(orbit.az) * ce, Math.sin(orbit.el), Math.cos(orbit.az) * ce).multiplyScalar(dist).add(tmpT);
     if (inGarage) garage!.clampCamera(tmpT, tmpP);
@@ -2624,19 +2610,17 @@ async function main() {
     if (citySwitching) return;
     const now = performance.now();
     const p0 = now;
-    const cb0 = bench.active ? now : 0;
     const frame = Math.min(0.1, (now - prev) / 1000);
     prev = now;
     const inShowroom = isShowroom(state);
     const frozenByCreator = photoMode.active || replay.active || raceNodes.matchmaking || carMeet.walking;
-    const live = state !== 'paused' && !frozenByCreator && (!inShowroom || settledShowroom < 24 || bench.active);
-    if (bench.active) benchStep(frame);
+    const live = state !== 'paused' && !frozenByCreator && (!inShowroom || settledShowroom < 24);
     // Slow-motion 0.22x time scale during totaled Crash Cinematic before entering Spectate
     const simDt = crashCineT > 0 ? frame * 0.22 : frame;
     if (live) acc += simDt; else acc = 0;
     // The street under the car is not built yet (a slow phone or network was outrun by the car, or a reset landed on an
     // unloaded tile): hold the simulation until its colliders exist, instead of letting the car fall through the map.
-    if (nyc && live && driving() && state !== 'spectate' && !bench.active) {
+    if (nyc && live && driving() && state !== 'spectate') {
       const cp = car.body.translation();
       const held = !nyc.groundReady(cp.x, cp.z);
       if (held) acc = 0;
@@ -2925,9 +2909,8 @@ async function main() {
       remote.update(now, camera);
       if (party && driving()) { const out = remote.outgoing(now, pos, quat, car.body.linvel()); if (out) party.sendPose(out, paintInt()); }
     }
-    // The garage is on screen for every showroom state, except behind the tuner's cover and during the benchmark
-    // (both measure the street).
-    setGarage(inShowroom && !tuning && !bench.active);
+    // The garage is on screen for every showroom state, except behind the tuner's cover
+    setGarage(inShowroom && !tuning);
     if (inGarage) {
       visual.custom.sync(garage!.holder.position, IDENT_Q);   // livery mask: the model sits on the turntable, not at the body
       if (garage!.dirtyEnv) { garage!.captureEnv(); probe?.fromCube(garage!.cube.texture); }
@@ -2990,8 +2973,8 @@ async function main() {
     // display refresh; only the draw is skipped, so the picture holds still between rendered frames. The cap is off while
     // the graphics tuner measures (it needs the uncapped speed), and the slot clock advances by whole intervals so a
     // 60/120/144 Hz display averages exactly the cap instead of rounding down.
-    if (capInterval === 0 || tuning || bench.uncap || now - lastRenderAt >= capInterval - 2) {
-      lastRenderAt = capInterval && !bench.uncap && now - lastRenderAt < capInterval * 1.5 ? lastRenderAt + capInterval : now;
+    if (capInterval === 0 || tuning || now - lastRenderAt >= capInterval - 2) {
+      lastRenderAt = capInterval && now - lastRenderAt < capInterval * 1.5 ? lastRenderAt + capInterval : now;
       const hasCasters = ai.mode !== 'off' || remote !== null || cops.active || damage.debrisCount > 0;
       if (hasCasters && ++frameNo % (params.has('se') ? num('se', 2) : PRESETS[post.preset].shadowEvery) === 0) for (const sh of headShadows) sh.needsUpdate = true;
       const tPost = performance.now();
@@ -3013,7 +2996,7 @@ async function main() {
           console.log(`[stats] ${s.calls} calls · ${s.textures} textures · ${s.textureMB} MB · ${s.noMips} without mips · ${s.triangles} tris`);
         }
       }
-      if (adaptive && state === 'race' && !bench.active && car.out[OUT.speed] > 5 && frame < 0.095) {
+      if (adaptive && state === 'race' && car.out[OUT.speed] > 5 && frame < 0.095) {
         driveWinTime += frame;
         if (++driveFrames >= 60) {
           const dfps = driveFrames / driveWinTime;
@@ -3029,14 +3012,6 @@ async function main() {
           if (lowDrive >= 3) { try { localStorage.setItem(POTATO_KEY, '1'); } catch { /* storage blocked */ } }
         }
       } else if (state !== 'race') { driveWinTime = 0; driveFrames = 0; }
-      if (bench.active) {
-        bench.stamps.push(now);
-        if (bench.ts && !bench.pending) {
-          bench.pending = true;
-          const r = renderer as unknown as { resolveTimestampsAsync(t: string): Promise<number | undefined> };
-          Promise.all([r.resolveTimestampsAsync('render'), r.resolveTimestampsAsync('compute')]).then(([a, c]) => { if (a) bench.gpu.push(a + (c || 0)); bench.pending = false; });
-        }
-      }
     }
     if (state === 'race' || (raceLaps() > 0 && (state === 'spectate' || state === 'results'))) {
       const tRace = ticks * DT - raceT0;
@@ -3113,7 +3088,6 @@ async function main() {
     if (heat.tick(Date.now())) renderHeat();   // quiet minutes cool one level; the dial is the state
     prof.total += performance.now() - p0;
     prof.n++;
-    if (bench.active) bench.cb.push(performance.now() - cb0);
   });
 }
 
