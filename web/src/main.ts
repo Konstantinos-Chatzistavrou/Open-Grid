@@ -68,7 +68,7 @@ import { RaceNodes } from './raceNodes';
 import { CarMeetHub } from './carMeet';
 import { INSURANCE_PREMIUM_XP, conditionOf, loadMaintenance, recordRaceDamage, repairCarCondition, repairCostOf, saveMaintenance, submitModerationReport, towFeeOf } from './maintenance';
 import { WorldClock } from './worldClock';
-import { AUCTION_LOTS, applyNightRunnersToPhysics, engineOf, loadNightRunners, saveNightRunners, stanceOf, tickEngineAndNos } from './nightRunners';
+import { AUCTION_LOTS, ENGINE_SWAPS, applyNightRunnersToPhysics, engineOf, loadNightRunners, saveNightRunners, stanceOf, tickEngineAndNos } from './nightRunners';
 import { PARTY_BONUS_MUL, advanceChallenge, loadRetention, saveRetention, triggerPrestigeReset } from './retention';
 import { VoiceChat } from './voice';
 import { ACADEMY_LESSONS, PenaltyTracker, markLessonDone } from './careerEvents';
@@ -384,10 +384,16 @@ async function main() {
   const turboStageOf = () => {
     if (specClass) return 0;
     const eng = engineOf(nr, sel.car);
+    const sw = ENGINE_SWAPS[eng.swap];
     if (eng.turbo === 'twin_turbo' || sel.car === 'tornado_gt3') return 3;
-    if (eng.turbo === 'big_single' || sel.car === 'tornado_gt') return 2;
-    if (eng.turbo === 'twin_scroll' || eng.swap === 'v8_twin_turbo') return 1;
+    if (eng.turbo === 'big_single' || sel.car === 'tornado_gt' || sw?.induction === 'turbo') return 2;
+    if (eng.turbo === 'twin_scroll') return 1;
     return 0;
+  };
+  const syncAudioEngine = () => {
+    const eng = engineOf(nr, sel.car);
+    const sw = specClass ? ENGINE_SWAPS.stock : (ENGINE_SWAPS[eng.swap] ?? ENGINE_SWAPS.stock);
+    audio.setCarProfile(sel.car, sw.voice, !specClass && eng.turbo !== 'stock');
   };
   let builtKey = carKey();
   let core = new CoreCar(coreJson());
@@ -1245,7 +1251,7 @@ async function main() {
     visual.driver.setSkin(skinOf(sel.skin), sel.avatarGear);
     const st = stanceOf(nr, sel.car);
     visual.setStance(st.camberFront, st.camberRear);
-    audio.setCarProfile(sel.car);
+    syncAudioEngine();
     carMeetRef?.setAvatarGear(sel.avatarGear);
   };
   /** The online account keeps each car's look; a garage click pushes once (debounced) once the profile is known. */
@@ -1373,12 +1379,12 @@ async function main() {
       void submitModerationReport(cloud, maint, rid, player, category).then((r) => hud.toast('🚩 REPORT SUBMITTED', r.message));
     },
     garageIgnition: () => {
-      audio.setCarProfile(sel.car);
+      syncAudioEngine();
       audio.triggerIgnition();
       visual.setExhaustFlame(0.65, false);
     },
     garageRev: () => {
-      audio.setCarProfile(sel.car);
+      syncAudioEngine();
       audio.triggerGarageRev();
       visual.setExhaustFlame(1.2, false);
     },
@@ -1390,6 +1396,7 @@ async function main() {
       saveNightRunners(nr);
       const st = stanceOf(nr, sel.car);
       visual.setStance(st.camberFront, st.camberRear);
+      syncAudioEngine();
       if (carKey() !== builtKey) { rebuildPlayer(); spawn(); syncPose(); }
     },
     buyAuction: (lotId) => {

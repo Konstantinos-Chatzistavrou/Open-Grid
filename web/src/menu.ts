@@ -23,7 +23,8 @@ import { LANGS, getLang, setLang, t, type LangCode } from './i18n';
 import type { AccessibilitySettings, ColorblindMode, UiScale } from './accessibility';
 import type { AvatarGear } from './carMeet';
 import { INSURANCE_PREMIUM_CR, INSURANCE_PREMIUM_XP, conditionOf, repairCostOf, type MaintenanceStore, type ReportCategory } from './maintenance';
-import { AUCTION_LOTS, ENGINE_SWAPS, ENGINE_SWAP_THRESHOLD, MANIFOLDS, NOS_MAX_LITERS, NOS_PRICE_PER_LITER_XP, TURBOS, engineOf, stanceOf, type ManifoldId, type NightRunnersStore, type SwapId, type TurboId } from './nightRunners';
+import { AUCTION_LOTS, ENGINE_SWAPS, MANIFOLDS, NOS_MAX_LITERS, NOS_PRICE_PER_LITER_XP, TURBOS, engineOf, stanceOf, type ManifoldId, type NightRunnersStore, type SwapId, type TurboId } from './nightRunners';
+import { brandBadgeSvg, brandOfCar, stockEngineOfCar } from './brands';
 import { PARTY_BONUS_MUL, type RetentionStore } from './retention';
 import { checkSplitScreen } from './splitScreen';
 import { MOD_CATALOG, loadModHub, toggleModSub, type ModHubStore } from './modHub';
@@ -355,7 +356,7 @@ export class Menu {
         </div>
       </div>
       <div class="t-heat heat-chip ${this.heat >= 5 ? 'maxed' : this.heat === 4 ? 'hot' : ''}"><span>HEAT</span>${Array.from({ length: 5 }, (_, i) => `<i class="${i < this.heat ? 'on' : ''}"></i>`).join('')}<b>${this.heat}/5</b></div>
-      <div class="t-car"><span>ACTIVE VEHICLE</span><b>${esc(curCar.name)}</b><em><i>CLASS ${cls}</i>${Math.round(st.power)} kW · ${Math.round(st.mass)} kg</em></div>`;
+      ${(() => { const br = brandOfCar(curCar.id); return `<div class="t-car"><div class="t-car-brand">${brandBadgeSvg(curCar.id, 30)}<span>${esc(br.fullName)} · ${esc(br.country)}</span></div><b>${esc(curCar.name)}</b><em><i>CLASS ${cls}</i>${Math.round(st.power)} kW · ${Math.round(st.mass)} kg</em></div>`; })()}`;
   }
 
   private settings() {
@@ -451,11 +452,12 @@ export class Menu {
   private shop() {
     const w = this.career, sp = w.kind === 'sp';
     const cars = this.cars.map((c) => {
-      const st = statsOf(this.physics[c.id]), owned = w.owns(c.id);
+      const st = statsOf(this.physics[c.id]), owned = w.owns(c.id), br = brandOfCar(c.id);
       const btn = owned ? `<button class="small" data-act="shop-drive" data-v="${c.id}">${c.id === this.sel.car ? '✓ Driving' : 'Drive'}</button>` : this.itemBtn('car', c.id, undefined, '');
       const r = w.req('car', c.id);
       return `<div class="scard ${owned ? 'owned' : ''}">
-        <div class="car-head"><b>${esc(c.name)}</b><i class="car-badge">${owned ? (sp ? 'UNLOCKED' : 'OWNED') : sp ? `LV ${r.spLevel}` : `LV ${r.mpLevel} · ${fmt(r.price)}`}</i></div>
+        <div class="car-head"><span class="brand-inline">${brandBadgeSvg(c.id, 22)}<b>${esc(c.name)}</b></span><i class="car-badge">${owned ? (sp ? 'UNLOCKED' : 'OWNED') : sp ? `LV ${r.spLevel}` : `LV ${r.mpLevel} · ${fmt(r.price)}`}</i></div>
+        <div class="brand-meta">${esc(br.fullName)} · ${esc(br.origin)} · ${esc(stockEngineOfCar(c.id).label)}</div>
         <span class="dim">${esc(c.tag)}</span>
         <div class="mini"><em>${Math.round(st.power)} kW</em><em>${Math.round(st.mass)} kg</em><em>${st.grip.toFixed(2)} µ</em></div>
         ${btn}</div>`;
@@ -527,8 +529,10 @@ export class Menu {
     const cards = filtered.map((c) => {
       const st = statsOf(this.physics[c.id]);
       const fav = this.favCars.includes(c.id);
+      const br = brandOfCar(c.id);
       return `<button class="car ${c.id === sel.car ? 'on' : ''}" data-act="car" data-v="${c.id}">
-        <div class="car-head"><b>${esc(c.name)}</b><span data-act="fav-car" data-v="${c.id}" title="Favorite">${fav ? '★' : '☆'}</span><i class="car-badge">${c.id === sel.car ? 'SELECTED' : 'SELECT'}</i></div>
+        <div class="car-head"><span class="brand-inline">${brandBadgeSvg(c.id, 20)}<b>${esc(c.name)}</b></span><span data-act="fav-car" data-v="${c.id}" title="Favorite">${fav ? '★' : '☆'}</span><i class="car-badge">${c.id === sel.car ? 'SELECTED' : 'SELECT'}</i></div>
+        <div class="brand-meta">${esc(br.name)} · ${esc(br.country)} · ${esc(stockEngineOfCar(c.id).label)}</div>
         <span>${esc(c.tag)}</span>
         <div class="mini"><em>${Math.round(st.power)} kW</em><em>${Math.round(st.mass)} kg</em><em>${st.grip.toFixed(2)} µ</em></div>
       </button>`;
@@ -552,7 +556,7 @@ export class Menu {
       <header class="g-head">
         <div class="g-brand">GARAGE<span>BUILD YOUR CAR</span></div>
         <div class="g-carsum">
-          <div class="g-name">${esc(this.car().name)}<i>CLASS ${cls}</i> ${condBadge}</div>
+          ${(() => { const br = brandOfCar(sel.car); const engCur = engineOf(this.nr, sel.car); const engLbl = engCur.swap === 'stock' ? stockEngineOfCar(sel.car).label : ENGINE_SWAPS[engCur.swap].label; return `<div class="g-name">${brandBadgeSvg(sel.car, 26)}<span>${esc(br.name)}</span> ${esc(this.car().name)}<i>CLASS ${cls}</i> <span class="pill">${esc(engLbl)}</span> ${condBadge}</div>`; })()}
           <div class="g-stats">
             <span><b>${Math.round(now.power)}</b> kW</span>
             <span><b>${Math.round(now.mass)}</b> kg</span>
@@ -747,15 +751,30 @@ export class Menu {
   private gEngine() {
     const eng = engineOf(this.nr, this.sel.car);
     const freeTest = this.sp.testingMode && this.sel.career === 'sp';
-    const canSwap = freeTest || eng.health <= ENGINE_SWAP_THRESHOLD;
+    const stockSpec = stockEngineOfCar(this.sel.car);
     const tagsHtml = eng.tags.length ? `<div style="margin:6px 0">${eng.tags.map((tg) => `<span class="tag-chip">${esc(tg)}</span>`).join('')}</div>` : '';
     const turboBtns = (Object.keys(TURBOS) as TurboId[]).map((id) =>
       `<button class="chip ${eng.turbo === id ? 'on' : ''}" data-act="nr-turbo" data-v="${id}">${TURBOS[id].label} (${Math.round((TURBOS[id].powerMul - 1) * 100)}% pwr)</button>`).join('');
     const manBtns = (Object.keys(MANIFOLDS) as ManifoldId[]).map((id) =>
       `<button class="chip ${eng.manifold === id ? 'on' : ''}" data-act="nr-man" data-v="${id}">${MANIFOLDS[id].label}</button>`).join('');
-    const swapBtns = (Object.keys(ENGINE_SWAPS) as SwapId[]).map((id) =>
-      `<button class="chip ${eng.swap === id ? 'on' : ''}" data-act="nr-swap" data-v="${id}" ${!canSwap && id !== 'stock' && id !== eng.swap ? 'disabled title="Wear current engine to <= 20% health to unlock swaps (or enable Testing Mode)"' : ''}>${ENGINE_SWAPS[id].label}</button>`).join('');
-    return `<h3>Maintenance &amp; Health</h3>
+    const swapCards = (Object.keys(ENGINE_SWAPS) as SwapId[]).map((id) => {
+      const sw = ENGINE_SWAPS[id];
+      const active = eng.swap === id;
+      const title = id === 'stock' ? `Factory · ${stockSpec.label}` : sw.label;
+      const sub = id === 'stock' ? 'Original manufacturer powertrain & factory acoustic voice' : sw.arch;
+      const massTxt = sw.massDeltaKg === 0 ? '±0 kg' : `${sw.massDeltaKg > 0 ? '+' : ''}${sw.massDeltaKg} kg`;
+      const pwrTxt = sw.powerMul === 1 ? 'Base' : `+${Math.round((sw.powerMul - 1) * 100)}% pwr`;
+      return `<button class="swap-card ${active ? 'on' : ''}" data-act="nr-swap" data-v="${id}" title="Click to install &amp; hear engine rev">
+        <div class="swap-top"><b>${esc(title)}</b><i>${esc(sw.short)}</i></div>
+        <span class="dim">${esc(sub)}</span>
+        <div class="swap-meta"><em>${pwrTxt}</em><em>${massTxt}</em><em>${active ? '✓ INSTALLED' : '🔊 SWAP &amp; REV'}</em></div>
+      </button>`;
+    }).join('');
+    return `<h3>Engine Swaps <small class="dim">(authentic multi-architecture physics &amp; acoustics — click any block to swap &amp; rev!)</small></h3>
+      <div class="swap-grid">${swapCards}</div>
+      <h3>Turbocharger <small class="dim">(adds boost &amp; compressor spool/BOV sound)</small></h3><div class="chips">${turboBtns}</div>
+      <h3>Exhaust Manifold <small class="dim">(more backfire flames &amp; flow)</small></h3><div class="chips">${manBtns}</div>
+      <h3>Maintenance &amp; Health</h3>
       <div class="dim small-note">Engine Health: <b>${Math.round(eng.health)}%</b> · Oil Life: <b>${Math.round(eng.oilLife)}%</b> · Odometer: <b>${Math.round(eng.mileageKm).toLocaleString()} km</b></div>
       ${tagsHtml}
       <div class="chips" style="margin:8px 0">
@@ -763,10 +782,7 @@ export class Menu {
         <button class="chip" data-act="nr-rebuild">🔧 Engine Overhaul (${freeTest ? 'FREE' : '350 XP'})</button>
       </div>
       <h3>💨 Nitrous Oxide <small class="dim">(${eng.nosLiters.toFixed(1)} / ${NOS_MAX_LITERS} L · [X] in race · overuse fries engine!)</small></h3>
-      <div class="chips"><button class="chip on" data-act="nr-nos" data-v="5">+5 L Refill (${freeTest ? 'FREE' : `${5 * NOS_PRICE_PER_LITER_XP} XP`})</button><button class="chip" data-act="nr-nos" data-v="15">Fill Full Bottle${freeTest ? ' (FREE)' : ''}</button></div>
-      <h3>Turbocharger <small class="dim">(trades reliability for boost)</small></h3><div class="chips">${turboBtns}</div>
-      <h3>Exhaust Manifold <small class="dim">(more backfire flames &amp; flow)</small></h3><div class="chips">${manBtns}</div>
-      <h3>Under-the-Hood Engine Swap <small class="dim">${freeTest ? '✓ UNLOCKED (Testing Mode · Free)' : canSwap ? '✓ UNLOCKED (engine worn <= 20%)' : `🔒 Locked until engine health <= ${ENGINE_SWAP_THRESHOLD}%`}</small></h3><div class="chips">${swapBtns}</div>`;
+      <div class="chips"><button class="chip on" data-act="nr-nos" data-v="5">+5 L Refill (${freeTest ? 'FREE' : `${5 * NOS_PRICE_PER_LITER_XP} XP`})</button><button class="chip" data-act="nr-nos" data-v="15">Fill Full Bottle${freeTest ? ' (FREE)' : ''}</button></div>`;
   }
 
   private gPerf() {
@@ -1126,13 +1142,12 @@ export class Menu {
       case 'nr-man': engineOf(this.nr, sel.car).manifold = v as ManifoldId; this.hooks.nrChanged?.(); this.render(); break;
       case 'nr-swap': {
         const eng = engineOf(this.nr, sel.car);
-        if (this.sp.testingMode || eng.health <= ENGINE_SWAP_THRESHOLD || v === 'stock') {
-          eng.swap = v as SwapId;
-          eng.health = 100;
-          eng.oilLife = 100;
-          this.hooks.nrChanged?.();
-          this.render();
-        }
+        eng.swap = v as SwapId;
+        eng.health = 100;
+        eng.oilLife = 100;
+        this.hooks.nrChanged?.();
+        this.hooks.garageRev?.();
+        this.render();
         break;
       }
       case 'nr-oil': {

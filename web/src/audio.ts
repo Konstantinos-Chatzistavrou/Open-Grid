@@ -7,18 +7,141 @@
 //   * breakGlassShopSound(): tempered plate-glass flex thump + wide-band shatter + 45+ crystalline shard chimes
 //   * breakWallSound(): heavy structural masonry/concrete demolition + falling brick rubble + glass shatter
 import { OUT } from './physics/core';
+import { stockEngineOfCar, type EngineVoiceId } from './brands';
 
-const CYLINDERS = 8;
+/** Acoustic synthesis parameters derived from real engine firing orders, crank planes & exhaust manifolds. */
+interface EngineVoiceSpec {
+  /** Combustion firings per crankshaft revolution (3.0 = 6-cyl, 4.0 = 8-cyl / 4-rotor, 5.0 = V10, 6.0 = V12). */
+  firingsPerRev: number;
+  /** Sub-harmonic oscillator ratio relative to firing freq (0.25 = cross-plane V8 lope, 0.5 = odd-fire V10 / flat-6). */
+  subRatio: number;
+  /** Secondary exhaust bank / unequal-runner ratio (0.75 = V8, 1.5 = V10/Flat-6 rasp, 2.0 = V12/Flat-8/Rotary scream). */
+  bankRatio: number;
+  /** Upper intake/header harmonic shriek ratio (2.0 = V12 soprano, 2.5 = V10 wail, 3.0 = Flat-6/Rotary buzz). */
+  harmRatio: number;
+  /** Oscillator mix weights */
+  mainGain: number;
+  subGain: number;
+  bankGain: number;
+  harmGain: number;
+  /** Dual exhaust bank X-pipe / header waveguide comb delays (seconds) */
+  combL: number;
+  combR: number;
+  /** 3 acoustic exhaust/intake formant resonators [freqHz, Q, gainDb] */
+  f1: [number, number, number];
+  f2: [number, number, number];
+  f3: [number, number, number];
+  /** Idle lope rate (Hz) & depth (rotary peripheral-port brap & cross-plane V8 cam lope vs smooth V12/I6) */
+  lopeHz: number;
+  lopeDepth: number;
+  /** WaveShaper harmonic saturation drive */
+  drive: number;
+  /** Forced induction synthesizer mode */
+  boost: 'none' | 'turbo' | 'supercharger';
+  /** Garage rev target RPM */
+  revRpm: number;
+  /** PeriodicWave preset key */
+  waveKey: 'crossplane' | 'flatplane' | 'v12' | 'v10' | 'v6' | 'flat6' | 'flat8' | 'i6' | 'rotary';
+}
+
+const ENGINE_VOICES: Record<EngineVoiceId, EngineVoiceSpec> = {
+  v8_crossplane: {
+    firingsPerRev: 4.0, subRatio: 0.25, bankRatio: 0.75, harmRatio: 1.5,
+    mainGain: 0.76, subGain: 0.74, bankGain: 0.38, harmGain: 0.14,
+    combL: 0.0024, combR: 0.0043,
+    f1: [112, 2.2, 8.0], f2: [330, 1.8, 5.5], f3: [1220, 2.4, 4.2],
+    lopeHz: 17.5, lopeDepth: 0.032, drive: 4.4, boost: 'none', revRpm: 7200, waveKey: 'crossplane',
+  },
+  v8_twin_turbo: {
+    firingsPerRev: 4.0, subRatio: 0.25, bankRatio: 0.75, harmRatio: 1.5,
+    mainGain: 0.74, subGain: 0.68, bankGain: 0.36, harmGain: 0.16,
+    combL: 0.0028, combR: 0.0046,
+    f1: [104, 2.4, 8.5], f2: [295, 1.9, 5.8], f3: [1180, 2.3, 3.8],
+    lopeHz: 18.0, lopeDepth: 0.026, drive: 4.2, boost: 'turbo', revRpm: 7800, waveKey: 'crossplane',
+  },
+  v8_supercharged: {
+    firingsPerRev: 4.0, subRatio: 0.25, bankRatio: 0.75, harmRatio: 1.5,
+    mainGain: 0.78, subGain: 0.76, bankGain: 0.40, harmGain: 0.14,
+    combL: 0.0026, combR: 0.0048,
+    f1: [98, 2.5, 9.0], f2: [310, 1.7, 6.0], f3: [1350, 2.2, 4.5],
+    lopeHz: 15.5, lopeDepth: 0.038, drive: 4.8, boost: 'supercharger', revRpm: 7200, waveKey: 'crossplane',
+  },
+  v8_flatplane: {
+    firingsPerRev: 4.0, subRatio: 0.5, bankRatio: 1.003, harmRatio: 2.0,
+    mainGain: 0.80, subGain: 0.30, bankGain: 0.42, harmGain: 0.36,
+    combL: 0.0018, combR: 0.0019,
+    f1: [165, 2.0, 5.5], f2: [520, 2.1, 5.5], f3: [1780, 2.8, 6.8],
+    lopeHz: 24.0, lopeDepth: 0.014, drive: 4.6, boost: 'none', revRpm: 9000, waveKey: 'flatplane',
+  },
+  v12_na: {
+    firingsPerRev: 6.0, subRatio: 0.5, bankRatio: 1.002, harmRatio: 2.0,
+    mainGain: 0.84, subGain: 0.24, bankGain: 0.44, harmGain: 0.46,
+    combL: 0.0015, combR: 0.00155,
+    f1: [195, 2.0, 4.8], f2: [640, 2.3, 6.2], f3: [2150, 3.0, 7.6],
+    lopeHz: 28.0, lopeDepth: 0.008, drive: 3.8, boost: 'none', revRpm: 9300, waveKey: 'v12',
+  },
+  v10_screamer: {
+    firingsPerRev: 5.0, subRatio: 0.5, bankRatio: 1.5, harmRatio: 2.0,
+    mainGain: 0.80, subGain: 0.36, bankGain: 0.50, harmGain: 0.42,
+    combL: 0.0019, combR: 0.0027,
+    f1: [170, 2.2, 5.4], f2: [560, 2.4, 6.8], f3: [1980, 3.1, 7.8],
+    lopeHz: 22.0, lopeDepth: 0.014, drive: 4.5, boost: 'none', revRpm: 9000, waveKey: 'v10',
+  },
+  v6_tt: {
+    firingsPerRev: 3.0, subRatio: 0.5, bankRatio: 1.5, harmRatio: 2.0,
+    mainGain: 0.78, subGain: 0.46, bankGain: 0.44, harmGain: 0.24,
+    combL: 0.0023, combR: 0.0036,
+    f1: [135, 2.3, 6.8], f2: [430, 2.1, 6.0], f3: [1520, 2.6, 5.4],
+    lopeHz: 19.0, lopeDepth: 0.020, drive: 4.3, boost: 'turbo', revRpm: 8000, waveKey: 'v6',
+  },
+  flat6_na: {
+    firingsPerRev: 3.0, subRatio: 0.5, bankRatio: 1.5, harmRatio: 3.0,
+    mainGain: 0.76, subGain: 0.38, bankGain: 0.52, harmGain: 0.38,
+    combL: 0.0017, combR: 0.0031,
+    f1: [155, 2.1, 5.6], f2: [490, 2.4, 6.5], f3: [1880, 3.2, 7.8],
+    lopeHz: 21.0, lopeDepth: 0.018, drive: 4.7, boost: 'none', revRpm: 9000, waveKey: 'flat6',
+  },
+  flat8_na: {
+    firingsPerRev: 4.0, subRatio: 0.5, bankRatio: 1.5, harmRatio: 2.0,
+    mainGain: 0.80, subGain: 0.32, bankGain: 0.46, harmGain: 0.42,
+    combL: 0.0016, combR: 0.0025,
+    f1: [175, 2.2, 5.2], f2: [580, 2.3, 6.4], f3: [2040, 3.0, 7.5],
+    lopeHz: 24.5, lopeDepth: 0.012, drive: 4.5, boost: 'none', revRpm: 9400, waveKey: 'flat8',
+  },
+  i6_forged: {
+    firingsPerRev: 3.0, subRatio: 0.5, bankRatio: 2.0, harmRatio: 3.0,
+    mainGain: 0.82, subGain: 0.28, bankGain: 0.44, harmGain: 0.30,
+    combL: 0.0020, combR: 0.00205,
+    f1: [148, 2.2, 6.2], f2: [460, 2.2, 6.0], f3: [1680, 2.8, 6.2],
+    lopeHz: 25.0, lopeDepth: 0.010, drive: 3.9, boost: 'turbo', revRpm: 8200, waveKey: 'i6',
+  },
+  rotary_4: {
+    firingsPerRev: 4.0, subRatio: 0.25, bankRatio: 2.0, harmRatio: 3.0,
+    mainGain: 0.80, subGain: 0.40, bankGain: 0.54, harmGain: 0.50,
+    combL: 0.0013, combR: 0.00135,
+    f1: [185, 2.4, 5.2], f2: [720, 2.8, 7.2], f3: [2480, 3.4, 8.6],
+    lopeHz: 11.5, lopeDepth: 0.068, drive: 5.2, boost: 'none', revRpm: 10200, waveKey: 'rotary',
+  },
+};
 
 export class GameAudio {
   private ctx: AudioContext | null = null;
   private noise: AudioBuffer | null = null;
   private out: GainNode | null = null;
+  private waves: Partial<Record<EngineVoiceSpec['waveKey'], PeriodicWave>> = {};
   private eng: {
     o1: OscillatorNode;
     oMain: OscillatorNode;
     oSub: OscillatorNode;
     oBank: OscillatorNode;
+    oHarm: OscillatorNode;
+    gMain: GainNode;
+    gSub: GainNode;
+    gBank: GainNode;
+    gHarm: GainNode;
+    oBoost: OscillatorNode;
+    boostFilter: BiquadFilterNode;
+    boostGain: GainNode;
     oGear: OscillatorNode;
     gearGain: GainNode;
     combDelayL: DelayNode;
@@ -57,58 +180,96 @@ export class GameAudio {
   private lastGear = 1;
   private lastRpm = 800;
   private nextCrackleAt = 0;
-  private pitchMul = 1.0;
+  private voiceId: EngineVoiceId = 'v8_crossplane';
+  private extraTurbo = false;
+  private boostSpool = 0;
   private revUntil = 0;
   muted = false;
   /** Low-power mobile/potato audio mode: skips heavy stereo FFT ConvolverNode reverb to save phone ARM CPU. */
   lowPower = false;
 
-  /** Unique engine sound profile per car (V8 / Flat-6 / Twin-Turbo V6 / V10 / V12 firing ratios). */
-  setCarProfile(carId: string) {
-    const map: Record<string, number> = {
-      vela_gt: 1.00,
-      k_concept: 1.06,
-      hayate: 0.96,
-      kestrel_gt: 1.14,
-      harrier_gt: 0.91,
-      tornado_gt: 1.18,
-      tornado_gt3: 1.36,
-      strix_gt7: 1.28,
-      basilisk_v12: 1.48,
-    };
-    this.pitchMul = map[carId] ?? 1.0;
+  /** Apply authentic engine acoustic architecture (factory stock engine OR installed engine swap + turbo kit). */
+  setCarProfile(carId: string, swapVoice?: EngineVoiceId | null, hasAftermarketTurbo = false) {
+    this.voiceId = swapVoice ?? stockEngineOfCar(carId).voice;
+    this.extraTurbo = hasAftermarketTurbo;
+    this.applyVoice();
   }
 
-  /** Garage Ignition button: starter motor crank + cold-start exhaust bark. */
+  private applyVoice() {
+    const e = this.eng;
+    const ctx = this.ctx;
+    if (!e || !ctx) return;
+    const v = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
+    const t = ctx.currentTime;
+    const w = this.waves[v.waveKey];
+    if (w) {
+      e.oMain.setPeriodicWave(w);
+      e.oBank.setPeriodicWave(w);
+    }
+    e.gMain.gain.setTargetAtTime(v.mainGain, t, 0.04);
+    e.gSub.gain.setTargetAtTime(v.subGain, t, 0.04);
+    e.gBank.gain.setTargetAtTime(v.bankGain, t, 0.04);
+    e.gHarm.gain.setTargetAtTime(v.harmGain, t, 0.04);
+    e.combDelayL.delayTime.setTargetAtTime(v.combL, t, 0.04);
+    e.combDelayR.delayTime.setTargetAtTime(v.combR, t, 0.04);
+    e.formant1.frequency.setTargetAtTime(v.f1[0], t, 0.04); e.formant1.Q.value = v.f1[1]; e.formant1.gain.value = v.f1[2];
+    e.formant2.frequency.setTargetAtTime(v.f2[0], t, 0.04); e.formant2.Q.value = v.f2[1]; e.formant2.gain.value = v.f2[2];
+    e.formant3.frequency.setTargetAtTime(v.f3[0], t, 0.04); e.formant3.Q.value = v.f3[1]; e.formant3.gain.value = v.f3[2];
+    e.shaper.curve = distortion(v.drive);
+  }
+
+  /** Garage Ignition button: starter motor crank + cold-start bark tuned to the active engine swap! */
   triggerIgnition() {
     this.unlock();
     const ctx = this.ctx;
     if (!ctx || !this.out) return;
+    const v = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
     const t = ctx.currentTime;
+    const fIdle = (900 / 60) * v.firingsPerRev;
+    const fBark = (2600 / 60) * v.firingsPerRev;
     for (let i = 0; i < 4; i++) {
-      this.tone(t + i * 0.11, 0.08, 130 * this.pitchMul, 165 * this.pitchMul, 'sawtooth', 0.14);
+      this.tone(t + i * 0.11, 0.08, 125, 160, 'sawtooth', 0.13);
     }
-    this.burst(t + 0.44, 0.22, 'bandpass', 180 * this.pitchMul, 1.2, 0.36);
-    this.tone(t + 0.44, 0.35, 95 * this.pitchMul, 195 * this.pitchMul, 'sawtooth', 0.24);
-    this.tone(t + 0.78, 0.55, 195 * this.pitchMul, 105 * this.pitchMul, 'sawtooth', 0.16);
+    this.burst(t + 0.44, 0.24, 'bandpass', v.f2[0], 1.4, 0.36);
+    this.tone(t + 0.44, 0.34, fIdle, fBark, 'sawtooth', 0.24);
+    this.tone(t + 0.44, 0.34, fIdle * v.bankRatio, fBark * v.bankRatio, 'triangle', 0.18);
+    this.tone(t + 0.78, 0.58, fBark, fIdle * 1.05, 'sawtooth', 0.17);
+    if (v.boost === 'supercharger') {
+      this.tone(t + 0.44, 0.42, 1150, 1950, 'sine', 0.08);
+    }
   }
 
-  /** Garage Rev button: 1.3 s throttle blip to redline + lift-off exhaust pops/crackles. */
+  /** Garage Rev button: authentic 1.4 s full-load rev of the installed engine (V12 / V10 / Flat-6 / Flat-8 / V8 SC / Rotary) + overrun pops! */
   triggerGarageRev() {
     this.unlock();
     const ctx = this.ctx;
     if (!ctx || !this.out) return;
+    const v = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
     const t = ctx.currentTime;
-    this.revUntil = performance.now() + 1350;
-    const p = this.pitchMul;
-    this.tone(t, 0.48, 105 * p, 410 * p, 'sawtooth', 0.28);
-    this.tone(t, 0.48, 52 * p, 205 * p, 'triangle', 0.24);
-    this.burst(t + 0.12, 0.38, 'bandpass', 360 * p, 1.1, 0.22);
-    this.tone(t + 0.48, 0.72, 410 * p, 105 * p, 'sawtooth', 0.20);
-    // Overrun flamethrower pops on lift-off!
-    this.exhaustPop(t + 0.52, 1.0);
-    this.exhaustPop(t + 0.64, 0.85);
-    this.exhaustPop(t + 0.79, 0.7);
+    this.revUntil = performance.now() + 1450;
+    const f0 = (1000 / 60) * v.firingsPerRev;
+    const fPeak = (v.revRpm / 60) * v.firingsPerRev;
+    // Primary firing order + sub-order + bank harmonic + upper screamer
+    this.tone(t, 0.52, f0, fPeak, 'sawtooth', 0.26 * v.mainGain);
+    this.tone(t, 0.52, f0 * v.subRatio, fPeak * v.subRatio, 'triangle', 0.24 * v.subGain);
+    this.tone(t, 0.52, f0 * v.bankRatio, fPeak * v.bankRatio, 'sawtooth', 0.20 * v.bankGain);
+    this.tone(t, 0.52, f0 * v.harmRatio, fPeak * v.harmRatio, 'sine', 0.16 * v.harmGain);
+    this.burst(t + 0.10, 0.44, 'bandpass', v.f2[0] * 1.4, 1.3, 0.24);
+    // Supercharger helical whine or turbo spool + BOV flutter on lift-off!
+    if (v.boost === 'supercharger') {
+      this.tone(t, 0.52, 1100, 950 + v.revRpm * 0.30, 'sine', 0.11);
+      this.tone(t + 0.52, 0.72, 950 + v.revRpm * 0.30, 1100, 'sine', 0.07);
+    } else if (v.boost === 'turbo' || this.extraTurbo) {
+      this.tone(t + 0.10, 0.42, 2400, 5600, 'sine', 0.06);
+      for (let k = 0; k < 4; k++) this.burst(t + 0.53 + k * 0.052, 0.044, 'bandpass', 3600 - k * 340, 5.0, 0.12 * (1 - k * 0.18));
+    }
+    // Decel ramp down
+    this.tone(t + 0.52, 0.78, fPeak, f0, 'sawtooth', 0.20 * v.mainGain);
+    this.tone(t + 0.52, 0.78, fPeak * v.bankRatio, f0 * v.bankRatio, 'triangle', 0.15 * v.bankGain);
+    // Overrun flamethrower exhaust pops on lift-off!
+    this.exhaustPop(t + 0.56, 1.0);
+    this.exhaustPop(t + 0.69, 0.88);
+    this.exhaustPop(t + 0.84, 0.72);
   }
 
   get revvingInGarage(): boolean { return performance.now() < this.revUntil; }
@@ -220,19 +381,66 @@ export class GameAudio {
     const g = ctx.createGain();
     g.gain.value = 0;
 
-    // Custom Fourier PeriodicWave modeling a 4-stroke cylinder blowdown pressure pulse
-    const nHarm = 24;
-    const real = new Float32Array(nHarm);
-    const imag = new Float32Array(nHarm);
-    for (let k = 1; k < nHarm; k++) {
-      // Exponentially decaying asymmetric exhaust pulse with strong even & 3rd/5th harmonics
-      const env = Math.exp(-k * 0.115) * (1 + 0.35 * Math.sin(k * 1.1));
-      real[k] = env * Math.cos(k * 0.42) * 0.6;
-      imag[k] = env * Math.sin(k * 0.42 + 0.3);
-    }
-    const pulseWave = ctx.createPeriodicWave(real, imag, { disableNormalization: false });
+    // Custom Fourier PeriodicWaves for each real engine architecture's exhaust blowdown harmonics
+    const nHarm = 28;
+    const mkWave = (fn: (k: number) => [number, number]) => {
+      const re = new Float32Array(nHarm);
+      const im = new Float32Array(nHarm);
+      for (let k = 1; k < nHarm; k++) {
+        const [r, i] = fn(k);
+        re[k] = r; im[k] = i;
+      }
+      return ctx.createPeriodicWave(re, im, { disableNormalization: false });
+    };
+    this.waves.crossplane = mkWave((k) => {
+      const env = Math.exp(-k * 0.12) * (1 + 0.35 * Math.sin(k * 1.1));
+      return [env * Math.cos(k * 0.42) * 0.6, env * Math.sin(k * 0.42 + 0.3)];
+    });
+    this.waves.flatplane = mkWave((k) => {
+      const env = Math.exp(-k * 0.085) * (k % 2 === 0 ? 1.15 : 0.72);
+      return [env * 0.45, env * 0.9];
+    });
+    this.waves.v12 = mkWave((k) => {
+      // Silky 12-cyl harmonic stack: strong 1, 2, 3, 4, 6th orders -> soaring soprano shriek
+      const boost = (k === 1 || k === 2 || k === 3 || k === 4 || k === 6) ? 1.35 : 0.55;
+      const env = Math.exp(-k * 0.075) * boost;
+      return [env * 0.3, env * 0.95];
+    });
+    this.waves.v10 = mkWave((k) => {
+      // Piercing 72° odd-fire V10: strong odd + 5th harmonic prominence -> iconic F1/LFA howl
+      const boost = (k % 2 === 1 ? 1.25 : 0.78) * (k === 5 || k === 3 ? 1.3 : 1.0);
+      const env = Math.exp(-k * 0.082) * boost;
+      return [env * 0.42, env * 0.92];
+    });
+    this.waves.v6 = mkWave((k) => {
+      const boost = (k % 3 === 0 ? 1.3 : 0.85);
+      const env = Math.exp(-k * 0.105) * boost;
+      return [env * 0.52, env * 0.84];
+    });
+    this.waves.flat6 = mkWave((k) => {
+      // Horizontally-opposed boxer rasp: crisp metallic 3rd, 5th, 6th, 9th overtones
+      const boost = (k % 3 === 0 || k === 5 || k === 7) ? 1.35 : 0.65;
+      const env = Math.exp(-k * 0.078) * boost;
+      return [env * 0.55 * (k % 2 ? 1 : -1), env * 0.88];
+    });
+    this.waves.flat8 = mkWave((k) => {
+      const boost = (k % 2 === 0 || k === 3 || k === 5) ? 1.28 : 0.6;
+      const env = Math.exp(-k * 0.076) * boost;
+      return [env * 0.46, env * 0.92];
+    });
+    this.waves.i6 = mkWave((k) => {
+      // Straight-six pure harmonic symmetry: ultra-smooth singing 1st, 2nd, 3rd, 6th
+      const boost = (k === 1 || k === 2 || k === 3 || k === 6) ? 1.4 : 0.5;
+      const env = Math.exp(-k * 0.095) * boost;
+      return [env * 0.25, env * 0.96];
+    });
+    this.waves.rotary = mkWave((k) => {
+      // 4-rotor 26B peripheral-port saw/buzz siren: rich upper harmonics all the way to k=24
+      const env = Math.exp(-k * 0.055) * (1 + 0.25 * (k % 2 === 0 ? 1 : -0.4));
+      return [env * 0.55, env * 0.95];
+    });
 
-    // Cross-plane V8 uneven firing order sub-harmonic wave (90-180-90-180 degree bank cadence)
+    // Sub-harmonic uneven bank cadence wave (deep V8 burble / boxer rumble / rotary idle brap)
     const subReal = new Float32Array(nHarm);
     const subImag = new Float32Array(nHarm);
     const weights = [0, 0.9, 1.0, 0.75, 0.6, 0.85, 0.45, 0.35, 0.5, 0.25, 0.2, 0.15];
@@ -240,7 +448,7 @@ export class GameAudio {
       subImag[k] = weights[k];
       subReal[k] = weights[k] * 0.35 * (k % 2 === 1 ? 1 : -1);
     }
-    const v8Wave = ctx.createPeriodicWave(subReal, subImag, { disableNormalization: false });
+    const subWave = ctx.createPeriodicWave(subReal, subImag, { disableNormalization: false });
 
     const preMix = ctx.createGain();
     preMix.gain.value = 0.42;
@@ -252,12 +460,34 @@ export class GameAudio {
       og.gain.value = level;
       o.connect(og).connect(preMix);
       o.start();
-      return o;
+      return { o, og };
     };
 
-    const oMain = mkOsc(pulseWave, 0.78);  // Primary firing frequency (4 pulses/rev)
-    const oSub = mkOsc(v8Wave, 0.68);      // Half-order cross-plane V8 burble (1x & 0.5x crank)
-    const oBank = mkOsc(pulseWave, 0.36);  // Secondary bank slightly detuned (+1.5x harmonic)
+    const mMain = mkOsc(this.waves.crossplane, 0.76);
+    const mSub = mkOsc(subWave, 0.74);
+    const mBank = mkOsc(this.waves.crossplane, 0.38);
+    const oHarm = ctx.createOscillator();
+    oHarm.type = 'triangle';
+    const gHarm = ctx.createGain();
+    gHarm.gain.value = 0.14;
+    oHarm.connect(gHarm).connect(preMix);
+    oHarm.start();
+
+    const oMain = mMain.o, gMain = mMain.og;
+    const oSub = mSub.o, gSub = mSub.og;
+    const oBank = mBank.o, gBank = mBank.og;
+
+    // Dedicated forced-induction synthesizer: helical Supercharger whine OR high-freq Turbocharger spool whistle
+    const oBoost = ctx.createOscillator();
+    oBoost.type = 'sine';
+    const boostFilter = ctx.createBiquadFilter();
+    boostFilter.type = 'bandpass';
+    boostFilter.frequency.value = 2400;
+    boostFilter.Q.value = 3.5;
+    const boostGain = ctx.createGain();
+    boostGain.gain.value = 0;
+    oBoost.connect(boostFilter).connect(boostGain).connect(g);
+    oBoost.start();
 
     // Dual-exhaust pipe waveguide comb filter (left & right exhaust banks meeting at X-pipe)
     const combDelayL = ctx.createDelay(0.02);
@@ -395,12 +625,15 @@ export class GameAudio {
     this.startAdaptiveMusic();
 
     this.eng = {
-      o1: oMain, oMain, oSub, oBank, oGear, gearGain,
+      o1: oMain, oMain, oSub, oBank, oHarm, gMain, gSub, gBank, gHarm,
+      oBoost, boostFilter, boostGain,
+      oGear, gearGain,
       combDelayL, combDelayR,
       formant1, formant2, formant3,
       intakeFilter, intakeGain, exhaustFilter, exhaustGain,
       lp, shaper, g,
     };
+    this.applyVoice();
   }
 
   /** Every frame with the core's output. */
@@ -412,27 +645,49 @@ export class GameAudio {
     const thr = out[OUT.throttle];
     const gear = Math.round(out[OUT.gear]);
     const stalled = out[OUT.stalled] > 0.5;
-    const f = (rpm / 60) * (CYLINDERS / 2) * this.pitchMul;
+    const vSpec = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
+    const f = (rpm / 60) * vSpec.firingsPerRev;
 
-    // Idle lope & combustion cycle-to-cycle micro-instability
-    const idleFactor = Math.max(0, 1 - (rpm - 650) / 900);
-    const lope = 1 + Math.sin(t * 19.5) * 0.022 * idleFactor + (Math.random() - 0.5) * 0.008;
+    // Architecture-specific idle lope (chunky rotary peripheral-port brap & V8 cam lope vs smooth V12 / I6)
+    const idleFactor = Math.max(0, 1 - (rpm - 650) / 1050);
+    const lope = 1 + Math.sin(t * vSpec.lopeHz) * vSpec.lopeDepth * idleFactor + (Math.random() - 0.5) * 0.007;
     const e = this.eng;
     e.oMain.frequency.setTargetAtTime(f * lope, t, tc);
-    e.oSub.frequency.setTargetAtTime(f * 0.25 * lope, t, tc);
-    e.oBank.frequency.setTargetAtTime(f * 0.75 * (2 - lope), t, tc);
+    e.oSub.frequency.setTargetAtTime(f * vSpec.subRatio * lope, t, tc);
+    e.oBank.frequency.setTargetAtTime(f * vSpec.bankRatio * (2 - lope), t, tc);
+    e.oHarm.frequency.setTargetAtTime(f * vSpec.harmRatio, t, tc);
 
     // Exhaust gas flow & intake induction roar
-    const rpmNorm = Math.min(1, (rpm - 650) / 6850);
+    const rpmNorm = Math.min(1, (rpm - 650) / Math.max(5500, vSpec.revRpm - 650));
     const load = 0.18 + 0.82 * thr;
     e.exhaustFilter.frequency.setTargetAtTime(160 + f * 1.9, t, tc);
     e.exhaustGain.gain.setTargetAtTime(0.18 + 0.42 * load + 0.22 * rpmNorm, t, tc);
 
     e.intakeFilter.frequency.setTargetAtTime(280 + f * 2.8, t, tc);
-    e.intakeGain.gain.setTargetAtTime(thr * thr * (0.28 + 0.35 * rpmNorm), t, tc);
+    e.intakeGain.gain.setTargetAtTime(thr * thr * (0.28 + 0.36 * rpmNorm), t, tc);
 
-    // Dynamic low-pass opens with throttle and RPM; closes on lift-off overrun for deep muffler burble
-    const cutoff = 320 + f * (2.2 + 5.8 * load) + rpmNorm * 1800 * thr;
+    // Forced-induction synthesizer: linear RPM supercharger whine OR lag-spooled turbo compressor whistle
+    const boostMode = vSpec.boost !== 'none' ? vSpec.boost : (this.extraTurbo ? 'turbo' : 'none');
+    if (boostMode === 'supercharger' && !this.muted && !stalled) {
+      const scFreq = 920 + rpm * 0.31;
+      e.oBoost.frequency.setTargetAtTime(scFreq, t, 0.02);
+      e.boostFilter.frequency.setTargetAtTime(scFreq, t, 0.03);
+      e.boostGain.gain.setTargetAtTime((0.025 + 0.105 * thr) * (0.35 + 0.65 * rpmNorm), t, 0.03);
+    } else if (boostMode === 'turbo' && !this.muted && !stalled) {
+      const targetSpool = Math.max(0, (rpmNorm - 0.18) * 1.25) * thr;
+      this.boostSpool += (targetSpool - this.boostSpool) * 0.12;
+      const tFreq = 2200 + this.boostSpool * 4400;
+      e.oBoost.frequency.setTargetAtTime(tFreq, t, 0.04);
+      e.boostFilter.frequency.setTargetAtTime(tFreq, t, 0.04);
+      e.boostGain.gain.setTargetAtTime(this.boostSpool * 0.048, t, 0.04);
+    } else {
+      this.boostSpool *= 0.85;
+      e.boostGain.gain.setTargetAtTime(0, t, 0.05);
+    }
+
+    // Dynamic low-pass opens with throttle and RPM; higher-revving exotic engines open brighter at the top end
+    const topBright = vSpec.firingsPerRev >= 5 || this.voiceId === 'rotary_4' || this.voiceId === 'flat6_na' || this.voiceId === 'flat8_na' ? 2600 : 1800;
+    const cutoff = 320 + f * (2.2 + 5.8 * load) + rpmNorm * topBright * thr;
     e.lp.frequency.setTargetAtTime(cutoff, t, tc);
 
     const absSpeed = Math.abs(speed);
