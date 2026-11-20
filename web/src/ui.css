@@ -637,10 +637,14 @@ body.photomode #hud, body.photomode #mirror, body.replaymode #hud, body.replaymo
 
 #menu .nfs-garage .g-rail {
   grid-area: rail; pointer-events: auto;
-  display: flex; flex-direction: column; gap: 4px; align-self: center;
-  max-height: 100%; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 4px;
+  align-self: stretch; justify-content: flex-start;
+  min-height: 0; max-height: 100%; overflow-y: auto; overflow-x: hidden;
+  padding: 4px 4px 10px 0;
+  touch-action: pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
 }
 #menu .nfs-garage .g-rail .rail {
+  flex: none;
   display: flex; align-items: center; gap: 10px; text-align: left;
   padding: 10px 14px 10px 18px; background: rgba(8, 12, 22, 0.82);
   border: 1px solid var(--line); clip-path: var(--lean);
@@ -653,15 +657,20 @@ body.photomode #hud, body.photomode #mirror, body.replaymode #hud, body.replaymo
 #menu .nfs-garage .g-rail .rail.on i { color: #ffffffd8; }
 
 #menu .nfs-garage .g-stage {
-  grid-area: stage; pointer-events: auto;
+  grid-area: stage; pointer-events: auto; min-height: 0;
   background: rgba(7, 10, 18, 0.90); border: 1px solid var(--line);
   border-top: 2px solid var(--hot); clip-path: var(--cut);
-  padding: 0 16px 16px; overflow: hidden; display: flex; flex-direction: column;
+  padding: 0 16px 12px; overflow: hidden; display: flex; flex-direction: column;
   backdrop-filter: blur(10px);
 }
-#menu .nfs-garage .g-stage-scroll { overflow-y: auto; flex: 1; padding-right: 4px; }
+#menu .nfs-garage .g-stage-scroll {
+  overflow-y: auto; overflow-x: hidden; flex: 1 1 0; min-height: 0;
+  padding: 10px 6px 18px 2px;
+  touch-action: pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+}
 #menu .nfs-garage .g-tabtitle {
-  margin: 0 -16px 10px; padding: 14px 16px 10px;
+  flex: none; position: static;
+  margin: 0 -16px 0; padding: 14px 16px 10px;
   font: italic 900 28px/1 var(--display); letter-spacing: .03em;
   background: rgba(7, 10, 18, 0.96); border-bottom: 1px solid var(--line);
 }
@@ -713,12 +722,22 @@ body.photomode #hud, body.photomode #mirror, body.replaymode #hud, body.replaymo
   z-index: 20; pointer-events: auto; padding: 9px 16px; font-size: 13px;
 }
 
-/* ---- Smooth native touch scrolling & safe areas on all overlays ---- */
-#menu .modes-screen, #menu .lobby-screen, #menu .g-stage-scroll,
-#menu .results-card, #menu .pause-card, #menu .settings-card {
+/* ---- Smooth native touch scrolling, full scrollability & safe areas on ALL menus ---- */
+#menu .title {
+  overflow-y: auto; max-height: 100dvh;
   touch-action: pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
 }
-#menu .g-rides-strip, #menu .nfs-garage .g-rail, #menu .g-pillars {
+#menu .modes-screen, #menu .lobby-screen {
+  overflow-y: auto; max-height: 100dvh; align-items: flex-start;
+  touch-action: pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+}
+#menu .lobby-card, #menu .shop-card, #menu .settings-card, #menu .controls-card,
+#menu .pause-card, #menu .results-card {
+  margin: auto; max-height: calc(100dvh - 20px); overflow-y: auto; min-height: 0;
+  touch-action: pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+}
+#menu .g-rides-dock { overflow-y: auto; max-height: 44vh; touch-action: pan-y; }
+#menu .g-rides-strip, #menu .g-pillars, #menu .g-rides-bar, #menu .gtabs, #menu .city-row {
   touch-action: pan-x; -webkit-overflow-scrolling: touch;
 }
 #menu .m-head, #menu .lobby-head, #menu .invite, #menu .invite-box, #menu .field,

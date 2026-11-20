@@ -87,8 +87,6 @@ export interface MenuHooks {
   restart(): void;
   /** leave the session for the main menu / game modes (single player) or the lobby (party) */
   quit(to: 'title' | 'modes'): void;
-  /** title buttons: benchmark (about a minute) / soak test (several minutes) */
-  bench(soak: boolean): void;
   /** spend reputation to clear the wanted level (the bank/pay choice, docs/design/heat-and-cops.md) */
   layLow?(): void;
   /** the shown screen changed (title <-> garage move the camera) */
@@ -248,6 +246,10 @@ export class Menu {
   private garageTab = 'paint';
   private garageCamIdx = 0;
   private garageHideUi = false;
+  /** Persistent scroll positions (vertical + horizontal) across re-renders until the menu screen itself is closed. */
+  private scrollMem = new Map<string, { top: number; left: number }>();
+  /** True when the Garage right/bottom customization drawer is visible (so camera frames car cleanly on the left/upper stage). */
+  get garageDrawerOpen(): boolean { return this.screen === 'garage' && this.garagePillar !== 'rides' && !this.garageHideUi; }
   /** the option under the pointer: the live panel previews its effect without applying it */
   private hover: { k: string; v: string | number } | null = null;
 
@@ -303,6 +305,7 @@ export class Menu {
 
   show(s: Screen, busyText = '') {
     clearInterval(this.friendsTimer);
+    if (s !== this.screen) this.scrollMem.clear();
     if (s === 'profile') { void this.identity.loadFriends(); this.friendsTimer = window.setInterval(() => void this.identity.loadFriends(), 20_000); }
     this.screen = s;
     this.busyText = busyText;
@@ -349,17 +352,30 @@ export class Menu {
     // don't rebuild under the cursor while someone types a name or code
     const focused = document.activeElement as HTMLInputElement | null;
     const keep = focused && this.root.contains(focused) && focused.tagName === 'INPUT' ? { id: focused.id, a: focused.selectionStart, b: focused.selectionEnd } : null;
-    // Bug fix: preserve scroll position across ALL scrollable panels (Garage, Shop, Settings, Controls, Lobby)
-    const SCROLL_SELS = ['.g-stage-scroll', '.g-carlist', '.g-left', '.g-right', '.lobby-card', '.settings-card', '.controls-card', '.shop-card', '.modes-screen'];
-    const scrolls = SCROLL_SELS.map((sel) => [sel, this.root.querySelector(sel)?.scrollTop ?? 0] as const);
+    // Persist BOTH scrollTop & scrollLeft across ALL scrollable menus/drawers until the menu itself is closed!
+    const SCROLL_SELS = [
+      '.g-stage-scroll', '.g-rail', '.g-rides-strip', '.g-rides-dock', '.g-pillars', '.g-rides-bar',
+      '.title', '.modes-screen', '.lobby-screen', '.lobby-card', '.settings-card', '.controls-card',
+      '.shop-card', '.pause-card', '.results-card', '.members', '.gtabs', '.city-row',
+    ];
+    for (const sel of SCROLL_SELS) {
+      const el = this.root.querySelector(sel);
+      if (el) this.scrollMem.set(sel, { top: el.scrollTop, left: el.scrollLeft });
+    }
     const html = {
       none: () => '', title: () => this.title(), garage: () => this.garage(), modes: () => this.modes(), lobby: () => this.lobby(),
       pause: () => this.pause(), controls: () => this.ctl?.html() ?? '', settings: () => this.settings(), shop: () => this.shop(), profile: () => this.profile(), results: () => (this.lastResults ? this.results(this.lastResults) : ''),
       busy: () => '',   // the loading screen (loading.ts) covers it
     }[this.screen]();
     this.root.innerHTML = html;
-    for (const [sel, top] of scrolls) {
-      if (top > 0) { const el = this.root.querySelector(sel); if (el) el.scrollTop = top; }
+    for (const sel of SCROLL_SELS) {
+      const mem = this.scrollMem.get(sel);
+      if (!mem) continue;
+      const el = this.root.querySelector(sel);
+      if (el) {
+        if (mem.top > 0) el.scrollTop = mem.top;
+        if (mem.left > 0) el.scrollLeft = mem.left;
+      }
     }
     if (keep?.id) {
       const el = document.getElementById(keep.id) as HTMLInputElement | null;
@@ -441,19 +457,17 @@ export class Menu {
       ${row('COUNTERSTEER', chip('as-cs', 'off', 'Off', a.countersteer === 'off') + chip('as-cs', 'weak', 'Weak', a.countersteer === 'weak') + chip('as-cs', 'strong', 'Strong', a.countersteer === 'strong'), 'Steers into a slide for you when the rear steps out (keyboard and controller).')}
       ${row('GEARBOX', chip('as-gb', 'auto', 'Automatic', a.gearbox === 'auto') + chip('as-gb', 'manual', 'Manual', a.gearbox === 'manual'), 'Manual: Q / E, bumpers or paddles.')}
       ${row('DRIVING LINE', chip('as-line', 'off', 'Off', a.line === 'off') + chip('as-line', 'braking', 'Braking zones', a.line === 'braking') + chip('as-line', 'full', 'Full', a.line === 'full'), 'The racing line on the road: blue = keep going, yellow = ease off, red = brake.')}
-      ${row('CAMERA', (['chase', 'far', 'cinematic', 'drift', 'hood', 'bumper', 'orbit'] as const).map((k) => chip('cam-mode', k, k[0].toUpperCase() + k.slice(1), this.camMode === k)).join(''), 'Chase is the default; drift keeps the camera on your travel line so the tail hangs out; cinematic is the low wide shot; hood and bumper are first-person; orbit is the showcase pan. C cycles any time while driving.')}
+      ${row('CAMERA', (['chase', 'far', 'cinematic', 'drift', 'free', 'hood', 'bumper', 'orbit'] as const).map((k) => chip('cam-mode', k, k === 'free' ? 'Free Cam' : k[0].toUpperCase() + k.slice(1), this.camMode === k)).join(''), 'Drag mouse or touch on screen while driving to look around freely (double-tap / right-click to recenter, scroll wheel to zoom). Free Cam keeps your custom angle locked without auto-recenter. C cycles views.')}
       ${row('REAR MIRROR', chip('mirror', '0', 'Off', !this.mirror) + chip('mirror', '1', 'On', this.mirror), 'The view behind the car, top centre, in every camera. Off saves a few frames per second.')}
       <div class="dim note">Assists never change the car: same physics and tyres for everyone; they only help with your inputs. Keys 1 / 2 / 3 / 5 switch ABS / traction / stability / gearbox while driving.</div>`;
     const g = (k: Gfx, label: string) => chip('gfx', k, label, this.gfx === k);
-    const more = inSession ? '<div class="dim note">Race rules, graphics and tests can be changed from the main menu.</div>' : `
+    const more = inSession ? '<div class="dim note">Race rules and graphics can be changed from the main menu.</div>' : `
       <h3>Race rules</h3>
       <div class="chips">${chip('realism', '1', 'Full Realism', this.sel.realism)}${chip('realism', '0', 'Respawns', !this.sel.realism)}</div>
       <div class="dim note">${this.sel.realism ? RULES.realism : RULES.respawn}</div>
       <h3>Graphics</h3>
       <div class="chips">${g('auto', 'Auto')}${g('max', 'Max')}${g('ultra', 'Ultra')}${g('high', 'High')}${g('medium', 'Medium')}${g('low', 'Low')}${g('potato', 'Potato')}</div>
-      <div class="dim note">${esc(this.gfxNote || 'Auto tunes resolution and effects for this device once.')}</div>
-      <h3>Performance tests</h3>
-      <div class="chips"><button class="small" data-act="bench">⏱ Benchmark</button><button class="small" data-act="soak">🔥 Soak Test</button></div>`;
+      <div class="dim note">${esc(this.gfxNote || 'Auto tunes resolution and effects for this device once.')}</div>`;
     return `<div class="lobby-screen"><div class="card lobby-card settings-card">
       <div class="lobby-head"><button data-act="settings-back" class="back-btn">← Back</button><div><div class="kicker">OPTIONS</div><h2>Settings</h2></div></div>
       <h3>Driving assists</h3>${assists}
@@ -735,8 +749,8 @@ export class Menu {
     };
     const stagePanel = pillar === 'rides' ? '' : `
       <section class="g-stage panel">
+        <div class="g-tabtitle">${esc((activeTabObj?.label ?? this.garageTab).toUpperCase())}</div>
         <div class="g-stage-scroll">
-          <div class="g-tabtitle">${esc((activeTabObj?.label ?? this.garageTab).toUpperCase())}</div>
           ${pillar === 'style' ? this.lookNow() : ''}
           ${tabRenderers[this.garageTab]?.() ?? ''}
         </div>
@@ -1427,6 +1441,8 @@ export class Menu {
       }
       case 'gpillar': {
         this.garagePillar = v as GaragePillar;
+        this.scrollMem.delete('.g-stage-scroll');
+        this.scrollMem.delete('.g-rail');
         if (this.garagePillar === 'rides') {
           this.hooks.cam?.(NaN, 0, 0);
         } else {
@@ -1448,7 +1464,7 @@ export class Menu {
         this.render();
         break;
       }
-      case 'gtab': { this.garageTab = v; const t = GTABS.find((x) => x.id === v); if (t) { this.garagePillar = t.pillar; const [az, el, dist] = t.cam.split(',').map(Number); this.hooks.cam?.(az, el, dist); } this.render(); break; }
+      case 'gtab': { this.garageTab = v; this.scrollMem.delete('.g-stage-scroll'); const t = GTABS.find((x) => x.id === v); if (t) { this.garagePillar = t.pillar; const [az, el, dist] = t.cam.split(',').map(Number); this.hooks.cam?.(az, el, dist); } this.render(); break; }
       case 'cu': {
         const c = customOf(sel), k = b.dataset.k as keyof Custom;
         const val = k === 'livery' || k === 'tint' ? Number(v) : k === 'smokedTails' ? v === 'true' : v;
@@ -1639,8 +1655,6 @@ export class Menu {
       case 'resume': this.hooks.resume(); break;
       case 'restart': this.hooks.restart(); break;
       case 'quit': this.lastResults = null; this.hooks.quit('title'); break;
-      case 'bench': this.hooks.bench(false); break;
-      case 'soak': this.hooks.bench(true); break;
       case 'cam': { if (v === 'orbit') { this.hooks.cam?.(NaN, 0, 0); break; } const [az, el, dist] = v.split(',').map(Number); this.hooks.cam?.(az, el, dist); break; }
       // multiplayer
       case 'invite': this.joinCode = this.invite; this.show('lobby'); this.hooks.partyJoin(this.invite); break;

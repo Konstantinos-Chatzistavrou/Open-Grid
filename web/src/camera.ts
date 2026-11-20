@@ -40,17 +40,19 @@ function vnoise(x: number, seed: number) {
   return h(i) + (h(i + 1) - h(i)) * u;
 }
 
-export type CamMode = 'chase' | 'far' | 'cinematic' | 'drift' | 'hood' | 'bumper' | 'orbit';
+export type CamMode = 'chase' | 'far' | 'cinematic' | 'drift' | 'free' | 'hood' | 'bumper' | 'orbit';
 /** Every view the rig offers, in the order C cycles them: NFS-style chase, a wider chase, a low
- *  cinematic, a drift cam that hangs the tail out, hood, bumper, and the orbit showcase. */
-const MODES: CamMode[] = ['chase', 'far', 'cinematic', 'drift', 'hood', 'bumper', 'orbit'];
-const MODE_CFG: Record<CamMode, { dist: number; height: number; kind: 'chase' | 'bumper' | 'orbit'; drift?: boolean }> = {
+ *  cinematic, a drift cam, a persistent Free Cam (stays where you drag it), hood, bumper, and orbit. */
+const MODES: CamMode[] = ['chase', 'far', 'cinematic', 'drift', 'free', 'hood', 'bumper', 'orbit'];
+const MODE_CFG: Record<CamMode, { dist: number; height: number; kind: 'chase' | 'bumper' | 'orbit'; drift?: boolean; holdFree?: boolean }> = {
   chase: { dist: DIST, height: HEIGHT, kind: 'chase' },
   far: { dist: DIST * 1.45, height: HEIGHT + 0.35, kind: 'chase' },
   cinematic: { dist: DIST * 1.85, height: HEIGHT * 0.45, kind: 'chase' },
   // drift: the chase spring, but the heading follows the VELOCITY direction, so a sliding car
   // stays broadside in frame instead of the camera snapping round to face where it points
   drift: { dist: DIST * 1.12, height: HEIGHT * 0.78, kind: 'chase', drift: true },
+  // free: AAA free-orbit driving camera — drag by mouse/touch to lock any angle & zoom without auto-recenter
+  free: { dist: DIST * 1.08, height: HEIGHT * 0.96, kind: 'chase', holdFree: true },
   hood: { dist: 0, height: 0, kind: 'bumper' },
   bumper: { dist: 0, height: 0, kind: 'bumper' },
   orbit: { dist: 7.6, height: 2.3, kind: 'orbit' },
@@ -78,6 +80,14 @@ export class CameraRig {
   /** orbit showcase: radians per second the camera walks around the car */
   orbitSpeed = 0.18;
   private orbitAngle = 0;
+  // Interactive AAA free-look offsets (mouse/touch drag & wheel zoom while driving)
+  private freeYaw = 0;
+  private freePitch = 0;
+  private freeZoom = 0;
+  private freeDragging = false;
+  private freeHoldUntil = 0;
+  private lookQ = new THREE.Quaternion();
+  private lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
   constructor(readonly camera: THREE.PerspectiveCamera, private pw: PhysicsWorld, private car: RAPIER.RigidBody, private redline = 7000) {}
 
@@ -85,8 +95,33 @@ export class CameraRig {
   setTarget(car: RAPIER.RigidBody, redline: number) { this.car = car; this.redline = redline; this.first = true; }
   snap() { this.first = true; }
 
-  setMode(m: CamMode) { this.mode = m; this.first = true; }
+  setMode(m: CamMode) { this.mode = m; this.first = true; this.resetFreeLook(); }
   toggle() { this.setMode(MODES[(MODES.indexOf(this.mode) + 1) % MODES.length]); }
+
+  /** Interactive free-look controls (mouse or touch drag on canvas while driving). */
+  beginFreeLook() { this.freeDragging = true; this.freeHoldUntil = performance.now() + 2600; }
+  dragFreeLook(dx: number, dy: number) {
+    const cfg = MODE_CFG[this.mode];
+    if (cfg.kind === 'orbit') {
+      this.orbitAngle -= dx * 0.007;
+      this.freePitch = Math.max(-0.22, Math.min(0.65, this.freePitch + dy * 0.0045));
+    } else if (cfg.kind === 'bumper') {
+      this.freeYaw = Math.max(-1.85, Math.min(1.85, this.freeYaw - dx * 0.0055));
+      this.freePitch = Math.max(-0.22, Math.min(0.42, this.freePitch - dy * 0.004));
+    } else {
+      this.freeYaw -= dx * 0.007;
+      // Keep yaw wrapped in [-PI, PI] for shortest-path auto-recenter
+      while (this.freeYaw > Math.PI) this.freeYaw -= Math.PI * 2;
+      while (this.freeYaw < -Math.PI) this.freeYaw += Math.PI * 2;
+      this.freePitch = Math.max(-0.18, Math.min(0.72, this.freePitch + dy * 0.0045));
+    }
+    this.freeHoldUntil = performance.now() + 2600;
+  }
+  endFreeLook() { this.freeDragging = false; this.freeHoldUntil = performance.now() + 2600; }
+  zoomFreeLook(deltaY: number) {
+    this.freeZoom = Math.max(-2.2, Math.min(4.5, this.freeZoom + deltaY * 0.004));
+  }
+  resetFreeLook() { this.freeYaw = 0; this.freePitch = 0; this.freeZoom = 0; this.freeDragging = false; this.freeHoldUntil = 0; }
 
   update(dt: number, carPos: THREE.Vector3, carQuat: THREE.Quaternion, carAcc: THREE.Vector3, out: Float64Array) {
     dt = Math.min(dt, 1 / 20);
@@ -104,28 +139,42 @@ export class CameraRig {
     this.shake += (onRedline - this.shake) * (1 - Math.exp(-dt * 7));
 
     const cfg = MODE_CFG[this.mode];
+    // Auto-recenter free-look gently when driving forward after ~2.6 s idle (never in persistent 'free' mode!)
+    if (!this.freeDragging && !cfg.holdFree && performance.now() > this.freeHoldUntil && Math.abs(speed) > 3.5) {
+      const k = 1 - Math.exp(-dt * 2.8);
+      this.freeYaw *= 1 - k;
+      this.freePitch *= 1 - k;
+      if (Math.abs(this.freeYaw) < 0.003) this.freeYaw = 0;
+      if (Math.abs(this.freePitch) < 0.003) this.freePitch = 0;
+    }
+
     if (cfg.kind === 'bumper') {
       const hood = this.mode === 'hood';
       cam.position.copy(carPos).add(this.tmp.set(0, hood ? 1.05 : 0.62, hood ? 0.95 : 0.25).applyQuaternion(carQuat));
       cam.quaternion.copy(carQuat).multiply(this.bumperQ);
+      if (Math.abs(this.freeYaw) > 1e-4 || Math.abs(this.freePitch) > 1e-4) {
+        this.lookEuler.set(this.freePitch, this.freeYaw, 0, 'YXZ');
+        this.lookQ.setFromEuler(this.lookEuler);
+        cam.quaternion.multiply(this.lookQ);
+      }
       this.applyShake(hood ? 0.35 : 0.45);     // subtler: the view already moves with the body
       this.setFov(hood ? 68 : 72, this.speedFov(speed) * 0.6, this.punch * 0.6, FOV_EXTRA_MAX * 0.6, dt);
       this.first = true;
       return;
     }
 
-    // orbit: walk around the car at a fixed radius/height and look at it. No spring (it is a
-    // showcase shot, not a driving view); the wall raycast still applies so it does not go inside
-    // a building in the garage.
+    // orbit: walk around the car at a fixed radius/height and look at it. Dragging overrides the angle interactively!
     if (cfg.kind === 'orbit') {
-      this.orbitAngle += this.orbitSpeed * dt;
+      if (!this.freeDragging) this.orbitAngle += this.orbitSpeed * dt;
       const head = this.head.copy(carPos).addScaledVector(UP, 1.0);
-      const want = this.want.copy(carPos).addScaledVector(UP, cfg.height)
-        .add(this.tmp.set(Math.sin(this.orbitAngle) * cfg.dist, 0, Math.cos(this.orbitAngle) * cfg.dist));
+      const dist = Math.max(3.6, cfg.dist + this.freeZoom);
+      const h = Math.max(0.7, cfg.height + Math.sin(this.freePitch) * dist * 0.7);
+      const want = this.want.copy(carPos).addScaledVector(UP, h)
+        .add(this.tmp.set(Math.sin(this.orbitAngle) * dist, 0, Math.cos(this.orbitAngle) * dist));
       const hit = this.pw.raycast(head, want, this.car, true, GROUP_VIEW);
       if (hit) {
-        const dist = head.distanceTo(want);
-        const f = Math.max(0.15, Math.min(1, (hit.toi - 0.4) / dist));
+        const d = head.distanceTo(want);
+        const f = Math.max(0.15, Math.min(1, (hit.toi - 0.4) / d));
         want.lerpVectors(head, want, f);
       }
       cam.position.copy(want);
@@ -150,10 +199,19 @@ export class CameraRig {
       if (this.first) this.heading.copy(flat);
       else this.heading.lerp(flat, 1 - Math.exp(-dt * 10)).normalize();
     }
-    const rTarget = this.rTarget.copy(this.heading).multiplyScalar(-cfg.dist).addScaledVector(UP, cfg.height);
+    const baseDist = Math.max(3.4, cfg.dist + this.freeZoom);
+    const basePitch = Math.atan2(cfg.height, baseDist);
+    const effPitch = Math.max(0.05, Math.min(1.08, basePitch + this.freePitch));
+    const horizDist = Math.cos(effPitch) * baseDist;
+    const vertH = Math.sin(effPitch) * baseDist;
+    const baseYaw = Math.atan2(-this.heading.x, -this.heading.z) + this.freeYaw;
+    const rTarget = this.rTarget.set(Math.sin(baseYaw) * horizDist, vertH, Math.cos(baseYaw) * horizDist);
 
-    if (this.first) {
-      this.r.copy(rTarget);
+    const freeActive = this.freeDragging || Math.abs(this.freeYaw) > 0.01 || Math.abs(this.freePitch) > 0.01 || cfg.holdFree;
+    if (this.first || freeActive) {
+      // Responsive direct orbit tracking when player drags the free camera (zero sluggish rubber-banding)
+      const follow = this.first ? 1 : 1 - Math.exp(-dt * 18);
+      this.r.lerp(rTarget, follow);
       this.rv.set(0, 0, 0);
     } else {
       // semi-implicit Euler in sub-steps of <= 1/120 s: stable at any frame rate
@@ -187,7 +245,9 @@ export class CameraRig {
     if (this.o.length() > wall) this.o.setLength(wall);
 
     cam.position.copy(head).add(this.o);
-    cam.lookAt(this.tmp.copy(carPos).addScaledVector(this.heading, LOOK_AHEAD).addScaledVector(UP, LOOK_HEIGHT));
+    // When looking sideways/backwards via free-look, center the aim cleanly on the car instead of ahead of the hood
+    const lookAheadScale = Math.max(0, Math.cos(this.freeYaw));
+    cam.lookAt(this.tmp.copy(carPos).addScaledVector(this.heading, LOOK_AHEAD * lookAheadScale).addScaledVector(UP, LOOK_HEIGHT));
     this.applyShake(1);
     this.setFov(60, this.speedFov(speed), this.punch, FOV_EXTRA_MAX, dt);
     this.first = false;
