@@ -366,4 +366,38 @@ RS_TEST(ue5_upgrade) {
         test::check("asymmetric left-puddle braking induces split-mu yaw torque pulling toward dry right side",
                     out.torque.z < -250.0);
     }
+
+    // 15. Pacejka MF 6.2 Camber-Conicity + WLF Millisecond Flash-Temperature + 3-Rib Contact-Patch Hybrid
+    {
+        const TireParams& tp = cfg.tire_front;
+        const double re_flat = effective_rolling_radius(tp, 4200.0);
+        const double re_camber = effective_rolling_radius_mf62(tp, 4200.0, 0.08);
+        test::check("MF 6.2 camber-conicity reduces effective rolling radius on tilted shoulder",
+                    re_camber < re_flat - 0.0005);
+
+        TireCondition tc;
+        // Sudden 12 ms high-power slide (38 kW) spikes micro-asperity WLF flash temperature while bulk surface barely moves
+        tc.update_zones(38000.0, 4200.0, 35.0, -0.05, 3200.0, -1.0, 100.0, 1.0, 0.012, &tp);
+        const double flash_spike = tc.flash_c;
+        test::check("WLF micro-asperity flash temperature spikes >20 C above bulk surface within 12 ms of slide",
+                    flash_spike > tc.surface_c + 20.0);
+
+        // Slide stops (0 W slip power for 20 ms): flash temperature cools rapidly back toward surface_c
+        tc.update_zones(0.0, 4200.0, 35.0, -0.05, 200.0, -1.0, 105.0, 2.0, 0.020, &tp);
+        test::check("WLF flash temperature cools rapidly back toward surface temperature within 20 ms",
+                    tc.flash_c < flash_spike - 15.0);
+
+        // 3-Rib + MF 6.2 hybrid evaluation inside magic_formula
+        tc.inner_c = 92.0;
+        tc.middle_c = 94.0;
+        tc.outer_c = 152.0; // overheated outer shoulder mid-corner
+        tc.flash_c = 165.0;
+        TireOperating op;
+        op.enable_mf62_hybrid = true;
+        op.wheel_side_sign = -1.0;
+        op.condition = &tc;
+        TireForces f_hybrid = magic_formula(tp, -0.08, 0.12, 4500.0, 1.0, -0.06, op);
+        test::check("3-Rib + MF 6.2 + WLF hybrid evaluates load-weighted rib grip and conicity/3-rib aligning moment",
+                    f_hybrid.effective_rib_mu < 0.99 && f_hybrid.effective_rib_mu > 0.80 && std::abs(f_hybrid.mz) > 1.0);
+    }
 }

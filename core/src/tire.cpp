@@ -100,6 +100,7 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
         middle_c += (surface_c - middle_c) * alpha_sync;
         outer_c += (surface_c - outer_c) * alpha_sync;
     }
+    flash_c = surface_c;
 }
 
 void TireCondition::update_zones(double slip_power_w, double load_n, double speed_mps, double camber_rad,
@@ -173,6 +174,13 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
         outer_c = clamp(to + dto * h, 10.0, 260.0);
     }
 
+    // WLF Micro-Asperity Flash Temperature (~8 ms thermal relaxation time constant):
+    // Spikes +20..+50 C in milliseconds at the onset of high-power sliding and cools back to surface_c in ~15 ms.
+    const double flash_steady_rise = clamp(std::max(0.0, slip_power_w) / 950.0, 0.0, 58.0);
+    const double flash_target = surface_c + flash_steady_rise;
+    const double alpha_flash = 1.0 - std::exp(-dt / 0.008);
+    flash_c = clamp(flash_c + (flash_target - flash_c) * alpha_flash, 10.0, 310.0);
+
     // Brake-lockup flat-spotting
     if (v > 8.0 && load_n > 800.0 && std::abs(wheel_omega_rads) < 1.2) {
         flat_spot_depth_mm = clamp(flat_spot_depth_mm + (std::max(0.0, slip_power_w) / 22000.0) * 0.45 * dt, 0.0, 3.0);
@@ -210,6 +218,26 @@ double TireCondition::zone_health_grip_factor() const {
     return clamp(1.0 - blister_loss - grain_loss - spread_loss, 0.82, 1.0);
 }
 
+double TireCondition::wlf_rib_grip_factor(double rib_surface_c, const TireParams* p) const {
+    // Williams-Landel-Ferry (WLF) viscoelastic log-shift equation:
+    //   log10(a_T) = -C1 * (T_eff - T_opt) / (C2 + (T_eff - T_opt)),  C1 = 8.86, C2 = 101.6 K
+    // Evaluates local rib + micro-asperity flash temperature relative to the compound's viscoelastic loss peak.
+    const double t_opt = p ? p->temp_optimal_c : 90.0;
+    const double w = p ? std::max(p->temp_window_c, 15.0) : 25.0;
+    const double t_eff = 0.48 * temperature_c + 0.34 * rib_surface_c + 0.18 * flash_c;
+    const double dt_c = clamp(t_eff - t_opt, -75.0, 140.0);
+    const double wlf_shift = (-8.86 * dt_c) / (101.6 + dt_c);
+    // Gaussian viscoelastic master envelope in WLF reduced-frequency space: smooth progressive roll-off at high flash temp
+    const double norm_shift = wlf_shift / (8.86 * w / (101.6 + w));
+    double wlf_grip = 1.0;
+    if (std::abs(dt_c) > w * 0.65) {
+        const double excess = (std::abs(norm_shift) - 0.65);
+        wlf_grip = clamp(std::exp(-0.085 * excess * excess), 0.80, 1.0);
+    }
+    const double flash_grease = flash_c > 155.0 ? clamp(1.0 - 0.0014 * (flash_c - 155.0), 0.86, 1.0) : 1.0;
+    return wlf_grip * flash_grease;
+}
+
 double TireCondition::dpi(const TireParams& p) const {
     if (pressure_kpa <= 0) return 0.0;
     return clamp((pressure_kpa - p.p_nominal_kpa) / std::max(p.p_nominal_kpa, 1.0), -0.5, 0.5);
@@ -235,6 +263,15 @@ double effective_rolling_radius(const TireParams& p, double fz) {
     // and the effective rolling radius R_e shifts by ~1/3 of the radial deflection due to belt inextensibility.
     double d_rho = (fz - p.fz0) / p.vertical_stiffness;
     return clamp(p.radius - (1.0 / 3.0) * d_rho, p.radius * 0.85, p.radius * 1.05);
+}
+
+double effective_rolling_radius_mf62(const TireParams& p, double fz, double gamma) {
+    const double re0 = effective_rolling_radius(p, fz);
+    // MF 6.2 camber-conicity asymmetric loaded radius: under inclination gamma, the contact patch shifts toward the
+    // tilted shoulder on a cone of half-width ~0.12 m, reducing the effective rolling radius by sin^2(gamma) & |sin(gamma)|.
+    const double s_g = std::sin(clamp(gamma, -0.45, 0.45));
+    const double camber_delta = re0 * 0.042 * s_g * s_g + 0.011 * std::abs(s_g);
+    return clamp(re0 - camber_delta, p.radius * 0.82, p.radius * 1.05);
 }
 
 void relaxation_lengths(const TireParams& p, double fz, double gamma, double& sigma_x, double& sigma_y) {
@@ -344,6 +381,30 @@ TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, do
     const double dpi = op.dpi;
     double dfz = dfz_of(p, fz);
     double alpha = std::atan(tan_alpha);
+
+    // ---- MF 6.2 + Physical 3-Rib (Inner / Middle / Outer) Contact-Patch & WLF Flash-Temperature Integration
+    double rib_diff_torque_factor = 0.0;
+    if (op.enable_mf62_hybrid && op.condition) {
+        const TireCondition& tc = *op.condition;
+        // Split vertical contact load across Inner, Middle, and Outer ribs from camber tilt, cornering slip, and pressure crowning
+        const double top_inward = clamp(op.wheel_side_sign * gamma, -0.35, 0.35);
+        const double corner_roll = clamp(-op.wheel_side_sign * alpha * 1.8, -0.45, 0.45);
+        const double crown = dpi > 0.05 ? clamp((dpi - 0.05) * 0.85, 0.0, 0.25) : 0.0;
+        double w_mid = 1.0 + 1.6 * crown;
+        double w_in  = clamp(1.0 + 3.2 * top_inward - 1.4 * corner_roll - 0.8 * crown, 0.15, 2.4);
+        double w_out = clamp(1.0 - 3.2 * top_inward + 1.4 * corner_roll - 0.8 * crown, 0.15, 2.4);
+        const double w_sum = w_in + w_mid + w_out;
+        w_in /= w_sum; w_mid /= w_sum; w_out /= w_sum;
+
+        const double mu_in  = tc.wlf_rib_grip_factor(tc.inner_c, &p);
+        const double mu_mid = tc.wlf_rib_grip_factor(tc.middle_c, &p);
+        const double mu_out = tc.wlf_rib_grip_factor(tc.outer_c, &p);
+        out.effective_rib_mu = clamp(w_in * mu_in + w_mid * mu_mid + w_out * mu_out, 0.78, 1.05);
+        mu_scale *= out.effective_rib_mu;
+        // Lateral imbalance between outer and inner rib longitudinal forces creates a physical 3-rib yaw scrub torque
+        rib_diff_torque_factor = (w_out * mu_out - w_in * mu_in) * (-op.wheel_side_sign);
+    }
+
     double fx0 = mf_pure_fx(p, kappa, fz, mu_scale, gamma, dpi);
     double fy0 = mf_pure_fy(p, alpha, fz, mu_scale, gamma, dpi);
     // MF 6.1 turn slip (spin) reduction of the lateral force (eqs. 4.E64-4.E69, peak factor zeta_2, stiffness zeta_3):
@@ -371,7 +432,8 @@ TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, do
     //   Byk = (rBy1 + rBy4 gamma^2) cos(atan(rBy2 (alpha - rBy3)))
     double byk = (p.rby1 + p.rby4 * gamma * gamma) * std::cos(std::atan(p.rby2 * (alpha - p.rby3)));
     double eyk = p.rey1 + p.rey2 * dfz;
-    double shyk = p.rhy1 + p.rhy2 * dfz;
+    // MF 6.2 asymmetric combined-slip camber coupling on shyk under simultaneous braking + camber
+    double shyk = p.rhy1 + p.rhy2 * dfz + (op.enable_mf62_hybrid ? 0.022 * gamma : 0.0);
     double kappa_s = kappa + shyk;
     double gyk0 = std::max(mf_cos(shyk, byk, p.rcy1, eyk), 1e-4);
     double gyk = clamp(mf_cos(kappa_s, byk, p.rcy1, eyk) / gyk0, 0.0, 1.0);
@@ -400,6 +462,12 @@ TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, do
     out.fx = fx;
     out.fy = fy;
     out.mz = mf_aligning_torque(p, kappa, alpha, fz, mu_scale, gamma, fx, fy_no_svyk, &out.pneumatic_trail);
+    if (op.enable_mf62_hybrid) {
+        // MF 6.2 camber-conicity rolling scrub moment + 3-rib (Inner/Middle/Outer) differential longitudinal force moment
+        const double mz_conicity = -0.024 * fz * p.radius * std::sin(gamma) * std::cos(alpha);
+        const double mz_3rib = rib_diff_torque_factor * 0.082 * fx; // ~0.082 m effective half-rib lever arm
+        out.mz += mz_conicity + mz_3rib;
+    }
     return out;
 }
 
