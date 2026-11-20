@@ -530,12 +530,15 @@ export class GameAudio {
 
   unlock() {
     if (!this.ctx) this.prepare();
-    if (this.ctx!.state !== 'running') void this.ctx!.resume();
+    if (this.ctx && this.ctx.state !== 'running') void this.ctx.resume().catch(() => {});
   }
 
   prepare() {
     if (this.ctx) return;
-    const ctx = new AudioContext({ latencyHint: 'interactive' });
+    const AudioCtor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtor) return;
+    let ctx: AudioContext;
+    try { ctx = new AudioCtor({ latencyHint: 'interactive' }); } catch { ctx = new AudioCtor(); }
     this.ctx = ctx;
     this.out = ctx.createGain();
     this.out.gain.value = 0.85;

@@ -130,6 +130,10 @@ export class Input {
   onDevice = () => {};
   /** set by the controls menu while it calibrates: game actions from pads / wheels are off */
   suspended = false;
+  /** When 2-player local split-screen is active, P1 uses Pad #1 (with 2+ pads) or WASD (leaving Arrows + Pad #2 for P2). */
+  splitScreen = false;
+  /** Right analog stick deflection (-1..1) for smooth TV/couch free-look camera orbit. */
+  rightStick = { x: 0, y: 0 };
 
   constructor() {
     this.loadBinds();
@@ -258,7 +262,21 @@ export class Input {
     const k = (c: string) => this.keys.has(c);
     const r = this.raw;
     r.directGear = -99;
-    const pads = (navigator.getGamepads?.() ?? []).filter((p): p is Gamepad => !!p && p.connected);
+    const allPads = (navigator.getGamepads?.() ?? []).filter((p): p is Gamepad => !!p && p.connected);
+    // In 2-Player Split-Screen:
+    //  - 2+ controllers: P1 ONLY listens to pads[0] (pads[1] belongs exclusively to Player 2!)
+    //  - 1 controller: P1 uses WASD keyboard so the single controller drives Player 2 cleanly!
+    const pads = this.splitScreen ? (allPads.length >= 2 ? [allPads[0]] : []) : allPads;
+    if (this.splitScreen && allPads.length >= 2 && this.activeIndex !== allPads[0].index) {
+      this.activeIndex = allPads[0].index;
+      this.activeId = allPads[0].id;
+      const c0 = this.kindOf(allPads[0]);
+      if (c0.kind === 'wheel') { this.wheel = { model: c0.model, key: deviceKey(allPads[0]) }; this.setSource('wheel'); }
+      else { this.family = c0.family; this.wheel = null; this.setSource('pad'); }
+    } else if (this.splitScreen && allPads.length < 2 && (this.source === 'pad' || this.source === 'wheel')) {
+      this.setSource('keys');
+    }
+    this.rightStick.x = 0; this.rightStick.y = 0;
     // which pad / wheel was moved? (it becomes the driving device) "Moved" = changed since it last drove or was first
     // seen, so a wheel left turned, a pedal resting at full scale or a drifting stick never steals control back.
     for (const p of pads) {
@@ -305,6 +323,9 @@ export class Input {
       const pb = this.padBinds;
       const dz = (x: number) => (Math.abs(x) < 0.06 ? 0 : x);
       r.steer = -dz(pad.axes[0] ?? 0);
+      const rdz = (v: number) => (Math.abs(v) < 0.14 ? 0 : (v - Math.sign(v) * 0.14) / 0.86);
+      this.rightStick.x = rdz(pad.axes[2] ?? 0);
+      this.rightStick.y = rdz(pad.axes[3] ?? 0);
       r.throttle = pb.throttle >= 0 ? (pad.buttons[pb.throttle]?.value ?? 0) : 0;
       r.brake = pb.brake >= 0 ? (pad.buttons[pb.brake]?.value ?? 0) : 0;
       r.handbrake = pb.handbrake >= 0 && pad.buttons[pb.handbrake]?.pressed ? 1 : 0;
@@ -328,11 +349,20 @@ export class Input {
     } else {
       r.device = 0;
       const kb = this.keyBinds;
-      r.steer = (k(kb.steerLeft) || k('ArrowLeft') ? 1 : 0) - (k(kb.steerRight) || k('ArrowRight') ? 1 : 0);
-      r.throttle = k(kb.throttle) || k('ArrowUp') ? 1 : 0;
-      r.brake = k(kb.brake) || k('ArrowDown') ? 1 : 0;
-      r.handbrake = k(kb.handbrake) ? 1 : 0;
-      r.clutch = k(kb.clutch) || k('ShiftRight') ? 1 : 0;
+      if (this.splitScreen) {
+        // Split-Screen: P1 uses WASD + Space ONLY (Arrow Keys & Right Shift belong exclusively to Player 2!)
+        r.steer = (k(kb.steerLeft) ? 1 : 0) - (k(kb.steerRight) ? 1 : 0);
+        r.throttle = k(kb.throttle) ? 1 : 0;
+        r.brake = k(kb.brake) ? 1 : 0;
+        r.handbrake = k(kb.handbrake) ? 1 : 0;
+        r.clutch = k(kb.clutch) ? 1 : 0;
+      } else {
+        r.steer = (k(kb.steerLeft) || k('ArrowLeft') ? 1 : 0) - (k(kb.steerRight) || k('ArrowRight') ? 1 : 0);
+        r.throttle = k(kb.throttle) || k('ArrowUp') ? 1 : 0;
+        r.brake = k(kb.brake) || k('ArrowDown') ? 1 : 0;
+        r.handbrake = k(kb.handbrake) ? 1 : 0;
+        r.clutch = k(kb.clutch) || k('ShiftRight') ? 1 : 0;
+      }
     }
     if (this.hold) {
       if (r.throttle > 0.05 && !this.locked) this.hold = false;

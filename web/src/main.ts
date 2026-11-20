@@ -80,6 +80,7 @@ import { autoCap, measureRefresh } from './bench';
 import { registerCarMeta } from './brands';
 import { CAR_REQ, CAR_VMAX_KMH } from './progression';
 import { BASE_CAR_VALUATION } from './auctionMarket';
+import { Player2Input, SplitHud, connectedGamepads, type SplitLayout } from './splitScreen';
 
 const params = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d);
@@ -106,6 +107,22 @@ const loading = document.getElementById('loading')!;
  * First screen is a click-for-fullscreen gate, not the loading bar: the game boots behind it, and the click is the
  * user gesture the Fullscreen API needs. Once entered, the normal loading screen (if still loading) or the game shows.
  */
+const isFullscreen = () => !!(document.fullscreenElement || (document as unknown as { webkitFullscreenElement?: Element }).webkitFullscreenElement);
+const reqFullscreen = () => {
+  try {
+    const docEl = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void };
+    if (docEl.requestFullscreen) { void Promise.resolve(docEl.requestFullscreen({ navigationUI: 'hide' } as FullscreenOptions)).catch(() => { void docEl.requestFullscreen().catch(() => {}); }); }
+    else if (docEl.webkitRequestFullscreen) { void Promise.resolve(docEl.webkitRequestFullscreen()).catch(() => {}); }
+  } catch { /* iOS Safari / TV browser without Fullscreen API */ }
+};
+const exitFullscreenSafe = () => {
+  try {
+    const doc = document as Document & { webkitExitFullscreen?: () => Promise<void> | void };
+    if (doc.exitFullscreen) void doc.exitFullscreen().catch(() => {});
+    else if (doc.webkitExitFullscreen) void Promise.resolve(doc.webkitExitFullscreen()).catch(() => {});
+  } catch { /* ignore */ }
+};
+
 const enterEl = document.getElementById('enter');
 let gameReady = false;
 const enter = () => {
@@ -113,11 +130,7 @@ const enter = () => {
   if (!el || !el.isConnected) return;
   el.remove();
   if (!gameReady) loading.hidden = false;
-  try {
-    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-      void document.documentElement.requestFullscreen().catch(() => { /* iOS Safari: no element fullscreen, play as is */ });
-    }
-  } catch { /* denied: play in the tab */ }
+  if (!isFullscreen()) reqFullscreen();
 };
 enterEl?.addEventListener('click', enter, { once: true });
 enterEl?.addEventListener('touchend', enter, { once: true });
@@ -157,32 +170,33 @@ const mark = (stage: string) => { loadLog.push({ stage, ms: Math.round(performan
 async function main() {
   const refreshP = measureRefresh();   // runs while the renderer and assets load
   // --- renderer -------------------------------------------------------------------------------
-  // WebGPU is what the game is built for (clustered lighting, compute). Without it: a phone starts in potato mode on
-  // WebGL 2 (same picture as potato on WebGPU, measured); a desktop gets the instructions and a link to do the same.
-  // ?webgl=1 forces WebGL 2 for debugging.
+  // WebGPU is preferred (clustered lighting, compute). If unavailable OR if WebGPU init fails on any
+  // device/browser (Firefox, Safari, Linux without Vulkan, Android, iOS, Smart TVs), we automatically
+  // and seamlessly fall back to WebGL 2 — zero dead error screen! ?webgl=1 forces WebGL 2 for testing.
   const isTouch = params.has('touch') ? params.get('touch') !== '0' : wantsTouch();
   let forceWebGL = params.get('webgl') === '1';
-  let noWebGPU = false;
+  let noWebGPU = forceWebGL;
   if (!forceWebGL) {
-    const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' }).catch(() => null);
+    let adapter: GPUAdapter | null = null;
+    try {
+      adapter = (await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' })) ?? null;
+    } catch { adapter = null; }
     if (!adapter) {
       const gl2 = !!document.createElement('canvas').getContext('webgl2');
-      if (isTouch && gl2) { forceWebGL = true; noWebGPU = true; }
-      else {
-        const u = new URL(location.href);
-        u.searchParams.set('webgl', '1'); u.searchParams.set('quality', 'potato');
+      if (gl2) {
+        forceWebGL = true;
+        noWebGPU = true;
+      } else {
         loading.innerHTML = `<div style="max-width:560px;text-align:left;letter-spacing:0;text-transform:none;line-height:1.6">
-          <b style="color:#f4f1ea">WebGPU is not available in this browser.</b><br>
-          Chrome on Linux: open <code>chrome://flags</code>, enable <b>Unsafe WebGPU Support</b> and <b>Vulkan</b>, then relaunch.<br>
-          Check with <code>chrome://gpu</code> → "WebGPU: Hardware accelerated".
-          ${gl2 ? `<br><a href="${u.pathname + u.search}" style="color:#ff2d6a">Start anyway in potato mode (WebGL 2, lowest graphics)</a>` : ''}</div>`;
-        if (import.meta.env.DEV) fetch('/__telemetry', { method: 'POST', body: 'NO WEBGPU ADAPTER - stopped' }).catch(() => {});
+          <b style="color:#f4f1ea">Neither WebGPU nor WebGL 2 is enabled in this browser.</b><br>
+          Enable Hardware Acceleration in your browser settings or update your graphics driver to play OpenGrid.</div>`;
+        if (import.meta.env.DEV) fetch('/__telemetry', { method: 'POST', body: 'NO WEBGPU OR WEBGL2 - stopped' }).catch(() => {});
         return;
       }
     }
   }
   const canvas = document.getElementById('view') as HTMLCanvasElement;
-  const renderer = new THREE.WebGPURenderer({ canvas, antialias: false, forceWebGL });
+  let renderer = new THREE.WebGPURenderer({ canvas, antialias: false, forceWebGL });
   // The canvas always runs at baseRatio; `scale` is the RENDER scale of the scene and the passes
   // before the sharpening upscale (post.ts). It used to be the canvas pixel ratio, which the browser
   // then stretched bilinearly (soft) and whose change reconfigured the whole canvas.
@@ -217,7 +231,7 @@ async function main() {
    * effect, so resolution is the one lever that moves a tier: 0.5 MP is the 45-60 fps picture, 1 MP the 30 fps one.
    * A window smaller than the budget simply renders 1:1.
    */
-  const PRESET_MP: Record<PresetName, number> = { max: 0.8e6, ultra: 0.88e6, high: 1.0e6, medium: 0.62e6, low: 0.5e6, potato: 0.22e6 };
+  const PRESET_MP: Record<PresetName, number> = { max: 0.8e6, ultra: 0.88e6, high: 1.0e6, medium: 0.62e6, low: 0.5e6, potato: isTouch ? 0.22e6 : 0.92e6 };
   let adaptive = gfx === 'auto' && !params.has('scale') && !potato;
   const maxScale = 1;
   const targetPixels = isTouch ? 0.72e6 : 0.9e6;
@@ -244,7 +258,29 @@ async function main() {
   renderer.toneMappingExposure = 1.1;
   renderer.shadowMap.enabled = params.get('shadows') !== '0' && !potato;   // potato: no shadow pass, no shadow code in any shader
   renderer.shadowMap.type = THREE.PCFShadowMap;
-  await renderer.init();
+  try {
+    await renderer.init();
+  } catch (initErr) {
+    if (forceWebGL) throw initErr;
+    // WebGPU driver reported an adapter but failed device creation (common on Safari TP / Linux Vulkan / Smart TVs) -> seamless WebGL 2 fallback
+    console.warn('[OpenGrid] WebGPU init failed, falling back seamlessly to WebGL 2:', initErr);
+    forceWebGL = true;
+    noWebGPU = true;
+    potato = true;
+    usePotatoOnly();
+    presetPinned = true;
+    adaptive = false;
+    presetIdx = 0;
+    scale = presetScale('potato');
+    renderer = new THREE.WebGPURenderer({ canvas, antialias: false, forceWebGL: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 1));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.toneMapping = THREE.AgXToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    renderer.shadowMap.enabled = false;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    await renderer.init();
+  }
   pipelineCount = () => (renderer as unknown as { _pipelines?: { caches?: Map<string, unknown> } })._pipelines?.caches?.size ?? 0;
   mark('renderer');
   if (params.has('pipelog')) {
@@ -299,6 +335,8 @@ async function main() {
   // Resize (window drag, fullscreen): at most once per frame, and never a preset change (that rebuilds pipelines =
   // seconds of shader compiles); the render scale keeps the pixel count the GPU was tuned for (syncToSize).
   let resizeQueued = false;
+  let lastSize = `${innerWidth}x${innerHeight}`, lastPixels = innerWidth * innerHeight;
+  let syncReady = false;
   addEventListener('resize', () => {
     if (resizeQueued) return;
     resizeQueued = true;
@@ -307,7 +345,7 @@ async function main() {
       renderer.setSize(innerWidth, innerHeight);
       camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
-      syncToSize();
+      if (syncReady) syncToSize();
     });
   });
   // Fullscreen shortcut (KeyF) is handled below once session state is ready so Free Roam can use [F] for headlight flash wagers.
@@ -1110,7 +1148,7 @@ async function main() {
    * the old 10 s fullscreen freeze). The render scale keeps the pixel count the GPU was tuned for: a 1.0 scale tuned in
    * a 1280x800 window becomes ~0.7 at 1920x1080 fullscreen. A scale stored for the new size wins (tuned there before).
    */
-  let lastSize = `${innerWidth}x${innerHeight}`, lastPixels = innerWidth * innerHeight;
+  syncReady = true;
   function syncToSize() {
     const k = `${innerWidth}x${innerHeight}`;
     if (k === lastSize) return;
@@ -1288,7 +1326,8 @@ async function main() {
         loader.hide();
       }
     })(); },
-    play: (mode) => void startSession(mode),
+    play: (mode) => { teardownSplitScreen(); void startSession(mode); },
+    playSplit: (mode, layout, carId) => void startSplitScreen(mode, layout, carId),
     // Seamless in-place city switching: disposes the previous city streamer & swaps tiles/roads/minimap/landmarks
     // right behind the loading overlay — ZERO page reload, stays in Fullscreen!
     city: (id) => { void switchCity(id); },
@@ -2106,6 +2145,121 @@ async function main() {
     }
   }
 
+  // ---- 2-Player Local Split-Screen (Laptop + Smart TV with 2 Controllers / 1 Controller + Keyboard / Shared Keyboard) ----
+  const splitHud = new SplitHud();
+  const p2Input = new Player2Input();
+  let splitActive = false;
+  let splitLayout: SplitLayout = 'horizontal';
+  let splitP2CarId = catalog[1]?.id ?? catalog[0].id;
+  let p2Core: CoreCar | null = null;
+  let p2Car: CarBody | null = null;
+  let p2Visual: CarVisual | null = null;
+  let p2Cam: THREE.PerspectiveCamera | null = null;
+  let p2Rig: CameraRig | null = null;
+  let p2RaceCar = -1;
+  let p2Lap: LapInfo | null = null;
+  let p2SourceLabel = 'Arrows';
+  let p2NosSec = 6.0;
+  const p2Pos = new THREE.Vector3(), p2Quat = new THREE.Quaternion();
+  const p2PrevPos = new THREE.Vector3(), p2PrevQuat = new THREE.Quaternion();
+  const p2PhysPos = new THREE.Vector3(), p2PhysQuat = new THREE.Quaternion();
+  const p2LastVel = new THREE.Vector3(), p2Acc = new THREE.Vector3(), p2StepAcc = new THREE.Vector3();
+
+  const readP2Body = (p: THREE.Vector3, q: THREE.Quaternion) => {
+    if (!p2Car) return;
+    const t = p2Car.body.translation(), r = p2Car.body.rotation();
+    p.set(t.x, t.y, t.z);
+    q.set(r.x, r.y, r.z, r.w);
+  };
+
+  const placeP2OnRoad = (dsOffset = 0, latOffset = 3.6) => {
+    if (!p2Car || !p2Core) return;
+    const p = new THREE.Vector3(s0.x, s0.z + 3, -s0.y);
+    p.x += Math.sin(startYaw) * (grid.ds + dsOffset) - Math.cos(startYaw) * (grid.lat + latOffset);
+    p.z += Math.cos(startYaw) * (grid.ds + dsOffset) + Math.sin(startYaw) * (grid.lat + latOffset);
+    const hit = pw.raycast(p, p.clone().add(new THREE.Vector3(0, -20, 0)));
+    if (hit) p.y -= hit.toi;
+    p.y += p2Core.info.cgHeight + 0.02;
+    p2Car.place(p, startYaw);
+    p2Car.settle();
+    readP2Body(p2PhysPos, p2PhysQuat);
+    p2PrevPos.copy(p2PhysPos); p2PrevQuat.copy(p2PhysQuat);
+    p2Pos.copy(p2PhysPos); p2Quat.copy(p2PhysQuat);
+    p2LastVel.set(0, 0, 0); p2Acc.set(0, 0, 0);
+    p2Rig?.snap();
+  };
+
+  const teardownSplitScreen = () => {
+    splitActive = false;
+    input.splitScreen = false;
+    splitHud.hide();
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, innerWidth, innerHeight);
+    camera.aspect = innerWidth / Math.max(1, innerHeight);
+    camera.updateProjectionMatrix();
+    if (p2Visual) { scene.remove(p2Visual.root); p2Visual = null; }
+    if (p2Car) {
+      try { pw.world.removeRigidBody(p2Car.body); } catch { /* already removed */ }
+      p2Car = null;
+    }
+    p2Core = null;
+    p2Cam = null;
+    p2Rig = null;
+    p2RaceCar = -1;
+    p2Lap = null;
+  };
+
+  const setupSplitP2 = async (carId: string) => {
+    // Clean any previous P2 vehicle before spawning fresh
+    if (p2Visual) { scene.remove(p2Visual.root); p2Visual = null; }
+    if (p2Car) { try { pw.world.removeRigidBody(p2Car.body); } catch { /* ignore */ } p2Car = null; }
+    p2Core = null;
+
+    const cat = catalog.find((c) => c.id === carId) ?? catalog[1] ?? catalog[0];
+    splitP2CarId = cat.id;
+    const visPath = cat.visual ?? DEFAULT_VISUAL;
+    const cfg = visPath === DEFAULT_VISUAL ? defaultCfg : await fetchVisualCfg(visPath);
+    p2Core = new CoreCar(JSON.stringify(physics[cat.id] ?? physics[catalog[0].id]));
+    p2Visual = await CarVisual.load(cfg);
+    // Give P2 a vibrant contrasting paint coat so both players pop immediately on a Smart TV
+    const p2Color = cat.id === sel.car ? '#00d8ff' : (cat.paint || '#00d8ff');
+    p2Visual.setPaint(p2Color, 'metallic');
+    p2Visual.dim = 1;
+    p2Visual.applyHeadlights();
+    scene.add(p2Visual.root);
+
+    const p2Shape = shapeOf(cfg);
+    p2Car = new CarBody(pw, p2Core, p2Shape, p2Visual.cg);
+    p2Car.usePatchRays = false; // keep 2P TV frame times smooth
+    p2Cam = new THREE.PerspectiveCamera(62, innerWidth / Math.max(1, innerHeight), 0.1, potato ? 560 : 1200);
+    p2Cam.layers.enable(DEBRIS_LAYER);
+    p2Cam.layers.enable(PROP_DETAIL_LAYER);
+    p2Rig = new CameraRig(p2Cam, pw, p2Car.body, p2Core.info.redline);
+    p2NosSec = 6.0;
+    placeP2OnRoad(0, 3.6);
+    p2Visual.update(p2Pos, p2Quat, p2Car.out);
+    p2Rig.update(1, p2Pos, p2Quat, new THREE.Vector3(), p2Car.out);
+  };
+
+  async function startSplitScreen(mode: 'race' | 'free', layout: SplitLayout, carId: string) {
+    splitLayout = layout;
+    splitP2CarId = carId || (catalog[1]?.id ?? catalog[0].id);
+    splitActive = true;
+    input.splitScreen = true;
+    await startSession(mode);
+  }
+
+  addEventListener('gamepadconnected', () => {
+    const n = connectedGamepads().length;
+    hud.toast(`🎮 CONTROLLER ${n} CONNECTED`, n >= 2 ? '2-Player Split-Screen ready for TV couch play!' : 'Controller ready · plug in a 2nd pad for 2P TV');
+    if (menu.screen === 'modes' || menu.screen === 'lobby') menu.render();
+  });
+  addEventListener('gamepaddisconnected', () => {
+    const n = connectedGamepads().length;
+    hud.toast('🎮 CONTROLLER DISCONNECTED', `${n} controller${n === 1 ? '' : 's'} active`);
+    if (menu.screen === 'modes' || menu.screen === 'lobby') menu.render();
+  });
+
   /**
    * Load a session: race (you + AI rivals on a grid), free roam (just you) or a party session
    * (online: the party's rules, other players' cars). A party session waits for the leader's GO
@@ -2115,9 +2269,12 @@ async function main() {
   async function startSession(mode: Mode, rejoin = false) {
     if (loadingSession || citySwitching) return;
     loadingSession = true;
+    if (mode === 'online' && splitActive) teardownSplitScreen();
     sel.mode = mode;
     setState('busy');
-    const modeTitle = mode === 'online' ? 'MULTIPLAYER SESSION' : mode === 'race' ? `RACE · ${sel.laps} LAPS` : sp.testingMode ? 'TESTING FREE ROAM' : 'FREE ROAM';
+    const modeTitle = splitActive
+      ? (mode === 'race' ? `2P SPLIT-SCREEN RACE · ${sel.laps} LAPS` : '2P SPLIT-SCREEN FREE ROAM')
+      : mode === 'online' ? 'MULTIPLAYER SESSION' : mode === 'race' ? `RACE · ${sel.laps} LAPS` : sp.testingMode ? 'TESTING FREE ROAM' : 'FREE ROAM';
     await loader.show(mode === 'online' ? 'Syncing party session…' : `Preparing ${cityInfo.name}…`, `${cityInfo.name.toUpperCase()} · ${modeTitle}`, 22);
     menu.show('none');
     if (mode === 'online' && cloud.available) {
@@ -2185,8 +2342,15 @@ async function main() {
       await warm();
       remote.warmup(false);
     } else await sleep(60);          // brief settle for any fullscreen transition
-    hud.lapTotal = raceLaps();
-    hud.show();
+    if (splitActive) {
+      loader.text('Staging Player 2 vehicle…', 66);
+      await setupSplitP2(splitP2CarId);
+      hud.hide();
+      splitHud.show(splitLayout);
+    } else {
+      hud.lapTotal = raceLaps();
+      hud.show();
+    }
     if (wantsTouch()) enableTouch();
     audio.unlock();
     loadingSession = false;
@@ -2204,6 +2368,13 @@ async function main() {
   /** Respawn and start: 3-2-1 in a race, straight into the car otherwise. */
   async function beginRace() {
     resetCar();
+    if (splitActive && p2Car && p2Visual && p2Rig) {
+      placeP2OnRoad(0, 3.6);
+      p2RaceCar = race.addCar(p2Car.body.translation());
+      p2Lap = null;
+      p2Visual.update(p2Pos, p2Quat, p2Car.out);
+      p2Rig.update(1, p2Pos, p2Quat, new THREE.Vector3(), p2Car.out);
+    }
     setGarage(false);
     visual.dim = 1;
     visual.applyHeadlights();
@@ -2267,6 +2438,7 @@ async function main() {
     ranked?.close(); ranked = null;
     if (remote) party?.sendGone();
     remote?.clear(); remote = null;
+    if (splitActive) teardownSplitScreen();
     hideSpectate();
     rig.setTarget(car.body, core.info.redline);
     hud.hide();
@@ -2367,8 +2539,8 @@ async function main() {
     if (e.code === 'KeyF' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && (e.target as HTMLElement).tagName !== 'INPUT') {
       // In Free Roam, [F] flashes headlights for Spontaneous Wagers; elsewhere [F] toggles fullscreen.
       if (!(driving() && raceLaps() === 0)) {
-        if (document.fullscreenElement) void document.exitFullscreen();
-        else void document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => {});
+        if (isFullscreen()) exitFullscreenSafe();
+        else reqFullscreen();
       }
       return;
     }
@@ -2641,9 +2813,14 @@ async function main() {
     } else if (hud.holdWarn) hud.holdWarn = '';
     let steps = 0;
     const tSim = performance.now();
+    let p2RightX = 0, p2RightY = 0;
     while (acc >= DT && steps < 24) {
       prevPos.copy(physPos);
       prevQuat.copy(physQuat);
+      if (splitActive && p2Car) {
+        p2PrevPos.copy(p2PhysPos);
+        p2PrevQuat.copy(p2PhysQuat);
+      }
       const script = (g.__game as { script?: ((tick: number) => RawInput) | null }).script;   // dev / replay: inputs by tick
       let tin = script ? script(ticks) : state === 'race' ? input.poll() : IDLE;
       if (state === 'countdown' && input.raw.throttle > 0.5) launchArmed = true;
@@ -2652,6 +2829,29 @@ async function main() {
         tin = { ...tin, throttle: Math.min(tin.throttle, 0.55 + 0.45 * ph) };   // ramp instead of instant full power
       }
       car.tick(tin, input.assists);
+      if (splitActive && p2Car && p2Core) {
+        const p2p = p2Input.poll((c) => input.isKeyDown(c), state !== 'race');
+        p2SourceLabel = p2p.sourceLabel;
+        p2RightX = p2p.rightStickX;
+        p2RightY = p2p.rightStickY;
+        if (p2p.camToggle) p2Rig?.toggle();
+        if (p2p.resetCar && state === 'race') {
+          const rp = p2Pos.clone(); rp.y += 1.6;
+          const hit = pw.raycast(rp, rp.clone().add(new THREE.Vector3(0, -14, 0)), p2Car.body);
+          if (hit) rp.y -= hit.toi;
+          rp.y += p2Core.info.cgHeight + 0.05;
+          p2Car.place(rp, startYaw);
+          p2Car.settle();
+        }
+        if (p2p.nos && state === 'race' && p2NosSec > 0) {
+          p2NosSec = Math.max(0, p2NosSec - DT);
+          p2Car.nosThrustN = 5200;
+        } else {
+          p2NosSec = Math.min(6.0, p2NosSec + DT * 0.25);
+          p2Car.nosThrustN = 0;
+        }
+        p2Car.tick(state === 'race' ? p2p.raw : IDLE, input.assists);
+      }
       if (tireSmoke) {
         if (state === 'race' && ticks % 3 === 0) {
           const slip = Math.max(Math.abs(car.out[OUT.wheel(2) + 7]), Math.abs(car.out[OUT.wheel(3) + 7]));
@@ -2681,6 +2881,13 @@ async function main() {
       if (ai.mode !== 'off') ai.afterStep(car.collider, car.body, preV, preW);   // rivals & cruising traffic take their half of a hit (ai.ts)
       stepMs += (performance.now() - t0 - stepMs) * 0.01;   // Rapier cost per 240 Hz step, smoothed
       readBody(physPos, physQuat);
+      if (splitActive && p2Car) {
+        readP2Body(p2PhysPos, p2PhysQuat);
+        const v2 = p2Car.body.linvel();
+        const a2 = p2StepAcc.set(v2.x - p2LastVel.x, v2.y - p2LastVel.y, v2.z - p2LastVel.z).divideScalar(DT);
+        p2LastVel.set(v2.x, v2.y, v2.z);
+        p2Acc.lerp(a2.clampLength(0, 60), 1 - Math.exp(-DT / 0.025));
+      }
       // car acceleration for the camera spring, from the physics (low-passed ~25 ms)
       const v = car.body.linvel();
       const a = stepAcc.set(v.x - lastVel.x, v.y - lastVel.y, v.z - lastVel.z).divideScalar(DT);
@@ -2700,6 +2907,10 @@ async function main() {
     const alpha = Math.min(1, acc / DT);
     pos.lerpVectors(prevPos, physPos, alpha);
     quat.slerpQuaternions(prevQuat, physQuat, alpha);
+    if (splitActive && p2Car) {
+      p2Pos.lerpVectors(p2PrevPos, p2PhysPos, alpha);
+      p2Quat.slerpQuaternions(p2PrevQuat, p2PhysQuat, alpha);
+    }
     post.carPos.copy(pos);
     // Tactical Police Pursuit: ONLY active in Race Events with Cop Mode ON (never in Free Roam!).
     const copsOnNow = copsActiveInRace();
@@ -2762,6 +2973,10 @@ async function main() {
         }
       }
       visual.update(pos, quat, car.out, prevPos, prevQuat);   // car.out was computed from the pose BEFORE the last step
+      if (splitActive && p2Visual && p2Car) {
+        p2Visual.update(p2Pos, p2Quat, p2Car.out, p2PrevPos, p2PrevQuat);
+        p2Visual.setExhaustFlame(p2Car.nosThrustN > 0 ? 1.25 : 0, p2Car.nosThrustN > 0);
+      }
       if (!inShowroom || settledShowroom <= 24) {
         ai.update(alpha, camera);
         damage.update(live ? frame : 0, () => core.damage());
@@ -2954,7 +3169,18 @@ async function main() {
     else if (carMeet.walking) { /* CarMeetHub updates smooth third-person walk camera */ }
     else {
       if (state === 'spectate') specCamera(frame);
-      else if (live) rig.update(frame, pos, quat, carAcc, car.out);
+      else if (live) {
+        if (Math.abs(input.rightStick.x) > 0.01 || Math.abs(input.rightStick.y) > 0.01) {
+          rig.dragFreeLook(input.rightStick.x * frame * 420, input.rightStick.y * frame * 260);
+        }
+        rig.update(frame, pos, quat, carAcc, car.out);
+        if (splitActive && p2Rig && p2Car) {
+          if (Math.abs(p2RightX) > 0.01 || Math.abs(p2RightY) > 0.01) {
+            p2Rig.dragFreeLook(p2RightX * frame * 420, p2RightY * frame * 260);
+          }
+          p2Rig.update(frame, p2Pos, p2Quat, p2Acc, p2Car.out);
+        }
+      }
     }
     const tCity = performance.now();
     if (!inGarage) {
@@ -2994,7 +3220,34 @@ async function main() {
         updateMirror(now);
         post.syncRoadReflection(camera, pos.y - visual.cg.y);
       }
-      if (inGarage) showPost!.render(); else post.render();
+      if (inGarage) showPost!.render();
+      else if (splitActive && driving() && p2Cam && p2Car) {
+        // Dual-viewport local 2-Player Split-Screen (works identically on WebGPU & WebGL 2 across all browsers/TVs)
+        const w = innerWidth, h = innerHeight;
+        const horiz = splitLayout === 'horizontal';
+        const p1X = 0, p1Y = horiz ? Math.floor(h / 2) : 0;
+        const p1W = horiz ? w : Math.floor(w / 2), p1H = horiz ? (h - p1Y) : h;
+        const p2X = horiz ? 0 : p1W, p2Y = 0;
+        const p2W = horiz ? w : (w - p1W), p2H = horiz ? p1Y : h;
+
+        camera.aspect = p1W / Math.max(1, p1H);
+        camera.updateProjectionMatrix();
+        p2Cam.aspect = p2W / Math.max(1, p2H);
+        p2Cam.updateProjectionMatrix();
+
+        renderer.setScissorTest(true);
+        renderer.setViewport(p1X, p1Y, p1W, p1H);
+        renderer.setScissor(p1X, p1Y, p1W, p1H);
+        renderer.render(scene, camera);
+
+        renderer.setViewport(p2X, p2Y, p2W, p2H);
+        renderer.setScissor(p2X, p2Y, p2W, p2H);
+        renderer.render(scene, p2Cam);
+
+        renderer.setScissorTest(false);
+        renderer.setViewport(0, 0, w, h);
+      }
+      else post.render();
       prof.post += performance.now() - tPost;
       // never while the garage is up: the probe's cube render rebuilds ShadowNodes and destroys the sun's shadow map
       if (screenNone() && post.preset !== 'low' && post.preset !== 'medium') probe?.update(pos, visual.root);
@@ -3055,7 +3308,20 @@ async function main() {
     }
     if (driving() && state !== 'paused' && state !== 'spectate') {
       const tHud = performance.now();
-      hud.update(now, frame, car.out, core.info, input.assists, damage.last, lap);
+      if (splitActive && p2Car && p2Core) {
+        if (state === 'race' && p2RaceCar >= 0) {
+          p2Lap = race.update(p2RaceCar, p2Car.body.translation(), ticks * DT - raceT0);
+        }
+        const p1Label = connectedGamepads().length >= 2 ? 'Pad 1' : 'WASD';
+        const p1Extra = raceLaps() > 0 && lap ? `LAP ${Math.min(raceLaps(), lap.laps + 1)}/${raceLaps()}` : (catalog.find((c) => c.id === sel.car)?.name ?? sel.car);
+        const p2Extra = raceLaps() > 0 && p2Lap ? `LAP ${Math.min(raceLaps(), p2Lap.laps + 1)}/${raceLaps()}` : (catalog.find((c) => c.id === splitP2CarId)?.name ?? splitP2CarId);
+        splitHud.update(
+          { kmh: Math.abs(car.out[OUT.speed]) * 3.6, gear: Math.round(car.out[OUT.gear] ?? 0), rpmFrac: (car.out[OUT.rpm] || 800) / Math.max(1000, core.info.redline), label: p1Label, extra: p1Extra },
+          { kmh: Math.abs(p2Car.out[OUT.speed]) * 3.6, gear: Math.round(p2Car.out[OUT.gear] ?? 0), rpmFrac: (p2Car.out[OUT.rpm] || 800) / Math.max(1000, p2Core.info.redline), label: p2SourceLabel, extra: p2Extra },
+        );
+      } else {
+        hud.update(now, frame, car.out, core.info, input.assists, damage.last, lap);
+      }
       prof.hud += performance.now() - tHud;
     }
     // Graphics tuning (title menu only, behind the cover; see startTuning)
