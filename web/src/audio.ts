@@ -36,6 +36,9 @@ export class GameAudio {
   } | null = null;
   private tyre: { f: BiquadFilterNode; f2: BiquadFilterNode; g: GainNode } | null = null;
   private roadRoll: { f: BiquadFilterNode; g: GainNode } | null = null;
+  /** Simcenter Tire 2606 dual Doppler-split toroidal air-cavity (~225 Hz) resonant bandpass filters. */
+  private cavity: { fLo: BiquadFilterNode; fHi: BiquadFilterNode; g: GainNode } | null = null;
+  private lastBovAt = 0;
   private wind: { f: BiquadFilterNode; g: GainNode } | null = null;
   private reverbSend: GainNode | null = null;
   /** Dynamic adaptive music state (reacts to speed, police pursuit heat & finish line swell). */
@@ -355,6 +358,22 @@ export class GameAudio {
     rSrc.start();
     this.roadRoll = { f: rFilt, g: rGain };
 
+    // Simcenter Tire 2606 Toroidal Air-Cavity (~225 Hz Doppler-split doublet) resonant hollow boom on curbs/bumps
+    const cSrc = ctx.createBufferSource();
+    cSrc.buffer = this.noise;
+    cSrc.loop = true;
+    const cLo = ctx.createBiquadFilter();
+    cLo.type = 'bandpass'; cLo.frequency.value = 216; cLo.Q.value = 14;
+    const cHi = ctx.createBiquadFilter();
+    cHi.type = 'bandpass'; cHi.frequency.value = 234; cHi.Q.value = 14;
+    const cGain = ctx.createGain();
+    cGain.gain.value = 0;
+    cSrc.connect(cLo).connect(cGain);
+    cSrc.connect(cHi).connect(cGain);
+    cGain.connect(this.out!);
+    cSrc.start();
+    this.cavity = { fLo: cLo, fHi: cHi, g: cGain };
+
     combMix
       .connect(shaper)
       .connect(formant1)
@@ -427,6 +446,25 @@ export class GameAudio {
       const targetGain = this.muted ? 0 : rollFrac * (this.onGravel ? 0.14 : this.roadWetness > 0.55 ? 0.11 : 0.055);
       this.roadRoll.f.frequency.setTargetAtTime(targetFreq, t, 0.08);
       this.roadRoll.g.gain.setTargetAtTime(targetGain, t, 0.08);
+    }
+
+    // Simcenter Tire 2606 Doppler-split toroidal air-cavity resonance (~225 Hz hollow thump over curbs/bumps)
+    if (this.cavity) {
+      let peakCav = 0;
+      for (let i = 0; i < 4; i++) peakCav = Math.max(peakCav, out[OUT.cavityGain(i)] || 0);
+      const fLo = Math.max(120, Math.min(340, out[OUT.cavityLowHz] || 220));
+      const fHi = Math.max(130, Math.min(380, out[OUT.cavityHighHz] || 228));
+      this.cavity.fLo.frequency.setTargetAtTime(fLo, t, 0.03);
+      this.cavity.fHi.frequency.setTargetAtTime(fHi, t, 0.03);
+      this.cavity.g.gain.setTargetAtTime(this.muted ? 0 : Math.min(0.24, peakCav * 0.22), t, 0.025);
+    }
+
+    // Turbo Blow-Off Valve (BOV) compressor surge flutter triggered directly by C++ drivetrain state
+    if (!this.muted && !stalled && (out[OUT.bovVenting] || 0) > 0.5 && t > this.lastBovAt + 0.32) {
+      this.lastBovAt = t;
+      for (let k = 0; k < 4; k++) {
+        this.burst(t + k * 0.048, 0.042, 'bandpass', 3600 - k * 340, 5.2, 0.13 * (1 - k * 0.18));
+      }
     }
 
     // Subtle GT transmission gear whine proportional to wheel speed + engine load

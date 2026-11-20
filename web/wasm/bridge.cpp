@@ -45,8 +45,9 @@ struct Car {
     rs::VehicleOutput out;
     rs::ChassisState cs;
     std::array<rs::WheelRay, 4> rays;
+    std::array<rs::WheelContactPatchRays, 4> patch_rays;
     std::array<double, 4> spin{};
-    std::vector<double> buf = std::vector<double>(256, 0.0);
+    std::vector<double> buf = std::vector<double>(384, 0.0);
 };
 
 std::vector<std::unique_ptr<Car>> g_cars;
@@ -71,6 +72,7 @@ EMSCRIPTEN_KEEPALIVE int rs_create(const char* json) {
         c->vehicle->chassis_dynamics().brake_fluid_boil_enabled = true;
         c->vehicle->engine_systems().torsional_compliance_enabled = true;
         c->vehicle->engine_systems().dog_box_flat_shift_cut = true;
+        c->vehicle->atmosphere().enabled = true;
         c->controls = std::make_unique<rs::Controls>(c->vehicle->config());
         c->buf[92] = -99;                                  // no H-pattern shifter until the page says so
         g_cars.push_back(std::move(c));
@@ -113,6 +115,24 @@ EMSCRIPTEN_KEEPALIVE void rs_reset_motion(int id, double speed, int gear) {
     if (gear >= 0) g_cars[id]->controls->set_gear(gear);
 }
 
+// Set live atmospheric climate & altitude (Celsius, metres, 0..1 humidity) for ISA air density,
+// NA/turbo engine output, and solid asphalt-to-tread thermal conduction.
+EMSCRIPTEN_KEEPALIVE void rs_set_atmosphere(int id, double air_c, double track_c, double altitude_m, double humidity) {
+    Car& c = *g_cars[id];
+    auto& atm = c.vehicle->atmosphere();
+    atm.enabled = true;
+    atm.ambient_air_c = air_c;
+    atm.track_surface_c = track_c;
+    atm.altitude_m = altitude_m;
+    atm.humidity_0_to_1 = humidity;
+}
+
+// Set forced-induction turbo stage (0 = NA, 1..3 = Stage 1-3 Turbocharger with spool & BOV flutter).
+EMSCRIPTEN_KEEPALIVE void rs_set_turbo_stage(int id, int stage) {
+    Car& c = *g_cars[id];
+    c.vehicle->engine_systems().turbo_stage = std::max(0, std::min(3, stage));
+}
+
 // IN  buf[0..12]: chassis state, three world, origin = CG:
 //     pos xyz, quat xyzw, linear vel xyz, angular vel xyz
 // OUT buf[16 + 6 i]: wheel i ray from xyz, to xyz (three world). Order FL, FR, RL, RR.
@@ -130,36 +150,31 @@ EMSCRIPTEN_KEEPALIVE void rs_rays(int id) {
     }
 }
 
-// Call after rs_rays with the raycast results and the driver's raw input.
-// IN  buf[48 + 8 i]: wheel i contact: hit (0/1), point xyz, normal xyz, surface index
-//     buf[80..87]: raw input: steer (-1 right .. +1 left), throttle, brake, clutch, handbrake,
-//                  shift_up (edge), shift_down (edge), device (0 kb, 1 pad, 2 wheel)
-//     buf[88..91]: settings: abs, tc, esc, auto_gearbox (0/1)
-//     buf[92]: H-pattern shifter gear index (0 R, 1 N, 2 1st ...), -99 = no shifter
-//     buf[93]: ABS slip target (0 = default 0.10)  [94] TC slip target (0 = default 0.10)  [95] countersteer gain (0 = off)
-// OUT buf[96..98] force, [99..101] torque (three world, apply at CG for one tick)
-//     buf[102] speed m/s  [103] rpm  [104] gear index  [105] sideslip rad  [106] stalled
-//     [107] throttle applied  [108] brake applied  [109] steer applied  [110..112] accel (body, core axes)
-//     [113] abs active  [114] tc active  [115] esc active  [116] steering rack torque N m (force feedback)
-//     buf[120 + 12 i]: wheel i centre xyz (three world), steer rad, spin rad, contact, load N,
-//                      slip ratio, slip angle rad, compression m, angular velocity rad/s, surface
-//     buf[168 + 4 i]:  wheel i self-aligning torque Mz (N m), camber rad, tread (core) temperature C, wear 0..1
-//     buf[184 + i]: brake disc temperature C   buf[188 + i]: tread surface temperature C   buf[192 + i]: tyre pressure kPa
-//     buf[196 + i]: brake pad friction vs. its working range (fade < 1)
-EMSCRIPTEN_KEEPALIVE void rs_step(int id, double dt) {
+// Multi-point 3-ray longitudinal curb contact patch per wheel (12 rays total).
+// IN  buf[0..12]: chassis state (three world)
+// OUT buf[280 + 18 i + 6 r]: wheel i (0..3), ray r (0=trailing, 1=center, 2=leading) from xyz, to xyz (three world)
+EMSCRIPTEN_KEEPALIVE void rs_rays_patch(int id) {
     Car& c = *g_cars[id];
     double* b = c.buf.data();
-    std::array<rs::WheelContact, 4> contacts{};
+    c.cs.position = to_core(b[0], b[1], b[2]);
+    c.cs.orientation = quat_to_core(b + 3);
+    c.cs.velocity = to_core(b[7], b[8], b[9]);
+    c.cs.angular_velocity = to_core(b[10], b[11], b[12]);
+    c.patch_rays = c.vehicle->wheel_contact_patch_rays(c.cs);
     for (int i = 0; i < 4; ++i) {
-        const double* w = b + 48 + 8 * i;
-        if (w[0] < 0.5) continue;
-        rs::WheelContact& k = contacts[i];
-        k.hit = true;
-        k.point = to_core(w[1], w[2], w[3]);
-        k.normal = rs::normalized(to_core(w[4], w[5], w[6]));
-        k.distance = rs::length(k.point - c.rays[i].origin);
-        k.surface = int(w[7]);
+        c.rays[i] = c.patch_rays[i].rays[1];
+        for (int r = 0; r < 3; ++r) {
+            const auto& ray = c.patch_rays[i].rays[r];
+            double* dst = b + 280 + 18 * i + 6 * r;
+            put(dst, ray.origin);
+            put(dst + 3, ray.origin + ray.direction * ray.length);
+        }
     }
+}
+
+namespace {
+void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts, double dt) {
+    double* b = c.buf.data();
     rs::RawInput raw;
     raw.steer = b[80];
     raw.throttle = b[81];
@@ -174,13 +189,11 @@ EMSCRIPTEN_KEEPALIVE void rs_step(int id, double dt) {
     a.tc = b[89] > 0.5;
     a.esc = b[90] > 0.5;
     c.controls->settings.auto_gearbox = b[91] > 0.5;
-    // assist strengths (the menu's levels; 0 = the core's defaults): ABS / TC slip targets, countersteer gain (0 = off)
     a.abs_slip_target = b[93] > 0 ? b[93] : 0.10;
     a.tc_slip_target = b[94] > 0 ? b[94] : 0.10;
     c.controls->settings.countersteer_assist = b[95] > 0;
     if (b[95] > 0) c.controls->settings.countersteer_gain = b[95];
-    raw.direct_gear = int(std::lround(b[92]));       // H-pattern shifter gear index, -99 = none
-    // No input cut-off when totaled: the car always stays drivable (limp home, see damage.hpp).
+    raw.direct_gear = int(std::lround(b[92]));
 
     const rs::DriverInput di = c.controls->update(raw, c.out, dt);
     c.vehicle->set_input(di);
@@ -204,6 +217,7 @@ EMSCRIPTEN_KEEPALIVE void rs_step(int id, double dt) {
     b[114] = as.tc_cut;
     b[115] = as.esc_mode;
     b[116] = c.out.steer_torque;
+    double cav_lo_sum = 0.0, cav_hi_sum = 0.0, pitch_sum = 0.0;
     for (int i = 0; i < 4; ++i) {
         const rs::WheelOutput& w = c.out.wheels[i];
         c.spin[i] = std::fmod(c.spin[i] + w.angular_velocity * dt, 2 * rs::kPi);
@@ -227,7 +241,76 @@ EMSCRIPTEN_KEEPALIVE void rs_step(int id, double dt) {
         b[188 + i] = w.condition.surface_c;
         b[192 + i] = w.condition.pressure_kpa;
         b[196 + i] = w.brake_mu;
+        // Extended Simcenter Tire 2606 & 3-Zone I/M/O + WLF telemetry [226..273]
+        b[226 + i] = w.condition.inner_c;
+        b[230 + i] = w.condition.middle_c;
+        b[234 + i] = w.condition.outer_c;
+        b[238 + i] = w.condition.flash_c;
+        b[242 + i] = w.condition.flat_spot_depth_mm;
+        const rs::TireAcousticSource ac = w.condition.compute_acoustics(w.angular_velocity, c.cfg.tire(i).radius, w.unsprung_vel_mps);
+        b[246 + i] = ac.cavity_ring_gain;
+        if (i < 2) { cav_lo_sum += ac.cavity_mode_low_hz; cav_hi_sum += ac.cavity_mode_high_hz; pitch_sum += ac.tread_block_pitch_hz; }
+        b[265 + i] = w.condition.blistering;
+        b[269 + i] = w.condition.graining;
     }
+    b[250] = cav_lo_sum * 0.5;
+    b[251] = cav_hi_sum * 0.5;
+    b[252] = c.out.boost_bar;
+    b[253] = c.out.bov_venting ? 1.0 : 0.0;
+    b[254] = c.out.shift_cut_active ? 1.0 : 0.0;
+    b[255] = c.out.drs_active ? 1.0 : 0.0;
+    b[256] = c.out.airbrake_active ? 1.0 : 0.0;
+    b[257] = c.out.front_splitter_stalled ? 1.0 : 0.0;
+    b[258] = c.out.oil_temp_c;
+    b[259] = c.out.intake_air_temp_c;
+    b[260] = c.out.fuel_liters;
+    b[261] = c.out.chassis_twist_deg;
+    b[262] = c.out.brake_vapor_lock_sponge;
+    b[263] = c.out.air_density_kg_m3;
+    b[264] = c.out.ayc_yaw_moment_nm;
+    b[273] = pitch_sum * 0.5;
+}
+}  // namespace
+
+// Call after rs_rays with the raycast results and the driver's raw input.
+EMSCRIPTEN_KEEPALIVE void rs_step(int id, double dt) {
+    Car& c = *g_cars[id];
+    double* b = c.buf.data();
+    std::array<rs::WheelContact, 4> contacts{};
+    for (int i = 0; i < 4; ++i) {
+        const double* w = b + 48 + 8 * i;
+        if (w[0] < 0.5) continue;
+        rs::WheelContact& k = contacts[i];
+        k.hit = true;
+        k.point = to_core(w[1], w[2], w[3]);
+        k.normal = rs::normalized(to_core(w[4], w[5], w[6]));
+        k.distance = rs::length(k.point - c.rays[i].origin);
+        k.surface = int(w[7]);
+    }
+    step_with_contacts(c, contacts, dt);
+}
+
+// Call after rs_rays_patch with 12 raycast hits in buf[280 + 24 i + 8 r] (r = 0..2).
+// Resolves circular-arc curb climb & MF-Swift enveloping slope via Vehicle::resolve_contact_patch.
+EMSCRIPTEN_KEEPALIVE void rs_step_patch(int id, double dt) {
+    Car& c = *g_cars[id];
+    double* b = c.buf.data();
+    std::array<rs::WheelContact, 4> contacts{};
+    for (int i = 0; i < 4; ++i) {
+        std::array<rs::WheelContact, 3> hits{};
+        for (int r = 0; r < 3; ++r) {
+            const double* w = b + 280 + 24 * i + 8 * r;
+            if (w[0] < 0.5) continue;
+            rs::WheelContact& k = hits[r];
+            k.hit = true;
+            k.point = to_core(w[1], w[2], w[3]);
+            k.normal = rs::normalized(to_core(w[4], w[5], w[6]));
+            k.distance = rs::length(k.point - c.patch_rays[i].rays[r].origin);
+            k.surface = int(w[7]);
+        }
+        contacts[i] = rs::Vehicle::resolve_contact_patch(c.patch_rays[i], hits, c.cfg.tire(i).radius);
+    }
+    step_with_contacts(c, contacts, dt);
 }
 
 // Crash input (call during a tick, after rs_rays): contact point in three world, impulse N s

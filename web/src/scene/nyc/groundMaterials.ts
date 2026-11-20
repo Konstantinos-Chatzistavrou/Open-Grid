@@ -10,7 +10,7 @@
 import * as THREE from 'three/webgpu';
 import {
   uv, vec2, vec3, float, mix, smoothstep, step, fract, floor, abs, max, min, clamp, hash, vertexColor, positionView, time,
-  bumpMap, length, normalWorld,
+  bumpMap, length, normalWorld, uniform,
 } from 'three/tsl';
 import { noise01, worleyEdge } from '../../fx/noiseTex';
 
@@ -23,6 +23,10 @@ let CS = Math.cos((29 * Math.PI) / 180);
 let SN = Math.sin((29 * Math.PI) / 180);
 /** The street grid's angle from east (degrees) for slabs and pavers; call before createGroundMaterials. */
 export function setGroundGrid(deg: number) { CS = Math.cos((deg * Math.PI) / 180); SN = Math.sin((deg * Math.PI) / 180); }
+
+/** Dynamic rain wetness uniform (0.15 dry night sheen .. 1.0 full rainstorm puddles): zero-cost uniform update. */
+const roadWetnessU = uniform(0.45);
+export function setGroundWetness(w: number) { roadWetnessU.value = Math.max(0.1, Math.min(1.0, w)); }
 
 // ---- shared node snippets (built once per createGroundMaterials call; each material owns its own nodes where they are mutated)
 const P = uv();                                                         // metres, world aligned
@@ -70,21 +74,23 @@ function road() {
   // cracks: thin lines where the two nearest cell distances of a worley field nearly meet, only in worn zones
   const w = worleyEdge(R.mul(0.55).add(vec2(11.0, 7.0)));
   const crack = float(1).sub(smoothstep(0.0, 0.028, w)).mul(smoothstep(0.58, 0.78, wearLo)).mul(near);
-  // puddles: large-scale noise peaks plus the gutter (low baked alpha at the kerb) collecting water
+  // puddles: large-scale noise peaks plus the gutter (low baked alpha at the kerb) collecting water, scaled dynamically by worldClock wetness
   const gutter = float(1).sub(smoothstep(0.76, 0.98, ao));
-  const pud = max(smoothstep(0.58, 0.74, n01(P.mul(0.068).add(vec2(3.1, 9.4)))), gutter.mul(smoothstep(0.45, 0.72, wearMid))).mul(float(1).sub(manhole));
+  const pudBase = max(smoothstep(0.58, 0.74, n01(P.mul(0.068).add(vec2(3.1, 9.4)))), gutter.mul(smoothstep(0.45, 0.72, wearMid))).mul(float(1).sub(manhole));
+  const pud = clamp(pudBase.mul(mix(0.42, 1.35, roadWetnessU)), 0.0, 1.0);
   let albedo: any = vec3(0.028, 0.030, 0.036).mul(mix(0.72, 1.38, wearLo)).mul(mix(0.88, 1.12, wearMid)).mul(float(0.88).add(grain.mul(0.24)));
   albedo = albedo.mul(mix(1.0, 0.65, patch)).mul(mix(1.0, 0.52, crack)).mul(mix(1.0, 0.86, tireTrack)).mul(mix(1.0, 0.45, mCollar));
   const ironCol = vec3(0.065, 0.058, 0.054).mul(float(0.82).add(waffle.mul(0.35)));
   albedo = mix(albedo, ironCol, manhole).mul(mix(1.0, 0.48, pud)).mul(mix(0.52, 1.0, ao));
   m.colorNode = albedo;
   let rough: any = float(0.29).add(grain.mul(0.15).mul(near)).add(float(1).sub(wearLo).mul(0.06)).sub(tireTrack.mul(0.07)).add(patch.mul(0.05)).add(crack.mul(0.38));
+  rough = rough.mul(mix(1.18, 0.76, roadWetnessU));
   rough = mix(rough, float(0.36).sub(waffle.mul(0.12)), manhole);
   rough = mix(rough, float(0.022), pud);
   m.roughnessNode = clamp(rough, 0.02, 1.0);
   m.metalnessNode = manhole.mul(0.65);
-  // Subtle rain micro-ripples on deep puddles, fading smoothly into asphalt grain outside puddles
-  const ripple = n01(P.mul(6.5).add(vec2(time.mul(0.45), time.mul(-0.35)))).mul(pud).mul(0.18);
+  // Subtle rain micro-ripples on deep puddles, scaled by live rain intensity
+  const ripple = n01(P.mul(6.5).add(vec2(time.mul(0.45), time.mul(-0.35)))).mul(pud).mul(mix(0.06, 0.26, roadWetnessU));
   const height = grain.mul(0.5).sub(crack.mul(1.5)).add(patch.mul(0.25)).add(manhole.mul(waffle.mul(0.6).add(0.3))).mul(float(1).sub(pud.mul(0.88))).add(ripple);
   m.normalNode = bumpMap(height, near.mul(0.42));
   return m;

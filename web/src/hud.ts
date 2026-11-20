@@ -31,6 +31,7 @@ export class Hud {
   private toastTimer = 0;
   private warnHtml = '';
   private assistHtml = '';
+  private simTelHtml = '';
   extra = '';
   /** Race mode: lap count shown as 'n / total' (0 = free run, counted forever). */
   lapTotal = 0;
@@ -134,6 +135,7 @@ export class Hud {
     ].join(' · ');
     if (assistHtml !== this.assistHtml) $('assists').innerHTML = this.assistHtml = assistHtml;
     this.updateWarnings(dmg, out);
+    this.updateSimTelemetry(out);
     const el = $('damage');
     if (!dmg || dmg.totalKj < 1) { el.textContent = ''; return; }
     const pct = (x: number) => Math.round(Math.min(1, x) * 100);
@@ -148,9 +150,18 @@ export class Hud {
     const chips: string[] = [];
     // hot brakes (thermal fade, core brake model): the hottest disc and what the pads have left
     if (out) {
-      let t = 0, mu = 1;
-      for (let i = 0; i < 4; i++) { t = Math.max(t, out[OUT.brakeTemp(i)]); mu = Math.min(mu, out[OUT.padMu(i)]); }
+      let t = 0, mu = 1, maxFlat = 0, maxBlister = 0;
+      for (let i = 0; i < 4; i++) {
+        t = Math.max(t, out[OUT.brakeTemp(i)]);
+        mu = Math.min(mu, out[OUT.padMu(i)]);
+        maxFlat = Math.max(maxFlat, out[OUT.flatSpot(i)] || 0);
+        maxBlister = Math.max(maxBlister, out[OUT.blistering(i)] || 0);
+      }
       if (t > 720 && !(dmg && (dmg.brakesFailed || dmg.brakes < 0.97))) chips.push(`<div class="chip ${mu < 0.75 ? 'red' : ''}">${ICON_BRAKE}BRAKES ${mu < 0.95 ? 'FADING' : 'HOT'} ${Math.round(t / 10) * 10}°C</div>`);
+      if ((out[OUT.brakeVaporSponge] || 0) > 0.06) chips.push(`<div class="chip red">${ICON_BRAKE}BRAKE FLUID BOILING</div>`);
+      if (maxFlat > 0.35) chips.push(`<div class="chip">FLAT-SPOT ${maxFlat.toFixed(1)}mm</div>`);
+      if (maxBlister > 0.35) chips.push(`<div class="chip red">TIRES BLISTERING</div>`);
+      if ((out[OUT.splitterStalled] || 0) > 0.5) chips.push(`<div class="chip">SPLITTER STALL</div>`);
     }
     if (this.outWarn) chips.push(`<div class="chip">${this.outWarn}</div>`);
     if (this.holdWarn) chips.push(`<div class="chip">${this.holdWarn}</div>`);
@@ -163,6 +174,32 @@ export class Hud {
     }
     const html = chips.join('');
     if (html !== this.warnHtml) $('warn').innerHTML = this.warnHtml = html;
+  }
+
+  /** Simcenter Tire 2606 3-Zone (Inner/Middle/Outer) thermal widget + live Active Aero & Turbo Boost pills. */
+  private updateSimTelemetry(out: Float64Array) {
+    const host = document.getElementById('sim-telemetry');
+    if (!host) return;
+    const ribColor = (c: number) =>
+      c < 62 ? '#38bdf8' : c < 76 ? '#4ade80' : c <= 108 ? '#22c55e' : c <= 130 ? '#f59e0b' : '#ef4444';
+    const labels = ['FL', 'FR', 'RL', 'RR'];
+    let grid = '';
+    for (let i = 0; i < 4; i++) {
+      const ti = out[OUT.tireInner(i)] || out[OUT.treadSurface(i)] || 80;
+      const tm = out[OUT.tireMiddle(i)] || out[OUT.treadSurface(i)] || 80;
+      const to = out[OUT.tireOuter(i)] || out[OUT.treadSurface(i)] || 80;
+      const surf = Math.round((ti + tm + to) / 3);
+      // Left wheels (0,2): Outer|Mid|Inner left-to-right; Right wheels (1,3): Inner|Mid|Outer left-to-right
+      const cols = i % 2 === 0 ? [to, tm, ti] : [ti, tm, to];
+      grid += `<div class="st-tire"><div class="st-ribs"><i style="background:${ribColor(cols[0])}"></i><i style="background:${ribColor(cols[1])}"></i><i style="background:${ribColor(cols[2])}"></i></div><span class="st-lbl">${labels[i]} ${surf}°</span></div>`;
+    }
+    const pills: string[] = [];
+    if ((out[OUT.drsActive] || 0) > 0.5) pills.push('<span class="st-pill drs">DRS OPEN</span>');
+    if ((out[OUT.airbrakeActive] || 0) > 0.5) pills.push('<span class="st-pill air">AIRBRAKE</span>');
+    const boost = out[OUT.boostBar] || 0;
+    if (boost > 0.05) pills.push(`<span class="st-pill boost">${boost.toFixed(2)} BAR</span>`);
+    const html = `${pills.length ? `<div class="st-pills">${pills.join('')}</div>` : ''}<div class="st-grid">${grid}</div>`;
+    if (html !== this.simTelHtml) host.innerHTML = this.simTelHtml = html;
   }
 
   private updateLaps(lap: LapInfo, dt: number) {

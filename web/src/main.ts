@@ -23,6 +23,7 @@ import { setGroundGrid } from './scene/nyc/groundMaterials';
 import { setSignCity } from './scene/nyc/signAtlas';
 import { CITIES, currentCity, saveCity } from './cities';
 import { StreetObstacles, type PoleHit } from './scene/nyc/obstacles';
+import { setGroundWetness } from './scene/nyc';
 import { drawEarly, type BreachSpec, type WallHit } from './scene/nyc/breach';
 import { CarVisual, type CarVisualConfig } from './scene/car';
 import { initLoaders } from './scene/loaders';
@@ -361,8 +362,17 @@ async function main() {
   const coreJson = () => specClass ? JSON.stringify(physics[sel.car])
     : JSON.stringify(applyNightRunnersToPhysics(applyMods(physics[sel.car], modsOf(sel)), engineOf(nr, sel.car), stanceOf(nr, sel.car)));
   const carKey = () => specClass ? `${sel.car}|spec` : `${sel.car}|${JSON.stringify(modsOf(sel))}|${JSON.stringify(stanceOf(nr, sel.car))}|${engineOf(nr, sel.car).turbo}|${engineOf(nr, sel.car).manifold}|${engineOf(nr, sel.car).swap}`;
+  const turboStageOf = () => {
+    if (specClass) return 0;
+    const eng = engineOf(nr, sel.car);
+    if (eng.turbo === 'twin_turbo') return 3;
+    if (eng.turbo === 'big_single') return 2;
+    if (eng.turbo === 'twin_scroll' || eng.swap === 'v8_twin_turbo') return 1;
+    return 0;
+  };
   let builtKey = carKey();
   let core = new CoreCar(coreJson());
+  core.setTurboStage(turboStageOf());
   const pw = new PhysicsWorld();
   const nyc = useNyc ? new NycStreamer(scene, renderer, pw, camera, {
     base: cityInfo.base,
@@ -1862,6 +1872,7 @@ async function main() {
     builtKey = carKey();
     pw.world.removeRigidBody(car.body);
     core = new CoreCar(coreJson());
+    core.setTurboStage(turboStageOf());
     car = new CarBody(pw, core, shape, visual.cg);
     rig.setTarget(car.body, core.info.redline);
     drivingLine.setCar(applyMods(physics[sel.car], modsOf(sel)));
@@ -2558,6 +2569,15 @@ async function main() {
         const ct = worldClock.hudText();
         if (ct !== lastClockText) { worldClockEl.textContent = lastClockText = ct; }
         if (ai.mode === 'cruise') ai.setCruiseDensity(worldClock.trafficDensity);
+        // Sync live climate & asphalt temperature into C++ ISA air density, NA/Turbo engine power & tire road conduction
+        const baseAirC = worldClock.season.id === 'winter' ? 4 : worldClock.season.id === 'summer' ? 28 : 16;
+        const rainDrop = worldClock.weather === 'rain' ? -4 : 0;
+        const nightDrop = (worldClock.hour >= 20 || worldClock.hour < 6) ? -5 : 4;
+        const airC = baseAirC + rainDrop + nightDrop;
+        const trackC = worldClock.weather === 'rain' ? airC - 2 : airC + (nightDrop > 0 ? 11 : -1);
+        const humidity = worldClock.weather === 'rain' ? 0.92 : 0.48;
+        core.setAtmosphere(airC, trackC, 15, humidity);
+        setGroundWetness(worldClock.wetness);
       }
 
       // Engine Health, Temperature, Nitrous Oxide ([X] purge) & Flamethrower Exhaust VFX
@@ -2566,7 +2586,8 @@ async function main() {
         const nosKey = input.isKeyDown('KeyX');
         const nrTick = tickEngineAndNos(eng, frame, car.out[OUT.rpm] || 800, core.info.redline, Math.abs(car.out[OUT.speed]), nosKey);
         car.nosThrustN = nrTick.nosThrustN;
-        if (nrTick.flameBurst) visual.setExhaustFlame(nrTick.nosActive ? 1.3 : 0.9, nrTick.nosActive);
+        const shiftPop = (car.out[OUT.shiftCut] || 0) > 0.5 || (car.out[OUT.bovVenting] || 0) > 0.5;
+        if (nrTick.flameBurst || shiftPop) visual.setExhaustFlame(nrTick.nosActive ? 1.3 : shiftPop ? 1.05 : 0.9, nrTick.nosActive);
         else visual.setExhaustFlame(0, false);
         const nt = `NOS ${eng.nosLiters.toFixed(1)}L [X] · ${Math.round(eng.tempC)}°C · ENG ${Math.round(eng.health)}%`;
         if (nt !== lastNosText) {

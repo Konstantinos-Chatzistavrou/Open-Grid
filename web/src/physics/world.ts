@@ -115,9 +115,12 @@ const PARK_ASSISTS: AssistToggles = { abs: true, tc: true, esc: true, autoGearbo
 /** One car: core vehicle + Rapier body. Origin of the body = centre of gravity. */
 export class CarBody {
   readonly body: RAPIER.RigidBody;
-  out: Float64Array = new Float64Array(256);
+  out: Float64Array = new Float64Array(384);
   private state = new Float64Array(13);
   private contacts = new Float64Array(32);
+  private contactsPatch = new Float64Array(96);
+  /** Multi-point 3-ray longitudinal curb contact patch per wheel (12 rays/car -> C++ circular-arc resolver). */
+  usePatchRays = true;
   private a = new THREE.Vector3();
   private b = new THREE.Vector3();
   readonly collider: RAPIER.Collider;
@@ -143,6 +146,25 @@ export class CarBody {
     const s = this.state;
     s[0] = t.x; s[1] = t.y; s[2] = t.z; s[3] = r.x; s[4] = r.y; s[5] = r.z; s[6] = r.w;
     s[7] = v.x; s[8] = v.y; s[9] = v.z; s[10] = w.x; s[11] = w.y; s[12] = w.z;
+    if (this.usePatchRays) {
+      const rays = this.core.raysPatch(s);
+      const c = this.contactsPatch;
+      for (let k = 0; k < 12; k++) {
+        this.a.set(rays[6 * k], rays[6 * k + 1], rays[6 * k + 2]);
+        this.b.set(rays[6 * k + 3], rays[6 * k + 4], rays[6 * k + 5]);
+        const hit = this.pw.raycast(this.a, this.b, this.body, false);
+        const o = 8 * k;
+        if (!hit) { c[o] = 0; continue; }
+        const dir = this.b.sub(this.a).normalize();
+        const cosN = -(dir.x * hit.normal.x + dir.y * hit.normal.y + dir.z * hit.normal.z);
+        if (cosN < 0.35 || hit.toi < 0.04) { c[o] = 0; continue; }
+        c[o] = 1;
+        c[o + 1] = this.a.x + dir.x * hit.toi; c[o + 2] = this.a.y + dir.y * hit.toi; c[o + 3] = this.a.z + dir.z * hit.toi;
+        c[o + 4] = hit.normal.x; c[o + 5] = hit.normal.y; c[o + 6] = hit.normal.z;
+        c[o + 7] = this.pw.surface(hit.collider);
+      }
+      return c;
+    }
     const rays = this.core.rays(s);
     const c = this.contacts;
     for (let i = 0; i < 4; i++) {
@@ -162,10 +184,14 @@ export class CarBody {
     return c;
   }
 
+  private stepCore(c: Float64Array, raw: RawInput, assists: AssistToggles, dt: number): Float64Array {
+    return this.usePatchRays ? this.core.stepPatch(c, raw, assists, dt) : this.core.step(c, raw, assists, dt);
+  }
+
   /** Populate `this.out` at the body's exact current pose without integrating forces or crash deltas. */
   syncOut(speed = 0) {
     const raw = speed > 0 ? { ...PARK_RAW, brake: 0, handbrake: 0 } : PARK_RAW;
-    this.out = this.core.step(this.raycastWheels(), raw, PARK_ASSISTS, 1e-5);
+    this.out = this.stepCore(this.raycastWheels(), raw, PARK_ASSISTS, 1e-5);
     this.prevF.set(0, 0, 0);
     this.hasPrev = false;
   }
@@ -179,7 +205,7 @@ export class CarBody {
       this.body.setTranslation({ x: t.x, y, z: t.z }, true);
       this.body.setLinvel({ x: 0, y: vy, z: 0 }, true);
       this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
-      const out = this.core.step(this.raycastWheels(), PARK_RAW, PARK_ASSISTS, DT);
+      const out = this.stepCore(this.raycastWheels(), PARK_RAW, PARK_ASSISTS, DT);
       const ay = out[OUT.force + 1] / m - 9.81;
       vy = (vy + ay * DT) * 0.9;
       y += vy * DT;
@@ -218,7 +244,7 @@ export class CarBody {
     if (assists.autoGearbox && Math.round(this.out[OUT.gear] ?? 1) === 1 && raw.throttle > 0.05 && raw.brake < 0.1 && !raw.shiftUp) {
       inRaw = { ...raw, shiftUp: true };
     }
-    const out = this.core.step(c, inRaw, assists, DT);
+    const out = this.stepCore(c, inRaw, assists, DT);
     this.body.resetForces(false);
     this.body.resetTorques(false);
     let fx = out[OUT.force], fy = out[OUT.force + 1], fz = out[OUT.force + 2];
