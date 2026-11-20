@@ -688,6 +688,7 @@ export class CarVisual {
   private flameIntU: THREE.UniformNode<'float', number> = uniform(0);
   private flameNosU: THREE.UniformNode<'float', number> = uniform(0);
   private flameLight: THREE.PointLight | null = null;
+  private flameLightAt = new THREE.Vector3();
   private flameLevel = 0;
 
   setStance(camberFrontDeg: number, camberRearDeg: number) {
@@ -821,6 +822,20 @@ export class CarVisual {
     return m;
   }
 
+  /**
+   * Load-time warm-up (main.ts, next to damage.warmup): the flames and their light are built now and drawn at zero
+   * intensity through the warm-up frames, so their pipelines compile behind the loading screen instead of at the first
+   * backfire (pipelog: exhaust_mach_flame compiled 0.3 s into a race, a frame of up to ~330 ms). The material is the same
+   * node graph for every car, so a car bought later reuses those pipelines. The flame's light stays lazy (setExhaustFlame).
+   */
+  warmupFlames(on: boolean) {
+    this.setExhaustFlame(0);   // builds the group (nozzles, plume, light) once
+    if (!this.flameGroup) return;
+    this.flameLevel = 0;
+    this.flameIntU.value = 0;
+    this.flameGroup.visible = on;
+  }
+
   /** Trigger or sustain photorealistic Mach-diamond flames shooting strictly from this car's exhaust pipes. */
   setExhaustFlame(intensity: number, blueNos = false) {
     if (!this.flameGroup) {
@@ -845,11 +860,10 @@ export class CarVisual {
         this.flameNozzles.push(pair);
         avgX += nz.x; avgY += nz.y; avgZ += nz.z;
       }
-      // Compact rear diffuser & wet-asphalt reflection flash (0 intensity when off -> skipped by Clustered Forward+)
+      // Compact rear diffuser & wet-asphalt reflection flash: its point light is made at the first real flame (below), not
+      // here: built during the load-time warm-up it added ~32 garage pipeline variants and ~2 s to the load (measured).
       const n = Math.max(1, nozzles.length);
-      this.flameLight = new THREE.PointLight(0xff7418, 0, 4.2, 2);
-      this.flameLight.position.set(avgX / n, avgY / n + 0.08, avgZ / n - 0.35);
-      g.add(this.flameLight);
+      this.flameLightAt.set(avgX / n, avgY / n + 0.08, avgZ / n - 0.35);
       g.visible = false;
       this.model.add(g);
       this.flameGroup = g;
@@ -860,6 +874,11 @@ export class CarVisual {
     this.flameGroup.visible = on;
     this.flameIntU.value = on ? Math.min(1.25, this.flameLevel) : 0;
     this.flameNosU.value = blueNos ? 1 : 0;
+    if (on && !this.flameLight) {
+      this.flameLight = new THREE.PointLight(0xff7418, 0, 4.2, 2);   // 0 intensity when off -> skipped by Clustered Forward+
+      this.flameLight.position.copy(this.flameLightAt);
+      this.flameGroup.add(this.flameLight);
+    }
     if (this.flameLight) {
       this.flameLight.color.setHex(blueNos ? 0x38bdf8 : 0xff6b14);
       this.flameLight.intensity = on ? (10 + Math.random() * 6) * this.flameLevel : 0;

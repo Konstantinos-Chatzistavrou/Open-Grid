@@ -305,7 +305,9 @@ try {
     console.log('g29 uncal  ', await st(), 'wheelPos', await evaluate(`window.__game.input.wheelPos.toFixed(3)`));
     // calibrate with the wheel only: pause (no button mapped yet: Escape), Controls, Calibrate, then every step by the wheel
     await evaluate(`(window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' })), 1)`); await sleep(400);
-    await evaluate(`(document.querySelector('[data-act=controls-open]').click(), 1)`); await sleep(400);
+    // Controls moved into Settings (pause -> Settings -> Controls)
+    await evaluate(`((document.querySelector('[data-act=controls-open]') ?? document.querySelector('[data-act=settings-open]')).click(), 1)`); await sleep(400);
+    await evaluate(`(document.querySelector('[data-act=controls-open]')?.click(), 1)`); await sleep(400);
     await evaluate(`(__pads[0].axes[0] = 0, 1)`); await sleep(200);
     await evaluate(`(document.querySelector('[data-act=c-cal]').click(), 1)`); await sleep(300);
     const step = () => evaluate(`document.querySelector('.cal-prompt')?.textContent ?? '(done) ' + (document.querySelector('.pnote')?.textContent ?? '')`);
@@ -325,6 +327,7 @@ try {
     console.log('saved', await evaluate(`JSON.stringify(window.__game.input.settings.calibration)`));
     await shot('d4_calibrated.png');
     await evaluate(`(document.querySelector('[data-act=c-back]').click(), 1)`); await sleep(300);
+    await evaluate(`(document.querySelector('[data-act=settings-back]')?.click(), 1)`); await sleep(300);   // Controls live in Settings now
     await evaluate(`(document.querySelector('[data-act=resume]').click(), 1)`); await sleep(300);
     await evaluate(`(() => { const p = __pads[0]; p.axes[0] = -0.25; p.axes[2] = -1; return 1; })()`); await sleep(2500);
     console.log('g29 drive  ', await st(), 'wheelPos', await evaluate(`window.__game.input.wheelPos.toFixed(3)`));

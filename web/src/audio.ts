@@ -1145,12 +1145,11 @@ export class GameAudio {
     this.burst(t, 0.42, 'lowpass', 195, 0.85, 0.88 * s);
     this.burst(t + 0.02, 0.35, 'bandpass', 420, 1.4, 0.65 * s);
 
-    // 2. Tumbling brick & concrete chunks slamming onto the floor over 0.06..0.75s (8 chunks, each a little louder than
-    //    the 16 it was: a breach used to build ~250 audio nodes in one frame)
-    for (let i = 0; i < 8; i++) {
+    // 2. Tumbling brick & concrete chunks slamming onto the floor over 0.06..0.75s (all 16 voices: fewer read as thinner)
+    for (let i = 0; i < 16; i++) {
       const dt = 0.05 + Math.random() * 0.68;
       const f = 140 + Math.random() * 380;
-      const g = (0.18 + Math.random() * 0.22) * s * (1 - dt * 0.7) * Math.SQRT2;
+      const g = (0.18 + Math.random() * 0.22) * s * (1 - dt * 0.7);
       this.burst(t + dt, 0.055 + Math.random() * 0.07, 'bandpass', f, 2.6, g);
       this.tone(t + dt, 0.05, f * 0.75, f * 0.45, 'sine', g * 0.7);
     }
@@ -1161,11 +1160,7 @@ export class GameAudio {
 
   /** Crystalline high-Q modal pings for individual tempered glass shards hitting pavement. */
   private playGlassShards(t0: number, s: number, count: number) {
-    // At most MAX_SHARDS voices (a storefront asked for 44 + 22 noise bursts at once); the louder pings keep the
-    // shatter's overall level (energy ~ count: amplitude x sqrt(asked / played), at most 1.5x).
-    const n = Math.min(count, MAX_SHARDS);
-    s *= Math.min(1.5, Math.sqrt(count / n));
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < count; i++) {
       // Exponential distribution in time: dense burst immediately, trailing tinkles up to 0.95s
       const u = Math.random();
       const dt = u * u * 0.88 + Math.random() * 0.04;
@@ -1210,9 +1205,6 @@ export class GameAudio {
     src.start(at, Math.random() * 2.0, len + 0.05);
   }
 }
-
-/** glass shard voices per shatter (each a tone, every other one a noise burst too) */
-const MAX_SHARDS = 14;
 
 function distortion(k: number): Float32Array<ArrayBuffer> {
   const n = 1024, c = new Float32Array(new ArrayBuffer(n * 4));
