@@ -28,7 +28,7 @@ static void run_bench(const CarConfig& cfg, const Route& r, bool max_aaa) {
         s->dt = 1.0 / 240.0;
         s->vehicle.assists().abs = s->vehicle.assists().tc = true;
         if (max_aaa) {
-            s->use_contact_patch = true;
+            s->use_footprint_16 = true;
             s->vehicle.unsprung_dynamics_enabled = true;
             s->vehicle.tire_zones_enabled = true;
             s->vehicle.aero_wake().yaw_aero_enabled = true;
@@ -36,6 +36,10 @@ static void run_bench(const CarConfig& cfg, const Route& r, bool max_aaa) {
             s->vehicle.chassis_dynamics().active_yaw_control_enabled = true;
             s->vehicle.chassis_dynamics().active_aero_enabled = true;
             s->vehicle.chassis_dynamics().brake_fluid_boil_enabled = true;
+            s->vehicle.atmosphere().enabled = true;
+            s->vehicle.atmosphere().altitude_m = 450.0;
+            s->vehicle.atmosphere().ambient_air_c = 18.0;
+            s->vehicle.atmosphere().track_surface_c = 24.0;
             s->vehicle.engine_systems().turbo_stage = 2;
             s->vehicle.engine_systems().wear_enabled = true;
             s->vehicle.engine_systems().fuel_consumption_enabled = true;

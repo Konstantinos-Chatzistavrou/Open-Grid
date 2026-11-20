@@ -38,6 +38,19 @@ private:
     int surface_;
 };
 
+// Lateral Apex Curb test ground: raised curb at z = curb_height_m only for y >= curb_y_m (clips only the inner/outer tire shoulder!).
+class LateralCurbGround : public Ground {
+public:
+    LateralCurbGround(double curb_y_m, double curb_height_m, int surface = 0)
+        : curb_y_(curb_y_m), curb_h_(curb_height_m), surface_(surface) {}
+    WheelContact raycast(const WheelRay& ray) const override;
+
+private:
+    double curb_y_;
+    double curb_h_;
+    int surface_;
+};
+
 // Rigid body with a diagonal inertia tensor in body axes.
 //   linear:  m dv/dt = F
 //   angular (Euler's equations, body frame):  I dw/dt = tau - w x (I w)
@@ -61,6 +74,7 @@ public:
     double dt = 1.0 / 240.0;
     double time = 0;
     bool use_contact_patch = false;   // true: cast 3-ray circular-arc tire contact patch per wheel (smooth curb climbing)
+    bool use_footprint_16 = false;    // true: cast 16-point 2D cylindrical & cambered tire footprint per wheel (lateral + longitudinal curb resolution)
     Vehicle vehicle;
     RigidBody body;
     VehicleOutput last;

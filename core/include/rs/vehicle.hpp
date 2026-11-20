@@ -51,6 +51,15 @@ struct WheelContactPatchRays {
     std::array<double, 3> longitudinal_offsets_m{};  // m from wheel axle center along steered rolling direction
 };
 
+// 16-Point 2D Cylindrical & Cambered Tire Footprint Grid (5 longitudinal x 3 lateral ribs [Inner/Middle/Outer] + 1 leading apex = 16 points).
+// Surpasses Forza Motorsport's 8-point and ACC's 5-point contact patch by resolving full 2D lateral + longitudinal curb strikes.
+struct WheelFootprint16Rays {
+    std::array<WheelRay, 16> rays{};
+    std::array<double, 16> longitudinal_offsets_m{}; // dx along steered wheel rolling plane (m)
+    std::array<double, 16> lateral_offsets_m{};      // dy across tread width (- = Inner rib, 0 = Middle rib, + = Outer rib, m)
+    std::array<int, 16> rib_index{};                 // 0 = Inner rib, 1 = Middle rib, 2 = Outer rib
+};
+
 struct WheelContact {
     bool hit = false;
     double distance = 0;    // m from ray origin to the hit point
@@ -58,6 +67,7 @@ struct WheelContact {
     Vec3 normal{0, 0, 1};   // world, unit
     int surface = 0;        // index into CarConfig::surface_grip
     double water_depth_mm = 0.0; // mm of standing water at this specific wheel contact patch (0 = dry/damp, > 1.5 mm = puddle/flooded curb)
+    std::array<double, 3> rib_contact_shares{1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0}; // 3D geometric normal load shares (Inner, Middle, Outer)
 };
 
 struct WheelOutput {
@@ -138,7 +148,9 @@ struct VehicleOutput {
     double ayc_yaw_moment_nm = 0.0;          // Active Torque-Vectoring E-Diff pro-rotation yaw moment (N m)
     bool drs_active = false;                 // Active Aero low-drag mode active
     bool airbrake_active = false;            // Active Aero high-downforce braking airbrake active
+    bool front_splitter_stalled = false;     // true when extreme front bottoming chokes ground-effect diffuser airflow
     double brake_vapor_lock_sponge = 0.0;    // 0..0.55 brake line pressure loss from boiling caliper fluid (> 260 C)
+    double air_density_kg_m3 = 1.225;        // live ISA atmospheric air density (kg/m^3) from altitude, Celsius & humidity
 };
 
 // Physical effect multipliers (filled from DamageModel each tick when damage is enabled).
@@ -177,6 +189,8 @@ public:
     const AeroWakeState& aero_wake() const { return aero_wake_; }
     ChassisDynamicsConfig& chassis_dynamics() { return chassis_dyn_; }
     const ChassisDynamicsConfig& chassis_dynamics() const { return chassis_dyn_; }
+    AtmosphericEnvironment& atmosphere() { return atmosphere_; }
+    const AtmosphericEnvironment& atmosphere() const { return atmosphere_; }
     /** Compute aerodynamic slipstream drag reduction (up to -28%) and dirty-air front downforce loss (up to -30%) behind lead cars. */
     static AeroWakeState compute_slipstream_wake(const Vec3& my_pos, const Vec3& my_fwd, const std::vector<Vec3>& lead_car_positions);
 
@@ -190,6 +204,11 @@ public:
     static WheelContact resolve_contact_patch(const WheelContactPatchRays& patch,
                                               const std::array<WheelContact, 3>& hits,
                                               double tire_radius);
+    // 16-Point 2D Cylindrical & Cambered Tire Footprint (5 longitudinal x 3 lateral ribs + 1 leading apex) + 3-rib curb load resolver.
+    std::array<WheelFootprint16Rays, 4> wheel_footprint_16_rays(const ChassisState& s) const;
+    static WheelContact resolve_footprint_16(const WheelFootprint16Rays& footprint,
+                                             const std::array<WheelContact, 16>& hits,
+                                             double tire_radius);
     // Start already rolling at `forward_speed` (m/s): wheels spin at v/r, slips cleared.
     // If gear >= 0, the engine is also set to the matching rpm (clutch engaged at that speed).
     void reset_motion(double forward_speed, int gear = -1);
@@ -222,6 +241,7 @@ private:
     std::array<double, 4> fluid_temp_{45.0, 45.0, 45.0, 45.0}; // caliper DOT 4 brake fluid temperature, C
     std::array<double, 4> pad_wear_{};                         // 0..1 brake pad friction material wear
     ChassisDynamicsConfig chassis_dyn_{};
+    AtmosphericEnvironment atmosphere_{};
     std::array<double, 2> prev_axle_fy_{};
     std::array<double, 4> prev_fx_{};       // last step's tyre Fx per wheel (anti-dive / anti-squat link forces)
     std::array<double, 4> dz_{};            // suspension compression from static per wheel, m (+ = bump; kinematics)
