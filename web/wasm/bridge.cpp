@@ -62,6 +62,15 @@ EMSCRIPTEN_KEEPALIVE int rs_create(const char* json) {
         auto c = std::make_unique<Car>();
         c->cfg = rs::parse_car_config(json);
         c->vehicle = std::make_unique<rs::Vehicle>(c->cfg);
+        c->vehicle->unsprung_dynamics_enabled = true;
+        c->vehicle->tire_zones_enabled = true;
+        c->vehicle->aero_wake().yaw_aero_enabled = true;
+        c->vehicle->chassis_dynamics().chassis_flex_enabled = true;
+        c->vehicle->chassis_dynamics().active_yaw_control_enabled = true;
+        c->vehicle->chassis_dynamics().active_aero_enabled = true;
+        c->vehicle->chassis_dynamics().brake_fluid_boil_enabled = true;
+        c->vehicle->engine_systems().torsional_compliance_enabled = true;
+        c->vehicle->engine_systems().dog_box_flat_shift_cut = true;
         c->controls = std::make_unique<rs::Controls>(c->vehicle->config());
         c->buf[92] = -99;                                  // no H-pattern shifter until the page says so
         g_cars.push_back(std::move(c));
