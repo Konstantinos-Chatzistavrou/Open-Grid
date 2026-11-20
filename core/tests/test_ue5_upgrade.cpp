@@ -148,4 +148,133 @@ RS_TEST(ue5_upgrade) {
         test::check("resolved contact patch tilts normal backward to ramp wheel smoothly up curb",
                     patch_hit.normal.x < -0.05 && patch_hit.normal.z > 0.85);
     }
+
+    // 6. 15 Hz 2-DOF Unsprung Mass Wheel-Hop & Radial Tire Carcass Deflection over Curb Step
+    {
+        auto curb = std::make_shared<CurbGround>(2.0, 0.08);
+        Simulation sim(cfg, curb);
+        sim.use_contact_patch = true;
+        sim.vehicle.unsprung_dynamics_enabled = true;
+        sim.reset({0.0, 0.0, 0.0}, 0.0, 14.0, 3);
+
+        DriverInput drive;
+        drive.throttle = 0.5;
+        drive.gear = 3;
+        drive.auto_clutch = true;
+
+        double max_hop_vel = 0.0;
+        double max_carcass_defl = 0.0;
+        for (int i = 0; i < 60; ++i) {
+            sim.step(drive);
+            max_hop_vel = std::max(max_hop_vel, std::abs(sim.last.wheels[FL].unsprung_vel_mps));
+            max_carcass_defl = std::max(max_carcass_defl, sim.last.wheels[FL].carcass_deflection_m);
+        }
+        test::check("2-DOF unsprung wheel mass exhibits vertical wheel-hop velocity & radial carcass deflection",
+                    max_hop_vel > 0.02 && max_carcass_defl > 0.005);
+    }
+
+    // 7. 3-Zone Tire Tread Thermals (Inner / Middle / Outer) & Brake-Lockup Flat-Spotting + FFB Thump
+    {
+        TireCondition tc;
+        // Negative camber on left wheel (side_sign = -1.0 -> top tilted inward toward car centerline has gamma = -0.07 rad)
+        for (int i = 0; i < 40; ++i) {
+            tc.update_zones(18000.0, 4200.0, 35.0, -0.07, 0.0, -1.0, 105.0, i * 0.5, 0.05, &cfg.tire_front);
+        }
+        test::check("negative camber on straight heats Inner tread shoulder above Outer shoulder",
+                    tc.inner_c > tc.outer_c + 1.5);
+
+        // Hard locked-wheel skid (omega = 0 at 30 m/s) grinds a flat spot and generates FFB thump torque
+        TireCondition locked_tire;
+        for (int i = 0; i < 30; ++i) {
+            locked_tire.update_zones(35000.0, 4500.0, 30.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.05, &cfg.tire_front);
+        }
+        const double thump_at_spot = std::abs(locked_tire.flat_spot_ffb_torque_nm(1.0, 4500.0, 25.0));
+        const double thump_opposite = std::abs(locked_tire.flat_spot_ffb_torque_nm(1.0 + kPi, 4500.0, 25.0));
+        test::check("locked-wheel skid grinds flat spot (> 0.2 mm) & produces once-per-rev FFB thump pulse",
+                    locked_tire.flat_spot_depth_mm > 0.2 && thump_at_spot > thump_opposite + 0.5);
+    }
+
+    // 8. Transmission Archetypes (H-Pattern Synchro Grind vs Sequential Dog-Box Flat-Shift Cut) & Torsional Backlash Clunk
+    {
+        Simulation sim_h(cfg, flat);
+        sim_h.vehicle.engine_systems().transmission = TransmissionType::HPatternSynchro;
+        sim_h.vehicle.engine_systems().strict_h_pattern_synchro = true;
+        sim_h.reset({}, 0.0, 20.0, 2);
+
+        // Attempt raw clutchless shift from 2nd to 5th without pressing clutch -> grinds synchros and drops to Neutral
+        DriverInput raw_shift;
+        raw_shift.throttle = 0.9;
+        raw_shift.clutch = 0.0;
+        raw_shift.gear = 5;
+        raw_shift.auto_clutch = false;
+        sim_h.step(raw_shift);
+        test::check("clutchless un-matched H-pattern shift grinds synchros (gear_grind) & kicks to neutral",
+                    sim_h.last.gear_grind && sim_h.last.gear == 1);
+
+        // Sequential Dog-Box flat-shift upshift triggers 55 ms ignition cut
+        Simulation sim_dog(cfg, flat);
+        sim_dog.vehicle.engine_systems().transmission = TransmissionType::SequentialDogBox;
+        sim_dog.vehicle.engine_systems().dog_box_flat_shift_cut = true;
+        sim_dog.vehicle.engine_systems().torsional_compliance_enabled = true;
+        sim_dog.reset({}, 0.0, 22.0, 2);
+
+        DriverInput g2;
+        g2.throttle = 1.0;
+        g2.gear = 2;
+        g2.auto_clutch = false;
+        sim_dog.step(g2);
+
+        DriverInput g3 = g2;
+        g3.gear = 3;
+        sim_dog.step(g3);
+        test::check("sequential dog-box flat-shift triggers 55 ms ignition cut (shift_cut_active)",
+                    sim_dog.last.shift_cut_active);
+    }
+
+    // 9. Aerodynamic Slipstream Tow (-28% Drag) & Dirty-Air Front Downforce Loss (-30%) + Yaw Drag
+    {
+        AeroWakeState clean = Vehicle::compute_slipstream_wake({0, 0, 0}, {1, 0, 0}, {{100, 0, 0}});
+        AeroWakeState tow = Vehicle::compute_slipstream_wake({0, 0, 0}, {1, 0, 0}, {{12, 0.2, 0}});
+        test::check("slipstream behind lead car (12 m ahead) cuts aero drag & reduces front downforce (dirty air)",
+                    clean.drag_scale == 1.0 && tow.drag_scale < 0.80 && tow.dirty_air_front_downforce_scale < 0.78);
+    }
+
+    // 10. Intercooler Heat Soak (IAT), Radiator Puncture Thermal Runaway & BSFC Fuel Consumption
+    {
+        Simulation sim_f(cfg, flat);
+        sim_f.vehicle.engine_systems().turbo_stage = 3;
+        sim_f.vehicle.engine_systems().fuel_consumption_enabled = true;
+        sim_f.reset({}, 0.0, 30.0, 4);
+
+        const double start_fuel = sim_f.vehicle.engine_systems().fuel_liters;
+        const double start_iat = sim_f.vehicle.engine_systems().intake_air_temp_c;
+        // Inflict a front-center crash to puncture the radiator
+        sim_f.vehicle.add_contact(99, {2.1, 0.0, 0.4}, 18000.0);
+
+        DriverInput wot;
+        wot.throttle = 1.0;
+        wot.gear = 4;
+        wot.auto_clutch = true;
+        for (int i = 0; i < 180; ++i) sim_f.step(wot);
+
+        test::check("turbo boost heats intake air temperature (IAT) & WOT load burns fuel",
+                    sim_f.last.intake_air_temp_c > start_iat + 4.0 && sim_f.last.fuel_liters < start_fuel - 0.001);
+        test::check("front-center crash populates 8-node morph target crush, unlatches hood & leaks radiator",
+                    sim_f.last.damage.node_norm[NodeFrontCenter] > 0.32 &&
+                    sim_f.last.damage.hood_unlatched &&
+                    sim_f.last.damage.radiator_leak > 0.05);
+    }
+
+    // 11. Bent Wishbone Camber & Caster Offsets + Hub Bearing Drag on Wheel Impact
+    {
+        Simulation sim_w(cfg, flat);
+        sim_w.reset({}, 0.0, 10.0, 2);
+        // Heavy direct hit on Front-Left wheel (> 0.35 wheel damage threshold)
+        const Vec3 fl_pt{cfg.wheels[FL].x, cfg.wheels[FL].y, 0.3};
+        sim_w.vehicle.add_contact(42, fl_pt, 22000.0);
+        test::check("direct wheel impact bends wishbone camber & caster and adds hub bearing drag",
+                    sim_w.vehicle.damage_model().camber_offset(FL) > 0.005 &&
+                    sim_w.vehicle.damage_model().caster_offset(FL) < -0.004 &&
+                    sim_w.vehicle.damage_model().wheel_bearing_drag_nm(FL) > 1.0);
+    }
 }

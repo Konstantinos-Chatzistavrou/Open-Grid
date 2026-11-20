@@ -3,6 +3,7 @@
 // self-aligning torque Mz (pneumatic trail t + residual torque Mzr + carcass offset s),
 // load-dependent carcass relaxation lengths, effective rolling radius, and tyre thermodynamics.
 #pragma once
+#include <algorithm>
 #include "rs/config.hpp"
 
 namespace rs {
@@ -17,12 +18,28 @@ struct TireForces {
 // Tyre thermal, pressure & wear state. Two layers: the tread SURFACE takes the sliding friction power and swings fast
 // (a few seconds), the CORE (bulk tread + carcass) follows it slowly and sets the inflation gas temperature. Grip comes
 // from a blend of the two inside the compound's window; a surface far over the window greases up on its own.
+// Three lateral tread zones (Inner / Middle / Outer) track contact-patch temperature distribution from camber,
+// cornering load transfer, and inflation crowning, alongside brake-lockup flat-spotting, blistering, and cold graining.
 struct TireCondition {
     double temperature_c = 80.0;  // core (bulk) temperature, C
     double surface_c = 80.0;      // tread surface temperature, C
     double pressure_kpa = 0.0;    // gauge, from the gas law (0 until the first update)
     double wear = 0.0;            // 0 = new, 1 = worn out
+    double inner_c = 80.0;        // Inner shoulder tread temperature (C) — heated by negative camber on straights
+    double middle_c = 80.0;       // Center rib tread temperature (C) — heated more at high inflation pressure
+    double outer_c = 80.0;        // Outer shoulder tread temperature (C) — heated heavily by cornering roll onto outer edge
+    double flat_spot_depth_mm = 0.0;  // 0..3.0 mm local tread flat spot ground during locked-wheel skids
+    double flat_spot_phase_rad = 0.0; // Wheel rotation angle (rad) where the flat spot sits
+    double blistering = 0.0;      // 0..1 internal rubber blistering from sustained core+surface overheating (> 130 C)
+    double graining = 0.0;        // 0..1 surface tearing from high lateral slip while core is cold (< 60 C)
+
     void update(double slip_power_w, double load_n, double speed_mps, double dt, const TireParams* p = nullptr);
+    void update_zones(double slip_power_w, double load_n, double speed_mps, double camber_rad, double lateral_force_n,
+                      double wheel_side_sign, double wheel_omega_rads, double wheel_angle_rad, double dt,
+                      const TireParams* p = nullptr);
+    double flat_spot_ffb_torque_nm(double wheel_angle_rad, double load_n, double speed_mps) const;
+    double imo_spread_c() const { return std::max({inner_c, middle_c, outer_c}) - std::min({inner_c, middle_c, outer_c}); }
+    double zone_health_grip_factor() const;
     double grip_factor(const TireParams* p = nullptr) const;
     /** Relative pressure change dpi = (p - p_nom) / p_nom (MF 6.1). */
     double dpi(const TireParams& p) const;

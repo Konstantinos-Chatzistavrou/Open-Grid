@@ -91,6 +91,37 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float SteerTorqueNm = 0.0f;
 
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float IntakeAirTempC = 28.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float FuelLiters = 55.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    bool bGearGrind = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    bool bShiftCutActive = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float DrivelineClunkNm = 0.0f;
+
+    /** 8-Node Normalized Structural Crush Weights (0..1) for UE5 Skeletal Mesh Morph Targets (FL, FrontCenter, FR, Left, Right, RL, RearCenter, RR). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    TArray<float> CrushNodeWeights;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    bool bHoodUnlatched = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    bool bTrunkUnlatched = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    bool bFrontBumperDetached = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    bool bRearBumperDetached = false;
+
     /** Fired when the Blow-Off Valve vents compressed turbo charge on throttle lift (hook straight to MetaSounds). */
     UPROPERTY(BlueprintAssignable, Category="OpenGrid|Audio")
     FOnBlowOffValveVent OnBlowOffValveVent;

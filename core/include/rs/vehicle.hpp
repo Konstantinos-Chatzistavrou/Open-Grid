@@ -74,16 +74,25 @@ struct WheelOutput {
     Vec3 contact_point;              // world, where the tyre touches the ground
     Vec3 force_world;                // world, tyre force in the ground plane (Fx + Fy), N
     double grip_limit = 0;           // N, approx. max friction force (peak mu * surface * load)
-    TireCondition condition;         // tyre temperature (core + surface), pressure & wear state
+    TireCondition condition;         // tyre temperature (core + surface + I/M/O zones), pressure & wear state
     double brake_temp_c = 0;         // brake disc temperature, C
     double brake_mu = 1;             // pad friction relative to its working range (cold / fading < 1)
+    double carcass_deflection_m = 0; // m, radial tyre carcass compression under vertical load
+    double unsprung_vel_mps = 0;     // m/s, vertical wheel-hop velocity of the unsprung hub/wheel mass
+};
+
+// Aerodynamic slipstream (drafting tow), turbulent dirty-air front downforce loss, and drift yaw-angle aero scaling.
+struct AeroWakeState {
+    double drag_scale = 1.0;                      // 1.0 in clean air, down to 0.72 (-28% drag) in optimal slipstream tow
+    double dirty_air_front_downforce_scale = 1.0; // 1.0 in clean air, down to 0.70 (-30% front downforce / understeer) in wake
+    bool yaw_aero_enabled = false;                // true: sideslip angle beta increases frontal drag (+35%) & sheds rear wing lift
 };
 
 struct VehicleOutput {
     Vec3 force;                      // world, N, total excluding gravity, applied at the CG
     Vec3 torque;                     // world, N m, about the CG
     std::array<WheelOutput, 4> wheels;
-    double steer_torque = 0;         // N m about the steering axes (front Mz + Fy x mechanical trail): force feedback
+    double steer_torque = 0;         // N m about the steering axes (front Mz + Fy x mechanical trail + flat-spot FFB): force feedback
     // chassis telemetry, body frame
     double speed = 0;                // m/s, forward component of velocity
     double sideslip = 0;             // rad, beta = atan(v_y / |v_x|) (0 when slow)
@@ -96,13 +105,20 @@ struct VehicleOutput {
     double engine_rpm = 0;
     int gear = 1;
     bool engine_stalled = false;
-    // Forced induction (Turbo + Blow-Off Valve), Nitrous Oxide (N2O), Oil Thermal & Engine Health telemetry
+    // Forced induction (Turbo + Blow-Off Valve + Intercooler IAT), Nitrous Oxide (N2O), Oil Thermal, Fuel & Drivetrain telemetry
     double boost_bar = 0.0;
     bool bov_venting = false;
+    double intake_air_temp_c = 28.0;
     double nos_remaining_l = 4.5;
     double oil_temp_c = 85.0;
     double engine_health = 1.0;
     bool engine_misfire = false;
+    double fuel_liters = 55.0;
+    bool gear_grind = false;
+    bool shift_cut_active = false;
+    double driveline_clunk_nm = 0.0;
+    double slipstream_drag_scale = 1.0;
+    double dirty_air_downforce_scale = 1.0;
 };
 
 // Physical effect multipliers (filled from DamageModel each tick when damage is enabled).
@@ -111,6 +127,10 @@ struct DamageState {
     std::array<double, 4> suspension_stiffness{1, 1, 1, 1};
     double aero_drag = 1.0;
     std::array<double, 4> toe{};               // rad, added to each wheel's steer angle
+    std::array<double, 4> camber{};            // rad, bent wishbone/strut camber offset
+    std::array<double, 4> caster{};            // rad, bent front caster offset (asymmetric steering pull)
+    std::array<double, 4> bearing_drag_nm{};   // N m, damaged hub bearing rolling drag
+    double radiator_cooling = 1.0;             // 1.0 intact .. 0.25 punctured front radiator/intercooler
     std::array<double, 4> grip{1, 1, 1, 1};    // tyre grip multiplier
     double brakes = 1.0;                       // brake effectiveness (fade / failure), all brakes
 };
@@ -133,6 +153,14 @@ public:
     const AssistSettings& assists() const { return assists_; }
     EngineSystemState& engine_systems() { return drivetrain_.systems; }
     const EngineSystemState& engine_systems() const { return drivetrain_.systems; }
+    AeroWakeState& aero_wake() { return aero_wake_; }
+    const AeroWakeState& aero_wake() const { return aero_wake_; }
+    /** Compute aerodynamic slipstream drag reduction (up to -28%) and dirty-air front downforce loss (up to -30%) behind lead cars. */
+    static AeroWakeState compute_slipstream_wake(const Vec3& my_pos, const Vec3& my_fwd, const std::vector<Vec3>& lead_car_positions);
+
+    /** Enable 15 Hz 2-DOF unsprung wheel-hop & radial tyre carcass vertical dynamics, and 3-zone I/M/O tread thermals + flat-spotting. */
+    bool unsprung_dynamics_enabled = false;
+    bool tire_zones_enabled = false;
 
     std::array<WheelRay, 4> wheel_rays(const ChassisState& s) const;
     // 3-ray fan along each wheel's steered rolling plane + circular-arc contact resolver for sharp street curbs.
@@ -171,6 +199,10 @@ private:
     std::array<double, 2> prev_axle_fy_{};
     std::array<double, 4> prev_fx_{};       // last step's tyre Fx per wheel (anti-dive / anti-squat link forces)
     std::array<double, 4> dz_{};            // suspension compression from static per wheel, m (+ = bump; kinematics)
+    std::array<double, 4> wheel_angle_{};   // accumulated wheel rotation angle, rad (for flat-spot phase & FFB thump)
+    std::array<double, 4> unsprung_z_{};    // 2-DOF unsprung wheel vertical offset relative to static equilibrium, m
+    std::array<double, 4> unsprung_vz_{};   // 2-DOF unsprung wheel vertical velocity (wheel hop), m/s
+    AeroWakeState aero_wake_{};
     int last_gear_ = 1;                     // auto-clutch: detects gear changes
     double shift_timer_ = 0;  // last lateral force per axle (geometric load transfer)
 

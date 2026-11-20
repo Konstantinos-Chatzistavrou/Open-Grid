@@ -19,6 +19,13 @@ void UOpenGridVehicleComponent::BeginPlay()
     Vehicle_ = MakeUnique<rs::Vehicle>(Config_);
     Vehicle_->engine_systems().turbo_stage = TurboStage;
     Vehicle_->engine_systems().wear_enabled = true;
+    Vehicle_->engine_systems().fuel_consumption_enabled = true;
+    Vehicle_->engine_systems().torsional_compliance_enabled = true;
+    Vehicle_->engine_systems().dog_box_flat_shift_cut = true;
+    Vehicle_->unsprung_dynamics_enabled = true;
+    Vehicle_->tire_zones_enabled = true;
+    Vehicle_->aero_wake().yaw_aero_enabled = true;
+    CrushNodeWeights.Init(0.0f, 8);
 
     if (bEnableSimHubUdp)
     {
@@ -129,6 +136,21 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     OilTempC = static_cast<float>(Out.oil_temp_c);
     EngineHealth = static_cast<float>(Out.engine_health);
     SteerTorqueNm = static_cast<float>(Out.steer_torque);
+    IntakeAirTempC = static_cast<float>(Out.intake_air_temp_c);
+    FuelLiters = static_cast<float>(Out.fuel_liters);
+    bGearGrind = Out.gear_grind;
+    bShiftCutActive = Out.shift_cut_active;
+    DrivelineClunkNm = static_cast<float>(Out.driveline_clunk_nm);
+
+    if (CrushNodeWeights.Num() != 8) CrushNodeWeights.SetNumZeroed(8);
+    for (int32 i = 0; i < 8; ++i)
+    {
+        CrushNodeWeights[i] = static_cast<float>(Out.damage.node_norm[i]);
+    }
+    bHoodUnlatched = Out.damage.hood_unlatched;
+    bTrunkUnlatched = Out.damage.trunk_unlatched;
+    bFrontBumperDetached = Out.damage.front_bumper_detached;
+    bRearBumperDetached = Out.damage.rear_bumper_detached;
 
     if (Out.bov_venting && !bPrevBov_)
     {

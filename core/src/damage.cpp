@@ -55,6 +55,45 @@ void DamageModel::add_contact(std::uint64_t id, const Vec3& pt, double impulse, 
     double full = zone == ZoneFront ? p_.front_max : zone == ZoneRear ? p_.rear_max : p_.side_max;
     r_.zone[zone] = std::min(1.0, r_.crush[zone] / full);
 
+    // ---- 8-Node Perimeter Structural Crush Grid (UE5 Skeletal Mesh Morph Targets & Chaos constraints)
+    int node = NodeFrontCenter;
+    if (pt.x > 0.8) {
+        node = (pt.y > 0.45) ? NodeFLCorner : (pt.y < -0.45 ? NodeFRCorner : NodeFrontCenter);
+    } else if (pt.x < -0.8) {
+        node = (pt.y > 0.45) ? NodeRLCorner : (pt.y < -0.45 ? NodeRRCorner : NodeRearCenter);
+    } else {
+        node = (pt.y >= 0.0) ? NodeLeftFlank : NodeRightFlank;
+    }
+    node_energy_[node] += de;
+    const bool is_side_node = (node == NodeLeftFlank || node == NodeRightFlank);
+    const double k_node = is_side_node ? p_.stiffness_side : p_.stiffness_front_rear;
+    const double full_node = (node <= NodeFRCorner) ? p_.front_max
+                           : (node >= NodeRLCorner) ? p_.rear_max
+                                                    : p_.side_max;
+    r_.node_crush_m[node] = std::sqrt(2.0 * node_energy_[node] / k_node);
+    r_.node_norm[node] = std::min(1.0, r_.node_crush_m[node] / full_node);
+
+    // Detachable panel & latch failure thresholds
+    if (r_.node_norm[NodeFrontCenter] > 0.32 ||
+        r_.node_norm[NodeFLCorner] > 0.45 ||
+        r_.node_norm[NodeFRCorner] > 0.45) {
+        r_.hood_unlatched = true;
+    }
+    if (r_.node_norm[NodeRearCenter] > 0.35) {
+        r_.trunk_unlatched = true;
+    }
+    if (r_.zone[ZoneFront] > 0.62) {
+        r_.front_bumper_detached = true;
+    }
+    if (r_.zone[ZoneRear] > 0.65) {
+        r_.rear_bumper_detached = true;
+    }
+    // Radiator / intercooler puncture scaling with front-center and front-corner crush above 0.25
+    const double front_rad_crush = std::max(
+        r_.node_norm[NodeFrontCenter],
+        std::max(r_.node_norm[NodeFLCorner], r_.node_norm[NodeFRCorner]));
+    r_.radiator_leak = clamp((front_rad_crush - 0.25) / 0.75, 0.0, 1.0);
+
     // ---- structure: only the part of the event above the bands (J/kg), see damage.hpp
     const double dv0 = std::max(0.0, j0 - p_.min_impulse) / mass_, dv1 = std::max(0.0, j1 - p_.min_impulse) / mass_;
     const double heavy = band_energy(dv1, p_.heavy_dv_lo, p_.heavy_dv_hi) - band_energy(dv0, p_.heavy_dv_lo, p_.heavy_dv_hi);
@@ -120,6 +159,25 @@ double DamageModel::suspension_factor(int w) const { return 1.0 - 0.4 * r_.wheel
 double DamageModel::toe_offset(int w) const {
     double toe = r_.wheel[w] * p_.max_toe_deg * kPi / 180.0;
     return (w % 2 == 0) ? toe : -toe;
+}
+
+double DamageModel::camber_offset(int w) const {
+    if (w < 0 || w >= 4) return 0.0;
+    return r_.wheel[w] * 2.2 * kPi / 180.0;
+}
+
+double DamageModel::caster_offset(int w) const {
+    if (w < 0 || w >= 4) return 0.0;
+    return -r_.wheel[w] * 1.8 * kPi / 180.0;
+}
+
+double DamageModel::wheel_bearing_drag_nm(int w) const {
+    if (w < 0 || w >= 4 || r_.wheel[w] <= 0.35) return 0.0;
+    return 45.0 * clamp((r_.wheel[w] - 0.35) / 0.65, 0.0, 1.0);
+}
+
+double DamageModel::radiator_cooling_factor() const {
+    return 1.0 - 0.75 * clamp(r_.radiator_leak, 0.0, 1.0);
 }
 
 // A wheel that is gone leaves hub and brake disc on the road: steel on asphalt, about a third of a tyre's grip.

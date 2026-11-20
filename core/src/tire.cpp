@@ -91,6 +91,123 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
     pressure_kpa = (p_cold + 101.3) * (t_gas + 273.15) / 293.15 - 101.3;
     // Wear: sliding work above normal cornering
     if (slip_power_w > 18000.0) wear = clamp(wear + (slip_power_w - 18000.0) * 1.2e-9 * dt, 0.0, 1.0);
+    // Keep 3-zone temperatures synchronized toward surface_c when update() is called directly
+    if (imo_spread_c() < 1e-9) {
+        inner_c = middle_c = outer_c = surface_c;
+    } else {
+        const double alpha_sync = clamp(dt * 1.5, 0.0, 1.0);
+        inner_c += (surface_c - inner_c) * alpha_sync;
+        middle_c += (surface_c - middle_c) * alpha_sync;
+        outer_c += (surface_c - outer_c) * alpha_sync;
+    }
+}
+
+void TireCondition::update_zones(double slip_power_w, double load_n, double speed_mps, double camber_rad,
+                                 double lateral_force_n, double wheel_side_sign, double wheel_omega_rads,
+                                 double wheel_angle_rad, double dt, const TireParams* p) {
+    if (dt <= 0) return;
+    const double ts_before = surface_c;
+    const double tc_before = temperature_c;
+    const double p_before = pressure_kpa;
+    if (imo_spread_c() < 1e-9 && std::abs(middle_c - surface_c) > 1e-6) {
+        inner_c = middle_c = outer_c = surface_c;
+    }
+    const double z_in0 = inner_c, z_mid0 = middle_c, z_out0 = outer_c;
+
+    update(slip_power_w, load_n, speed_mps, dt, p);
+
+    if (p_before > pressure_kpa + 5.0) {
+        pressure_kpa = p_before;
+    }
+    inner_c = z_in0;
+    middle_c = z_mid0;
+    outer_c = z_out0;
+
+    // 3-zone lateral heat distribution across Inner / Middle / Outer tread ribs
+    const double p_nom = p ? std::max(p->p_nominal_kpa, 1.0) : 220.0;
+    const double rel_dpi = pressure_kpa > 0.0 ? clamp((pressure_kpa - p_nom) / p_nom, -0.5, 0.5) : 0.0;
+    const double fz_ref = p ? std::max(p->fz0, 1000.0) : 4000.0;
+
+    // Negative top-inward tilt (-wheel_side_sign * camber_rad < 0, e.g. negative static camber) biases straight-line heating onto inner_c
+    const double top_inward_rad = std::max(-camber_rad, wheel_side_sign * camber_rad);
+    const double camber_bias = clamp(top_inward_rad * 9.0, -0.75, 0.75);
+
+    // Hard cornering load (outside wheel in a turn, where lateral_force_n * wheel_side_sign < 0 or high |lateral_force_n|) shifts heating onto outer_c
+    const double lat_ratio = std::abs(lateral_force_n) / fz_ref;
+    const double outside_mult = (lateral_force_n * wheel_side_sign < 0.0) ? 1.25 : 1.0;
+    const double corner_bias = clamp(lat_ratio * 1.10 * outside_mult, 0.0, 1.05);
+
+    const double net_in_out = clamp(camber_bias - corner_bias, -0.82, 0.82);
+
+    // High inflation pressure (dpi > 0.08) biases heating slightly toward middle_c
+    const double mid_bias = rel_dpi > 0.08 ? clamp((rel_dpi - 0.08) * 1.8, 0.04, 0.40) : 0.0;
+
+    double w_mid = 1.0 + 2.0 * mid_bias;
+    double w_in = clamp(1.0 + net_in_out - mid_bias, 0.12, 2.6);
+    double w_out = clamp(1.0 - net_in_out - mid_bias, 0.12, 2.6);
+    const double w_sum = w_in + w_mid + w_out;
+    w_in *= 3.0 / w_sum;
+    w_mid *= 3.0 / w_sum;
+    w_out *= 3.0 / w_sum;
+
+    constexpr double Cs = 1500.0, G = 400.0, G_zone = 90.0, Tair = 30.0;
+    const double v = std::abs(speed_mps);
+    const double ha = 20.0 + 2.5 * v;
+    const double q_asym = std::max(0.0, slip_power_w) + 0.018 * std::max(0.0, load_n) * v;
+    const double q_in = slip_power_w + (w_in - 1.0) * q_asym;
+    const double q_mid = slip_power_w + (w_mid - 1.0) * q_asym;
+    const double q_out = slip_power_w + (w_out - 1.0) * q_asym;
+
+    const int n = std::max(1, (int)std::ceil(dt / 0.05));
+    const double h = dt / n;
+    for (int i = 0; i < n; ++i) {
+        const double frac = (double)(i + 1) / n;
+        const double tc = tc_before + (temperature_c - tc_before) * frac;
+        const double ts = ts_before + (surface_c - ts_before) * frac;
+        const double ti = inner_c, tm = middle_c, to = outer_c;
+        const double dti = (q_in - G * (ti - tc) - ha * (ti - Tair) - G_zone * (ti - ts)) / Cs;
+        const double dtm = (q_mid - G * (tm - tc) - ha * (tm - Tair) - G_zone * (tm - ts)) / Cs;
+        const double dto = (q_out - G * (to - tc) - ha * (to - Tair) - G_zone * (to - ts)) / Cs;
+        inner_c = clamp(ti + dti * h, 10.0, 260.0);
+        middle_c = clamp(tm + dtm * h, 10.0, 260.0);
+        outer_c = clamp(to + dto * h, 10.0, 260.0);
+    }
+
+    // Brake-lockup flat-spotting
+    if (v > 8.0 && load_n > 800.0 && std::abs(wheel_omega_rads) < 1.2) {
+        flat_spot_depth_mm = clamp(flat_spot_depth_mm + (std::max(0.0, slip_power_w) / 22000.0) * 0.45 * dt, 0.0, 3.0);
+        flat_spot_phase_rad = std::fmod(wheel_angle_rad, 2.0 * kPi);
+    } else if (std::abs(wheel_omega_rads) > 15.0) {
+        flat_spot_depth_mm = clamp(flat_spot_depth_mm - 0.002 * dt, 0.0, 3.0);
+    }
+
+    // Blistering & Graining
+    const double max_core_c = std::max(tc_before, temperature_c);
+    const double max_surf_c = std::max({ts_before, surface_c, inner_c, middle_c, outer_c});
+    if (max_core_c > 118.0 && max_surf_c > 145.0) {
+        blistering = clamp(blistering + 0.015 * dt, 0.0, 1.0);
+    }
+    if (std::min(tc_before, temperature_c) < 58.0 && slip_power_w > 12000.0) {
+        graining = clamp(graining + 0.02 * dt, 0.0, 1.0);
+    } else if (temperature_c >= 75.0 && temperature_c <= 105.0) {
+        graining = clamp(graining - 0.01 * dt, 0.0, 1.0);
+    }
+}
+
+double TireCondition::flat_spot_ffb_torque_nm(double wheel_angle_rad, double load_n, double speed_mps) const {
+    if (flat_spot_depth_mm <= 0.05 || std::abs(speed_mps) <= 2.0 || load_n <= 0.0) return 0.0;
+    const double speed_scale = clamp((std::abs(speed_mps) - 2.0) / 18.0, 0.15, 1.5);
+    const double c1 = std::cos(wheel_angle_rad - flat_spot_phase_rad);
+    const double pulse = std::exp(-3.0 * (1.0 - c1)) * c1;
+    return 3.5 * flat_spot_depth_mm * (load_n / 4000.0) * speed_scale * pulse;
+}
+
+double TireCondition::zone_health_grip_factor() const {
+    const double blister_loss = 0.08 * clamp(blistering, 0.0, 1.0);
+    const double grain_loss = 0.06 * clamp(graining, 0.0, 1.0);
+    const double spread = imo_spread_c();
+    const double spread_loss = spread > 28.0 ? 0.04 * clamp((spread - 28.0) / 22.0, 0.0, 1.0) : 0.0;
+    return clamp(1.0 - blister_loss - grain_loss - spread_loss, 0.82, 1.0);
 }
 
 double TireCondition::dpi(const TireParams& p) const {
@@ -109,7 +226,7 @@ double TireCondition::grip_factor(const TireParams* p) const {
     else if (t > t_opt + w) { double d = (t - t_opt - w) / 50.0; temp_grip = std::max(0.82, 1.0 - 0.14 * d * d); }
     double grease = surface_c > 140.0 ? std::max(0.88, 1.0 - 0.0012 * (surface_c - 140.0)) : 1.0;
     double wear_grip = 1.0 - 0.15 * wear * wear;
-    return temp_grip * grease * wear_grip;
+    return temp_grip * grease * wear_grip * zone_health_grip_factor();
 }
 
 double effective_rolling_radius(const TireParams& p, double fz) {

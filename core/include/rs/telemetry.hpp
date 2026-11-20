@@ -59,8 +59,17 @@ struct TelemetrySample {
     std::array<double, 4> tire_slip_ratio{};     // kappa
     std::array<double, 4> tire_slip_angle{};     // rad
     std::array<double, 4> tire_temp_c{75, 75, 75, 75};
+    std::array<double, 4> tire_temp_inner_c{75, 75, 75, 75};
+    std::array<double, 4> tire_temp_middle_c{75, 75, 75, 75};
+    std::array<double, 4> tire_temp_outer_c{75, 75, 75, 75};
+    std::array<double, 4> flat_spot_depth_mm{};
     std::array<double, 4> brake_temp_c{220, 220, 220, 220};
     std::array<double, 4> wheel_load_n{};
+    double boost_bar = 0.0;
+    double intake_air_temp_c = 28.0;
+    double oil_temp_c = 85.0;
+    double fuel_liters = 55.0;
+    double slipstream_drag_scale = 1.0;
 };
 
 /// Build a TelemetrySample directly from rs::VehicleOutput + ChassisState + DriverInput.

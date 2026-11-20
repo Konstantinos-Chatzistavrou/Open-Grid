@@ -50,6 +50,18 @@ namespace rs {
 
 enum DamageZone { ZoneFront = 0, ZoneRear = 1, ZoneLeft = 2, ZoneRight = 3 };
 
+// 8-Node Perimeter Structural Crush Grid for Unreal Engine 5 Skeletal Mesh Morph Targets.
+enum CrushNode : int {
+    NodeFLCorner = 0,
+    NodeFrontCenter = 1,
+    NodeFRCorner = 2,
+    NodeLeftFlank = 3,
+    NodeRightFlank = 4,
+    NodeRLCorner = 5,
+    NodeRearCenter = 6,
+    NodeRRCorner = 7
+};
+
 struct DamageParams {
     // ---- panels (visible crush)
     double stiffness_front_rear = 1.0e6;   // N/m (crash-test calibrated, see above)
@@ -104,6 +116,16 @@ struct DamageReport {
     double fire = 0;                   // 0 = no fire, (0..1] flame size (grows over time)
     double brakes = 1;                 // brake effectiveness 1..0.3, 0 once failed
     bool brakes_failed = false;
+    // ---- 8-Node Perimeter Structural Crush Grid (UE5 Skeletal Mesh Morph Targets)
+    std::array<double, 8> node_crush_m{};  // m of deformation at each of the 8 perimeter morph-target nodes
+    std::array<double, 8> node_norm{};     // 0..1 normalized deformation per node for UE5 Morph Target weights
+    // ---- Detachable Panel & Latch Failure States (UE5 Chaos breakable constraints)
+    bool hood_unlatched = false;           // triggers when node_norm[NodeFrontCenter] > 0.32 or front corner > 0.45
+    bool trunk_unlatched = false;          // triggers when node_norm[NodeRearCenter] > 0.35
+    bool front_bumper_detached = false;    // triggers when front zone > 0.62
+    bool rear_bumper_detached = false;     // triggers when rear zone > 0.65
+    // ---- Radiator / Intercooler Puncture State
+    double radiator_leak = 0.0;            // 0..1, scales with front-center and front-corner crush above 0.25
 };
 
 class DamageModel {
@@ -117,7 +139,14 @@ public:
 
     const DamageReport& report() const { return r_; }
     const DamageParams& params() const { return p_; }
-    void repair() { r_ = DamageReport{}; events_.clear(); zone_energy_ = {}; zone_heavy_ = {}; brake_wear_ = 0; }
+    void repair() {
+        r_ = DamageReport{};
+        events_.clear();
+        zone_energy_ = {};
+        zone_heavy_ = {};
+        node_energy_ = {};
+        brake_wear_ = 0;
+    }
     // Time-driven effects (fire, brake fade). Call once per physics tick.
     void update(double dt);
     double severity() const;                    // 0..1, see OVERHEATING, FIRE, BRAKES above
@@ -128,6 +157,10 @@ public:
     double suspension_factor(int wheel) const;  // 1 .. 0.6 spring stiffness
     bool wheel_off(int wheel) const { return r_.wheel[wheel] >= p_.wheel_off; }
     double toe_offset(int wheel) const;         // rad, bent steering/suspension arm
+    double camber_offset(int wheel) const;      // rad, bent wishbone/strut knocking wheel into positive camber
+    double caster_offset(int wheel) const;      // rad, front impact knocking caster back (asymmetric steering pull)
+    double wheel_bearing_drag_nm(int wheel) const; // N m, damaged hub bearing parasitic rolling drag
+    double radiator_cooling_factor() const;     // 1.0 intact down to 0.25 when radiator_leak == 1.0
     double grip_factor(int wheel) const;        // 1 .. 0.9 (misaligned tyre); wheel_off_grip once the wheel is gone
     double brake_factor() const { return r_.brakes; }   // 1 .. 0 (fade, then failure)
 
@@ -139,6 +172,7 @@ private:
     DamageReport r_;
     std::array<double, 4> zone_energy_{};   // J absorbed per zone (panels)
     std::array<double, 4> zone_heavy_{};    // J/kg of structural energy per zone
+    std::array<double, 8> node_energy_{};   // J absorbed per 8-node perimeter crush grid cell
     std::map<std::uint64_t, Event> events_;
     double brake_wear_ = 0;                 // 0..1, 1 = brakes failed
 };

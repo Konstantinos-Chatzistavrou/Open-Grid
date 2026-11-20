@@ -38,6 +38,9 @@ void Vehicle::reset_motion(double v, int gear) {
         kappa_[w] = tan_alpha_[w] = 0;
         tire_condition_[w] = TireCondition{};
         disc_temp_[w] = cfg_.brake_thermal.start_temp_c;
+        wheel_angle_[w] = 0.0;
+        unsprung_z_[w] = 0.0;
+        unsprung_vz_[w] = 0.0;
     }
     disc_init_ = true;
     const auto& g = cfg_.drivetrain.gear_ratios;
@@ -45,6 +48,7 @@ void Vehicle::reset_motion(double v, int gear) {
         double idle_w = cfg_.engine.idle_rpm * 2.0 * kPi / 60.0;
         drivetrain_.engine_omega = std::max(idle_w, v / cfg_.tire(RL).radius * g[gear] * cfg_.drivetrain.final_drive);
         drivetrain_.stalled = false;
+        drivetrain_.systems.engaged_gear = gear;
     }
     prev_axle_fy_ = {0, 0};
 }
@@ -154,6 +158,28 @@ WheelContact Vehicle::resolve_contact_patch(const WheelContactPatchRays& patch,
     return best;
 }
 
+AeroWakeState Vehicle::compute_slipstream_wake(const Vec3& my_pos, const Vec3& my_fwd, const std::vector<Vec3>& lead_car_positions) {
+    AeroWakeState wake;
+    const Vec3 fwd = length(my_fwd) > 1e-6 ? normalized(my_fwd) : Vec3{1, 0, 0};
+    double best_tow = 0.0;
+    for (const Vec3& lead : lead_car_positions) {
+        const Vec3 rel = lead - my_pos;
+        const double lon = dot(rel, fwd);
+        if (lon < 3.5 || lon > 42.0) continue; // slipstream wake cone: 3.5 m .. 42 m ahead
+        const Vec3 lat_v = rel - fwd * lon;
+        const double lat = length(lat_v);
+        const double cone_half_width = 1.15 + 0.035 * lon;
+        if (lat >= cone_half_width) continue;
+        const double lat_factor = 1.0 - (lat / cone_half_width) * (lat / cone_half_width);
+        // Peak tow at ~9-16 m behind lead bumper, tapering smoothly to 42 m
+        const double lon_factor = lon < 9.0 ? (lon - 3.5) / 5.5 : 1.0 - (lon - 9.0) / 33.0;
+        best_tow = std::max(best_tow, clamp(lat_factor * lon_factor, 0.0, 1.0));
+    }
+    wake.drag_scale = 1.0 - 0.28 * best_tow;                      // up to -28% drag reduction in tow
+    wake.dirty_air_front_downforce_scale = 1.0 - 0.30 * best_tow; // up to -30% front downforce loss (dirty-air understeer)
+    return wake;
+}
+
 VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelContact, 4>& contacts, double dt) {
     VehicleOutput out;
     time_ += dt;
@@ -165,9 +191,13 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         damage_.brakes = dm.brake_factor();
         damage_.engine_power = dm.engine_power_factor();
         damage_.aero_drag = dm.drag_factor();
+        damage_.radiator_cooling = dm.radiator_cooling_factor();
         for (int w = 0; w < 4; ++w) {
             damage_.suspension_stiffness[w] = dm.suspension_factor(w);
             damage_.toe[w] = dm.toe_offset(w);
+            damage_.camber[w] = dm.camber_offset(w);
+            damage_.caster[w] = dm.caster_offset(w);
+            damage_.bearing_drag_nm[w] = dm.wheel_bearing_drag_nm(w);
             damage_.grip[w] = dm.grip_factor(w);
         }
     }
@@ -222,6 +252,30 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const double anti = w < 2 ? -ax.anti_pitch * fx : (fx > 0 ? ax.anti_pitch : ax.anti_lift_rear_braking) * fx;
         f += anti * hl;
         susp_force[w] = std::max(0.0, f);               // a spring can push, not pull the ground
+        // ---- 15 Hz 2-DOF Unsprung Wheel-Hop & Radial Tire Carcass Dynamics
+        if (unsprung_dynamics_enabled) {
+            const double m_u = 42.0; // kg unsprung wheel/tire/hub/brake assembly mass
+            const double k_t = std::max(140000.0, cfg_.tire(w).vertical_stiffness); // N/m radial tire carcass stiffness
+            const double c_t = 1850.0; // N s/m radial tire carcass structural hysteresis damping
+            // Unsprung mass sits between suspension force pushing down (susp_force[w]) and tire carcass pushing up
+            const double sub_dt = std::min(dt, 0.002);
+            const int u_steps = std::max(1, (int)std::ceil(dt / sub_dt));
+            const double hu = dt / u_steps;
+            double uz = unsprung_z_[w], uv = unsprung_vz_[w];
+            for (int us = 0; us < u_steps; ++us) {
+                // Static carcass deflection balances static suspension force; uz is dynamic offset (+ = hub hopped up)
+                const double f_carcass = std::max(0.0, susp_force[w] - k_t * uz - c_t * uv);
+                const double a_u = (f_carcass - susp_force[w]) / m_u - 18.0 * comp_rate[w];
+                uv = clamp(uv + a_u * hu, -4.5, 4.5);
+                uz = clamp(uz + uv * hu, -0.035, 0.035);
+            }
+            unsprung_z_[w] = uz;
+            unsprung_vz_[w] = uv;
+            out.wheels[w].carcass_deflection_m = std::max(0.0, susp_force[w] / k_t - uz);
+            out.wheels[w].unsprung_vel_mps = uv;
+            // Effective ground contact normal load modulates with 15 Hz unsprung wheel hop
+            susp_force[w] = std::max(0.0, susp_force[w] - k_t * uz * 0.45);
+        }
     }
     for (int w = 0; w < 4; ++w) dz_[w] = touching[w] ? comp[w] - cfg_.wheels[w].static_compression : dz_[w] * 0.9;
 
@@ -255,15 +309,17 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const double rch = roll_centre(w);
         double geo = prev_axle_fy_[w < 2 ? 0 : 1] * rch / ax.track;
         k.load = std::max(0.0, k.load + (w % 2 == 0 ? -geo : geo));
-        k.mu = cfg_.grip_for_surface(c.surface) * tire_condition_[w].grip_factor(&cfg_.tire(w)) * damage_.grip[w];
+        k.mu = cfg_.grip_for_surface(c.surface) * tire_condition_[w].grip_factor(&cfg_.tire(w))
+             * (tire_zones_enabled ? tire_condition_[w].zone_health_grip_factor() : 1.0) * damage_.grip[w];
         // Dynamic inclination / camber angle gamma in the tyre frame (+ = top tilted toward +left):
         //   1. Chassis roll relative to the road normal (dot(up, k.lat))
-        //   2. Static camber + suspension bump camber gain (negative = top tilted inward)
+        //   2. Static camber + suspension bump camber gain (negative = top tilted inward) + bent wishbone damage
         //   3. Steering caster angle + kingpin inclination (caster leans outer steered wheel into turn)
         double roll_gamma = std::asin(clamp(dot(up, k.lat), -0.5, 0.5));
         const double dz = comp[w] - cfg_.wheels[w].static_compression;
-        double susp_camber = ax.static_camber_deg * kPi / 180.0 + ax.camber_gain_rad_per_m * dz + ax.camber_gain2_rad_per_m2 * dz * dz;
-        double caster = ax.caster_deg * kPi / 180.0, kpi = ax.kpi_deg * kPi / 180.0;
+        double susp_camber = ax.static_camber_deg * kPi / 180.0 + ax.camber_gain_rad_per_m * dz
+                           + ax.camber_gain2_rad_per_m2 * dz * dz + damage_.camber[w];
+        double caster = ax.caster_deg * kPi / 180.0 + damage_.caster[w], kpi = ax.kpi_deg * kPi / 180.0;
         double side = (w % 2 == 0) ? -1.0 : 1.0;   // FL/RL = -1 (left), FR/RR = +1 (right)
         k.gamma = clamp(roll_gamma - side * susp_camber + caster * std::sin(d) - side * kpi * (1.0 - std::cos(d)), -0.35, 0.35);
         k.re = effective_rolling_radius(tp, k.load);
@@ -337,6 +393,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     din.nos_active = input_.nos;
     din.starter_crank = input_.starter;
     din.airspeed_mps = std::abs(out.speed);
+    din.radiator_cooling_scale = damage_.radiator_cooling;
+    din.bearing_drag_nm = damage_.bearing_drag_nm;
     // ---- ASSIST: auto-clutch (sits on top of the model; the drivetrain only sees a pedal value)
     // Behaves like a centrifugal clutch: engagement rises with engine rpm above idle, so the car
     // launches when you add throttle and declutches before stalling when you slow down. Gear
@@ -381,7 +439,14 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             fy_sum[w] += f.fy;
             mz_sum[w] += f.mz;
             double slip_power = std::abs(f.fx * v_sx) + std::abs(f.fy * k.vy);
-            tire_condition_[w].update(slip_power, k.load, std::hypot(k.vx, k.vy), h, &tp);
+            wheel_angle_[w] += drivetrain_.wheel_omega[w] * h;
+            if (tire_zones_enabled) {
+                const double side_sign = (w % 2 == 0) ? -1.0 : 1.0;
+                tire_condition_[w].update_zones(slip_power, k.load, std::hypot(k.vx, k.vy), k.gamma, f.fy,
+                                                side_sign, drivetrain_.wheel_omega[w], wheel_angle_[w], h, &tp);
+            } else {
+                tire_condition_[w].update(slip_power, k.load, std::hypot(k.vx, k.vy), h, &tp);
+            }
             tyre_t[w] = -f.fx * k.re;                                // road pushes back on the wheel
             double c_rr = tp.rolling_resistance + tp.rolling_resistance_v2 * (k.vx / 30.0) * (k.vx / 30.0);
             roll_t[w] = c_rr * k.load * k.re;
@@ -454,10 +519,12 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         prev_fx_[w] = fx;
         if (w < 2 && cfg_.axle(w).max_steer_deg > 0) {
             // Rack torque about the steering axis: the tyre's aligning moment plus the lateral force acting on the
-            // caster trail (R tan caster). This is what the driver feels through the wheel: it builds with cornering
-            // force and goes light as the front tyres pass their peak (pneumatic trail collapses) - the understeer cue.
-            const double trail = tp.radius * std::tan(cfg_.axle(w).caster_deg * kPi / 180.0);
-            out.steer_torque += mz - fy * trail;
+            // caster trail (R tan caster) + speed-synchronous flat-spot FFB thump when a front tyre is flat-spotted.
+            const double trail = tp.radius * std::tan(cfg_.axle(w).caster_deg * kPi / 180.0 + damage_.caster[w]);
+            const double flat_thump = tire_zones_enabled
+                                    ? tire_condition_[w].flat_spot_ffb_torque_nm(wheel_angle_[w], k.load, std::hypot(k.vx, k.vy))
+                                    : 0.0;
+            out.steer_torque += mz - fy * trail + flat_thump;
         }
         // Low-speed damping (below ~2 m/s): the relaxation-length model acts like an undamped
         // spring at standstill; real tyres have internal damping. Blends out with speed.
@@ -498,11 +565,17 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     prev_axle_fy_ = axle_fy;
 
     // ------------------------------------------------------------------ aerodynamics
-    // Drag:      F = -1/2 rho CdA |v| v
-    // Downforce: F = 1/2 rho ClA v_x^2, split between the axles by aero balance.
+    // Drag:      F = -1/2 rho CdA |v| v * slipstream_drag_scale * yaw_drag_mult
+    // Downforce: F = 1/2 rho ClA v_x^2, split between the axles by aero balance (with dirty-air front loss & yaw stall).
     const AeroParams& a = cfg_.aero;
     double v = length(s.velocity);
-    force += s.velocity * (-0.5 * a.air_density * a.drag_area * damage_.aero_drag * v);
+    const double sin_beta = std::sin(clamp(out.sideslip, -1.2, 1.2));
+    const double yaw_drag_mult = aero_wake_.yaw_aero_enabled ? (1.0 + 0.35 * sin_beta * sin_beta) : 1.0;
+    const double yaw_rear_down_mult = aero_wake_.yaw_aero_enabled ? (1.0 - 0.30 * sin_beta * sin_beta) : 1.0;
+    const double eff_drag_scale = clamp(aero_wake_.drag_scale, 0.65, 1.2) * yaw_drag_mult;
+    const double eff_front_down_scale = clamp(aero_wake_.dirty_air_front_downforce_scale, 0.55, 1.1);
+
+    force += s.velocity * (-0.5 * a.air_density * a.drag_area * damage_.aero_drag * eff_drag_scale * v);
     double vx_body = dot(s.velocity, s.orientation.rotate({1, 0, 0}));
     // Ride height: lower = more underbody downforce; nose down (front compressed more) = balance forward.
     const double dz_f = 0.5 * (dz_[FL] + dz_[FR]), dz_r = 0.5 * (dz_[RL] + dz_[RR]);
@@ -511,7 +584,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     double down = 0.5 * a.air_density * a.lift_area * ground * vx_body * vx_body;
     Vec3 p_front = s.position + s.orientation.rotate({cfg_.dist_cg_front, 0, 0});
     Vec3 p_rear = s.position + s.orientation.rotate({-cfg_.dist_cg_rear, 0, 0});
-    Vec3 f_front = up * (-down * balance), f_rear = up * (-down * (1 - balance));
+    Vec3 f_front = up * (-down * balance * eff_front_down_scale);
+    Vec3 f_rear = up * (-down * (1 - balance) * yaw_rear_down_mult);
     force += f_front + f_rear;
     torque += cross(p_front - s.position, f_front) + cross(p_rear - s.position, f_rear);
 
@@ -519,14 +593,21 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     out.torque = torque;
     out.accel = s.orientation.inv_rotate(force) / cfg_.mass;
     out.engine_rpm = drivetrain_.engine_rpm();
-    out.gear = input_.gear;
+    out.gear = drivetrain_.systems.engaged_gear >= 0 ? drivetrain_.systems.engaged_gear : input_.gear;
     out.engine_stalled = drivetrain_.stalled;
     out.boost_bar = drivetrain_.systems.boost_bar;
     out.bov_venting = drivetrain_.systems.bov_venting;
+    out.intake_air_temp_c = drivetrain_.systems.intake_air_temp_c;
     out.nos_remaining_l = drivetrain_.systems.nos_bottles_l;
     out.oil_temp_c = drivetrain_.systems.oil_temp_c;
     out.engine_health = drivetrain_.systems.engine_health;
     out.engine_misfire = drivetrain_.systems.misfiring;
+    out.fuel_liters = drivetrain_.systems.fuel_liters;
+    out.gear_grind = drivetrain_.systems.gear_grind;
+    out.shift_cut_active = drivetrain_.systems.shift_cut_active;
+    out.driveline_clunk_nm = drivetrain_.systems.driveline_clunk_nm;
+    out.slipstream_drag_scale = eff_drag_scale;
+    out.dirty_air_downforce_scale = eff_front_down_scale;
     return out;
 }
 
