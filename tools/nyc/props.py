@@ -550,10 +550,35 @@ def gen_tile(world, ix, iy, debug=False):
         O[k] = [v for v in O[k] if not t.blocked(v[0], v[1], clear=clear, bld=False)]
     # ... and no footprint on the asphalt as drawn (corner fillets, parking lots, wide props): pushed back or dropped
     for k in FOOT:
-        O[k] = [r for r in (t.off_road(k, v) for v in O[k]) if r is not None]
+        O[k] = [r for r in (t.off_road(k, v) for v in O[k]) if r is not None and x0 <= r[0] < x1 and y0 <= r[1] < y1]
+
+    # Spatial-hash Poisson thinning for trees so OSM + synth + overlapping park polygons NEVER pile up 0-5 m apart
+    if O["tree"]:
+        min_tree_d = 10.5
+        cell_t = min_tree_d
+        t_buckets: dict[tuple[int, int], list[tuple[float, float]]] = {}
+        kept_trees = []
+        for v in sorted(O["tree"], key=lambda r: hf(seed0, int(abs(r[0]) * 10), int(abs(r[1]) * 10), 79)):
+            tx, ty = v[0], v[1]
+            bx, by = int(math.floor(tx / cell_t)), int(math.floor(ty / cell_t))
+            clash = False
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    for px, py in t_buckets.get((bx + dx, by + dy), ()):
+                        if (tx - px) ** 2 + (ty - py) ** 2 < min_tree_d * min_tree_d:
+                            clash = True
+                            break
+                    if clash:
+                        break
+                if clash:
+                    break
+            if not clash:
+                t_buckets.setdefault((bx, by), []).append((tx, ty))
+                kept_trees.append(v)
+        O["tree"] = kept_trees
 
     # caps (budget ~1500 per tile)
-    caps = {"lamp": 420, "tree": 900, "signal": 64, "hydrant": 48, "bench": 70, "bus_stop": 14, "subway_entrance": 14, "steam": 6,
+    caps = {"lamp": 420, "tree": 300, "signal": 64, "hydrant": 48, "bench": 70, "bus_stop": 14, "subway_entrance": 14, "steam": 6,
             "scaffold": 70, "cone": 24, "kiosk": 8, "waste": 50, "sign": 360}
     for k, cap in caps.items():
         if len(O[k]) > cap:

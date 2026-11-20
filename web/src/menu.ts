@@ -15,15 +15,16 @@ import { PRESET_INFO, applyPreset, matchPreset, type AssistSettings, type Preset
 import { fmt, fmtXp, type Career, type MpCareer, type SpCareer } from './career';
 import type { Cloud, Friend } from './cloud';
 import type { RankedResult } from './ranked';
-import { levelOf } from './progression';
+import { STARTER_CAR, levelOf } from './progression';
 import type { Loader } from './loading';
 import { AERO_FINISHES, DIFFUSERS, FENDERS, FRONT_BUMPERS, GLOW_COLOURS, HEAD_TINTS, HOODS, LIVERIES, PART_COLOURS, REAR_BUMPERS, RIM_FINISHES, RIMS, SKIRTS, SPLITTERS, WINGS, type Custom } from './scene/custom';
 import { SKINS, helmetSvg, skinOf } from './scene/driver';
 import { LANGS, getLang, setLang, t, type LangCode } from './i18n';
 import type { AccessibilitySettings, ColorblindMode, UiScale } from './accessibility';
 import type { AvatarGear } from './carMeet';
-import { INSURANCE_PREMIUM_CR, INSURANCE_PREMIUM_XP, conditionOf, repairCostOf, type MaintenanceStore, type ReportCategory } from './maintenance';
-import { AUCTION_LOTS, ENGINE_SWAPS, MANIFOLDS, NOS_MAX_LITERS, NOS_PRICE_PER_LITER_XP, TURBOS, engineOf, stanceOf, type ManifoldId, type NightRunnersStore, type SwapId, type TurboId } from './nightRunners';
+import { INSURANCE_PREMIUM_CR, INSURANCE_PREMIUM_XP, conditionOf, recordRaceDamage, repairCarCondition, repairCostOf, saveMaintenance, type MaintenanceStore, type ReportCategory } from './maintenance';
+import { ENGINE_SWAPS, MANIFOLDS, NOS_MAX_LITERS, NOS_PRICE_PER_LITER_XP, TURBOS, engineOf, saveNightRunners, stanceOf, type ManifoldId, type NightRunnersStore, type SwapId, type TurboId } from './nightRunners';
+import { AUCTION_MARKET_FEE, DEALER_SPREAD, MOD_OVERPAY_RATE, appraiseCarForSale, generateLiveAuctionLots, gradeFromFloat, loadAuctionMarket, marketEntryOf, recordMarketTrade, renderPriceSparklineSvg, saveAuctionMarket, trendPctOf, type AuctionMarketStore, type LiveAuctionLot } from './auctionMarket';
 import { brandBadgeSvg, brandOfCar, stockEngineOfCar } from './brands';
 import { PARTY_BONUS_MUL, type RetentionStore } from './retention';
 import { checkSplitScreen } from './splitScreen';
@@ -229,7 +230,10 @@ export class Menu {
   private reportTarget = '';
   simhubOn = false;
   telemetrySamples = 0;
-  private shopTab: 'cars' | 'upgrades' | 'gear' | 'auction' | 'mods' = 'cars';
+  private shopTab: 'lots' | 'market' | 'sell' | 'mods' = 'lots';
+  market!: AuctionMarketStore;
+  private lotWindowOffset = 0;
+  private garageNote = '';
   /** the rear-view mirror at the top of the screen while driving */
   mirror = true;
   assists!: AssistSettings;
@@ -240,11 +244,12 @@ export class Menu {
   private garagePillar: GaragePillar = 'style';
   private garageTab = 'paint';
   private garageCamIdx = 0;
+  private garageHideUi = false;
   /** the option under the pointer: the live panel previews its effect without applying it */
   private hover: { k: string; v: string | number } | null = null;
-  private shopCar = '';
 
   constructor(readonly sel: Selection, private cars: CatalogCar[], private physics: Record<string, unknown>, private hooks: MenuHooks) {
+    this.market = loadAuctionMarket(this.cars.map((c) => c.id));
     this.root.addEventListener('click', (e) => this.click(e));
     // live previews: hovering a part shows what it would do without applying it
     this.root.addEventListener('pointerover', (e) => this.hoverPart(e, true));
@@ -447,74 +452,141 @@ export class Menu {
     </div></div>`;
   }
 
-  /** A career's level, XP bar and (online) credits. */
+  /** A career's level, XP bar and auction credits. */
   private careerCard(k: 'sp' | 'mp') {
     const c = k === 'sp' ? this.sp : this.mp, L = levelOf(c.xp);
     const pct = L.need ? Math.round((L.into / L.need) * 100) : 100;
     const extra = k === 'mp'
       ? (this.mp.ready ? ` · <span class="credits">${fmt(c.credits)}</span>` : ` · <span class="dim">${esc(this.mp.note || 'Offline')}</span>`)
-      : (this.sp.testingMode ? ` · <span class="pill gold">🧪 TESTING FREE</span>` : '');
+      : (this.sp.testingMode ? ` · <span class="pill gold">🧪 TESTING FREE</span>` : ` · <span class="credits">${fmt(c.credits)}</span>`);
     return `<div class="ccard"><span class="dim">${k === 'sp' ? 'SINGLE PLAYER' : 'ONLINE'}</span><b>Level ${L.level}</b>${extra}
       <div class="xpbar"><i style="width:${pct}%"></i></div><small class="dim">${this.sp.testingMode && k === 'sp' ? 'All cars & upgrades unlocked' : L.need ? `${fmtXp(L.into)} / ${fmtXp(L.need)}` : 'Max level'}</small></div>`;
   }
-  /** The single player / online switch on the garage and shop. */
+  /** The single player / online switch on the garage and auction house. */
   private careerBar() {
     const sp = levelOf(this.sp.xp).level, mp = levelOf(this.mp.xp).level;
-    return `<div class="career-bar"><button class="chip ${this.sel.career === 'sp' ? 'on' : ''}" data-act="career" data-v="sp">Single player · Lv ${sp}</button>
+    return `<div class="career-bar"><button class="chip ${this.sel.career === 'sp' ? 'on' : ''}" data-act="career" data-v="sp">Single player · Lv ${sp} · ${this.sp.testingMode ? 'FREE' : fmt(this.sp.credits)}</button>
       <button class="chip ${this.sel.career === 'mp' ? 'on' : ''}" data-act="career" data-v="mp">Online · Lv ${mp}${this.mp.ready ? ` · ${fmt(this.mp.credits)}` : ''}</button></div>`;
   }
-  /** The get-it button of a shop item for the active career. */
-  private itemBtn(kind: 'car' | 'mod' | 'skin', id: string, stage: number | undefined, label: string, small = true) {
-    const c = this.career, r = c.req(kind, id, stage), cls = small ? 'small' : 'pip buy';
-    const data = `data-act="buy" data-kind="${kind}" data-v="${id}"${stage ? ` data-stage="${stage}"` : ''}`;
-    if (c.kind === 'sp') return `<button class="${cls}" disabled>${label ? `${label} · ` : ''}Unlocks at level ${r.spLevel}</button>`;
-    if (!this.mp.ready) return `<button class="${cls}" disabled>${esc(this.mp.note || 'Online service unavailable')}</button>`;
-    const lvl = levelOf(this.mp.xp).level;
-    let price = r.price;
-    if (kind === 'mod') { price = 0; const [car, key] = id.split(':'); for (let s2 = this.mp.stage(car, key as ModKey) + 1; s2 <= (stage ?? 1); s2++) price += c.req('mod', key, s2).price; }
-    if (lvl < r.mpLevel) return `<button class="${cls}" disabled>${label ? `${label} · ` : ''}Online level ${r.mpLevel}</button>`;
-    if (price > this.mp.credits) return `<button class="${cls}" disabled>${label ? `${label} · ` : ''}Need ${fmt(price - this.mp.credits)} more</button>`;
-    return `<button class="${cls} primary" ${data}>${label ? `${label} · ` : ''}Buy · ${fmt(price)}</button>`;
+
+  private currentLiveLots(): LiveAuctionLot[] {
+    const slot = Math.floor(Date.now() / (15 * 60_000)) + this.lotWindowOffset;
+    const nameOf = (id: string) => this.cars.find((c) => c.id === id)?.name ?? id;
+    return generateLiveAuctionLots(this.market, this.cars.map((c) => c.id), nameOf, slot);
   }
 
+  /** CS2-inspired Live Supply & Demand Auction House (replaces Shop completely). */
   private shop() {
     const w = this.career, sp = w.kind === 'sp';
-    const cars = this.cars.map((c) => {
-      const st = statsOf(this.physics[c.id]), owned = w.owns(c.id), br = brandOfCar(c.id);
-      const btn = owned ? `<button class="small" data-act="shop-drive" data-v="${c.id}">${c.id === this.sel.car ? '✓ Driving' : 'Drive'}</button>` : this.itemBtn('car', c.id, undefined, '');
-      const r = w.req('car', c.id);
-      return `<div class="scard ${owned ? 'owned' : ''}">
-        <div class="car-head"><span class="brand-inline">${brandBadgeSvg(c.id, 22)}<b>${esc(c.name)}</b></span><i class="car-badge">${owned ? (sp ? 'UNLOCKED' : 'OWNED') : sp ? `LV ${r.spLevel}` : `LV ${r.mpLevel} · ${fmt(r.price)}`}</i></div>
-        <div class="brand-meta">${esc(br.fullName)} · ${esc(br.origin)} · ${esc(stockEngineOfCar(c.id).label)}</div>
-        <span class="dim">${esc(c.tag)}</span>
-        <div class="mini"><em>${Math.round(st.power)} kW</em><em>${Math.round(st.mass)} kg</em><em>${st.grip.toFixed(2)} µ</em></div>
-        ${btn}</div>`;
-    }).join('');
-    const ownedCars = this.cars.filter((c) => w.owns(c.id));
-    if (!w.owns(this.shopCar)) this.shopCar = this.sel.car;
-    const carChips = ownedCars.map((c) => `<button class="chip ${c.id === this.shopCar ? 'on' : ''}" data-act="shop-car" data-v="${c.id}">${esc(c.name)}</button>`).join('');
-    const ups = MOD_KEYS.map((k) => {
-      const m = MODS[k], have = w.stage(this.shopCar, k);
-      const stages = [1, 2, 3].map((n) => n <= have ? `<button class="pip on" disabled>${m.levels[n]} ✓</button>` : this.itemBtn('mod', sp ? k : `${this.shopCar}:${k}`, n, m.levels[n], false)).join('');
-      return `<div class="mod"><div><b>${m.label}</b><span class="dim">${m.hint}</span></div><div class="pips">${stages}</div></div>`;
-    }).join('');
-    const gear = SKINS.map((k) => {
-      const owned = w.ownsSkin(k.id), worn = this.sel.skin === k.id, r = w.req('skin', k.id);
-      const btn = owned ? `<button class="small ${worn ? '' : 'primary'}" data-act="wear-skin" data-v="${k.id}" ${worn ? 'disabled' : ''}>${worn ? '✓ Wearing' : 'Wear'}</button>` : this.itemBtn('skin', k.id, undefined, '');
-      return `<div class="scard gear ${owned ? 'owned' : ''}">${helmetSvg(k, 64)}<div class="car-head"><b>${esc(k.name)}</b><i class="car-badge">${owned ? (sp ? 'UNLOCKED' : 'OWNED') : sp ? `LV ${r.spLevel}` : fmt(r.price)}</i></div>
-        <span class="suit-dot" style="background:${k.suit}"></span>${btn}</div>`;
-    }).join('');
-    const tab = (id: typeof this.shopTab, label: string) => `<button class="gtab ${this.shopTab === id ? 'on' : ''}" data-act="stab" data-v="${id}">${label}</button>`;
-    const auctionCards = AUCTION_LOTS.map((lot) => {
-      const sold = this.nr.boughtLots.includes(lot.id);
+    const testing = sp && this.sp.testingMode;
+    const carIds = this.cars.map((c) => c.id);
+    const loanerActive = w.isUsingLoaner(carIds);
+    const lots = this.currentLiveLots();
+
+    // 1. Live Rotating Lots (Salvage Finds, Pre-Swapped Builds, Limited 1/1 Collector Specs)
+    const lotCards = lots.map((lot) => {
+      const sold = this.market.boughtDynamicLots.includes(lot.id);
+      const grade = gradeFromFloat(lot.floatVal);
+      const br = brandOfCar(lot.carId);
       const tags = lot.tags.map((tg) => `<span class="tag-chip">${esc(tg)}</span>`).join('');
-      return `<div class="scard ${sold ? 'owned' : ''}">
-        <div class="car-head"><b>${esc(lot.title)}</b><i class="car-badge">-${lot.discountPct}% LOT</i></div>
-        <div class="dim small-note">${lot.mileageKm.toLocaleString()} km · Engine ${lot.startHealth}% · Damage ${Math.round(lot.startDamage * 100)}%</div>
-        <div>${tags}</div>
-        <button class="small ${sold ? '' : 'primary'}" data-act="buy-auction" data-v="${lot.id}" ${sold ? 'disabled' : ''}>${sold ? '✓ Won Auction' : `🔨 Buy Lot · ${lot.priceXp} XP`}</button>
+      const canAfford = testing || w.credits >= lot.priceCr;
+      const badgeCls = lot.kind === 'limited' ? 'gold' : lot.kind === 'salvage' ? 'hot' : 'cy';
+      return `<div class="scard auc-card ${sold ? 'owned' : ''}">
+        <div class="car-head">
+          <span class="brand-inline">${brandBadgeSvg(lot.carId, 22)}<b>${esc(lot.title)}</b></span>
+          <i class="car-badge auc-b-${badgeCls}">${esc(lot.rarityLabel)}</i>
+        </div>
+        <div class="brand-meta">${esc(br.fullName)} · ${esc(lot.subtitle)}</div>
+        <div class="auc-float-row">
+          <span class="auc-float-pill" style="border-color:${grade.color};color:${grade.color}">FLOAT ${grade.floatVal.toFixed(3)} · ${grade.short} (${grade.label})</span>
+          <span class="dim">${lot.mileageKm.toLocaleString()} km · Eng ${lot.startHealth}% · Dmg ${Math.round(lot.startDamage * 100)}%</span>
+        </div>
+        <div class="auc-tags">${tags}</div>
+        <div class="auc-price-row">
+          <div>
+            <b class="auc-price">${testing ? 'FREE' : fmt(lot.priceCr)}</b>
+            <small class="dim">vs Live Market ${fmt(lot.marketRefCr)} <em class="up">(-${lot.discountPct}%)</em></small>
+          </div>
+          <button class="small ${sold ? '' : 'primary'}" data-act="buy-live-lot" data-v="${esc(lot.id)}" ${sold || (!canAfford && !sold) ? 'disabled' : ''}>
+            ${sold ? '✓ Won Lot' : canAfford ? '🔨 Instant Buy' : `Need ${fmt(lot.priceCr - w.credits)}`}
+          </button>
+        </div>
       </div>`;
     }).join('');
+
+    // 2. Open Market (All Car Models · Uncapped Supply & Demand + Live SVG Price History Chart)
+    const marketCards = this.cars.map((c) => {
+      const st = statsOf(this.physics[c.id]);
+      const ownedReal = w.ownsSellable(c.id);
+      const br = brandOfCar(c.id);
+      const entry = marketEntryOf(this.market, c.id);
+      const trend = trendPctOf(entry);
+      const up = trend >= 0;
+      const hi = Math.max(...entry.history);
+      const lo = Math.min(...entry.history);
+      const canAfford = testing || w.credits >= entry.price;
+      const demandTag = entry.buys24h > entry.sells24h + 6 ? '🔥 HIGH DEMAND' : entry.sells24h > entry.buys24h + 6 ? '📉 OVERSUPPLIED' : '⚖ BALANCED';
+      const actionBtn = ownedReal
+        ? `<button class="small" data-act="shop-drive" data-v="${c.id}">${c.id === this.sel.car ? '✓ Driving' : 'Drive'}</button>`
+        : `<button class="small primary" data-act="buy-market-car" data-v="${c.id}" ${canAfford ? '' : 'disabled'}>${canAfford ? `Buy · ${testing ? 'FREE' : fmt(entry.price)}` : `Need ${fmt(entry.price - w.credits)}`}</button>`;
+      return `<div class="scard auc-card ${ownedReal ? 'owned' : ''}">
+        <div class="car-head">
+          <span class="brand-inline">${brandBadgeSvg(c.id, 22)}<b>${esc(c.name)}</b></span>
+          <span class="mkt-trend ${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${Math.abs(trend).toFixed(1)}%</span>
+        </div>
+        <div class="brand-meta">${esc(br.fullName)} · ${esc(stockEngineOfCar(c.id).label)} · ${demandTag}</div>
+        <div class="mkt-chart-row">
+          ${renderPriceSparklineSvg(entry.history, 148, 38)}
+          <div class="mkt-stats">
+            <b class="auc-price">${fmt(entry.price)}</b>
+            <small class="dim">24h L ${fmt(lo)} · H ${fmt(hi)}</small>
+            <small class="dim">Vol: ${entry.buys24h} buys / ${entry.sells24h} sells</small>
+          </div>
+        </div>
+        <div class="mini"><em>${Math.round(st.power)} kW</em><em>${Math.round(st.mass)} kg</em><em>${st.grip.toFixed(2)} µ</em></div>
+        ${actionBtn}
+      </div>`;
+    }).join('');
+
+    // 3. Sell & Appraise (Sell EVERYTHING · Float + 35% Mod/Swap Overpay · Dealer Spread · 15% Market Fee · Free Loaner Fallback)
+    const sellableCars = this.cars.filter((c) => w.ownsSellable(c.id));
+    const sellCards = sellableCars.map((c) => {
+      const cond = conditionOf(this.maint, c.id);
+      const eng = engineOf(this.nr, c.id);
+      const mods = this.sel.mods[c.id] ?? { engine: 0, tyres: 0, weight: 0, aero: 0 };
+      const ap = appraiseCarForSale(this.market, c.id, cond, eng, mods);
+      const entry = marketEntryOf(this.market, c.id);
+      const br = brandOfCar(c.id);
+      const up = ap.trendPct >= 0;
+      const engName = eng.swap === 'stock' ? stockEngineOfCar(c.id).label : `${ENGINE_SWAPS[eng.swap].label} (Swapped)`;
+      return `<div class="scard auc-card sell-card">
+        <div class="car-head">
+          <span class="brand-inline">${brandBadgeSvg(c.id, 22)}<b>${esc(c.name)}</b></span>
+          <span class="mkt-trend ${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${Math.abs(ap.trendPct).toFixed(1)}%</span>
+        </div>
+        <div class="brand-meta">${esc(br.fullName)} · ${esc(engName)} · ${Math.round(eng.mileageKm).toLocaleString()} km</div>
+        <div class="mkt-chart-row">
+          ${renderPriceSparklineSvg(entry.history, 134, 34)}
+          <div class="mkt-stats">
+            <span class="auc-float-pill" style="border-color:${ap.floatGrade.color};color:${ap.floatGrade.color}">FLOAT ${ap.floatGrade.floatVal.toFixed(3)} · ${ap.floatGrade.label}</span>
+            <small class="dim">Condition multiplier: ${Math.round(ap.floatGrade.priceMul * 100)}%</small>
+          </div>
+        </div>
+        <div class="appraise-box">
+          <div class="arow"><span>Live Market Price</span><b>${fmt(ap.liveMarketPrice)}</b></div>
+          <div class="arow"><span>Float Condition (${ap.floatGrade.short})</span><b>${fmt(ap.conditionAdjusted)}</b></div>
+          <div class="arow"><span>Mods &amp; Engine Swap (+${Math.round(MOD_OVERPAY_RATE * 100)}%)</span><b class="${ap.modOverpay > 0 ? 'up' : ''}">+${fmt(ap.modOverpay)}</b></div>
+          <div class="arow"><span>Dealer Spread (${Math.round(DEALER_SPREAD * 100)}% bid)</span><b>${fmt(ap.dealerBid)}</b></div>
+          <div class="arow"><span>Auction Market Fee (-${Math.round(AUCTION_MARKET_FEE * 100)}%)</span><b class="down">-${fmt(ap.marketFee)}</b></div>
+          <div class="arow total"><span>INSTANT PAYOUT</span><b class="up">+${fmt(ap.netPayout)}</b></div>
+        </div>
+        <div class="auc-price-row">
+          <small class="dim">${ap.cooldownSec > 0 ? `⏱ Anti-spoof dampening (${ap.cooldownSec}s)` : 'Selling adds supply & moves live price'}</small>
+          <button class="small primary" data-act="sell-car" data-v="${c.id}">💰 Instant Sell · +${fmt(ap.netPayout)}</button>
+        </div>
+      </div>`;
+    }).join('');
+
     const modCards = MOD_CATALOG.map((m) => {
       const sub = this.modHub.subscribed.includes(m.id);
       return `<div class="scard ${sub ? 'owned' : ''}">
@@ -524,17 +596,29 @@ export class Menu {
         <button class="small ${sub ? '' : 'primary'}" data-act="mod-sub" data-v="${m.id}">${sub ? '✓ Subscribed (Auto-Sync)' : '＋ Subscribe Mod'}</button>
       </div>`;
     }).join('');
-    const content = this.shopTab === 'cars' ? `<div class="shop-cars">${cars}</div>`
-      : this.shopTab === 'upgrades' ? `<p class="dim small-note">Fit and remove stages in the Garage → Tune.</p><div class="chips">${carChips}</div>${ups}`
-      : this.shopTab === 'auction' ? `<p class="dim small-note">Night Runners Used-Car Auction House: opaque condition tags &amp; high mileage carry real mechanical wear at steep discounts.</p><div class="shop-cars">${auctionCards}</div>`
-      : this.shopTab === 'mods' ? `<p class="dim small-note">In-Game Mod Hub (Steam Workshop &amp; OpenGrid validated packs — poly limit &lt;= 120k tris, LODs verified, zero unsafe scripts).</p><div class="shop-cars">${modCards}</div>`
-      : `<p class="dim small-note">Helmet and suit: worn by your driver and shown as your avatar to everyone in a party.</p><div class="shop-cars">${gear}</div>`;
-    const how = sp ? 'Single player: everything unlocks as you level up (XP from races and free roam). Nothing to buy.'
-      : 'Online: credits and XP come only from ranked party races (6+ players who race; at most 2 per network). Each item needs an online level and credits.';
+
+    const tab = (id: typeof this.shopTab, label: string) => `<button class="gtab ${this.shopTab === id ? 'on' : ''}" data-act="stab" data-v="${id}">${label}</button>`;
+
+    const loanerBanner = loanerActive
+      ? `<div class="pnote"><b>🚗 FREE UNTRADEABLE STOCK LOANER ACTIVE:</b> You liquidated your entire garage! You can still race &amp; free-roam in the stock Valenza Vela GT loaner (untradeable) until you buy your next car from Live Lots or Open Market.</div>`
+      : '';
+
+    const content = this.shopTab === 'lots'
+      ? `<div class="auc-bar"><p class="dim small-note">Rotating supply pools (Salvage Bargains, Pre-Swapped Builds &amp; Limited 1/1 Mint Drops). Repair wrecked salvage cars in Garage &amp; flip when demand spikes!</p><button class="small" data-act="refresh-lots">↻ Scout Next Floor Rotation</button></div><div class="shop-cars">${lotCards}</div>`
+      : this.shopTab === 'market'
+      ? `<p class="dim small-note">Uncapped CS2-style live supply &amp; demand: every buy drives prices up, every sell adds supply and pulls prices down. No forced MSRP resets. Upgrades &amp; Driver Gear are bought directly inside your Garage.</p><div class="shop-cars">${marketCards}</div>`
+      : this.shopTab === 'sell'
+      ? `${loanerBanner}<p class="dim small-note">Instant Market-Maker Sell: includes live supply/demand price, CS2 Wear Float grade, +${Math.round(MOD_OVERPAY_RATE * 100)}% overpay on installed upgrades &amp; engine swaps, dealer spread, and ${Math.round(AUCTION_MARKET_FEE * 100)}% Auction Market Fee. You can sell every car you own (free Stock Loaner fallback).</p>${sellCards ? `<div class="shop-cars">${sellCards}</div>` : ''}`
+      : `<p class="dim small-note">In-Game Mod Hub (Steam Workshop &amp; OpenGrid validated packs — poly limit &lt;= 120k tris, LODs verified, zero unsafe scripts).</p><div class="shop-cars">${modCards}</div>`;
+
+    const how = sp
+      ? `Live Auction Market · ${this.market.totalFlipped} cars traded · ${fmt(this.market.totalVolumeCr)} lifetime volume · Upgrades & Driver Gear are now bought directly inside Garage.`
+      : 'Online ranked credits & XP come from ranked party races (6+ players). Single Player mode runs the full live supply-and-demand Auction House locally.';
+
     return `<div class="lobby-screen"><div class="card lobby-card shop-card">
-      <div class="lobby-head"><button data-act="home" class="back-btn">← Main Menu</button><div><div class="kicker">${sp ? 'UNLOCKS' : 'SPEND YOUR CREDITS'}</div><h2>Shop</h2></div>${sp ? '' : `<div class="wallet-pill">${this.mp.ready ? fmt(w.credits) : '—'}</div>`}</div>
+      <div class="lobby-head"><button data-act="home" class="back-btn">← Main Menu</button><div><div class="kicker">LIVE SUPPLY &amp; DEMAND · 15% MARKET FEE</div><h2>Auction</h2></div><div class="wallet-pill">${testing ? '∞ FREE' : (sp || this.mp.ready ? fmt(w.credits) : '—')}</div></div>
       ${this.careerBar()}
-      <div class="gtabs">${tab('cars', 'Cars')}${tab('upgrades', 'Upgrades')}${tab('gear', 'Driver gear')}${tab('auction', '🏷 Auction House')}${tab('mods', `🧩 Mod Hub (${this.modHub.subscribed.length})`)}</div>
+      <div class="gtabs">${tab('lots', '🔨 Live Lots')}${tab('market', '📈 Open Market')}${tab('sell', `💰 Sell & Appraise (${sellableCars.length})`)}${tab('mods', `🧩 Mod Hub (${this.modHub.subscribed.length})`)}</div>
       ${this.shopNote ? `<div class="pnote ${this.shopNote.startsWith('✓') ? '' : 'bad'}">${esc(this.shopNote)}</div>` : ''}
       ${content}
       <div class="dim note">${how}</div>
@@ -554,12 +638,15 @@ export class Menu {
         if (this.carSort === 'weight') return statsOf(this.physics[a.id]).mass - statsOf(this.physics[b.id]).mass;
         return a.name.localeCompare(b.name);
       });
+    const carIds = this.cars.map((c) => c.id);
+    const loanerActive = w.isUsingLoaner(carIds);
     const cards = filtered.map((c) => {
       const st = statsOf(this.physics[c.id]);
       const fav = this.favCars.includes(c.id);
       const br = brandOfCar(c.id);
+      const isLoanerCard = loanerActive && c.id === STARTER_CAR;
       return `<button class="car ${c.id === sel.car ? 'on' : ''}" data-act="car" data-v="${c.id}">
-        <div class="car-head"><span class="brand-inline">${brandBadgeSvg(c.id, 20)}<b>${esc(c.name)}</b></span><span data-act="fav-car" data-v="${c.id}" title="Favorite">${fav ? '★' : '☆'}</span><i class="car-badge">${c.id === sel.car ? 'ACTIVE' : 'DRIVE'}</i></div>
+        <div class="car-head"><span class="brand-inline">${brandBadgeSvg(c.id, 20)}<b>${esc(c.name)}</b></span><span data-act="fav-car" data-v="${c.id}" title="Favorite">${fav ? '★' : '☆'}</span><i class="car-badge">${isLoanerCard ? 'LOANER' : c.id === sel.car ? 'ACTIVE' : 'DRIVE'}</i></div>
         <div class="brand-meta">${esc(br.name)} · ${esc(stockEngineOfCar(c.id).label)}</div>
         <div class="mini"><em>${Math.round(st.power)} kW</em><em>${Math.round(st.mass)} kg</em><em>${st.grip.toFixed(2)} µ</em></div>
       </button>`;
@@ -627,7 +714,10 @@ export class Menu {
             ${(['all', 'fav', 'S', 'A', 'B'] as const).map((f) => `<button class="chip ${this.carFilter === f ? 'on' : ''}" data-act="gfilter" data-v="${f}">${f === 'fav' ? '★' : f.toUpperCase()}</button>`).join('')}
             ${(['name', 'power', 'weight'] as const).map((s) => `<button class="chip ${this.carSort === s ? 'on' : ''}" data-act="gsort" data-v="${s}">⇅ ${s}</button>`).join('')}
           </div>
-          ${this.cars.some((c) => !w.owns(c.id)) ? '<button class="small primary" data-act="shop-open">+ Dealership / Mod Hub</button>' : ''}
+          <div class="chips">
+            ${loanerActive ? '<span class="pill">🚗 Free Untradeable Loaner</span>' : '<button class="small" data-act="auction-sell-open">💰 Sell / Appraise</button>'}
+            <button class="small primary" data-act="shop-open">🔨 Auction House</button>
+          </div>
         </div>
         <div class="g-rides-strip">${cards}</div>
       </section>`;
@@ -637,7 +727,7 @@ export class Menu {
     const rep = repairCostOf(cond, this.maint.insured);
     const dmgPill = rep.pct > 0 ? `<button class="chip on" data-act="repair-car">🔧 Repair (${this.sp.testingMode ? 'FREE' : `${rep.xp} XP`})</button>` : '';
 
-    return `<div class="nfs-garage" data-pillar="${pillar}">
+    return `<div class="nfs-garage ${this.garageHideUi ? 'ui-hidden' : ''}" data-pillar="${pillar}">
       <header class="g-topbar">
         <div class="g-top-left">
           <button data-act="home" class="back-btn">← Menu</button>
@@ -652,9 +742,10 @@ export class Menu {
         <nav class="g-pillars">${pillarBar}</nav>
         <div class="g-top-actions">
           ${dmgPill}
-          <button class="chip" data-act="g-ignition" title="Crank starter">🔑 Start</button>
-          <button class="chip on" data-act="g-rev" title="Rev engine &amp; shoot exhaust flames">🔥 Rev</button>
-          <button class="chip" data-act="g-cam-cycle" title="Cycle showroom camera angle">📷 ${camNow.label}</button>
+          <button class="chip g-eye-btn" data-act="g-hide-ui" title="Hide UI &amp; inspect car full-screen">👁<span class="lbl"> View</span></button>
+          <button class="chip" data-act="g-ignition" title="Crank starter">🔑<span class="lbl"> Start</span></button>
+          <button class="chip on" data-act="g-rev" title="Rev engine &amp; shoot exhaust flames">🔥<span class="lbl"> Rev</span></button>
+          <button class="chip" data-act="g-cam-cycle" title="Cycle showroom camera angle">📷<span class="lbl"> ${camNow.label}</span></button>
           ${this.nr.walkableGarage ? `<button class="chip ${this.garageWalkActive ? 'on' : ''}" data-act="g-walk" title="Walk around your car">🚶</button>` : ''}
           <button class="primary g-drive-btn" data-act="play">DRIVE ▶</button>
         </div>
@@ -663,6 +754,7 @@ export class Menu {
       ${stagePanel}
       ${ridesDock}
       <section class="g-live-compact" id="g-live">${this.liveStats()}</section>
+      <button class="chip primary g-show-ui-fab" data-act="g-hide-ui" aria-label="Show Garage UI">👁 Show UI</button>
     </div>`;
   }
 
@@ -795,19 +887,27 @@ export class Menu {
       <h3>Window Tint</h3><div class="chips">${['Light', 'Dark', 'Limo'].map((l, i) => this.cu('tint', i, l, c.tint === i)).join('')}</div>`;
   }
   private gDriver() {
-    const owned = SKINS.filter((k) => this.career.ownsSkin(k.id));
-    const cards = owned.map((k) => `<button class="skin ${this.sel.skin === k.id ? 'on' : ''}" data-act="skin" data-v="${k.id}">${helmetSvg(k, 42)}<span>${esc(k.name)}</span></button>`).join('');
+    const w = this.career;
+    const cards = SKINS.map((k) => {
+      const owned = w.ownsSkin(k.id);
+      const r = w.req('skin', k.id);
+      if (owned) {
+        return `<button class="skin ${this.sel.skin === k.id ? 'on' : ''}" data-act="skin" data-v="${k.id}">${helmetSvg(k, 42)}<span>${esc(k.name)}</span></button>`;
+      }
+      const canBuy = w.credits >= r.price && (w.kind === 'sp' || (this.mp.ready && levelOf(this.mp.xp).level >= r.mpLevel));
+      return `<button class="skin locked" data-act="garage-buy-skin" data-v="${k.id}" title="Buy &amp; equip ${esc(k.name)} gear (${fmt(r.price)})" ${canBuy ? '' : 'disabled'}>${helmetSvg(k, 42)}<span>${esc(k.name)}</span><em class="skin-price">${fmt(r.price)}</em></button>`;
+    }).join('');
     const gear = this.sel.avatarGear;
     const gearSwatches = (slot: keyof AvatarGear, cur: string) =>
       `<div class="sws">${PART_COLOURS.filter(Boolean).map((c) => `<button class="sw ${c === cur ? 'on' : ''}" style="background:${c}" data-act="gear" data-k="${slot}" data-v="${c}" aria-label="${c}"></button>`).join('')}</div>`;
-    return `<h3>Driver Preset</h3>
+    return `${this.garageNote ? `<div class="pnote ${this.garageNote.startsWith('✓') ? '' : 'bad'}">${esc(this.garageNote)}</div>` : ''}
+      <h3>Driver Gear <small class="dim">Balance: ${fmt(w.credits)}</small></h3>
       <div class="chips" style="margin-bottom:10px"><button class="chip on" data-act="gear-match">🎨 Match Car Paint</button></div>
       <div class="skins">${cards}</div>
       <h3>Helmet Colour</h3>${gearSwatches('helmet', gear.helmet)}
       <h3>Visor Accent</h3>${gearSwatches('accent', gear.accent)}
       <h3>Racing Suit</h3>${gearSwatches('suit', gear.suit)}
-      <h3>Gloves &amp; Shoes</h3>${gearSwatches('gloves', gear.gloves)}
-      ${owned.length < SKINS.length ? '<button class="small more-cars" data-act="shop-gear">🛒 More Gear in Shop</button>' : ''}`;
+      <h3>Gloves &amp; Shoes</h3>${gearSwatches('gloves', gear.gloves)}`;
   }
   /** does the car in the garage have this bumper / hood option? (main.ts: the customiser knows) */
   fits: (id: string) => boolean = () => true;
@@ -872,9 +972,15 @@ export class Menu {
     const rows = MOD_KEYS.map((k) => {
       const m = MODS[k];
       const own = w.stage(sel.car, k);
-      const pips = m.levels.map((l, i) => i > own
-        ? `<button class="pip locked" data-act="shop-open" title="${l}: ${w.kind === 'sp' ? `unlocks at level ${w.req('mod', k, i).spLevel}` : `online level ${w.req('mod', k, i).mpLevel}, ${fmt(w.req('mod', k, i).price)} in the Shop`}">🔒</button>`
-        : `<button class="pip ${i <= mods[k] && mods[k] > 0 ? 'on' : ''} ${i === mods[k] ? 'cur' : ''}" data-act="mod" data-k="${k}" data-v="${i}" title="${l}">${i === 0 ? 'STK' : 'S' + i}</button>`).join('');
+      const pips = m.levels.map((l, i) => {
+        if (i <= own) {
+          return `<button class="pip ${i <= mods[k] && mods[k] > 0 ? 'on' : ''} ${i === mods[k] ? 'cur' : ''}" data-act="mod" data-k="${k}" data-v="${i}" title="${l}">${i === 0 ? 'STK' : 'S' + i}</button>`;
+        }
+        let price = 0;
+        for (let s = own + 1; s <= i; s++) price += w.req('mod', k, s).price;
+        const canBuy = w.credits >= price && (w.kind === 'sp' || (this.mp.ready && levelOf(this.mp.xp).level >= w.req('mod', k, i).mpLevel));
+        return `<button class="pip locked ${canBuy ? 'buyable' : ''}" data-act="garage-buy-mod" data-k="${k}" data-v="${i}" title="Buy &amp; fit ${l} for ${fmt(price)} (or unlock at Lv ${w.req('mod', k, i).spLevel})" ${canBuy ? '' : 'disabled'}>S${i} · ${Math.round(price / 1000)}k</button>`;
+      }).join('');
       return `<div class="mod"><div><b>${m.label}</b><span class="dim">${m.levels[mods[k]]}</span></div><div class="pips">${pips}</div><small class="dim">${m.hint}</small></div>`;
     }).join('');
     const base = statsOf(this.physics[sel.car] as never), now = statsOf(applyMods(this.physics[sel.car], mods));
@@ -887,7 +993,9 @@ export class Menu {
       stat('Downforce', `${now.downforce.toFixed(2)} m²`, base.downforce / 1.2, now.downforce / 1.2),
       stat('Power/wt', `${Math.round(now.ratio)} W/kg`, base.ratio / 400, now.ratio / 400),
     ].join('');
-    return `<h3>Performance upgrades</h3>${rows}<h3>Telemetry <small class="dim">(red marker = stock)</small></h3>${stats}`;
+    return `${this.garageNote ? `<div class="pnote ${this.garageNote.startsWith('✓') ? '' : 'bad'}">${esc(this.garageNote)}</div>` : ''}
+      <h3>Stage Upgrades <small class="dim">Balance: ${fmt(w.credits)} · +35% value returned on Auction sale</small></h3>${rows}
+      <h3>Telemetry <small class="dim">(red marker = stock)</small></h3>${stats}`;
   }
 
   private modes() {
@@ -930,7 +1038,7 @@ export class Menu {
             <button class="primary huge" data-act="start-free" style="flex:1;min-width:160px">Cruise Free Roam</button>
           </div>
           <div class="opts" style="margin-top:8px;padding-top:10px;border-top:1px solid #ffffff16;flex-direction:column;align-items:stretch;gap:6px">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
               <span class="pill gold">🧪 TESTING PURPOSES</span>
               <span class="dim small-note">All ${this.cars.length} cars, Stage 3 mods, turbos &amp; engine swaps 100% FREE</span>
             </div>
@@ -1156,7 +1264,7 @@ export class Menu {
       case 'mirror': this.mirror = v === '1'; this.hooks.mirror?.(this.mirror); this.render(); break;
       case 'city': this.hooks.city?.(v); break;
       case 'laylow': this.hooks.layLow?.(); break;
-      case 'garage-open': this.show('garage'); this.hooks.preview(); break;
+      case 'garage-open': this.garageHideUi = false; this.garageNote = ''; this.show('garage'); this.hooks.preview(); break;
       case 'home': this.show('title'); break;
       case 'profile-open': this.profileFrom = this.screen === 'profile' ? this.profileFrom : this.screen; this.unameDraft = null; this.unameNote = ''; this.friendNote = ''; this.show('profile'); break;
       case 'profile-back': this.show(this.profileFrom); break;
@@ -1165,9 +1273,122 @@ export class Menu {
       case 'friend-accept': void this.friendAct(v, 'accept'); break;
       case 'friend-remove': void this.friendAct(v, 'remove'); break;
       case 'friend-join': this.joinCode = v; this.setCareer('mp'); this.show('lobby'); this.hooks.partyJoin(v); break;
-      case 'shop-open': this.shopNote = ''; this.shopCar = sel.car; this.shopTab = this.garageTab === 'perf' ? 'upgrades' : 'cars'; this.show('shop'); break;
-      case 'shop-gear': this.shopNote = ''; this.shopTab = 'gear'; this.show('shop'); break;
-      case 'stab': this.shopTab = v as typeof this.shopTab; this.render(); break;
+      case 'shop-open': this.shopNote = ''; this.shopTab = 'lots'; this.show('shop'); break;
+      case 'auction-sell-open': this.shopNote = ''; this.shopTab = 'sell'; this.show('shop'); break;
+      case 'shop-gear': this.garagePillar = 'driver'; this.garageTab = 'driver'; this.show('garage'); break;
+      case 'stab': this.shopTab = v as typeof this.shopTab; this.shopNote = ''; this.render(); break;
+      case 'refresh-lots': this.lotWindowOffset += 1; this.shopNote = '✓ Scouted next Auction Floor rotation.'; this.render(); break;
+      case 'buy-live-lot': {
+        const lot = this.currentLiveLots().find((x) => x.id === v);
+        if (!lot || this.market.boughtDynamicLots.includes(lot.id)) break;
+        this.shopNote = '…'; this.render();
+        void this.career.buyAuctionCar(lot.carId, lot.priceCr).then((note) => {
+          this.shopNote = note;
+          if (note.startsWith('✓')) {
+            this.market.boughtDynamicLots.push(lot.id);
+            recordMarketTrade(this.market, lot.carId, 'buy', lot.priceCr);
+            const eng = engineOf(this.nr, lot.carId);
+            eng.health = lot.startHealth;
+            eng.mileageKm = lot.mileageKm;
+            eng.oilLife = lot.kind === 'salvage' ? 28 : 100;
+            eng.tags = [...lot.tags];
+            if (lot.swap) eng.swap = lot.swap;
+            if (lot.turbo) eng.turbo = lot.turbo;
+            if (lot.manifold) eng.manifold = lot.manifold;
+            saveNightRunners(this.nr);
+            if (lot.startDamage > 0.02) recordRaceDamage(this.maint, lot.carId, lot.startDamage, false);
+            else repairCarCondition(this.maint, lot.carId);
+            saveMaintenance(this.maint);
+            sel.car = lot.carId;
+            this.save();
+            this.hooks.nrChanged?.();
+            this.hooks.preview();
+          }
+          this.render();
+        });
+        break;
+      }
+      case 'buy-market-car': {
+        const entry = marketEntryOf(this.market, v);
+        const price = entry.price;
+        this.shopNote = '…'; this.render();
+        void this.career.buyAuctionCar(v, price).then((note) => {
+          this.shopNote = note;
+          if (note.startsWith('✓')) {
+            recordMarketTrade(this.market, v, 'buy', price);
+            const eng = engineOf(this.nr, v);
+            eng.health = 100; eng.oilLife = 100; eng.mileageKm = 420; eng.tags = [];
+            saveNightRunners(this.nr);
+            repairCarCondition(this.maint, v);
+            saveMaintenance(this.maint);
+            sel.car = v;
+            this.save();
+            this.hooks.nrChanged?.();
+            this.hooks.preview();
+          }
+          this.render();
+        });
+        break;
+      }
+      case 'sell-car': {
+        const cond = conditionOf(this.maint, v);
+        const eng = engineOf(this.nr, v);
+        const mods = this.sel.mods[v] ?? { engine: 0, tyres: 0, weight: 0, aero: 0 };
+        const ap = appraiseCarForSale(this.market, v, cond, eng, mods);
+        this.shopNote = '…'; this.render();
+        void this.career.sellAuctionCar(v, ap.netPayout).then((note) => {
+          this.shopNote = note;
+          if (note.startsWith('✓')) {
+            recordMarketTrade(this.market, v, 'sell', ap.netPayout);
+            // Reset sold car's mods/engine/damage cleanly so re-buying starts fresh
+            delete sel.mods[v];
+            eng.swap = 'stock'; eng.turbo = 'stock'; eng.manifold = 'stock';
+            eng.health = 100; eng.oilLife = 100; eng.mileageKm = 1_200; eng.tags = [];
+            saveNightRunners(this.nr);
+            repairCarCondition(this.maint, v);
+            saveMaintenance(this.maint);
+            this.career.fit(sel);
+            this.save();
+            this.hooks.nrChanged?.();
+            this.hooks.preview();
+          }
+          this.render();
+        });
+        break;
+      }
+      case 'garage-buy-mod': {
+        const k = b.dataset.k as ModKey;
+        const st = Number(v);
+        this.garageNote = '…'; this.render();
+        void this.career.buy('mod', `${sel.car}:${k}`, st).then((note) => {
+          this.garageNote = note;
+          if (note.startsWith('✓')) {
+            const m = { ...modsOf(sel) };
+            m[k] = st;
+            sel.mods[sel.car] = m;
+            this.save();
+            this.hooks.nrChanged?.();
+          }
+          this.render();
+        });
+        break;
+      }
+      case 'garage-buy-skin': {
+        this.garageNote = '…'; this.render();
+        void this.career.buy('skin', v).then((note) => {
+          this.garageNote = note;
+          if (note.startsWith('✓') && this.career.ownsSkin(v)) {
+            sel.skin = v;
+            const sk = skinOf(v);
+            Object.assign(sel.avatarGear, { helmet: sk.helmet, accent: sk.accent, visor: sk.visor, suit: sk.suit, gloves: sk.gloves });
+            this.save();
+            this.hooks.look();
+            this.hooks.partyMe();
+          }
+          this.render();
+        });
+        break;
+      }
       case 'gpillar': {
         this.garagePillar = v as GaragePillar;
         if (this.garagePillar === 'rides') {
@@ -1233,6 +1454,7 @@ export class Menu {
         this.render();
         break;
       }
+      case 'g-hide-ui': this.garageHideUi = !this.garageHideUi; this.render(); break;
       case 'g-ignition': this.hooks.garageIgnition?.(); break;
       case 'g-rev': this.hooks.garageRev?.(); break;
       case 'g-walk': this.garageWalkActive = !this.garageWalkActive; this.hooks.garageWalk?.(this.garageWalkActive); this.render(); break;
@@ -1318,12 +1540,11 @@ export class Menu {
         break;
       }
       case 'wear-skin': if (this.career.ownsSkin(v)) { sel.skin = v; this.save(); this.hooks.look(); this.hooks.partyMe(); this.render(); } break;
-      case 'shop-car': this.shopCar = v; this.render(); break;
-      case 'shop-drive': sel.car = v; this.shopCar = v; this.save(); this.render(); this.hooks.preview(); break;
+      case 'shop-drive': sel.car = v; this.save(); this.render(); this.hooks.preview(); break;
       case 'buy': {
         const st = b.dataset.stage ? Number(b.dataset.stage) : undefined;
         this.shopNote = '…'; this.render();
-        void this.career.buy(b.dataset.kind as 'car' | 'mod' | 'skin', v, st).then((note) => { this.shopNote = note; if (b.dataset.kind === 'car' && this.career.owns(v)) this.shopCar = v; this.render(); });
+        void this.career.buy(b.dataset.kind as 'car' | 'mod' | 'skin', v, st).then((note) => { this.shopNote = note; this.render(); });
         break;
       }
       case 'career': {

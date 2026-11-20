@@ -815,8 +815,33 @@ export class NycProps {
     this.pools.instanceMatrix.needsUpdate = true;
 
     // trees come from the tile data only (OSM street trees + the generator's), each drawn as its census species
+    // Also deduplicate across neighboring tile seams (< 9.5 m) so tile borders never stack trees side by side.
+    const [tIx, tIy] = key.split('_').map(Number);
+    const neighborBorderTrees: { x: number; y: number }[] = [];
+    const tx0 = tIx * 256, ty0 = tIy * 256;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        const nList = this.tileTrees.get(`${tIx + dx}_${tIy + dy}`);
+        if (!nList) continue;
+        for (let i = 0; i < nList.length; i++) {
+          const nt = nList[i];
+          if (nt.x >= tx0 - 12 && nt.x <= tx0 + 268 && nt.y >= ty0 - 12 && nt.y <= ty0 + 268) {
+            neighborBorderTrees.push(nt);
+          }
+        }
+      }
+    }
+    const clearOfNeighborSeams = (x: number, y: number) => {
+      if (!neighborBorderTrees.length) return true;
+      for (let i = 0; i < neighborBorderTrees.length; i++) {
+        const dx = x - neighborBorderTrees[i].x, dy = y - neighborBorderTrees[i].y;
+        if (dx * dx + dy * dy < 9.5 * 9.5) return false;
+      }
+      return true;
+    };
     const keepTree = (x: number, y: number) => this.treeDensity >= 1 || Math.abs(Math.sin(x * 39.3468 + y * 11.135) * 24634.6345) % 1 < this.treeDensity;
-    const treeRows = (d.tree ?? []).filter((r) => keepTree(r[0], r[1]) && !this.isInsideAnyBuilding(r[0], r[1]));
+    const treeRows = (d.tree ?? []).filter((r) => keepTree(r[0], r[1]) && !this.isInsideAnyBuilding(r[0], r[1]) && clearOfNeighborSeams(r[0], r[1]));
     const trees: { set: string; slot: number; x: number; y: number; z: number; scale: number }[] = [];
     for (const sp of TREE_SPECIES) {
       const rows = treeRows.filter((r) => speciesOf(r[0], r[1]) === sp.id), set = `tree_${sp.id}`;

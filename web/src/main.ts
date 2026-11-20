@@ -2119,6 +2119,12 @@ async function main() {
       pw.world.step();
       resetCar();
 
+      // Compile every new-city pipeline with the warm-up triangles, then REMOVE them. They copy the raw quantized tile
+      // vertex layout without the glTF node transform, so left in the scene they draw as a giant stray wall across the
+      // spawn road (the "random wall in the middle of the road" after switching cities).
+      await compileFor(scene, post.sceneTarget).catch(() => { /* compiles on first sight instead */ });
+      nextStreamer.endWarm();
+
       // Re-capture city environment reflection map without leaving fullscreen
       if (!potato) {
         const oldEnv = scene.environment;
@@ -2477,21 +2483,32 @@ async function main() {
    */
   const placeShowroom = (dt: number, carPos: THREE.Vector3) => {
     if (!orbit.drag && performance.now() > orbit.holdUntil) orbit.az += dt * (state === 'title' ? 0.16 : 0.08);
-    // on the title the car sits right of centre (the menu is on the left); in the garage it is centred
-    orbit.shift += ((state === 'title' ? 1.55 : state === 'garage' ? -0.35 : 0) - orbit.shift) * (1 - Math.exp(-dt * 4));
-    if (inGarage) tmpT.set(0, 0.58, 0); else tmpT.copy(carPos).add(tmpD.set(0, 0.25, 0));
-    const dist = inGarage ? Math.min(7.6, Math.max(3.2, orbit.dist)) : orbit.dist;
+    const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+    const portrait = aspect < 0.92;
+    const phoneLandscape = !portrait && (window.innerHeight <= 540 || (window.innerWidth <= 1000 && matchMedia('(pointer: coarse)').matches));
+    // Frame the hero car in the exact open stage of each screen layout:
+    // - Portrait phones: dead center (0 shift) so the car sits cleanly in the middle window
+    // - Phone landscape garage: shift slightly left (+0.55) to center in the open 69% left stage beside the right drawer
+    // - Desktop title: car right of the left menu rail (+1.55); desktop garage: subtle offset (-0.30)
+    const targetShift = portrait ? 0
+      : state === 'title' ? (phoneLandscape ? 1.05 : 1.55)
+      : state === 'garage' ? (phoneLandscape ? 0.55 : -0.30)
+      : 0;
+    orbit.shift += (targetShift - orbit.shift) * (1 - Math.exp(-dt * 4));
+    if (inGarage) tmpT.set(0, portrait ? 0.42 : 0.58, 0); else tmpT.copy(carPos).add(tmpD.set(0, 0.25, 0));
+    const baseDist = inGarage ? Math.min(7.6, Math.max(3.2, orbit.dist)) : orbit.dist;
+    const dist = portrait ? Math.min(inGarage ? 8.2 : 11.5, baseDist * 1.24) : baseDist;
     const ce = Math.cos(orbit.el);
     tmpP.set(Math.sin(orbit.az) * ce, Math.sin(orbit.el), Math.cos(orbit.az) * ce).multiplyScalar(dist).add(tmpT);
     if (inGarage) garage!.clampCamera(tmpT, tmpP);
     else {
       const hit = pw.raycast(tmpT, tmpP, car.body);   // pull in front of walls (not the car itself)
-      if (hit && hit.toi < orbit.dist) tmpP.sub(tmpT).setLength(Math.max(2.5, hit.toi - 0.4)).add(tmpT);
+      if (hit && hit.toi < dist) tmpP.sub(tmpT).setLength(Math.max(2.5, hit.toi - 0.4)).add(tmpT);
     }
     camera.position.copy(tmpP);
     tmpR.subVectors(tmpT, tmpP).cross(tmpD.set(0, 1, 0)).setY(0).normalize();   // camera right
     camera.lookAt(tmpD.copy(tmpT).addScaledVector(tmpR, -orbit.shift));
-    const fov = inGarage ? 38 : 42;
+    const fov = portrait ? (inGarage ? 48 : 52) : (inGarage ? 38 : 42);
     if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
     if (showPost) showPost.focus.value = tmpP.distanceTo(tmpT);
   };

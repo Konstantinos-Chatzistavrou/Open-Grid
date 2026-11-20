@@ -14,9 +14,19 @@ const FLAG_PAVE = 2;
 const FLAG_NEAR_1 = 4;   // within 1 m of road/curb/water
 const FLAG_NEAR_2 = 8;   // within 2 m of road/curb/water (also clears narrow < 4 m center-road medians/islands!)
 const FLAG_BLD = 16;
+const FLAG_GRASS = 32;   // park / lawn surface (allows slightly tighter 9 m natural grove spacing vs 12.5 m street trees)
 
 const ROAD_MATS = new Set(['road', 'marking', 'crosswalk', 'curb', 'water', 'rail']);
 const PAVE_MATS = new Set(['sidewalk', 'plaza', 'grass']);
+
+const STREET_TREE_MIN_DIST = 12.5;
+const PARK_TREE_MIN_DIST = 9.0;
+const WIDE_PROP_MIN_DIST = 3.2;
+
+function coordHash(x: number, y: number): number {
+  const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+  return s - Math.floor(s);
+}
 
 // Wide props + street clutter stay >= 2.0 m behind the kerb (keeps all narrow center-road medians & kerb lanes clear!)
 const WIDE_KINDS: (keyof PropsData)[] = ['tree', 'bus_stop', 'kiosk', 'bench', 'subway_entrance', 'scaffold', 'cone', 'steam'];
@@ -134,7 +144,7 @@ export function filterPropsToPavement(
       rasterMesh(m, x0, y0, FLAG_ROAD);
       sawAnyGround = true;
     } else if (PAVE_MATS.has(matName)) {
-      rasterMesh(m, x0, y0, FLAG_PAVE);
+      rasterMesh(m, x0, y0, matName === 'grass' ? (FLAG_PAVE | FLAG_GRASS) : FLAG_PAVE);
       sawAnyGround = true;
     }
   });
@@ -184,51 +194,92 @@ export function filterPropsToPavement(
 
   const out: PropsData = { ...d };
 
-  const filterList = (rows: number[][] | undefined, wide: boolean): number[][] | undefined => {
+  const filterList = (rows: number[][] | undefined, wide: boolean, isTree = false): number[][] | undefined => {
     if (!rows || !rows.length) return rows;
     const forbid = wide ? (FLAG_ROAD | FLAG_NEAR_1 | FLAG_NEAR_2 | FLAG_BLD) : (FLAG_ROAD | FLAG_NEAR_1 | FLAG_BLD);
+    // For trees, sort deterministically by coordinate hash so Poisson thinning is completely stable across reloads.
+    const ordered = isTree
+      ? rows.slice().sort((a, b) => coordHash(a[0], a[1]) - coordHash(b[0], b[1]))
+      : rows;
+
+    // Fast tile-local spatial hash so trees never bunch 0-5 m apart (and snapped kerbside props never pile up on 1 m cells!)
+    const cellSize = isTree ? STREET_TREE_MIN_DIST : WIDE_PROP_MIN_DIST;
+    const buckets = new Map<number, [number, number, number][]>(); // bucketKey -> [lx, ly, minDist]
+    const tooClose = (lx: number, ly: number, minD: number): boolean => {
+      const bx = Math.floor(lx / cellSize);
+      const by = Math.floor(ly / cellSize);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const list = buckets.get((by + dy) * 64 + (bx + dx));
+          if (!list) continue;
+          for (let i = 0; i < list.length; i++) {
+            const p = list[i];
+            const req = Math.max(minD, p[2]);
+            const rx = lx - p[0], ry = ly - p[1];
+            if (rx * rx + ry * ry < req * req) return true;
+          }
+        }
+      }
+      return false;
+    };
+    const recordPos = (lx: number, ly: number, minD: number) => {
+      const key = Math.floor(ly / cellSize) * 64 + Math.floor(lx / cellSize);
+      let list = buckets.get(key);
+      if (!list) { list = []; buckets.set(key, list); }
+      list.push([lx, ly, minD]);
+    };
+
     const keep: number[][] = [];
-    for (const r of rows) {
+    for (const r of ordered) {
       const lx = r[0] - x0;
       const ly = r[1] - y0;
       const gx = Math.floor(lx);
       const gy = Math.floor(ly);
-      if (gx < 0 || gx >= N || gy < 0 || gy >= N) {
-        // Out-of-tile coordinate: cannot verify ground mask -> skip safely if on border overlap, keep only if very close
-        continue;
-      }
-      const c = grid[gy * N + gx];
-      if ((c & forbid) === 0 && (c & FLAG_PAVE) !== 0) {
-        keep.push(r);
-        continue;
-      }
-      // Try snapping cleanly to the nearest strictly valid clear pavement cell within 5 m (never into a building or road!)
-      let snapped = false;
-      for (let i = 0; i < SNAP_OFFSETS.length; i++) {
-        const nx = gx + SNAP_OFFSETS[i][0];
-        const ny = gy + SNAP_OFFSETS[i][1];
-        if (nx < 0 || nx >= N || ny < 0 || ny >= N) continue;
-        const nc = grid[ny * N + nx];
-        if ((nc & forbid) === 0 && (nc & FLAG_PAVE) !== 0) {
-          const copy = r.slice();
-          copy[0] = x0 + nx + 0.5;
-          copy[1] = y0 + ny + 0.5;
-          keep.push(copy);
-          snapped = true;
+      if (gx < 0 || gx >= N || gy < 0 || gy >= N) continue;
+
+      let finalLx = lx, finalLy = ly, cellFlag = grid[gy * N + gx];
+      let valid = (cellFlag & forbid) === 0 && (cellFlag & FLAG_PAVE) !== 0;
+
+      if (!valid) {
+        // Try snapping cleanly to the nearest strictly valid clear pavement cell within 5 m (never into a building, road, or existing tree!)
+        for (let i = 0; i < SNAP_OFFSETS.length; i++) {
+          const nx = gx + SNAP_OFFSETS[i][0];
+          const ny = gy + SNAP_OFFSETS[i][1];
+          if (nx < 0 || nx >= N || ny < 0 || ny >= N) continue;
+          const nc = grid[ny * N + nx];
+          if ((nc & forbid) !== 0 || (nc & FLAG_PAVE) === 0) continue;
+          const candLx = nx + 0.5, candLy = ny + 0.5;
+          const candMin = isTree ? ((nc & FLAG_GRASS) ? PARK_TREE_MIN_DIST : STREET_TREE_MIN_DIST) : (wide ? WIDE_PROP_MIN_DIST : 0);
+          if (candMin > 0 && tooClose(candLx, candLy, candMin)) continue;
+          finalLx = candLx; finalLy = candLy; cellFlag = nc; valid = true;
           break;
         }
+        if (!valid) continue;
       }
-      // If no clear pavement cell exists within 5 m (e.g. stranded in an intersection or highway), drop it!
-      if (!snapped) continue;
+
+      const minD = isTree ? ((cellFlag & FLAG_GRASS) ? PARK_TREE_MIN_DIST : STREET_TREE_MIN_DIST) : (wide ? WIDE_PROP_MIN_DIST : 0);
+      if (minD > 0) {
+        if (tooClose(finalLx, finalLy, minD)) continue;
+        recordPos(finalLx, finalLy, minD);
+      }
+
+      if (finalLx !== lx || finalLy !== ly) {
+        const copy = r.slice();
+        copy[0] = x0 + finalLx;
+        copy[1] = y0 + finalLy;
+        keep.push(copy);
+      } else {
+        keep.push(r);
+      }
     }
     return keep;
   };
 
   for (const k of WIDE_KINDS) {
-    if (d[k]) (out as Record<string, unknown>)[k] = filterList(d[k] as number[][] | undefined, true);
+    if (d[k]) (out as Record<string, unknown>)[k] = filterList(d[k] as number[][] | undefined, true, k === 'tree');
   }
   for (const k of SLIM_KINDS) {
-    if (d[k]) (out as Record<string, unknown>)[k] = filterList(d[k] as number[][] | undefined, false);
+    if (d[k]) (out as Record<string, unknown>)[k] = filterList(d[k] as number[][] | undefined, false, false);
   }
   return out;
 }

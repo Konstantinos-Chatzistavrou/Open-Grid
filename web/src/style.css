@@ -127,7 +127,7 @@ body.touch #warn { right: auto; left: calc(8px + env(safe-area-inset-left)); tra
 }
 #rotate { display: none; }
 @media (orientation: portrait) and (max-width: 600px) and (pointer: coarse) {
-  #rotate { display: grid; position: fixed; inset: 0; z-index: 40; place-items: center; background: var(--bg);
+  body:not(.menu) #rotate { display: grid; position: fixed; inset: 0; z-index: 40; place-items: center; background: var(--bg);
     color: var(--fg); font-size: 18px; letter-spacing: .08em; text-align: center; padding: 24px; }
 }
 
@@ -159,7 +159,7 @@ body.touch #warn { right: auto; left: calc(8px + env(safe-area-inset-left)); tra
 #menu .small { font-size: 12px; padding: 7px 13px; }
 #menu .btnrow { display: flex; gap: 10px; flex-wrap: wrap; }
 #menu .btnrow button:not(.primary) { background: var(--panel); border-color: var(--line2); font-weight: 700; letter-spacing: .04em; }
-#menu .btns { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
+#menu .btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
 #menu .btns.col { flex-direction: column; }
 #menu .btns.col button { width: 100%; padding: 12px 16px; }
 #menu .chip { padding: 6px 12px; font-size: 12px; border-radius: 999px; font-weight: 600; }
@@ -763,12 +763,12 @@ body.touch #cops { position: absolute; top: calc(44px + env(safe-area-inset-top)
   .garage .g-rail .rail { padding: 4px 3px !important; }
   .garage .g-rail .rail b { font-size: 6.5px !important; letter-spacing: .06em !important; }
   .garage .g-stage { padding: 4px 5px !important; }
-  .g-tabtitle { margin: -4px -5px 3px !important; padding: 4px 5px !important; font-size: 8px !important; }
-  .g-stage .chip { font-size: 7px !important; padding: 4px 5px !important; }
-  .g-stage h3 { font-size: 7px !important; margin: 4px 0 2px !important; }
-  .g-foot .back-btn { font-size: 8px !important; padding: 4px 7px !important; }
-  .g-foot .go { font-size: 10px !important; padding: 5px 10px !important; }
-  #menu .card, #menu .panel { padding: 14px 16px !important; }
+  .garage .g-tabtitle { margin: -4px -5px 3px !important; padding: 4px 5px !important; font-size: 8px !important; }
+  .garage .g-stage .chip { font-size: 7px !important; padding: 4px 5px !important; }
+  .garage .g-stage h3 { font-size: 7px !important; margin: 4px 0 2px !important; }
+  .garage .g-foot .back-btn { font-size: 8px !important; padding: 4px 7px !important; }
+  .garage .g-foot .go { font-size: 10px !important; padding: 5px 10px !important; }
+  #menu .card { padding: 14px 16px; }
 }
 
 
@@ -777,8 +777,8 @@ body.touch #cops { position: absolute; top: calc(44px + env(safe-area-inset-top)
 #menu .careers { max-width: 470px; gap: 8px; }
 #menu .ccard { min-width: 0; flex: 1 1 200px; padding: 7px 10px; }
 #menu .title-btns { width: min(430px, 100%); }
-@media (pointer: coarse), (max-width: 1100px) {
-  #menu .title { max-width: 60vw; }
-  #menu .careers { max-width: 60vw; }
+@media ((pointer: coarse) or (max-width: 1100px)) and (orientation: landscape) {
+  #menu .title { max-width: min(390px, 54vw); }
+  #menu .careers { max-width: min(390px, 54vw); }
 }
 
