@@ -87,7 +87,75 @@ export function bakedMaterial(maps: SurfaceMaps, env: THREE.Texture, o: BakedOpt
 }
 
 /**
- * A loaded prop (glTF, its own UVs and PBR maps) shaded by the same bake as the room: the prop picks up the light of
+ * Procedural wear for the props, generated once and shared by every prop material: a 256x256 RGBA canvas texture with
+ *  - R: mottled roughness (metal that has been handled),
+ *  - G: dirt amount (speckle/blotches; multiplied into the albedo, with an extra floor-height grime gradient).
+ * Deterministic (seeded value noise, no Math.random), RepeatWrapping, anisotropy 4, cheap: one 2-channel-ish read.
+ */
+let wearTex: THREE.CanvasTexture | null = null;
+function propWear(): THREE.CanvasTexture {
+  if (wearTex) return wearTex;
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const x = cv.getContext('2d')!;
+  const hash = (i: number, j: number) => {
+    let h = (i * 374761393 + j * 668265263 + 0x9e3779b9) | 0;
+    h = (h ^ (h >>> 13)) * 1274126177;
+    h = (h ^ (h >>> 16)) | 0;
+    return ((h >>> 0) % 4096) / 4096;
+  };
+  const smooth = (t: number) => t * t * (3 - 2 * t);
+  const vnoise = (px: number, py: number) => {
+    const i = Math.floor(px), j = Math.floor(py);
+    const fx = smooth(px - i), fy = smooth(py - j);
+    const a = hash(i, j) * (1 - fx) + hash(i + 1, j) * fx;
+    const b = hash(i, j + 1) * (1 - fx) + hash(i + 1, j + 1) * fx;
+    return a * (1 - fy) + b * fy;
+  };
+  const img = x.createImageData(S, S);
+  for (let yy = 0; yy < S; yy++) {
+    for (let xx = 0; xx < S; xx++) {
+      const u = xx / S, v = yy / S;
+      // two octaves: broad patches + fine speckle, plus a faint horizontal wipe pattern so it reads as handling
+      const broad = vnoise(u * 6, v * 6);
+      const fine = vnoise(u * 24 + 11, v * 24 + 7);
+      const wipe = 0.5 + 0.5 * Math.sin(v * Math.PI * 9 + broad * 3);
+      const roughMottle = Math.max(0, Math.min(1, 0.55 + 0.3 * broad + 0.12 * fine + 0.05 * wipe));
+      const dirt = Math.max(0, Math.min(1, 0.25 + 0.55 * Math.pow(broad, 1.6) + 0.2 * fine));
+      const i = (yy * S + xx) * 4;
+      img.data[i] = Math.round(roughMottle * 255);
+      img.data[i + 1] = Math.round(dirt * 255);
+      img.data[i + 2] = 0;
+      img.data[i + 3] = 255;
+    }
+  }
+  // a handful of deterministic grime blotches (seeded, same every load)
+  const blotch = (n: number) => {
+    let s = n * 2654435761;
+    return (s >>> 0) / 4294967296;
+  };
+  for (let k = 0; k < 26; k++) {
+    const cx = blotch(k + 1) * S, cy = blotch(k + 97) * S, rr = 6 + blotch(k + 199) * 26;
+    const g = x.createRadialGradient(cx, cy, 0, cx, cy, rr);
+    g.addColorStop(0, 'rgba(0,0,0,0.22)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = g;
+    x.beginPath();
+    x.arc(cx, cy, rr, 0, Math.PI * 2);
+    x.fill();
+  }
+  x.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  t.colorSpace = THREE.NoColorSpace;
+  t.needsUpdate = true;
+  wearTex = t;
+  return t;
+}
+
+/** A loaded prop (glTF, its own UVs and PBR maps) shaded by the same bake as the room: the prop picks up the light of
  * the spot where it stands - the neon wash by the back wall, the tube over its bay - instead of one average.
  */
 export function bakedPropMaterial(src: THREE.MeshStandardMaterial, env: THREE.Texture, gain = 1): THREE.MeshBasicNodeMaterial {
@@ -101,18 +169,26 @@ export function bakedPropMaterial(src: THREE.MeshStandardMaterial, env: THREE.Te
   const nW = (src.normalMap ? normalize(cameraWorldMatrix.mul(vec4(normalMap(texture(src.normalMap, uv())) as unknown as V3, 0)).xyz) : N) as V3;
   const orm = src.roughnessMap ? texture(src.roughnessMap, uv()) : null;
   const rough: F = orm ? (orm.g.mul(src.roughness) as F) : float(src.roughness);
+  // shared procedural wear: mottled roughness everywhere, dirt multiplied into the albedo and stronger near the floor
+  const wr = texture(propWear(), uv().mul(2.2));
+  const mottle = wr.r as F;
+  const dirtAmt = wr.g as F;
+  const floorFade = smoothstep(float(0), float(0.55), positionWorld.y as unknown as F) as F;
+  const grime = max(float(0.62), float(1).sub(dirtAmt.mul(float(1).sub(floorFade)).mul(0.5))) as F;
+  const albW = alb.mul(grime) as V3;
+  const roughW = rough.mul(mix(float(0.85), float(1.18), mottle)) as F;
   const metal: F = orm ? (orm.b.mul(src.metalness) as F) : float(src.metalness);
   const ao: F = src.aoMap ? (texture(src.aoMap, uv()).r as F) : float(1);
   const gdl = max(dot(N, ldir), 0.25);
   const detail = mix(float(1), max(dot(nW, ldir), 0).div(gdl).clamp(0, 1.8), 0.75);
   const V = normalize(cameraPosition.sub(positionWorld)) as V3;
   const ndv = max(dot(nW, V), 0);
-  const f0 = mix(vec3(0.04), alb, metal);
-  const fres = f0.add(vec3(1).sub(f0).mul(pow(float(1).sub(ndv), 5)).mul(float(1).sub(rough)));
-  const spec = pmremTexture(env, reflect(V.negate(), nW), rough).rgb.mul(fres).mul(ao).mul(0.7);
+  const f0 = mix(vec3(0.04), albW, metal);
+  const fres = f0.add(vec3(1).sub(f0).mul(pow(float(1).sub(ndv), 5)).mul(float(1).sub(roughW)));
+  const spec = pmremTexture(env, reflect(V.negate(), nW), roughW).rgb.mul(fres).mul(ao).mul(0.7);
   const H = normalize(ldir.add(V));
-  const hl = pow(max(dot(nW, H), 0), mix(float(80), float(8), rough)).mul(max(dot(nW, ldir), 0)).mul(float(1).sub(rough).mul(0.9).add(0.05));
-  const out = alb.mul(irr).mul(detail).mul(ao).mul(float(1).sub(metal.mul(0.8))).mul(gain).add(spec).add(irr.mul(mix(vec3(0.5), alb.mul(2), metal)).mul(hl));
+  const hl = pow(max(dot(nW, H), 0), mix(float(80), float(8), roughW)).mul(max(dot(nW, ldir), 0)).mul(float(1).sub(roughW).mul(0.9).add(0.05));
+  const out = albW.mul(irr).mul(detail).mul(ao).mul(float(1).sub(metal.mul(0.8))).mul(gain).add(spec).add(irr.mul(mix(vec3(0.5), albW.mul(2), metal)).mul(hl));
   m.colorNode = vec4(out, base ? base.a : 1);
   return m;
 }
