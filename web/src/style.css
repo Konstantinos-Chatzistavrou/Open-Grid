@@ -760,9 +760,9 @@ body.touch #cops { position: absolute; top: calc(44px + env(safe-area-inset-top)
   .g-carlist h3, .g-carlist .more-cars { display: none !important; }
   .g-carlist .car { padding: 4px 5px !important; }
   .g-carlist .car-head b { font-size: 9px !important; }
-  .g-rail .rail { padding: 4px 3px !important; }
-  .g-rail .rail b { font-size: 6.5px !important; letter-spacing: .06em !important; }
-  .g-stage { padding: 4px 5px !important; }
+  .garage .g-rail .rail { padding: 4px 3px !important; }
+  .garage .g-rail .rail b { font-size: 6.5px !important; letter-spacing: .06em !important; }
+  .garage .g-stage { padding: 4px 5px !important; }
   .g-tabtitle { margin: -4px -5px 3px !important; padding: 4px 5px !important; font-size: 8px !important; }
   .g-stage .chip { font-size: 7px !important; padding: 4px 5px !important; }
   .g-stage h3 { font-size: 7px !important; margin: 4px 0 2px !important; }

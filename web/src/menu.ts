@@ -30,19 +30,39 @@ import { checkSplitScreen } from './splitScreen';
 import { MOD_CATALOG, loadModHub, toggleModSub, type ModHubStore } from './modHub';
 import { ACADEMY_LESSONS, WEEKLY_CALENDAR, loadCompletedLessons, todayCalendarEvent, type AcademyLesson, type CalendarEvent } from './careerEvents';
 
-/** Garage tabs: name, camera (azimuth, elevation, distance) that shows those parts. */
-const GTABS: { id: string; label: string; cam: string }[] = [
-  { id: 'paint', label: 'Paint', cam: '0.8,0.17,6.5' },
-  { id: 'body', label: 'Body', cam: '0.5,0.2,6.8' },
-  { id: 'aero', label: 'Aero', cam: '2.45,0.24,6.0' },
-  { id: 'fenders', label: 'Fenders', cam: '1.2,0.12,5.2' },
-  { id: 'wheels', label: 'Wheels', cam: '1.25,0.04,4.4' },
-  { id: 'lights', label: 'Lights', cam: '0.35,0.1,5.6' },
-  { id: 'glass', label: 'Glass', cam: '2.85,0.14,5.2' },
-  { id: 'driver', label: 'Driver', cam: '1.45,0.14,4.3' },
-  { id: 'stance', label: 'Stance', cam: '1.35,0.04,4.8' },
-  { id: 'engine', label: 'Engine', cam: '0.15,0.22,4.4' },
-  { id: 'perf', label: 'Tune', cam: '0.8,0.17,6.5' },
+type GaragePillar = 'rides' | 'style' | 'perf' | 'driver';
+
+/** Granular NFS Heat-inspired Garage sub-categories: each focuses on ONE zone & swings the camera onto that exact part. */
+const GTABS: { id: string; pillar: GaragePillar; label: string; cam: string }[] = [
+  // Pillar 2: Style & Body (granular — never lumped into giant mixed walls!)
+  { id: 'paint',   pillar: 'style',  label: 'Paint',          cam: '0.8,0.17,6.4' },
+  { id: 'wraps',   pillar: 'style',  label: 'Wraps & Livery', cam: '1.15,0.18,6.5' },
+  { id: 'front',   pillar: 'style',  label: 'Front & Lip',    cam: '0.28,0.10,5.2' },
+  { id: 'rear',    pillar: 'style',  label: 'Rear & Diffuser',cam: '2.92,0.12,5.2' },
+  { id: 'wing',    pillar: 'style',  label: 'Rear Wing',      cam: '2.45,0.24,5.6' },
+  { id: 'hood',    pillar: 'style',  label: 'Hood',           cam: '0.35,0.28,5.0' },
+  { id: 'bodykit', pillar: 'style',  label: 'Fenders & Skirts',cam: '1.38,0.10,5.4' },
+  { id: 'wheels',  pillar: 'style',  label: 'Wheels & Brakes',cam: '1.42,0.05,4.1' },
+  { id: 'lights',  pillar: 'style',  label: 'Lighting & Glow',cam: '0.35,0.10,5.6' },
+  { id: 'exhaust', pillar: 'style',  label: 'Exhaust & Tint', cam: '2.95,0.08,4.6' },
+  // Pillar 3: Performance
+  { id: 'swaps',   pillar: 'perf',   label: 'Engine Swaps',   cam: '2.85,0.12,5.0' },
+  { id: 'boost',   pillar: 'perf',   label: 'Turbo & Exhaust',cam: '0.25,0.22,4.6' },
+  { id: 'perf',    pillar: 'perf',   label: 'Stage Upgrades', cam: '0.85,0.17,6.3' },
+  { id: 'stance',  pillar: 'perf',   label: 'Stance & Susp.', cam: '1.45,0.04,4.8' },
+  { id: 'care',    pillar: 'perf',   label: 'Nitrous & Care', cam: '0.45,0.20,5.0' },
+  // Pillar 4: Driver
+  { id: 'driver',  pillar: 'driver', label: 'Driver Gear',    cam: '1.45,0.16,4.2' },
+];
+
+const GARAGE_CAMS: { label: string; v: string }[] = [
+  { label: 'Orbit',  v: 'orbit' },
+  { label: '3/4',    v: '0.8,0.17,6.5' },
+  { label: 'Front',  v: '0,0.12,5.8' },
+  { label: 'Side',   v: '1.57,0.08,6.2' },
+  { label: 'Rear',   v: '3.14,0.13,5.4' },
+  { label: 'Low',    v: '1.35,0.03,4.8' },
+  { label: 'Top',    v: '0.9,0.55,6.8' },
 ];
 
 export type Gfx = 'auto' | 'max' | 'ultra' | 'high' | 'medium' | 'low' | 'potato';
@@ -217,7 +237,9 @@ export class Menu {
   /** the loading screen ('busy' shows it; main may hold it while the game warms up) */
   loader!: Loader;
   private shopNote = '';
+  private garagePillar: GaragePillar = 'style';
   private garageTab = 'paint';
+  private garageCamIdx = 0;
   /** the option under the pointer: the live panel previews its effect without applying it */
   private hover: { k: string; v: string | number } | null = null;
   private shopCar = '';
@@ -267,9 +289,15 @@ export class Menu {
   /** Public helper for 3D click-on-part customization in the Garage. */
   openGarageTab(tabId: string) {
     if (this.screen !== 'garage') return;
-    this.garageTab = tabId;
-    const t = GTABS.find((x) => x.id === tabId);
-    if (t) { const [az, el, dist] = t.cam.split(',').map(Number); this.hooks.cam?.(az, el, dist); }
+    // Map legacy 3D click aliases to our new granular NFS Heat sub-categories
+    const alias: Record<string, string> = { body: 'front', aero: 'wing', fenders: 'bodykit', glass: 'exhaust', engine: 'swaps' };
+    const id = alias[tabId] ?? tabId;
+    const t = GTABS.find((x) => x.id === id);
+    if (!t) return;
+    this.garagePillar = t.pillar;
+    this.garageTab = t.id;
+    const [az, el, dist] = t.cam.split(',').map(Number);
+    this.hooks.cam?.(az, el, dist);
     this.render();
   }
 
@@ -531,68 +559,110 @@ export class Menu {
       const fav = this.favCars.includes(c.id);
       const br = brandOfCar(c.id);
       return `<button class="car ${c.id === sel.car ? 'on' : ''}" data-act="car" data-v="${c.id}">
-        <div class="car-head"><span class="brand-inline">${brandBadgeSvg(c.id, 20)}<b>${esc(c.name)}</b></span><span data-act="fav-car" data-v="${c.id}" title="Favorite">${fav ? '★' : '☆'}</span><i class="car-badge">${c.id === sel.car ? 'SELECTED' : 'SELECT'}</i></div>
-        <div class="brand-meta">${esc(br.name)} · ${esc(br.country)} · ${esc(stockEngineOfCar(c.id).label)}</div>
-        <span>${esc(c.tag)}</span>
+        <div class="car-head"><span class="brand-inline">${brandBadgeSvg(c.id, 20)}<b>${esc(c.name)}</b></span><span data-act="fav-car" data-v="${c.id}" title="Favorite">${fav ? '★' : '☆'}</span><i class="car-badge">${c.id === sel.car ? 'ACTIVE' : 'DRIVE'}</i></div>
+        <div class="brand-meta">${esc(br.name)} · ${esc(stockEngineOfCar(c.id).label)}</div>
         <div class="mini"><em>${Math.round(st.power)} kW</em><em>${Math.round(st.mass)} kg</em><em>${st.grip.toFixed(2)} µ</em></div>
       </button>`;
     }).join('') || '<div class="dim small-note">No cars match this filter.</div>';
-    const filterBar = `<div class="chips" style="margin-bottom:6px">${(['all', 'fav', 'S', 'A', 'B'] as const).map((f) => `<button class="chip ${this.carFilter === f ? 'on' : ''}" data-act="gfilter" data-v="${f}">${f === 'fav' ? '★' : f.toUpperCase()}</button>`).join('')}
-      ${(['name', 'power', 'weight'] as const).map((s) => `<button class="chip ${this.carSort === s ? 'on' : ''}" data-act="gsort" data-v="${s}">⇅ ${s}</button>`).join('')}</div>`;
+
     const mods = modsOf(sel);
     const now = statsOf(applyMods(this.physics[sel.car], mods));
-    const stages = MOD_KEYS.reduce((a, k) => a + mods[k], 0);
-    const tabs = GTABS.map((t) => `<button class="gtab ${this.garageTab === t.id ? 'on' : ''}" data-act="gtab" data-v="${t.id}">${t.label}</button>`).join('');
-    const body = ({ paint: () => this.gPaint(), body: () => this.gBody(), aero: () => this.gAero(), fenders: () => this.gFenders(), wheels: () => this.gWheels(), lights: () => this.gLights(),
-      glass: () => this.gGlass(), driver: () => this.gDriver(), stance: () => this.gStance(), engine: () => this.gEngine(), perf: () => this.gPerf() } as Record<string, () => string>)[this.garageTab]?.() ?? '';
-    const rail = GTABS.map((t, i) => `<button class="rail ${this.garageTab === t.id ? 'on' : ''}" data-act="gtab" data-v="${t.id}"><i>${String(i + 1).padStart(2, '0')}</i><b>${t.label}</b></button>`).join('');
     const cls = now.power > 420 ? 'S' : now.power > 330 ? 'A' : now.power > 250 ? 'B' : 'C';
+    const br = brandOfCar(sel.car);
+    const engCur = engineOf(this.nr, sel.car);
+    const engLbl = engCur.swap === 'stock' ? stockEngineOfCar(sel.car).label : ENGINE_SWAPS[engCur.swap].label;
+
+    const pillar = this.garagePillar;
+    const pillars: { id: GaragePillar; n: string; label: string }[] = [
+      { id: 'rides',  n: '01', label: `My Rides (${ownedList.length})` },
+      { id: 'style',  n: '02', label: 'Style & Body' },
+      { id: 'perf',   n: '03', label: 'Performance' },
+      { id: 'driver', n: '04', label: 'Driver' },
+    ];
+    const pillarBar = pillars.map((p) =>
+      `<button class="gpillar ${pillar === p.id ? 'on' : ''}" data-act="gpillar" data-v="${p.id}"><i>${p.n}</i><b>${p.label}</b></button>`,
+    ).join('');
+
+    const subTabs = GTABS.filter((t) => t.pillar === pillar);
+    if (pillar !== 'rides' && !subTabs.some((t) => t.id === this.garageTab) && subTabs[0]) {
+      this.garageTab = subTabs[0].id;
+    }
+    const activeTabObj = GTABS.find((t) => t.id === this.garageTab) ?? subTabs[0];
+    const rail = subTabs.length > 1
+      ? `<nav class="g-rail">${subTabs.map((t, i) => `<button class="rail ${this.garageTab === t.id ? 'on' : ''}" data-act="gtab" data-v="${t.id}"><i>${String(i + 1).padStart(2, '0')}</i><b>${t.label}</b></button>`).join('')}</nav>`
+      : '';
+
+    const tabRenderers: Record<string, () => string> = {
+      paint:   () => this.gPaint(),
+      wraps:   () => this.gWraps(),
+      front:   () => this.gFront(),
+      rear:    () => this.gRear(),
+      wing:    () => this.gWing(),
+      hood:    () => this.gHood(),
+      bodykit: () => this.gBodykit(),
+      wheels:  () => this.gWheels(),
+      lights:  () => this.gLights(),
+      exhaust: () => this.gExhaust(),
+      swaps:   () => this.gSwaps(),
+      boost:   () => this.gBoost(),
+      perf:    () => this.gPerf(),
+      stance:  () => this.gStance(),
+      care:    () => this.gCare(),
+      driver:  () => this.gDriver(),
+    };
+    const stagePanel = pillar === 'rides' ? '' : `
+      <section class="g-stage panel">
+        <div class="g-stage-scroll">
+          <div class="g-tabtitle">${esc((activeTabObj?.label ?? this.garageTab).toUpperCase())}</div>
+          ${pillar === 'style' ? this.lookNow() : ''}
+          ${tabRenderers[this.garageTab]?.() ?? ''}
+        </div>
+      </section>`;
+
+    const ridesDock = pillar !== 'rides' ? '' : `
+      <section class="g-rides-dock panel">
+        <div class="g-rides-bar">
+          <div class="chips">
+            <button class="chip ${this.sp.testingMode ? 'on' : ''}" data-act="toggle-testing" title="Unlock all cars, upgrades &amp; engine swaps for free">${this.sp.testingMode ? '🧪 Testing Mode ON (All Free)' : '🧪 Unlock All (Testing)'}</button>
+            ${(['all', 'fav', 'S', 'A', 'B'] as const).map((f) => `<button class="chip ${this.carFilter === f ? 'on' : ''}" data-act="gfilter" data-v="${f}">${f === 'fav' ? '★' : f.toUpperCase()}</button>`).join('')}
+            ${(['name', 'power', 'weight'] as const).map((s) => `<button class="chip ${this.carSort === s ? 'on' : ''}" data-act="gsort" data-v="${s}">⇅ ${s}</button>`).join('')}
+          </div>
+          ${this.cars.some((c) => !w.owns(c.id)) ? '<button class="small primary" data-act="shop-open">+ Dealership / Mod Hub</button>' : ''}
+        </div>
+        <div class="g-rides-strip">${cards}</div>
+      </section>`;
+
+    const camNow = GARAGE_CAMS[this.garageCamIdx % GARAGE_CAMS.length];
     const cond = conditionOf(this.maint, sel.car);
     const rep = repairCostOf(cond, this.maint.insured);
-    const condBadge = rep.pct > 0
-      ? `<button class="chip on" data-act="repair-car" title="Repair persistent race damage (${this.maint.insured ? '-50% Insured' : 'Standard rate'})">🔧 ${cond.totaled ? 'TOTALED' : `${rep.pct}% DAMAGED`} · Repair (${rep.xp} XP)</button>`
-      : `<span class="pill">✓ 100% MINT</span>`;
-    return `<div class="garage">
-      <header class="g-head">
-        <div class="g-brand">GARAGE<span>BUILD YOUR CAR</span></div>
-        <div class="g-carsum">
-          ${(() => { const br = brandOfCar(sel.car); const engCur = engineOf(this.nr, sel.car); const engLbl = engCur.swap === 'stock' ? stockEngineOfCar(sel.car).label : ENGINE_SWAPS[engCur.swap].label; return `<div class="g-name">${brandBadgeSvg(sel.car, 26)}<span>${esc(br.name)}</span> ${esc(this.car().name)}<i>CLASS ${cls}</i> <span class="pill">${esc(engLbl)}</span> ${condBadge}</div>`; })()}
-          <div class="g-stats">
-            <span><b>${Math.round(now.power)}</b> kW</span>
-            <span><b>${Math.round(now.mass)}</b> kg</span>
-            <span><b>${now.grip.toFixed(2)}</b> µ</span>
+    const dmgPill = rep.pct > 0 ? `<button class="chip on" data-act="repair-car">🔧 Repair (${this.sp.testingMode ? 'FREE' : `${rep.xp} XP`})</button>` : '';
+
+    return `<div class="nfs-garage" data-pillar="${pillar}">
+      <header class="g-topbar">
+        <div class="g-top-left">
+          <button data-act="home" class="back-btn">← Menu</button>
+          <div class="g-id">
+            ${brandBadgeSvg(sel.car, 30)}
+            <div>
+              <div class="g-id-sub">${esc(br.fullName)} · ${esc(engLbl)}</div>
+              <div class="g-id-name">${esc(this.car().name)} <i>CLASS ${cls}</i></div>
+            </div>
           </div>
         </div>
-        <div class="g-cams">
-          <button class="chip" data-act="cam" data-v="0.8,0.17,6.5">3/4</button>
-          <button class="chip" data-act="cam" data-v="-0.75,0.16,6.2">F 3/4</button>
-          <button class="chip" data-act="cam" data-v="0,0.14,6.0">Front</button>
-          <button class="chip" data-act="cam" data-v="1.57,0.08,6.4">Side</button>
-          <button class="chip" data-act="cam" data-v="2.45,0.16,6.2">R 3/4</button>
-          <button class="chip" data-act="cam" data-v="3.14,0.15,6.0">Rear</button>
-          <button class="chip" data-act="cam" data-v="1.57,0.03,5.0">Low</button>
-          <button class="chip" data-act="cam" data-v="0,0.05,4.2">Nose</button>
-          <button class="chip" data-act="cam" data-v="1.5,0.05,3.4">Wheel</button>
-          <button class="chip" data-act="cam" data-v="0.9,0.55,6.8">Top</button>
-          <button class="chip" data-act="cam" data-v="orbit">Orbit</button>
-          <button class="chip on" data-act="g-ignition" title="Crank starter &amp; cold-start exhaust bark">🔑 Ignition</button>
-          <button class="chip on" data-act="g-rev" title="Rev engine &amp; trigger flamethrower exhaust pops">🔥 Rev</button>
-          ${this.nr.walkableGarage ? `<button class="chip ${this.garageWalkActive ? 'on' : ''}" data-act="g-walk">🚶 ${this.garageWalkActive ? 'Stop Walk' : 'Walk Garage'}</button>` : ''}
+        <nav class="g-pillars">${pillarBar}</nav>
+        <div class="g-top-actions">
+          ${dmgPill}
+          <button class="chip" data-act="g-ignition" title="Crank starter">🔑 Start</button>
+          <button class="chip on" data-act="g-rev" title="Rev engine &amp; shoot exhaust flames">🔥 Rev</button>
+          <button class="chip" data-act="g-cam-cycle" title="Cycle showroom camera angle">📷 ${camNow.label}</button>
+          ${this.nr.walkableGarage ? `<button class="chip ${this.garageWalkActive ? 'on' : ''}" data-act="g-walk" title="Walk around your car">🚶</button>` : ''}
+          <button class="primary g-drive-btn" data-act="play">DRIVE ▶</button>
         </div>
       </header>
-      <aside class="g-carlist panel"><h3>Your cars (${ownedList.length}/${this.cars.length})</h3>
-        <div class="chips" style="margin-bottom:6px"><button class="chip ${this.sp.testingMode ? 'on' : ''}" data-act="toggle-testing" title="Unlock every car, upgrade, turbo, engine swap &amp; skin for free">${this.sp.testingMode ? '🧪 Testing Mode ON (All Free)' : '🧪 Unlock All (Testing Mode)'}</button></div>
-        ${filterBar}${cards}
-        <div class="dim small-note" style="margin-top:6px">Tip: click any 3D part on the car to jump directly to its tab!</div>
-        ${this.cars.some((c) => !w.owns(c.id)) ? '<button class="small more-cars" data-act="shop-open">+ More cars / Mod Hub</button>' : ''}</aside>
-      <nav class="g-rail">${rail}</nav>
-      <section class="g-stage panel"><div class="g-stage-scroll"><div class="g-tabtitle">${this.garageTab.toUpperCase()}</div>${this.lookNow()}${body}</div></section>
-      <section class="g-live" id="g-live">${this.liveStats()}</section>
-      <footer class="g-foot">
-        <button data-act="home" class="back-btn">← Main Menu</button>
-        <div class="g-summary"><b>${esc(this.car().name)}</b><span class="dim">${stages ? `${stages} upgrade stage${stages > 1 ? 's' : ''} fitted` : 'Stock'} · ${FINISHES[sel.finish].label} paint · ${Math.round(now.power)} kW</span></div>
-        <button class="primary huge go" data-act="play">Continue</button>
-      </footer>
+      ${rail}
+      ${stagePanel}
+      ${ridesDock}
+      <section class="g-live-compact" id="g-live">${this.liveStats()}</section>
     </div>`;
   }
 
@@ -628,12 +698,10 @@ export class Menu {
       '<div class="lv"><span>' + label + '</span><div class="lbar">' + bar(frac) + '</div><b>' + text + '</b><i>' + sub + '</i>' + delta + '</div>';
     return [
       row('POWER', Math.round(st.power) + ' kW', Math.round(st.hp) + ' hp', st.power / 600, ''),
-      row('WEIGHT', Math.round(mass) + ' kg', 'loaded', (1700 - mass) / 600, dl(mass, pmass, 'kg', 0, true)),
-      row('POWER / T', Math.round(st.pwr) + ' kW/t', Math.round(st.ratio) + ' W/kg', st.pwr / 450, ''),
-      row('0-100', accel.toFixed(1) + ' s', 'estimate', (6.5 - accel) / 5, dl(accel, paccel, 's', 1, true)),
-      row('DOWNFORCE', df.toFixed(2) + ' m²', 'aero', df / 0.95, dl(df, pdf, 'm²', 2)),
-      row('TOP SPEED', Math.round(vmax) + ' km/h', 'drag-limited', vmax / 360, dl(vmax, pvmax, 'km/h')),
-      row('DRAG', drag.toFixed(2) + ' m²', 'CdA', (0.95 - drag) / 0.8, dl(drag, pdrag, 'm²', 2, true)),
+      row('0-100', accel.toFixed(1) + ' s', 'launch', (6.5 - accel) / 5, dl(accel, paccel, 's', 1, true)),
+      row('TOP SPEED', Math.round(vmax) + ' km/h', 'vmax', vmax / 360, dl(vmax, pvmax, 'km/h')),
+      row('WEIGHT', Math.round(mass) + ' kg', 'curb', (1700 - mass) / 600, dl(mass, pmass, 'kg', 0, true)),
+      row('AERO', df.toFixed(2) + ' m²', 'downforce', df / 0.95, dl(df, pdf, 'm²', 2)),
     ].join('');
   }
 
@@ -667,41 +735,64 @@ export class Menu {
       <span class="dim" style="font-size:11px">${paint.toUpperCase()}</span></div>`;
   }
   private gPaint() {
-    const sel = this.sel, c = customOf(sel), paint = paintOf(sel, this.cars).toLowerCase();
+    const sel = this.sel, paint = paintOf(sel, this.cars).toLowerCase();
     const sw = SWATCHES.map((x) => `<button class="sw ${x === paint ? 'on' : ''}" style="background:${x}" data-act="paint" data-v="${x}" aria-label="${x}"></button>`).join('');
     const fin = (Object.keys(FINISHES) as Finish[]).map((f) => `<button class="chip ${sel.finish === f ? 'on' : ''}" data-act="finish" data-v="${f}">${FINISHES[f].label}</button>`).join('');
     const looks = LOOK_PRESETS.map((p) => `<button class="chip" data-act="look" data-v="${p.id}" title="${esc(p.blurb)}">${esc(p.label)}</button>`).join('');
-    return `<h3>Style presets <small>one click, everything below changes</small></h3><div class="chips">${looks}</div>
-      <h3>Body colour</h3>
+    return `<h3>Body Colour</h3>
       <div class="sws">${sw}<label class="sw custom" title="Custom colour"><input id="custom" type="color" value="${paint}" /></label></div>
-      <h3>Finish</h3><div class="chips">${fin}</div>
-      <h3>Livery</h3><div class="chips">${LIVERIES.map((l, i) => this.cu('livery', i, l, c.livery === i)).join('')}</div>
-      ${c.livery ? `<h3>Livery colour</h3>${this.swatches('liveryColor', c.liveryColor)}` : ''}`;
+      <h3>Paint Finish</h3><div class="chips">${fin}</div>
+      <h3>Quick Style Presets</h3><div class="chips">${looks}</div>`;
   }
-  private gAero() {
+  private gWraps() {
     const c = customOf(this.sel);
-    return `<h3>Front splitter <small class="dim">front-end bite</small></h3><div class="chips">${(Object.keys(SPLITTERS) as string[]).map((k) => this.cu('splitter', k, SPLITTERS[k], c.splitter === k, kitHint('splitter', k))).join('')}</div>
-      <h3>Rear diffuser <small class="dim">rear stability</small></h3><div class="chips">${(Object.keys(DIFFUSERS) as string[]).map((k) => this.cu('diffuser', k, DIFFUSERS[k], c.diffuser === k, kitHint('diffuser', k))).join('')}</div>
-      <h3>Side skirts <small class="dim">side stability</small></h3><div class="chips">${(Object.keys(SKIRTS) as string[]).map((k) => this.cu('skirt', k, SKIRTS[k], c.skirt === k, kitHint('skirt', k))).join('')}</div>
-      <h3>Splitter, diffuser &amp; wing finish</h3><div class="chips">${(Object.keys(AERO_FINISHES) as (keyof typeof AERO_FINISHES)[]).map((k) => this.cu('aero', k, AERO_FINISHES[k], c.aero === k)).join('')}</div>`;
+    return `<h3>Livery Pattern</h3><div class="chips">${LIVERIES.map((l, i) => this.cu('livery', i, l, c.livery === i)).join('')}</div>
+      ${c.livery ? `<h3>Accent Colour</h3>${this.swatches('liveryColor', c.liveryColor)}` : '<div class="dim small-note" style="margin-top:10px">Pick a livery pattern above to customize its colour.</div>'}`;
+  }
+  private gFront() {
+    const c = customOf(this.sel);
+    const bumpers = Object.keys(FRONT_BUMPERS).filter((id) => id === 'stock' || this.fits(id));
+    return `<h3>Front Bumper</h3><div class="chips">${bumpers.map((id) => this.cu('frontB', id, FRONT_BUMPERS[id], c.frontB === id, bodyHint('front', id, FRONT_BUMPERS[id]))).join('')}</div>
+      <h3>Front Splitter <small class="dim">front-end grip</small></h3><div class="chips">${Object.keys(SPLITTERS).map((k) => this.cu('splitter', k, SPLITTERS[k], c.splitter === k, kitHint('splitter', k))).join('')}</div>`;
+  }
+  private gRear() {
+    const c = customOf(this.sel);
+    const bumpers = Object.keys(REAR_BUMPERS).filter((id) => id === 'stock' || this.fits(id));
+    return `<h3>Rear Bumper</h3><div class="chips">${bumpers.map((id) => this.cu('rearB', id, REAR_BUMPERS[id], c.rearB === id, bodyHint('rear', id, REAR_BUMPERS[id]))).join('')}</div>
+      <h3>Rear Diffuser <small class="dim">high-speed stability</small></h3><div class="chips">${Object.keys(DIFFUSERS).map((k) => this.cu('diffuser', k, DIFFUSERS[k], c.diffuser === k, kitHint('diffuser', k))).join('')}</div>`;
+  }
+  private gWing() {
+    const c = customOf(this.sel);
+    return `<h3>Rear Wing <small class="dim">downforce vs top speed</small></h3><div class="chips">${(Object.keys(WINGS) as (keyof typeof WINGS)[]).map((k) => this.cu('wing', k, WINGS[k], c.wing === k, wingHint(k as string))).join('')}</div>
+      <h3>Aero Carbon / Gloss Finish</h3><div class="chips">${(Object.keys(AERO_FINISHES) as (keyof typeof AERO_FINISHES)[]).map((k) => this.cu('aero', k, AERO_FINISHES[k], c.aero === k)).join('')}</div>`;
+  }
+  private gHood() {
+    const c = customOf(this.sel);
+    const hoods = Object.keys(HOODS).filter((id) => id === 'stock' || this.fits(id));
+    return `<h3>Hood Style</h3><div class="chips">${hoods.map((id) => this.cu('hood', id, HOODS[id], c.hood === id, bodyHint('hood', id, HOODS[id]))).join('')}</div>`;
+  }
+  private gBodykit() {
+    const c = customOf(this.sel);
+    return `<h3>Fender Flares <small class="dim">widebody stance</small></h3><div class="chips">${Object.keys(FENDERS).map((id) => this.cu('fenders', id, FENDERS[id], c.fenders === id, bodyHint('fender', id, FENDERS[id]))).join('')}</div>
+      <h3>Side Skirts</h3><div class="chips">${Object.keys(SKIRTS).map((k) => this.cu('skirt', k, SKIRTS[k], c.skirt === k, kitHint('skirt', k))).join('')}</div>`;
   }
   private gWheels() {
     const c = customOf(this.sel);
-    return `<h3>Rim design <small class="dim">lighter = quicker launch</small></h3><div class="chips">${(Object.keys(RIMS) as string[]).map((k) => this.cu('rims', k, RIMS[k], c.rims === k, rimHint(k))).join('')}</div>
-      <h3>Rim colour</h3>${this.swatches('rimColor', c.rimColor)}
-      <h3>Rim finish</h3><div class="chips">${(Object.keys(RIM_FINISHES) as (keyof typeof RIM_FINISHES)[]).map((k) => this.cu('rimFinish', k, RIM_FINISHES[k], c.rimFinish === k)).join('')}</div>
-      <h3>Brake calipers</h3>${this.swatches('caliper', c.caliper)}`;
+    return `<h3>Rim Design <small class="dim">lighter = quicker launch</small></h3><div class="chips">${(Object.keys(RIMS) as string[]).map((k) => this.cu('rims', k, RIMS[k], c.rims === k, rimHint(k))).join('')}</div>
+      <h3>Rim Colour</h3>${this.swatches('rimColor', c.rimColor)}
+      <h3>Rim Finish</h3><div class="chips">${(Object.keys(RIM_FINISHES) as (keyof typeof RIM_FINISHES)[]).map((k) => this.cu('rimFinish', k, RIM_FINISHES[k], c.rimFinish === k)).join('')}</div>
+      <h3>Brake Calipers</h3>${this.swatches('caliper', c.caliper)}`;
   }
   private gLights() {
     const c = customOf(this.sel);
     return `<h3>Headlights</h3><div class="chips">${(Object.keys(HEAD_TINTS) as (keyof typeof HEAD_TINTS)[]).map((k) => this.cu('headlights', k, HEAD_TINTS[k], c.headlights === k)).join('')}</div>
-      <h3>Tail lights</h3><div class="chips">${this.cu('smokedTails', false, 'Clear red', !c.smokedTails)}${this.cu('smokedTails', true, 'Smoked', c.smokedTails)}</div>
-      <h3>Underglow</h3>${this.swatches('underglow', c.underglow, GLOW_COLOURS)}`;
+      <h3>Tail Lights</h3><div class="chips">${this.cu('smokedTails', false, 'Clear Red', !c.smokedTails)}${this.cu('smokedTails', true, 'Smoked', c.smokedTails)}</div>
+      <h3>Underglow Neon</h3>${this.swatches('underglow', c.underglow, GLOW_COLOURS)}`;
   }
-  private gGlass() {
+  private gExhaust() {
     const c = customOf(this.sel);
-    return `<h3>Window tint</h3><div class="chips">${['Light', 'Dark', 'Limo'].map((l, i) => this.cu('tint', i, l, c.tint === i)).join('')}</div>
-      <h3>Exhaust tips</h3><div class="chips">${this.cu('exhaust', 'chrome', 'Chrome', c.exhaust === 'chrome')}${this.cu('exhaust', 'black', 'Black', c.exhaust === 'black')}${this.cu('exhaust', 'titanium', 'Burnt titanium', c.exhaust === 'titanium')}</div>`;
+    return `<h3>Exhaust Tips <small class="dim">hit 🔥 Rev above to test flames</small></h3><div class="chips">${this.cu('exhaust', 'chrome', 'Chrome', c.exhaust === 'chrome')}${this.cu('exhaust', 'black', 'Stealth Black', c.exhaust === 'black')}${this.cu('exhaust', 'titanium', 'Burnt Titanium', c.exhaust === 'titanium')}</div>
+      <h3>Window Tint</h3><div class="chips">${['Light', 'Dark', 'Limo'].map((l, i) => this.cu('tint', i, l, c.tint === i)).join('')}</div>`;
   }
   private gDriver() {
     const owned = SKINS.filter((k) => this.career.ownsSkin(k.id));
@@ -709,54 +800,31 @@ export class Menu {
     const gear = this.sel.avatarGear;
     const gearSwatches = (slot: keyof AvatarGear, cur: string) =>
       `<div class="sws">${PART_COLOURS.filter(Boolean).map((c) => `<button class="sw ${c === cur ? 'on' : ''}" style="background:${c}" data-act="gear" data-k="${slot}" data-v="${c}" aria-label="${c}"></button>`).join('')}</div>`;
-    return `<h3>Driver preset <small class="dim">(in-car &amp; walkable Car Meet avatar)</small></h3>
-      <div class="chips" style="margin-bottom:10px"><button class="chip on" data-act="gear-match">🎨 Match Car Livery &amp; Paint</button></div>
+    return `<h3>Driver Preset</h3>
+      <div class="chips" style="margin-bottom:10px"><button class="chip on" data-act="gear-match">🎨 Match Car Paint</button></div>
       <div class="skins">${cards}</div>
-      <h3>Helmet colour</h3>${gearSwatches('helmet', gear.helmet)}
-      <h3>Helmet accent / visor stripe</h3>${gearSwatches('accent', gear.accent)}
-      <h3>Racing suit</h3>${gearSwatches('suit', gear.suit)}
-      <h3>Racing gloves</h3>${gearSwatches('gloves', gear.gloves)}
-      <h3>Racing shoes</h3>${gearSwatches('shoes', gear.shoes)}
-      ${owned.length < SKINS.length ? '<button class="small more-cars" data-act="shop-gear">🛒 More helmets &amp; suits in the Shop</button>' : ''}`;
+      <h3>Helmet Colour</h3>${gearSwatches('helmet', gear.helmet)}
+      <h3>Visor Accent</h3>${gearSwatches('accent', gear.accent)}
+      <h3>Racing Suit</h3>${gearSwatches('suit', gear.suit)}
+      <h3>Gloves &amp; Shoes</h3>${gearSwatches('gloves', gear.gloves)}
+      ${owned.length < SKINS.length ? '<button class="small more-cars" data-act="shop-gear">🛒 More Gear in Shop</button>' : ''}`;
   }
-  /** Body: the big shapes - rear wing, bumpers, hood (generated panels replace the stock ones). */
   /** does the car in the garage have this bumper / hood option? (main.ts: the customiser knows) */
   fits: (id: string) => boolean = () => true;
-  private gBody() {
-    const c = customOf(this.sel);
-    const sec = (k: 'frontB' | 'rearB' | 'hood', map: Record<string, string>, kind: 'front' | 'rear' | 'hood') =>
-      `<h3>${kind === 'front' ? 'Front bumper' : kind === 'rear' ? 'Rear bumper' : 'Hood'} <small class="dim">replaces the stock panel</small></h3>` +
-      // only the panels this car really has (a panel is a reshaped copy of the car's own, or one authored for it)
-      `<div class="chips">${Object.keys(map).filter((id) => id === 'stock' || this.fits(id)).map((id) => this.cu(k, id, map[id], (c as unknown as Record<string, string>)[k] === id, bodyHint(kind, id, map[id]))).join('')}</div>`;
-    return `<h3>Rear wing <small class="dim">grip in corners, costs top speed</small></h3><div class="chips">${(Object.keys(WINGS) as (keyof typeof WINGS)[]).map((k) => this.cu('wing', k, WINGS[k], c.wing === k, wingHint(k as string))).join('')}</div>
-      ${sec('frontB', FRONT_BUMPERS, 'front')}${sec('rearB', REAR_BUMPERS, 'rear')}${sec('hood', HOODS, 'hood')}`;
-  }
-
-  private gFenders() {
-    const c = customOf(this.sel);
-    return `<h3>Fender flares <small class="dim">wide body, more drag</small></h3><div class="chips">${Object.keys(FENDERS).map((id) => this.cu('fenders', id, FENDERS[id], c.fenders === id, bodyHint('fender', id, FENDERS[id]))).join('')}</div>`;
-  }
 
   private gStance() {
     const st = stanceOf(this.nr, this.sel.car);
     const pick = (k: string, vals: number[], cur: number, fmtV: (n: number) => string) =>
       `<div class="chips">${vals.map((v) => `<button class="chip ${Math.abs(cur - v) < 0.05 ? 'on' : ''}" data-act="nr-stance" data-k="${k}" data-v="${v}">${fmtV(v)}</button>`).join('')}</div>`;
-    return `<h3>Stance &amp; Suspension <small class="dim">(visuals &amp; physics hitboxes stay 1:1)</small></h3>
-      <h3>Front Camber</h3>${pick('camberFront', [-7, -5, -3.5, -1.8, 0], st.camberFront, (v) => `${v}°`)}
+    return `<h3>Front Camber</h3>${pick('camberFront', [-7, -5, -3.5, -1.8, 0], st.camberFront, (v) => `${v}°`)}
       <h3>Rear Camber</h3>${pick('camberRear', [-7, -5, -3.5, -1.5, 0], st.camberRear, (v) => `${v}°`)}
       <h3>Ride Height</h3>${pick('rideHeightMm', [-40, -25, -10, 0, 15], st.rideHeightMm, (v) => `${v > 0 ? '+' : ''}${v} mm`)}
       <h3>Spring Stiffness</h3>${pick('springMul', [0.75, 1.0, 1.25, 1.5], st.springMul, (v) => `${Math.round(v * 100)}%`)}`;
   }
 
-  private gEngine() {
+  private gSwaps() {
     const eng = engineOf(this.nr, this.sel.car);
-    const freeTest = this.sp.testingMode && this.sel.career === 'sp';
     const stockSpec = stockEngineOfCar(this.sel.car);
-    const tagsHtml = eng.tags.length ? `<div style="margin:6px 0">${eng.tags.map((tg) => `<span class="tag-chip">${esc(tg)}</span>`).join('')}</div>` : '';
-    const turboBtns = (Object.keys(TURBOS) as TurboId[]).map((id) =>
-      `<button class="chip ${eng.turbo === id ? 'on' : ''}" data-act="nr-turbo" data-v="${id}">${TURBOS[id].label} (${Math.round((TURBOS[id].powerMul - 1) * 100)}% pwr)</button>`).join('');
-    const manBtns = (Object.keys(MANIFOLDS) as ManifoldId[]).map((id) =>
-      `<button class="chip ${eng.manifold === id ? 'on' : ''}" data-act="nr-man" data-v="${id}">${MANIFOLDS[id].label}</button>`).join('');
     const swapCards = (Object.keys(ENGINE_SWAPS) as SwapId[]).map((id) => {
       const sw = ENGINE_SWAPS[id];
       const active = eng.swap === id;
@@ -770,19 +838,33 @@ export class Menu {
         <div class="swap-meta"><em>${pwrTxt}</em><em>${massTxt}</em><em>${active ? '✓ INSTALLED' : '🔊 SWAP &amp; REV'}</em></div>
       </button>`;
     }).join('');
-    return `<h3>Engine Swaps <small class="dim">(authentic multi-architecture physics &amp; acoustics — click any block to swap &amp; rev!)</small></h3>
-      <div class="swap-grid">${swapCards}</div>
-      <h3>Turbocharger <small class="dim">(adds boost &amp; compressor spool/BOV sound)</small></h3><div class="chips">${turboBtns}</div>
-      <h3>Exhaust Manifold <small class="dim">(more backfire flames &amp; flow)</small></h3><div class="chips">${manBtns}</div>
-      <h3>Maintenance &amp; Health</h3>
-      <div class="dim small-note">Engine Health: <b>${Math.round(eng.health)}%</b> · Oil Life: <b>${Math.round(eng.oilLife)}%</b> · Odometer: <b>${Math.round(eng.mileageKm).toLocaleString()} km</b></div>
+    return `<div class="dim small-note" style="margin-bottom:8px">Click any engine block to swap physics, redline, weight &amp; immediately rev its exhaust note!</div>
+      <div class="swap-grid">${swapCards}</div>`;
+  }
+
+  private gBoost() {
+    const eng = engineOf(this.nr, this.sel.car);
+    const turboBtns = (Object.keys(TURBOS) as TurboId[]).map((id) =>
+      `<button class="chip ${eng.turbo === id ? 'on' : ''}" data-act="nr-turbo" data-v="${id}">${TURBOS[id].label} (${Math.round((TURBOS[id].powerMul - 1) * 100)}%)</button>`).join('');
+    const manBtns = (Object.keys(MANIFOLDS) as ManifoldId[]).map((id) =>
+      `<button class="chip ${eng.manifold === id ? 'on' : ''}" data-act="nr-man" data-v="${id}">${MANIFOLDS[id].label}</button>`).join('');
+    return `<h3>Turbocharger <small class="dim">boost &amp; BOV flutter</small></h3><div class="chips">${turboBtns}</div>
+      <h3>Exhaust Manifold <small class="dim">backfire flames &amp; flow</small></h3><div class="chips">${manBtns}</div>`;
+  }
+
+  private gCare() {
+    const eng = engineOf(this.nr, this.sel.car);
+    const freeTest = this.sp.testingMode && this.sel.career === 'sp';
+    const tagsHtml = eng.tags.length ? `<div style="margin:6px 0">${eng.tags.map((tg) => `<span class="tag-chip">${esc(tg)}</span>`).join('')}</div>` : '';
+    return `<h3>Nitrous Oxide <small class="dim">${eng.nosLiters.toFixed(1)} / ${NOS_MAX_LITERS} L · press [X]</small></h3>
+      <div class="chips"><button class="chip on" data-act="nr-nos" data-v="5">+5 L (${freeTest ? 'FREE' : `${5 * NOS_PRICE_PER_LITER_XP} XP`})</button><button class="chip" data-act="nr-nos" data-v="15">Fill Bottle${freeTest ? ' (FREE)' : ''}</button></div>
+      <h3>Engine Maintenance</h3>
+      <div class="dim small-note">Health: <b>${Math.round(eng.health)}%</b> · Oil: <b>${Math.round(eng.oilLife)}%</b> · Odometer: <b>${Math.round(eng.mileageKm).toLocaleString()} km</b></div>
       ${tagsHtml}
-      <div class="chips" style="margin:8px 0">
+      <div class="chips" style="margin-top:8px">
         <button class="chip" data-act="nr-oil">🛢 Change Oil (${freeTest ? 'FREE' : '50 XP'})</button>
-        <button class="chip" data-act="nr-rebuild">🔧 Engine Overhaul (${freeTest ? 'FREE' : '350 XP'})</button>
-      </div>
-      <h3>💨 Nitrous Oxide <small class="dim">(${eng.nosLiters.toFixed(1)} / ${NOS_MAX_LITERS} L · [X] in race · overuse fries engine!)</small></h3>
-      <div class="chips"><button class="chip on" data-act="nr-nos" data-v="5">+5 L Refill (${freeTest ? 'FREE' : `${5 * NOS_PRICE_PER_LITER_XP} XP`})</button><button class="chip" data-act="nr-nos" data-v="15">Fill Full Bottle${freeTest ? ' (FREE)' : ''}</button></div>`;
+        <button class="chip" data-act="nr-rebuild">🔧 Overhaul (${freeTest ? 'FREE' : '350 XP'})</button>
+      </div>`;
   }
 
   private gPerf() {
@@ -1086,7 +1168,30 @@ export class Menu {
       case 'shop-open': this.shopNote = ''; this.shopCar = sel.car; this.shopTab = this.garageTab === 'perf' ? 'upgrades' : 'cars'; this.show('shop'); break;
       case 'shop-gear': this.shopNote = ''; this.shopTab = 'gear'; this.show('shop'); break;
       case 'stab': this.shopTab = v as typeof this.shopTab; this.render(); break;
-      case 'gtab': { this.garageTab = v; const t = GTABS.find((x) => x.id === v); if (t) { const [az, el, dist] = t.cam.split(',').map(Number); this.hooks.cam?.(az, el, dist); } this.render(); break; }
+      case 'gpillar': {
+        this.garagePillar = v as GaragePillar;
+        if (this.garagePillar === 'rides') {
+          this.hooks.cam?.(NaN, 0, 0);
+        } else {
+          const first = GTABS.find((x) => x.pillar === this.garagePillar);
+          if (first) {
+            this.garageTab = first.id;
+            const [az, el, dist] = first.cam.split(',').map(Number);
+            this.hooks.cam?.(az, el, dist);
+          }
+        }
+        this.render();
+        break;
+      }
+      case 'g-cam-cycle': {
+        this.garageCamIdx = (this.garageCamIdx + 1) % GARAGE_CAMS.length;
+        const c = GARAGE_CAMS[this.garageCamIdx];
+        if (c.v === 'orbit') this.hooks.cam?.(NaN, 0, 0);
+        else { const [az, el, dist] = c.v.split(',').map(Number); this.hooks.cam?.(az, el, dist); }
+        this.render();
+        break;
+      }
+      case 'gtab': { this.garageTab = v; const t = GTABS.find((x) => x.id === v); if (t) { this.garagePillar = t.pillar; const [az, el, dist] = t.cam.split(',').map(Number); this.hooks.cam?.(az, el, dist); } this.render(); break; }
       case 'cu': {
         const c = customOf(sel), k = b.dataset.k as keyof Custom;
         const val = k === 'livery' || k === 'tint' ? Number(v) : k === 'smokedTails' ? v === 'true' : v;

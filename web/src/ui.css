@@ -234,78 +234,21 @@ html, body { font-family: var(--text); font-size: 15px; }
 #menu .mod > div:first-child b { font: 700 16px var(--display); letter-spacing: .08em; text-transform: uppercase; }
 #countdown { font: italic 900 clamp(120px, 24vw, 300px)/1 var(--display); }
 
-/* ---- garage (desktop) ---------------------------------------------------------------------------------------------- */
+/* ---- garage (desktop styling for stage controls) ------------------------------------------------------------------- */
 @media (min-width: 1101px) and (not (pointer: coarse)) {
-  .garage { grid-template-columns: 214px minmax(0, 1fr) 348px !important; grid-template-rows: 64px minmax(0, 1fr) auto 78px 56px !important;
+  .garage:not(.nfs-garage) { grid-template-columns: 214px minmax(0, 1fr) 348px !important; grid-template-rows: 64px minmax(0, 1fr) auto 78px 56px !important;
     grid-template-areas: "head head head" "rail . stage" "cars cars stage" "live live live" "foot foot foot"; gap: 10px !important; padding: 16px 20px 14px !important; }
-  .garage::before { background: linear-gradient(90deg, #05070ccc 0%, #05070c30 16%, transparent 30%, transparent 62%, #05070c50 100%), linear-gradient(0deg, #05070ca8 0%, transparent 26%); }
-  #menu .g-head { grid-area: head !important; gap: 22px; }
-  #menu .g-rail { grid-area: rail !important; justify-content: flex-start; gap: 3px; padding-top: 6px; }
-  #menu .g-stage { grid-area: stage !important; }
-  #menu .g-carlist { grid-area: cars !important; }
-  .garage > .g-live { grid-area: live !important; }
-  .garage > .g-foot { grid-area: foot !important; }
-
-  #menu .g-brand { font: italic 900 46px/.9 var(--display); letter-spacing: 0; gap: 14px; }
-  #menu .g-brand span { font: 700 12px/1 var(--display); letter-spacing: .34em; }
-  #menu .g-carsum { padding-left: 20px; gap: 5px; }
-  #menu .g-name { font: italic 800 24px/1 var(--display); letter-spacing: .04em; gap: 12px; }
-  #menu .g-name i { font: 700 11px/1 var(--display); letter-spacing: .2em; padding: 4px 11px; background: var(--fg); }
-  #menu .g-stats { gap: 18px; font: 600 12px/1 var(--display); letter-spacing: .2em; }
-  #menu .g-stats b { font: italic 800 19px/1 var(--display); }
-  #menu .g-cams { gap: 3px; }
-  #menu .g-cams .chip { font: 700 12px/1 var(--display); letter-spacing: .14em; padding: 8px 11px; clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%); background: #0a0e16d8; box-shadow: none; }
-  #menu .g-cams .chip:hover { color: #fff; border-color: var(--cy); }
-
-  /* category rail: the main navigation of the garage */
-  #menu .g-rail .rail { padding: 11px 14px 10px 12px; gap: 12px; background: #0a0e16d0; border: 1px solid var(--line); clip-path: var(--lean); padding-left: 22px; }
-  #menu .g-rail .rail i { font: 700 12px/1 var(--display); letter-spacing: .1em; }
-  #menu .g-rail .rail b { font: italic 800 21px/1 var(--display); letter-spacing: .05em; }
-  #menu .g-rail .rail:hover { transform: translateX(4px); background: #131a27e8; }
-  #menu .g-rail .rail.on { background: linear-gradient(100deg, var(--hot), var(--hot2)); box-shadow: none; transform: translateX(8px); }
-
-  /* parts panel */
-  #menu .g-stage { padding: 0 18px 18px; background: #080b12f4; clip-path: var(--cut); box-shadow: none; }
-  #menu .g-tabtitle { margin: 0 -18px 12px; padding: 18px 18px 12px; font: italic 900 34px/1 var(--display); letter-spacing: .02em; background: linear-gradient(180deg, #080b12 80%, #080b12e0); border-bottom: 1px solid var(--line); }
-  #menu .g-tabtitle::after { width: 64px; height: 3px; margin-top: 10px; background: linear-gradient(90deg, var(--hot), var(--hot2)); }
-  #menu .g-stage h3 { font: 700 12px/1 var(--display); letter-spacing: .26em; margin: 20px 0 9px; }
+  .garage:not(.nfs-garage)::before { background: linear-gradient(90deg, #05070ccc 0%, #05070c30 16%, transparent 30%, transparent 62%, #05070c50 100%), linear-gradient(0deg, #05070ca8 0%, transparent 26%); }
+  #menu .g-stage h3 { font: 700 12px/1 var(--display); letter-spacing: .24em; margin: 16px 0 8px; }
   #menu .g-stage h3::before { width: 14px; height: 2px; }
   #menu .g-stage .chips { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
-  #menu .g-stage .chip { font: 700 14px/1.15 var(--display); letter-spacing: .08em; padding: 11px 12px 11px 15px; background: #0e131e; box-shadow: none; }
+  #menu .g-stage .chip { font: 700 13px/1.15 var(--display); letter-spacing: .07em; padding: 10px 11px 10px 14px; background: #0e131e; box-shadow: none; }
   #menu .g-stage .chip.on { background: linear-gradient(90deg, #ff2d6a40, #0e131e 70%); border-color: #ff2d6aaa; }
   #menu .g-stage .chip.on::before { background: var(--hot); }
-  #menu .sws { gap: 9px; }
-  #menu .sw { width: 34px; height: 34px; border-radius: 0; transform: skewX(-10deg); border: 2px solid #ffffff22; }
+  #menu .sws { gap: 8px; }
+  #menu .sw { width: 32px; height: 32px; border-radius: 0; transform: skewX(-10deg); border: 2px solid #ffffff22; }
   #menu .sw.on { border-color: #fff; box-shadow: 0 0 0 2px var(--hot); }
   #menu .skin { border-radius: 0; font: 700 13px var(--display); letter-spacing: .08em; }
-
-  /* your cars: a strip along the bottom of the stage */
-  #menu .g-carlist { flex-direction: row; align-items: stretch; gap: 6px; padding: 0; background: none; border: 0; box-shadow: none; clip-path: none; overflow-x: auto; overflow-y: hidden; }
-  #menu .g-carlist h3 { writing-mode: vertical-rl; transform: rotate(180deg); margin: 0; font: 700 11px/1 var(--display); letter-spacing: .24em; align-self: center; }
-  #menu .g-carlist h3::before { display: none; }
-  #menu .g-carlist .car { flex: none; width: 196px; padding: 10px 14px 10px 20px; background: #0a0e16d8; clip-path: var(--lean); }
-  #menu .g-carlist .car.on { background: linear-gradient(100deg, #ff2d6a3a, #0a0e16e0 70%); border-color: #ff2d6aaa; }
-  #menu .g-carlist .car.on::before { display: none; }
-  #menu .g-carlist .car-head b { font: italic 800 20px/1 var(--display); }
-  #menu .g-carlist .car-badge { font: 700 10px/1 var(--display); padding: 3px 6px; }
-  #menu .g-carlist .car > span { display: none; }
-  #menu .g-carlist .mini { margin-top: 7px; font: 600 13px var(--display); gap: 5px; }
-  #menu .g-carlist .mini em { padding: 2px 6px; }
-  #menu .g-carlist .more-cars { flex: none; align-self: stretch; width: auto; margin: 0; font-size: 13px; clip-path: var(--lean); padding: 0 22px; }
-
-  /* live numbers */
-  .g-live { padding: 10px 18px; gap: 22px; background: #080b12f4; border: 1px solid var(--line); box-shadow: none; }
-  .g-live .lv span { font: 700 11px/1 var(--display); letter-spacing: .24em; }
-  .g-live .lv b { font: italic 800 23px/1.05 var(--display); letter-spacing: .02em; }
-  .g-live .lv i { font: 500 11px var(--text); }
-  .g-live .lv em { font: 700 13px var(--display); }
-  .g-live .lbar { height: 2px; }
-  .g-live .lbar i { background: linear-gradient(90deg, var(--cy), #7be4ff); }
-
-  #menu .g-foot .back-btn { font: 700 14px/1 var(--display); letter-spacing: .16em; padding: 12px 26px 12px 16px; }
-  #menu .g-foot .g-summary b { font: italic 800 20px/1 var(--display); }
-  #menu .g-foot .g-summary span { font: 500 13px var(--text); letter-spacing: .02em; }
-  #menu .g-foot .go { font: italic 900 24px/1 var(--display); letter-spacing: .1em; padding: 15px 54px; box-shadow: none; clip-path: var(--lean); }
 }
 
 /* ---- HUD -------------------------------------------------------------------------------------------------------------- */
@@ -626,3 +569,148 @@ body.photomode #hud, body.photomode #mirror, body.replaymode #hud, body.replaymo
 #menu .swap-card span { font-size: 11px; line-height: 1.3; }
 #menu .swap-meta { display: flex; justify-content: space-between; gap: 6px; margin-top: 2px; font: 700 10px/1 var(--display); letter-spacing: .08em; color: #cbd5e1; }
 #menu .swap-card.on .swap-meta em:last-child { color: #4ade80; }
+
+/* ---- NFS Heat Clean Spatial Garage Layout (unobstructed center hero car!) ---- */
+#menu .nfs-garage {
+  position: fixed; inset: 0; pointer-events: none;
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr) 334px;
+  grid-template-rows: 62px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "top top top"
+    "rail . stage"
+    "live live stage";
+  gap: 12px; padding: 14px 18px 16px;
+  --g-bg: #080b11; --g-bg2: #0b0f16; --g-line: #ffffff1c; --g-line2: #ffffff38;
+}
+#menu .nfs-garage[data-pillar="rides"] {
+  grid-template-areas:
+    "top top top"
+    ". . ."
+    "dock dock dock";
+}
+#menu .nfs-garage[data-pillar="driver"] {
+  grid-template-areas:
+    "top top top"
+    ". . stage"
+    "live . stage";
+}
+#menu .nfs-garage::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    linear-gradient(180deg, rgba(5, 7, 13, 0.78) 0%, transparent 18%),
+    linear-gradient(0deg, rgba(5, 7, 13, 0.72) 0%, transparent 24%);
+}
+#menu .nfs-garage > * { position: relative; z-index: 1; }
+
+#menu .g-topbar {
+  grid-area: top; pointer-events: auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 0 10px;
+  background: rgba(7, 10, 18, 0.86); border: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+}
+#menu .g-top-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+#menu .g-id { display: flex; align-items: center; gap: 9px; min-width: 0; }
+#menu .g-id-sub { font: 700 10px/1.1 var(--display); letter-spacing: .18em; text-transform: uppercase; color: var(--cy); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+#menu .g-id-name { font: italic 900 22px/1 var(--display); letter-spacing: .03em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+#menu .g-id-name i { font: 700 10px/1 var(--display); font-style: normal; letter-spacing: .18em; padding: 3px 8px; background: var(--fg); color: #07090d; clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%); }
+
+#menu .g-pillars { display: flex; align-items: stretch; gap: 4px; height: 100%; }
+#menu .gpillar {
+  display: flex; align-items: center; gap: 8px; padding: 0 16px;
+  background: transparent; border: 0; border-bottom: 3px solid transparent; border-radius: 0;
+  color: var(--dim); transition: color .14s, border-color .14s, background .14s;
+}
+#menu .gpillar i { font: 700 11px/1 var(--display); font-style: normal; letter-spacing: .12em; color: var(--hot); opacity: .7; }
+#menu .gpillar b { font: italic 800 17px/1 var(--display); letter-spacing: .06em; text-transform: uppercase; }
+#menu .gpillar:hover { color: #fff; background: rgba(255, 255, 255, 0.04); }
+#menu .gpillar.on { color: #fff; border-bottom-color: var(--hot); background: linear-gradient(180deg, transparent, rgba(255, 45, 106, 0.22)); }
+#menu .gpillar.on i { opacity: 1; }
+
+#menu .g-top-actions { display: flex; align-items: center; gap: 6px; }
+#menu .g-top-actions .chip { padding: 7px 11px; font: 700 12px/1 var(--display); letter-spacing: .12em; background: rgba(14, 20, 34, 0.9); }
+#menu .g-drive-btn {
+  padding: 10px 26px; font: italic 900 18px/1 var(--display); letter-spacing: .1em;
+  clip-path: var(--lean);
+}
+
+#menu .nfs-garage .g-rail {
+  grid-area: rail; pointer-events: auto;
+  display: flex; flex-direction: column; gap: 4px; align-self: center;
+  max-height: 100%; overflow-y: auto;
+}
+#menu .nfs-garage .g-rail .rail {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  padding: 10px 14px 10px 18px; background: rgba(8, 12, 22, 0.82);
+  border: 1px solid var(--line); clip-path: var(--lean);
+  transition: transform .14s, background .14s, border-color .14s;
+}
+#menu .nfs-garage .g-rail .rail i { font: 700 11px/1 var(--display); font-style: normal; color: #ffffff55; }
+#menu .nfs-garage .g-rail .rail b { font: italic 800 17px/1 var(--display); letter-spacing: .04em; text-transform: uppercase; }
+#menu .nfs-garage .g-rail .rail:hover { transform: translateX(4px); border-color: rgba(255, 255, 255, 0.35); background: rgba(18, 26, 44, 0.9); }
+#menu .nfs-garage .g-rail .rail.on { transform: translateX(8px); border-color: transparent; background: linear-gradient(100deg, var(--hot), var(--hot2)); }
+#menu .nfs-garage .g-rail .rail.on i { color: #ffffffd8; }
+
+#menu .nfs-garage .g-stage {
+  grid-area: stage; pointer-events: auto;
+  background: rgba(7, 10, 18, 0.90); border: 1px solid var(--line);
+  border-top: 2px solid var(--hot); clip-path: var(--cut);
+  padding: 0 16px 16px; overflow: hidden; display: flex; flex-direction: column;
+  backdrop-filter: blur(10px);
+}
+#menu .nfs-garage .g-stage-scroll { overflow-y: auto; flex: 1; padding-right: 4px; }
+#menu .nfs-garage .g-tabtitle {
+  margin: 0 -16px 10px; padding: 14px 16px 10px;
+  font: italic 900 28px/1 var(--display); letter-spacing: .03em;
+  background: rgba(7, 10, 18, 0.96); border-bottom: 1px solid var(--line);
+}
+
+#menu .g-rides-dock {
+  grid-area: dock; pointer-events: auto;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 16px 14px; background: rgba(7, 10, 18, 0.88);
+  border: 1px solid var(--line); border-top: 2px solid var(--cy);
+  backdrop-filter: blur(10px);
+}
+#menu .g-rides-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+#menu .g-rides-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+#menu .g-rides-strip .car {
+  flex: none; width: 224px; padding: 10px 14px 10px 18px;
+  background: rgba(12, 18, 30, 0.92); border: 1px solid var(--line); clip-path: var(--lean);
+  text-align: left;
+}
+#menu .g-rides-strip .car.on { border-color: var(--hot); background: linear-gradient(105deg, rgba(255, 45, 106, 0.28), rgba(12, 18, 30, 0.94) 75%); }
+
+#menu .g-live-compact {
+  grid-area: live; pointer-events: none; align-self: end; justify-self: start;
+  display: flex; gap: 16px; padding: 10px 16px;
+  background: rgba(7, 10, 18, 0.82); border: 1px solid var(--line);
+  border-left: 3px solid var(--cy); backdrop-filter: blur(8px);
+}
+#menu .nfs-garage[data-pillar="rides"] .g-live-compact { display: none; }
+#menu .g-live-compact .lv { display: flex; flex-direction: column; gap: 3px; min-width: 92px; }
+#menu .g-live-compact .lv span { font: 700 10px/1 var(--display); letter-spacing: .2em; color: var(--dim); }
+#menu .g-live-compact .lv b { font: italic 800 20px/1 var(--display); color: #fff; }
+#menu .g-live-compact .lv i { display: none; }
+#menu .g-live-compact .lv em { font: 700 11px/1 var(--display); font-style: normal; }
+#menu .g-live-compact .lv em.up { color: #4ade80; }
+#menu .g-live-compact .lv em.down { color: #fb7185; }
+#menu .g-live-compact .lbar { height: 2px; background: #ffffff1a; }
+#menu .g-live-compact .lbar i { display: block; height: 100%; background: linear-gradient(90deg, var(--cy), #7be4ff); }
+
+@media (max-width: 1100px) {
+  #menu .nfs-garage {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-areas: "top" "rail" "stage";
+    padding: 8px; gap: 6px;
+  }
+  #menu .nfs-garage[data-pillar="rides"] { grid-template-areas: "top" "." "dock"; }
+  #menu .g-topbar { flex-wrap: wrap; padding: 6px 8px; gap: 6px; }
+  #menu .g-pillars { order: 3; width: 100%; justify-content: space-between; overflow-x: auto; }
+  #menu .gpillar { padding: 6px 10px; }
+  #menu .nfs-garage .g-rail { flex-direction: row; overflow-x: auto; align-self: stretch; }
+  #menu .nfs-garage .g-rail .rail { flex: none; padding: 7px 12px; clip-path: none; transform: none !important; }
+  #menu .g-live-compact { display: none; }
+}

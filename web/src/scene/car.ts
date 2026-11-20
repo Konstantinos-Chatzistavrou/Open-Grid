@@ -2,7 +2,8 @@
 // soft ground contact shadow, and realistic radial spoke motion blur.
 import * as THREE from 'three/webgpu';
 import { applyPlate } from './plate';
-import { float, mix, smoothstep, texture, uniform, uv, vec3, vec4 } from 'three/tsl';
+import { abs, float, max, mix, normalView, pow, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { noise01 } from '../fx/noiseTex';
 import { OUT } from '../physics/core';
 import { materialsOf } from './city';
 import { assetUrl, loadGLTF } from './loaders';
@@ -607,10 +608,12 @@ export class CarVisual {
   private camberFrontRad = 0;
   private camberRearRad = 0;
   private qc = new THREE.Quaternion();
-  /** Dual rear exhaust flamethrower VFX group (flashes on NOS, upshifts, overrun pops & Garage rev). */
+  /** Photorealistic Mach-diamond exhaust-only flamethrower VFX (anchored strictly to real exhaust tips). */
   private flameGroup: THREE.Group | null = null;
-  private flameOuterMat: THREE.MeshBasicMaterial | null = null;
-  private flameInnerMat: THREE.MeshBasicMaterial | null = null;
+  private flameNozzles: THREE.Object3D[] = [];
+  private flameIntU: THREE.UniformNode<'float', number> = uniform(0);
+  private flameNosU: THREE.UniformNode<'float', number> = uniform(0);
+  private flameLight: THREE.PointLight | null = null;
   private flameLevel = 0;
 
   setStance(camberFrontDeg: number, camberRearDeg: number) {
@@ -618,35 +621,181 @@ export class CarVisual {
     this.camberRearRad = (camberRearDeg * Math.PI) / 180;
   }
 
-  /** Trigger or sustain flamethrower exhaust cones (`blueNos = true` gives blue-violet nitrous purge flame). */
+  /** Detect the exact rear-exit mouth (x, y, z) of every real exhaust pipe on this car model. */
+  private detectExhaustNozzles(): { x: number; y: number; z: number; r: number }[] {
+    this.model.updateMatrixWorld(true);
+    const invModel = this.model.matrixWorld.clone().invert();
+    const mLocal = new THREE.Matrix4();
+    const vTmp = new THREE.Vector3();
+    const buckets: { sx: number; sy: number; minZ: number; minY: number; maxY: number; n: number }[] = [];
+
+    this.model.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.geometry) return;
+      const mats = materialsOf(mesh);
+      const isEx = /exhaust|tailpipe|muffler/i.test(mesh.name || '')
+        || mats.some((m) => /exhaust|tailpipe|muffler/i.test(m.name || ''));
+      if (!isEx || /flame/i.test(mesh.name || '')) return;
+      const pos = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (!pos || pos.count === 0) return;
+      mLocal.multiplyMatrices(invModel, mesh.matrixWorld);
+      for (let i = 0; i < pos.count; i++) {
+        vTmp.fromBufferAttribute(pos, i).applyMatrix4(mLocal);
+        // Only consider vertices near the rear half of the car
+        if (vTmp.z > -0.5) continue;
+        let b = buckets.find((k) => Math.abs(k.sx / k.n - vTmp.x) < 0.14 && Math.abs(k.sy / k.n - vTmp.y) < 0.14);
+        if (!b) {
+          b = { sx: 0, sy: 0, minZ: Infinity, minY: Infinity, maxY: -Infinity, n: 0 };
+          buckets.push(b);
+        }
+        b.sx += vTmp.x;
+        b.sy += vTmp.y;
+        if (vTmp.z < b.minZ) b.minZ = vTmp.z;
+        if (vTmp.y < b.minY) b.minY = vTmp.y;
+        if (vTmp.y > b.maxY) b.maxY = vTmp.y;
+        b.n++;
+      }
+    });
+
+    if (buckets.length > 0) {
+      return buckets
+        .filter((b) => b.n >= 4)
+        .sort((a, b) => a.sx / a.n - b.sx / b.n)
+        .slice(0, 4)
+        .map((b) => ({
+          x: b.sx / b.n,
+          y: (b.minY + b.maxY) * 0.5,
+          z: b.minZ + 0.02, // tucked 2 cm inside pipe lip so flame erupts strictly from the bore!
+          r: Math.max(0.036, Math.min(0.068, (b.maxY - b.minY) * 0.48)),
+        }));
+    }
+
+    // Fallback for models without named exhaust meshes: tucked directly into the rear diffuser exit
+    const cb = this.cfg.collision_box;
+    const rearZ = cb.centre_in_model_m[2] - cb.size_m[2] * 0.5 + 0.04;
+    const centerExit = /strix|basilisk/i.test(this.cfg.model);
+    const xs = centerExit ? [-0.14, 0.14] : [-0.46, 0.46];
+    return xs.map((x) => ({ x, y: centerExit ? 0.34 : 0.28, z: rearZ, r: 0.052 }));
+  }
+
+  /** Build contoured volumetric flame plume + crossed internal plasma fins (pointing along -Z from bore origin 0). */
+  private buildExhaustPlumeGeo(): THREE.BufferGeometry {
+    // Smooth aerodynamic jet envelope (v=0 at pipe mouth -> v=1 at flame tip)
+    const pts: THREE.Vector2[] = [
+      new THREE.Vector2(0.035, 0.00),
+      new THREE.Vector2(0.060, 0.08),
+      new THREE.Vector2(0.072, 0.20),
+      new THREE.Vector2(0.062, 0.38),
+      new THREE.Vector2(0.042, 0.58),
+      new THREE.Vector2(0.018, 0.78),
+      new THREE.Vector2(0.001, 0.94),
+    ];
+    const geo = new THREE.LatheGeometry(pts, 14);
+    // Lathe grows along +Y -> rotate -90 deg around X so it shoots straight backward along -Z out of the tailpipe!
+    geo.rotateX(-Math.PI / 2);
+    return geo;
+  }
+
+  /** Photorealistic WebGPU TSL Mach-diamond exhaust afterburner shader (zero hard edges, HDR bloom). */
+  private createExhaustFlameMat(): THREE.MeshBasicNodeMaterial {
+    const m = new THREE.MeshBasicNodeMaterial();
+    m.name = 'exhaust_mach_flame';
+    m.transparent = true;
+    m.blending = THREE.AdditiveBlending;
+    m.depthWrite = false;
+    m.side = THREE.DoubleSide;
+
+    const p = uv();
+    const v = p.y; // 0 = inside exhaust mouth, 1 = flame tip
+    const u = p.x;
+
+    // Fast supersonic turbulent gas flow scrolling backward out of the tailpipe
+    const flowA = noise01(vec2(u.mul(3.5), v.mul(3.2).sub(time.mul(22.0))));
+    const flowB = noise01(vec2(u.mul(7.0).add(2.3), v.mul(6.5).sub(time.mul(34.0))));
+    const turb = flowA.mul(0.62).add(flowB.mul(0.38));
+
+    // Standing Mach shock diamonds near the nozzle exit (signature real GT3 / anti-lag / titanium flame physics!)
+    const shockWave = pow(max(float(0), sin(v.mul(27.0).sub(time.mul(16.0)))), float(3.2))
+      .mul(smoothstep(float(0.02), float(0.10), v))
+      .mul(smoothstep(float(0.68), float(0.14), v));
+
+    // Soft view-angle Fresnel fade removes all hard cone silhouette lines from any viewing angle
+    const fresnel = pow(abs(normalView.z), float(0.85));
+    const throat = smoothstep(float(0.0), float(0.05), v);
+    const tailFade = pow(max(float(0), float(1).sub(v).add(turb.sub(0.5).mul(0.26))), float(1.65));
+
+    // Normal gasoline/anti-lag palette: white-blue throat -> electric cyan Mach diamonds -> molten orange -> deep crimson tip
+    const gasOuter = mix(vec3(1.0, 0.42, 0.04), vec3(0.85, 0.08, 0.01), smoothstep(float(0.35), float(0.95), v));
+    const gasMid = mix(vec3(1.0, 0.86, 0.48), gasOuter, smoothstep(float(0.10), float(0.45), v));
+    const gasCol = mix(gasMid, vec3(0.55, 0.88, 1.0), shockWave.mul(0.82))
+      .add(vec3(1.0, 0.98, 0.92).mul(smoothstep(float(0.18), float(0.0), v).mul(1.1)));
+
+    // Nitrous oxide [X] plasma palette: white-hot throat -> cyan-cobalt shock diamonds -> electric violet tip
+    const nosOuter = mix(vec3(0.12, 0.56, 1.0), vec3(0.42, 0.14, 1.0), smoothstep(float(0.35), float(0.95), v));
+    const nosCol = mix(vec3(0.82, 0.98, 1.0), nosOuter, smoothstep(float(0.10), float(0.50), v))
+      .add(vec3(1.0, 1.0, 1.0).mul(shockWave.mul(0.95)));
+
+    const flameRgb = mix(gasCol, nosCol, this.flameNosU);
+    const alpha = throat.mul(tailFade).mul(fresnel).mul(turb.mul(0.55).add(0.45)).mul(this.flameIntU).clamp(0, 1);
+    // HDR energy > 1.5 triggers rich emitter-biased WebGPU bloom right around the tailpipes
+    const hdrBoost = float(3.8).add(shockWave.mul(2.4)).mul(this.flameIntU);
+    m.colorNode = vec4(flameRgb.mul(hdrBoost), alpha);
+    return m;
+  }
+
+  /** Trigger or sustain photorealistic Mach-diamond flames shooting strictly from this car's exhaust pipes. */
   setExhaustFlame(intensity: number, blueNos = false) {
     if (!this.flameGroup) {
       const g = new THREE.Group();
       g.name = 'wheel_exhaust_flames';
-      const outerGeo = new THREE.ConeGeometry(0.11, 0.72, 10, 1, true).rotateX(-Math.PI / 2);
-      const innerGeo = new THREE.ConeGeometry(0.055, 0.44, 8, 1, true).rotateX(-Math.PI / 2);
-      this.flameOuterMat = new THREE.MeshBasicMaterial({ color: 0xff6a00, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-      this.flameInnerMat = new THREE.MeshBasicMaterial({ color: 0x60d8ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-      const rearZ = -this.cfg.collision_box.size_m[2] * 0.5 - 0.15;
-      for (const sx of [-0.52, 0.52]) {
+      const plumeGeo = this.buildExhaustPlumeGeo();
+      const plumeMat = this.createExhaustFlameMat();
+      const nozzles = this.detectExhaustNozzles();
+      let avgX = 0, avgY = 0, avgZ = 0;
+      for (const nz of nozzles) {
         const pair = new THREE.Group();
-        pair.position.set(sx, 0.34, rearZ);
-        const o = new THREE.Mesh(outerGeo, this.flameOuterMat); o.position.z = -0.34;
-        const inn = new THREE.Mesh(innerGeo, this.flameInnerMat); inn.position.z = -0.20;
-        pair.add(o, inn);
+        pair.position.set(nz.x, nz.y, nz.z);
+        const rScale = nz.r / 0.052;
+        // Outer turbulent plume + tight inner high-velocity supersonic core
+        const outer = new THREE.Mesh(plumeGeo, plumeMat);
+        outer.scale.set(rScale * 1.15, rScale * 1.15, 0.92);
+        const inner = new THREE.Mesh(plumeGeo, plumeMat);
+        inner.scale.set(rScale * 0.56, rScale * 0.56, 0.58);
+        inner.rotation.z = Math.PI * 0.5;
+        pair.add(outer, inner);
         g.add(pair);
+        this.flameNozzles.push(pair);
+        avgX += nz.x; avgY += nz.y; avgZ += nz.z;
       }
+      // Compact rear diffuser & wet-asphalt reflection flash (0 intensity when off -> skipped by Clustered Forward+)
+      const n = Math.max(1, nozzles.length);
+      this.flameLight = new THREE.PointLight(0xff7418, 0, 4.2, 2);
+      this.flameLight.position.set(avgX / n, avgY / n + 0.08, avgZ / n - 0.35);
+      g.add(this.flameLight);
       g.visible = false;
       this.model.add(g);
       this.flameGroup = g;
     }
-    this.flameLevel = Math.max(this.flameLevel * 0.75, Math.max(0, Math.min(1.4, intensity)));
-    this.flameGroup.visible = this.flameLevel > 0.05;
-    if (this.flameGroup.visible && this.flameOuterMat && this.flameInnerMat) {
-      this.flameOuterMat.color.setHex(blueNos ? 0x1e90ff : 0xff6a00);
-      this.flameInnerMat.color.setHex(blueNos ? 0xe0f7ff : 0xffe066);
-      const flick = 0.8 + Math.random() * 0.45;
-      this.flameGroup.scale.set(0.8 + this.flameLevel * 0.4, 0.8 + this.flameLevel * 0.4, (0.45 + this.flameLevel * 0.85) * flick);
+
+    this.flameLevel = Math.max(this.flameLevel * 0.72, Math.max(0, Math.min(1.4, intensity)));
+    const on = this.flameLevel > 0.06;
+    this.flameGroup.visible = on;
+    this.flameIntU.value = on ? Math.min(1.25, this.flameLevel) : 0;
+    this.flameNosU.value = blueNos ? 1 : 0;
+    if (this.flameLight) {
+      this.flameLight.color.setHex(blueNos ? 0x38bdf8 : 0xff6b14);
+      this.flameLight.intensity = on ? (10 + Math.random() * 6) * this.flameLevel : 0;
+    }
+    if (on) {
+      for (let i = 0; i < this.flameNozzles.length; i++) {
+        const flick = 0.72 + Math.random() * 0.56;
+        const wFlick = 0.85 + Math.random() * 0.30;
+        this.flameNozzles[i].scale.set(
+          wFlick * (0.78 + this.flameLevel * 0.32),
+          wFlick * (0.78 + this.flameLevel * 0.32),
+          (0.32 + this.flameLevel * 0.88) * flick,
+        );
+      }
     }
   }
 
