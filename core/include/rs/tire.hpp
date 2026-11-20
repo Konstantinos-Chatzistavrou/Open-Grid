@@ -34,7 +34,11 @@ struct TireCondition {
     double flat_spot_phase_rad = 0.0; // Wheel rotation angle (rad) where the flat spot sits
     double blistering = 0.0;      // 0..1 internal rubber blistering from sustained core+surface overheating (> 130 C)
     double graining = 0.0;        // 0..1 surface tearing from high lateral slip while core is cold (< 60 C)
+    double ambient_air_c = 30.0;  // Ambient air temperature (C) for convective tread cooling & cold-start gas law
+    double track_surface_c = 30.0;// Asphalt road surface temperature (C) for conductive contact-patch heat transfer
+    std::array<double, 3> rib_contact_shares{1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0}; // 16-point 3D geometric load shares (Inner, Middle, Outer)
 
+    void set_environment_celsius(double air_c, double track_c) { ambient_air_c = air_c; track_surface_c = track_c; }
     void update(double slip_power_w, double load_n, double speed_mps, double dt, const TireParams* p = nullptr);
     void update_zones(double slip_power_w, double load_n, double speed_mps, double camber_rad, double lateral_force_n,
                       double wheel_side_sign, double wheel_omega_rads, double wheel_angle_rad, double dt,

@@ -20,6 +20,28 @@ struct DrivetrainInput {
     double airspeed_mps = 0.0;                       // vehicle forward speed for oil/intercooler radiator cooling
     double radiator_cooling_scale = 1.0;             // 1.0 intact .. 0.25 punctured by front-zone crash damage
     std::array<double, 4> bearing_drag_nm{};         // parasitic hub bearing drag from wheel impact damage, N m
+    double ambient_air_c = 25.0;                     // live ambient air temperature (C)
+    double altitude_m = 0.0;                         // elevation above sea level (m)
+    double humidity_0_to_1 = 0.35;                   // relative humidity (0..1)
+    bool atmosphere_enabled = false;                 // true: scale NA vs Turbo power, IAT & cooling by altitude/Celsius
+};
+
+// International Standard Atmosphere (ISA) barometric altitude, ambient air Celsius, asphalt track Celsius & humidity model.
+struct AtmosphericEnvironment {
+    bool enabled = false;
+    double altitude_m = 0.0;            // meters above sea level (0 m NYC coast .. 2,200 m mountain touge / volcano)
+    double ambient_air_c = 25.0;        // ambient air temperature (C: -10 C winter night .. +42 C summer heat)
+    double track_surface_c = 30.0;      // asphalt road surface temperature (C: -8 C freezing .. +62 C sun-baked)
+    double humidity_0_to_1 = 0.35;      // relative humidity (0..1; water vapor is less dense than dry O2/N2)
+
+    /** Barometric pressure P(h) in kPa via ISA tropospheric lapse formula (101.325 kPa at 0 m -> 77.5 kPa at 2,200 m). */
+    double barometric_pressure_kpa() const;
+    /** Moist air mass density rho(h, T_air, RH) in kg/m^3 (1.225 kg/m^3 at ISA 15 C sea level). */
+    double air_density_kg_m3() const;
+    /** Naturally aspirated (NA) SAE J1349 dry-air mass power factor (loses ~21% at 2,200 m or hot humid air; +5% at 0 C sea level). */
+    double na_engine_power_factor() const;
+    /** Turbocharged altitude power factor: closed-loop wastegate spins turbo harder to hold boost until 155k RPM compressor choke. */
+    double turbo_altitude_power_factor(double boost_bar, double* out_compressor_pr = nullptr) const;
 };
 
 enum class TransmissionType : int {

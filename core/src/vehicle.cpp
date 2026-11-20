@@ -161,6 +161,118 @@ WheelContact Vehicle::resolve_contact_patch(const WheelContactPatchRays& patch,
     return best;
 }
 
+std::array<WheelFootprint16Rays, 4> Vehicle::wheel_footprint_16_rays(const ChassisState& s) const {
+    std::array<WheelFootprint16Rays, 4> out;
+    const Vec3 down = s.orientation.rotate({0, 0, -1});
+    // 5 longitudinal stations (-0.54 R .. +0.54 R) x 3 lateral ribs (Inner, Middle, Outer) + 1 leading apex = 16 points
+    static constexpr double kLonFracs[5] = {-0.54, -0.27, 0.0, 0.27, 0.54};
+    static constexpr double kLatOffsetsM[3] = {-0.095, 0.0, 0.095}; // ~245-285 mm tread width across 3 ribs
+    for (int w = 0; w < 4; ++w) {
+        const WheelGeom& g = cfg_.wheels[w];
+        const double r = cfg_.tire(w).radius;
+        const double len = cfg_.axle(w).spring_rest_length + r;
+        const Vec3 mount = s.position + s.orientation.rotate({g.x, g.y, g.mount_z});
+        const double st = steer_angle(w);
+        const Vec3 wheel_fwd = s.orientation.rotate({std::cos(st), std::sin(st), 0.0});
+        // Wheel lateral direction pointing from Inner rib toward Outer rib (FL/RL: outer is +Y left; FR/RR: outer is -Y right)
+        const double out_sign = (w % 2 == 0) ? 1.0 : -1.0;
+        const Vec3 wheel_outward = s.orientation.rotate({-std::sin(st) * out_sign, std::cos(st) * out_sign, 0.0});
+
+        int idx = 0;
+        for (int ilon = 0; ilon < 5; ++ilon) {
+            const double dx = kLonFracs[ilon] * r;
+            for (int irib = 0; irib < 3; ++irib) {
+                const double dy = kLatOffsetsM[irib];
+                out[w].longitudinal_offsets_m[idx] = dx;
+                out[w].lateral_offsets_m[idx] = dy;
+                out[w].rib_index[idx] = irib; // 0 = Inner, 1 = Middle, 2 = Outer
+                out[w].rays[idx].origin = mount + wheel_fwd * dx + wheel_outward * dy;
+                out[w].rays[idx].direction = down;
+                out[w].rays[idx].length = len;
+                ++idx;
+            }
+        }
+        // 16th point: high-resolution leading centerline curb-strike probe (+0.40 R, Middle rib)
+        out[w].longitudinal_offsets_m[15] = 0.40 * r;
+        out[w].lateral_offsets_m[15] = 0.0;
+        out[w].rib_index[15] = 1;
+        out[w].rays[15].origin = mount + wheel_fwd * (0.40 * r);
+        out[w].rays[15].direction = down;
+        out[w].rays[15].length = len;
+    }
+    return out;
+}
+
+WheelContact Vehicle::resolve_footprint_16(const WheelFootprint16Rays& footprint,
+                                           const std::array<WheelContact, 16>& hits,
+                                           double tire_radius) {
+    WheelContact best;
+    const double r = std::max(tire_radius, 0.10);
+    double best_eff_dist = 1e9;
+    Vec3 normal_acc{0, 0, 0};
+    double weight_sum = 0.0;
+    std::array<double, 3> rib_min_dist{1e9, 1e9, 1e9};
+
+    for (int i = 0; i < 16; ++i) {
+        if (!hits[i].hit) continue;
+        const double dx = footprint.longitudinal_offsets_m[i];
+        const double dy = footprint.lateral_offsets_m[i];
+        // 3D cylindrical tire arc + lateral shoulder crown profile
+        const double dz_x = r - std::sqrt(std::max(0.0, r * r - dx * dx));
+        const double dz_y = 0.0028 * (dy / 0.095) * (dy / 0.095);
+        const double eff_dist = hits[i].distance + dz_x + dz_y;
+        const int rib = clamp(footprint.rib_index[i], 0, 2);
+        rib_min_dist[rib] = std::min(rib_min_dist[rib], eff_dist);
+
+        if (eff_dist < best_eff_dist) {
+            best_eff_dist = eff_dist;
+            best.hit = true;
+            best.distance = eff_dist;
+            best.point = footprint.rays[7].origin + footprint.rays[7].direction * eff_dist; // ray[7] is (0,0) center
+            best.surface = hits[i].surface;
+            best.water_depth_mm = std::max(best.water_depth_mm, hits[i].water_depth_mm);
+        }
+        const double w = (std::abs(dx) < 0.01 && std::abs(dy) < 0.01) ? 1.2 : 0.6;
+        normal_acc += hits[i].normal * w;
+        weight_sum += w;
+    }
+    if (!best.hit) return best;
+
+    // Compute per-rib (Inner=0, Middle=1, Outer=2) 3D geometric load distribution from relative curb/camber penetration:
+    // A rib that strikes a raised curb has a smaller eff_dist than the other ribs and carries proportionally more load!
+    std::array<double, 3> rib_w{};
+    double rib_sum = 0.0;
+    for (int irib = 0; irib < 3; ++irib) {
+        if (rib_min_dist[irib] > 1e8) {
+            rib_w[irib] = 0.05;
+        } else {
+            const double penetration_above_best = std::max(0.0, rib_min_dist[irib] - best_eff_dist);
+            // Carcass lateral compliance (~0.018 m characteristic decay across ribs): a 3 cm curb step concentrates load on that rib
+            rib_w[irib] = std::exp(-penetration_above_best / 0.016);
+        }
+        rib_sum += rib_w[irib];
+    }
+    if (rib_sum > 1e-6) {
+        for (int irib = 0; irib < 3; ++irib) best.rib_contact_shares[irib] = rib_w[irib] / rib_sum;
+    }
+
+    // Ramp normal backward if leading row (indices 12..15) hits a higher curb step than center row (indices 6..8)
+    const double lead_dist = std::min({hits[12].hit ? hits[12].distance : 1e9,
+                                       hits[13].hit ? hits[13].distance : 1e9,
+                                       hits[14].hit ? hits[14].distance : 1e9});
+    const double cent_dist = hits[7].hit ? hits[7].distance : 1e9;
+    if (lead_dist + 0.005 < cent_dist && cent_dist < 1e8) {
+        const Vec3 up_dir = footprint.rays[7].direction * -1.0;
+        const Vec3 step_vec = footprint.rays[13].origin - footprint.rays[7].origin;
+        if (dot(step_vec, step_vec) > 1e-6) {
+            Vec3 ramp_n = normalized(up_dir - normalized(step_vec) * 0.35);
+            if (dot(ramp_n, up_dir) > 0.4) normal_acc += ramp_n * 1.6;
+        }
+    }
+    best.normal = weight_sum > 0.0 ? normalized(normal_acc) : Vec3{0, 0, 1};
+    return best;
+}
+
 AeroWakeState Vehicle::compute_slipstream_wake(const Vec3& my_pos, const Vec3& my_fwd, const std::vector<Vec3>& lead_car_positions) {
     AeroWakeState wake;
     const Vec3 fwd = length(my_fwd) > 1e-6 ? normalized(my_fwd) : Vec3{1, 0, 0};
@@ -334,6 +446,10 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             k.load *= hydro.effective_load_scale;
             k.ffb_hydro_scale = hydro.ffb_aligning_torque_scale;
         }
+        if (atmosphere_.enabled) {
+            tire_condition_[w].set_environment_celsius(atmosphere_.ambient_air_c, atmosphere_.track_surface_c);
+        }
+        tire_condition_[w].rib_contact_shares = c.rib_contact_shares;
         k.mu = cfg_.grip_for_surface(c.surface) * tire_condition_[w].grip_factor(&cfg_.tire(w))
              * (tire_zones_enabled ? tire_condition_[w].zone_health_grip_factor() : 1.0) * damage_.grip[w];
         // Dynamic inclination / camber angle gamma in the tyre frame (+ = top tilted toward +left):
@@ -420,6 +536,10 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     din.airspeed_mps = std::abs(out.speed);
     din.radiator_cooling_scale = damage_.radiator_cooling;
     din.bearing_drag_nm = damage_.bearing_drag_nm;
+    din.atmosphere_enabled = atmosphere_.enabled;
+    din.ambient_air_c = atmosphere_.ambient_air_c;
+    din.altitude_m = atmosphere_.altitude_m;
+    din.humidity_0_to_1 = atmosphere_.humidity_0_to_1;
     // ---- ASSIST: auto-clutch (sits on top of the model; the drivetrain only sees a pedal value)
     // Behaves like a centrifugal clutch: engagement rises with engine rpm above idle, so the car
     // launches when you add throttle and declutches before stalling when you slow down. Gear
@@ -517,16 +637,18 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             const bool front = w < 2;
             const double cap = (front ? bt.disc_mass_front : bt.disc_mass_rear) * 460.0;
             const double area = front ? bt.disc_area_front : bt.disc_area_rear;
-            const double tk = disc_temp_[w] + 273.15, ta = 25.0 + 273.15;
+            const double amb_brake_c = atmosphere_.enabled ? atmosphere_.ambient_air_c : 25.0;
+            const double tk = disc_temp_[w] + 273.15, ta = amb_brake_c + 273.15;
             const double heat = drivetrain_.brake_torque[w] * std::abs(drivetrain_.wheel_omega[w]);
-            const double cool = (bt.cooling_base + bt.cooling_per_mps * v_car) * (disc_temp_[w] - 25.0)
+            const double cool = (bt.cooling_base + bt.cooling_per_mps * v_car) * (disc_temp_[w] - amb_brake_c)
                               + 0.55 * 5.670e-8 * area * (tk * tk * tk * tk - ta * ta * ta * ta);
-            disc_temp_[w] = clamp(disc_temp_[w] + h * (heat - cool) / cap, 0.0, 1100.0);
+            disc_temp_[w] = clamp(disc_temp_[w] + h * (heat - cool) / cap, -20.0, 1100.0);
             din.pad_mu[w] = brake_pad_mu(disc_temp_[w]);
             // Caliper DOT 4 brake fluid heat soak from hot rotor through pad + convective airflow cooling
+            const double fluid_amb_c = atmosphere_.enabled ? (atmosphere_.ambient_air_c + 15.0) : 40.0;
             const double d_fluid = 0.025 * std::max(0.0, disc_temp_[w] - fluid_temp_[w])
-                                 - (0.012 + 0.0015 * v_car) * (fluid_temp_[w] - 40.0);
-            fluid_temp_[w] = clamp(fluid_temp_[w] + h * d_fluid, 20.0, 360.0);
+                                 - (0.012 + 0.0015 * v_car) * (fluid_temp_[w] - fluid_amb_c);
+            fluid_temp_[w] = clamp(fluid_temp_[w] + h * d_fluid, -10.0, 360.0);
             pad_wear_[w] = clamp(pad_wear_[w] + heat * 2.5e-10 * h, 0.0, 1.0);
         }
     }
@@ -629,15 +751,23 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     const double yaw_drag_mult = aero_wake_.yaw_aero_enabled ? (1.0 + 0.35 * sin_beta * sin_beta) : 1.0;
     const double yaw_rear_down_mult = aero_wake_.yaw_aero_enabled ? (1.0 - 0.30 * sin_beta * sin_beta) : 1.0;
     const double eff_drag_scale = clamp(aero_wake_.drag_scale, 0.65, 1.2) * yaw_drag_mult * active_drag_mult;
-    const double eff_front_down_scale = clamp(aero_wake_.dirty_air_front_downforce_scale, 0.55, 1.1);
+    double eff_front_down_scale = clamp(aero_wake_.dirty_air_front_downforce_scale, 0.55, 1.1);
+    const double rho_air = atmosphere_.enabled ? atmosphere_.air_density_kg_m3() : a.air_density;
+    out.air_density_kg_m3 = rho_air;
 
-    force += s.velocity * (-0.5 * a.air_density * a.drag_area * damage_.aero_drag * eff_drag_scale * v);
+    force += s.velocity * (-0.5 * rho_air * a.drag_area * damage_.aero_drag * eff_drag_scale * v);
     double vx_body = dot(s.velocity, s.orientation.rotate({1, 0, 0}));
-    // Ride height: lower = more underbody downforce; nose down (front compressed more) = balance forward.
+    // Ride height & 2D Non-Linear Ground-Effect Aero Map:
+    // Lower ride height increases underbody venturi downforce until the front splitter bottoms out past its choke threshold
+    // (dz_f > 0.88 * max_compression), where underbody airflow partially stalls (aero porpoising / high-speed bottoming push).
     const double dz_f = 0.5 * (dz_[FL] + dz_[FR]), dz_r = 0.5 * (dz_[RL] + dz_[RR]);
+    if (chassis_dyn_.active_aero_enabled && dz_f > cfg_.front.max_compression * 0.85 && out.speed > 35.0) {
+        out.front_splitter_stalled = true;
+        eff_front_down_scale *= 0.74; // -26% front venturi stall when splitter chokes against asphalt
+    }
     const double ground = clamp(1.0 + a.ground_effect_per_m * 0.5 * (dz_f + dz_r), 0.6, 1.5);
     const double balance = clamp(a.front_balance + a.pitch_balance_per_m * (dz_f - dz_r), 0.05, 0.95);
-    double down = 0.5 * a.air_density * a.lift_area * ground * vx_body * vx_body;
+    double down = 0.5 * rho_air * a.lift_area * ground * vx_body * vx_body;
     Vec3 p_front = s.position + s.orientation.rotate({cfg_.dist_cg_front, 0, 0});
     Vec3 p_rear = s.position + s.orientation.rotate({-cfg_.dist_cg_rear, 0, 0});
     Vec3 f_front = up * (-down * balance * eff_front_down_scale);

@@ -400,4 +400,70 @@ RS_TEST(ue5_upgrade) {
         test::check("3-Rib + MF 6.2 + WLF hybrid evaluates load-weighted rib grip and conicity/3-rib aligning moment",
                     f_hybrid.effective_rib_mu < 0.99 && f_hybrid.effective_rib_mu > 0.80 && std::abs(f_hybrid.mz) > 1.0);
     }
+
+    // 16. 16-Point 2D Cylindrical Tire Footprint on Lateral Apex Curb (Beating Single-Ray & 3-Ray Centerline)
+    {
+        // Front-Right wheel (FR) is at y = -0.805 m; its Inner rib (-0.095 m inward -> y = -0.710 m) clips a lateral apex curb at y >= -0.74 m!
+        // Both 1-ray and 3-ray centerline queries lie along y = -0.805 m (< -0.74 m) and completely miss the lateral curb,
+        // while the 16-Point 2D Footprint detects the inner-shoulder strike and concentrates >60% load onto the Inner rib!
+        const double fr_y = cfg.wheels[FR].y; // -0.805 m
+        auto lat_curb = std::make_shared<LateralCurbGround>(fr_y + 0.06, 0.055);
+        Simulation sim16(cfg, lat_curb);
+        sim16.use_footprint_16 = true;
+        sim16.reset({}, 0.0, 12.0, 2);
+
+        auto center_rays = sim16.vehicle.wheel_rays(sim16.body.state);
+        auto patch3_rays = sim16.vehicle.wheel_contact_patch_rays(sim16.body.state);
+        auto fp16_rays = sim16.vehicle.wheel_footprint_16_rays(sim16.body.state);
+
+        WheelContact c1 = lat_curb->raycast(center_rays[FR]);
+        std::array<WheelContact, 3> h3 = {
+            lat_curb->raycast(patch3_rays[FR].rays[0]),
+            lat_curb->raycast(patch3_rays[FR].rays[1]),
+            lat_curb->raycast(patch3_rays[FR].rays[2]),
+        };
+        WheelContact c3 = Vehicle::resolve_contact_patch(patch3_rays[FR], h3, cfg.tire(FR).radius);
+
+        std::array<WheelContact, 16> h16;
+        for (int j = 0; j < 16; ++j) h16[j] = lat_curb->raycast(fp16_rays[FR].rays[j]);
+        WheelContact c16 = Vehicle::resolve_footprint_16(fp16_rays[FR], h16, cfg.tire(FR).radius);
+
+        test::check("16-point 2D tire footprint detects inner-shoulder lateral curb missed by 1-ray and 3-ray centerline",
+                    c16.distance < c1.distance - 0.03 && c16.distance < c3.distance - 0.03);
+        test::check("16-point 2D tire footprint concentrates normal load onto the curb-striking Inner rib (> 65%)",
+                    c16.rib_contact_shares[0] > 0.65 && c16.rib_contact_shares[0] > c16.rib_contact_shares[2] * 3.0);
+    }
+
+    // 17. Live Barometric Altitude (0 m vs 2,400 m Mountain Pass) & Ambient/Track Celsius Thermodynamics
+    {
+        AtmosphericEnvironment sea_cold;
+        sea_cold.enabled = true;
+        sea_cold.altitude_m = 0.0;
+        sea_cold.ambient_air_c = 2.0;    // 2 C crisp winter night at sea level
+        sea_cold.track_surface_c = 4.0;
+
+        AtmosphericEnvironment mountain_hot;
+        mountain_hot.enabled = true;
+        mountain_hot.altitude_m = 2400.0; // 2,400 m high-altitude mountain pass
+        mountain_hot.ambient_air_c = 36.0;
+        mountain_hot.track_surface_c = 54.0; // 54 C sun-baked asphalt
+
+        test::check("ISA barometric pressure & air density drop by >22% at 2,400m hot altitude vs 2C sea level",
+                    mountain_hot.barometric_pressure_kpa() < 78.0 &&
+                    mountain_hot.air_density_kg_m3() < sea_cold.air_density_kg_m3() * 0.72);
+        test::check("turbocharged wastegate retains significantly more power at 2,400m altitude than naturally aspirated engine",
+                    mountain_hot.turbo_altitude_power_factor(1.15) > mountain_hot.na_engine_power_factor() + 0.12);
+
+        // Asphalt-to-tread solid conduction: rolling on 54 C asphalt vs 4 C winter asphalt over 10 seconds
+        TireCondition tire_winter, tire_summer;
+        tire_winter.set_environment_celsius(2.0, 4.0);
+        tire_summer.set_environment_celsius(36.0, 54.0);
+        for (int i = 0; i < 200; ++i) {
+            tire_winter.update_zones(6000.0, 4000.0, 30.0, -0.03, 500.0, -1.0, 95.0, i * 0.4, 0.05, &cfg.tire_front);
+            tire_summer.update_zones(6000.0, 4000.0, 30.0, -0.03, 500.0, -1.0, 95.0, i * 0.4, 0.05, &cfg.tire_front);
+        }
+        test::check("hot 54C asphalt & 36C air heat tire tread and inflation pressure higher than 4C winter asphalt",
+                    tire_summer.surface_c > tire_winter.surface_c + 12.0 &&
+                    tire_summer.pressure_kpa > tire_winter.pressure_kpa + 8.0);
+    }
 }

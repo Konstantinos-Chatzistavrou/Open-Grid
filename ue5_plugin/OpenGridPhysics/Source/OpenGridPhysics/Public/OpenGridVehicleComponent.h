@@ -32,9 +32,26 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Drivetrain")
     int32 TurboStage = 0;
 
-    /** Use 3-ray circular-arc tire contact patch per wheel for smooth street curb climbing. */
+    /** Use 16-point 2D cylindrical & cambered tire footprint per wheel (5 longitudinal x 3 lateral ribs + 1 leading apex = 16 points). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Suspension")
+    bool bUse16PointTireFootprint = true;
+
+    /** Use 3-ray circular-arc tire contact patch per wheel when bUse16PointTireFootprint is false. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Suspension")
     bool bUseThreeRayContactPatch = true;
+
+    // ---- Atmospheric Environment (Altitude, Ambient Air Celsius, Asphalt Track Celsius & Humidity) -----
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Atmosphere")
+    float AltitudeMeters = 10.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Atmosphere")
+    float AmbientAirCelsius = 18.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Atmosphere")
+    float TrackSurfaceCelsius = 22.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Atmosphere")
+    float RelativeHumidity = 0.45f;
 
     /** Stream live 311-byte Forza Dash V2 UDP packets to 127.0.0.1:20777 for SimHub / motion rigs. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Telemetry")
@@ -119,6 +136,12 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     bool bAirbrakeActive = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    bool bFrontSplitterStalled = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float AirDensityKgPerM3 = 1.225f;
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float BrakeVaporLockSponge = 0.0f;

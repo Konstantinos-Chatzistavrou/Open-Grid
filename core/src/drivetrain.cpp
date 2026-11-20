@@ -128,6 +128,47 @@ double Drivetrain::max_boost_for_stage(int stage) {
     }
 }
 
+double AtmosphericEnvironment::barometric_pressure_kpa() const {
+    const double h = clamp(altitude_m, -200.0, 5500.0);
+    // ISA barometric formula: P = 101.325 * (1 - 0.0065 * h / 288.15)^5.25588
+    return 101.325 * std::pow(1.0 - (0.0065 * h) / 288.15, 5.25588);
+}
+
+double AtmosphericEnvironment::air_density_kg_m3() const {
+    const double p_kpa = barometric_pressure_kpa();
+    const double t_k = clamp(ambient_air_c, -40.0, 65.0) + 273.15;
+    // Tetens saturation vapor pressure (kPa) & moist-air density (dry air R_d = 287.05, water vapor R_v = 461.5 J/(kg K))
+    const double p_sat_kpa = 0.61078 * std::exp((17.27 * ambient_air_c) / (ambient_air_c + 237.3));
+    const double p_vapor_kpa = clamp(humidity_0_to_1, 0.0, 1.0) * p_sat_kpa;
+    const double p_dry_kpa = std::max(10.0, p_kpa - p_vapor_kpa);
+    return (p_dry_kpa * 1000.0) / (287.05 * t_k) + (p_vapor_kpa * 1000.0) / (461.5 * t_k);
+}
+
+double AtmosphericEnvironment::na_engine_power_factor() const {
+    if (!enabled) return 1.0;
+    // SAE J1349 dry-air mass density & charge temperature correction relative to 25 C sea level (101.325 kPa)
+    const double p_kpa = barometric_pressure_kpa();
+    const double p_sat_kpa = 0.61078 * std::exp((17.27 * ambient_air_c) / (ambient_air_c + 237.3));
+    const double p_dry_kpa = std::max(10.0, p_kpa - clamp(humidity_0_to_1, 0.0, 1.0) * p_sat_kpa);
+    const double t_k = clamp(ambient_air_c, -40.0, 65.0) + 273.15;
+    return clamp((p_dry_kpa / 100.2) * std::sqrt(298.15 / t_k), 0.55, 1.12);
+}
+
+double AtmosphericEnvironment::turbo_altitude_power_factor(double boost_bar, double* out_compressor_pr) const {
+    const double p_atm_bar = barometric_pressure_kpa() / 100.0;
+    const double abs_target_bar = 1.01325 + std::max(0.0, boost_bar);
+    // Closed-loop wastegate raises pressure ratio PR = P_abs / P_atm to maintain manifold pressure at altitude,
+    // capped at compressor choke / 155,000 RPM overspeed ceiling (max PR ~ 3.15)
+    const double max_pr = 3.15;
+    const double req_pr = abs_target_bar / std::max(p_atm_bar, 0.45);
+    const double actual_pr = std::min(req_pr, max_pr);
+    if (out_compressor_pr) *out_compressor_pr = actual_pr;
+    if (!enabled) return 1.0;
+    const double achieved_abs_bar = p_atm_bar * actual_pr;
+    const double t_k = clamp(ambient_air_c, -40.0, 65.0) + 273.15;
+    return clamp((achieved_abs_bar / abs_target_bar) * std::sqrt(298.15 / t_k), 0.72, 1.08);
+}
+
 void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& tyre_torque,
                       const std::array<double, 4>& rolling_torque, double h) {
     const EngineParams& e = cfg_.engine;
@@ -202,7 +243,13 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         if (systems.shift_cut_active) thr = 0;          // sequential dog-box flat-shift ignition cut
         if (systems.fuel_consumption_enabled && systems.fuel_liters <= 0.0) thr = 0; // out of fuel
 
-        // ---- Turbocharger spool, boost pressure, Blow-Off Valve (BOV) & Intercooler Heat Soak (IAT)
+        // ---- Turbocharger spool, boost pressure, Blow-Off Valve (BOV) & Intercooler Heat Soak (IAT + Altitude)
+        AtmosphericEnvironment env;
+        env.enabled = in.atmosphere_enabled;
+        env.ambient_air_c = in.ambient_air_c;
+        env.altitude_m = in.altitude_m;
+        env.humidity_0_to_1 = in.humidity_0_to_1;
+
         double turbo_mult = 1.0;
         if (systems.turbo_stage > 0) {
             const double max_boost = max_boost_for_stage(systems.turbo_stage);
@@ -222,13 +269,15 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
                 systems.bov_timer_s = std::max(0.0, systems.bov_timer_s - h);
                 if (systems.bov_timer_s <= 0.0) systems.bov_venting = false;
             }
-            // Adiabatic compressor heating + air-to-air intercooler heat soak:
-            // Compressor discharge temp rises with pressure ratio PR = 1 + boost; airflow cools the intercooler core
-            const double pr = 1.0 + std::max(0.0, systems.boost_bar);
-            const double t_comp_c = 25.0 + 298.15 * (std::pow(pr, 0.286) - 1.0) / 0.72;
+            // Adiabatic compressor heating + air-to-air intercooler heat soak (at altitude, compressor works at higher PR):
+            const double t_amb_c = env.enabled ? env.ambient_air_c : 25.0;
+            const double t_amb_k = t_amb_c + 273.15;
+            double pr = 1.0 + std::max(0.0, systems.boost_bar);
+            const double alt_turbo_factor = env.turbo_altitude_power_factor(systems.boost_bar, &pr);
+            const double t_comp_c = t_amb_c + t_amb_k * (std::pow(pr, 0.286) - 1.0) / 0.72;
             const double airflow_eff = clamp(systems.intercooler_eff * (0.45 + 0.55 * std::min(1.0, std::abs(in.airspeed_mps) / 38.0))
                                              * in.radiator_cooling_scale, 0.15, 0.92);
-            const double target_iat = t_comp_c - airflow_eff * (t_comp_c - 25.0);
+            const double target_iat = t_comp_c - airflow_eff * (t_comp_c - t_amb_c);
             systems.intake_air_temp_c += (target_iat - systems.intake_air_temp_c) * std::min(1.0, h * 0.45);
             systems.iat_power_factor = systems.intake_air_temp_c > 52.0
                                      ? clamp(1.0 - (systems.intake_air_temp_c - 52.0) * 0.0025, 0.85, 1.0) : 1.0;
@@ -236,13 +285,14 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
             if (systems.boost_bar > 0.0) {
                 turbo_mult += systems.boost_bar * 0.24;
             }
-            turbo_mult *= systems.iat_power_factor;
+            turbo_mult *= systems.iat_power_factor * alt_turbo_factor;
         } else {
             systems.boost_bar = 0.0;
             systems.bov_venting = false;
             systems.bov_timer_s = 0.0;
-            systems.intake_air_temp_c = 28.0;
+            systems.intake_air_temp_c = env.enabled ? (env.ambient_air_c + 3.0) : 28.0;
             systems.iat_power_factor = 1.0;
+            turbo_mult *= env.na_engine_power_factor();
         }
 
         // ---- Nitrous Oxide (N2O) injection (requires WOT > 0.70, RPM > 2600, bottle > 0)
@@ -258,9 +308,10 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         const double heat_load = (14.0 * rpm_frac * rpm_frac * (0.3 + 0.7 * thr))
                                * (1.0 + 0.35 * std::max(0.0, systems.boost_bar))
                                * (nos_mult > 1.0 ? 1.45 : 1.0);
+        const double oil_eq_c = env.enabled ? (82.0 + 0.45 * (env.ambient_air_c - 25.0)) : 82.0;
         const double cooling = (0.16 + 0.008 * std::max(0.0, in.airspeed_mps))
                              * clamp(in.radiator_cooling_scale, 0.15, 1.0)
-                             * (systems.oil_temp_c - 82.0);
+                             * (systems.oil_temp_c - oil_eq_c);
         systems.oil_temp_c = clamp(systems.oil_temp_c + h * (heat_load - cooling) * 0.12, 20.0, 165.0);
 
         if (systems.wear_enabled && (systems.oil_temp_c > 128.0 || rpm > e.redline_rpm * 0.985)) {

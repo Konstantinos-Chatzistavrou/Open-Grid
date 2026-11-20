@@ -33,6 +33,20 @@ WheelContact CurbGround::raycast(const WheelRay& ray) const {
     return c;
 }
 
+WheelContact LateralCurbGround::raycast(const WheelRay& ray) const {
+    WheelContact c;
+    if (std::abs(ray.direction.z) < 1e-9) return c;
+    const double z_top = (ray.origin.y >= curb_y_) ? curb_h_ : 0.0;
+    const double t = (z_top - ray.origin.z) / ray.direction.z;
+    if (t < 0.0 || t > ray.length) return c;
+    c.hit = true;
+    c.distance = t;
+    c.point = ray.origin + ray.direction * t;
+    c.normal = {0, 0, 1};
+    c.surface = surface_;
+    return c;
+}
+
 void RigidBody::integrate(const Vec3& f, const Vec3& tau, double dt) {
     ChassisState& s = state;
     s.velocity += f * (dt / mass);
@@ -70,7 +84,14 @@ void Simulation::reset(const Vec3& p, double yaw, double forward_speed, int gear
 void Simulation::step(const DriverInput& in) {
     vehicle.set_input(in);
     std::array<WheelContact, 4> contacts;
-    if (use_contact_patch) {
+    if (use_footprint_16) {
+        auto footprints = vehicle.wheel_footprint_16_rays(body.state);
+        for (int i = 0; i < 4; ++i) {
+            std::array<WheelContact, 16> sub_hits;
+            for (int j = 0; j < 16; ++j) sub_hits[j] = ground_->raycast(footprints[i].rays[j]);
+            contacts[i] = Vehicle::resolve_footprint_16(footprints[i], sub_hits, vehicle.config().tire(i).radius);
+        }
+    } else if (use_contact_patch) {
         auto patches = vehicle.wheel_contact_patch_rays(body.state);
         for (int i = 0; i < 4; ++i) {
             std::array<WheelContact, 3> sub_hits;

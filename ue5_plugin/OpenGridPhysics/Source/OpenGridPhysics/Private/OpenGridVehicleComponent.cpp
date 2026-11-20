@@ -79,9 +79,14 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     In.nos = bNitrousActive;
     In.starter = bStarterCrank;
     Vehicle_->engine_systems().turbo_stage = TurboStage;
+    Vehicle_->atmosphere().enabled = true;
+    Vehicle_->atmosphere().altitude_m = AltitudeMeters;
+    Vehicle_->atmosphere().ambient_air_c = AmbientAirCelsius;
+    Vehicle_->atmosphere().track_surface_c = TrackSurfaceCelsius;
+    Vehicle_->atmosphere().humidity_0_to_1 = RelativeHumidity;
     Vehicle_->set_input(In);
 
-    // 3. Cast suspension rays in UE5 World (3-ray circular-arc curb contact patch or single ray)
+    // 3. Cast suspension rays in UE5 World (16-point 2D cylindrical footprint, 3-ray circular-arc patch, or single ray)
     FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(OpenGridWheelTrace), false, GetOwner());
     auto TraceSingleRay = [&](const rs::WheelRay& Ray) -> rs::WheelContact
     {
@@ -106,7 +111,17 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     };
 
     std::array<rs::WheelContact, 4> Contacts;
-    if (bUseThreeRayContactPatch)
+    if (bUse16PointTireFootprint)
+    {
+        const auto Footprints = Vehicle_->wheel_footprint_16_rays(Chassis);
+        for (int w = 0; w < 4; ++w)
+        {
+            std::array<rs::WheelContact, 16> SubHits;
+            for (int j = 0; j < 16; ++j) SubHits[j] = TraceSingleRay(Footprints[w].rays[j]);
+            Contacts[w] = rs::Vehicle::resolve_footprint_16(Footprints[w], SubHits, Config_.tire(w).radius);
+        }
+    }
+    else if (bUseThreeRayContactPatch)
     {
         const auto Patches = Vehicle_->wheel_contact_patch_rays(Chassis);
         for (int w = 0; w < 4; ++w)
@@ -153,6 +168,8 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     AycYawMomentNm = static_cast<float>(Out.ayc_yaw_moment_nm);
     bDrsActive = Out.drs_active;
     bAirbrakeActive = Out.airbrake_active;
+    bFrontSplitterStalled = Out.front_splitter_stalled;
+    AirDensityKgPerM3 = static_cast<float>(Out.air_density_kg_m3);
     BrakeVaporLockSponge = static_cast<float>(Out.brake_vapor_lock_sponge);
 
     const rs::EngineAcousticState Acoustics = rs::compute_engine_acoustics(

@@ -69,9 +69,16 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
     // equilibrium T_eq (hysteresis heating balanced by carcass / rim cooling). C_s = 1.5 kJ/K (the outer 2-3 mm of
     // tread), C_c = 16 kJ/K, G = 400 W/K, air h A = 20 + 2.5 v W/K (~0.6 m^2 of tread): a 25 kW drift puts the surface
     // near 100 C in a few seconds while the core climbs ~1 C/s; the spike fades ~3 s after the slide.
-    constexpr double Cs = 1500.0, Cc = 16000.0, G = 400.0, Teq = 78.0, Tair = 30.0;
+    constexpr double Cs = 1500.0, Cc = 16000.0, G = 400.0;
+    const double Tair = ambient_air_c;
+    const double Ttrack = track_surface_c;
+    const double Teq = 78.0 + 0.35 * (0.5 * (Tair + Ttrack) - 30.0);
     const double v = std::abs(speed_mps);
-    const double ha = 20.0 + 2.5 * v;                       // W/K, surface convection to air
+    const double ha_total = 20.0 + 2.5 * v;                 // W/K, total surface heat transfer at default 30 C
+    // Solid-to-solid conductive heat transfer between loaded tire contact patch and asphalt road surface (rFactor 2 / iRacing model)
+    const double g_road = (std::abs(Ttrack - Tair) > 1e-4 && load_n > 50.0)
+                        ? 38.0 * clamp(load_n / 4000.0, 0.0, 1.6) : 0.0;
+    const double ha = std::max(5.0, ha_total - g_road * 0.45);
     const double kc = 0.012 + 0.0012 * v;                   // 1/s, core toward the rolling equilibrium
     const double hyst = 0.012 * load_n * v;                 // W, rolling hysteresis (mostly in the core)
     // integrate in <= 50 ms steps ((G + h_a) / C_s ~ 0.3 /s)
@@ -79,15 +86,15 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
     const double h = dt / n;
     for (int i = 0; i < n; ++i) {
         const double ts = surface_c, tc = temperature_c;
-        const double dts = (slip_power_w - G * (ts - tc) - ha * (ts - Tair)) / Cs;
+        const double dts = (slip_power_w - G * (ts - tc) - ha * (ts - Tair) - g_road * (ts - Ttrack)) / Cs;
         const double dtc = (G * (ts - tc) + hyst) / Cc - kc * (tc - Teq);
-        surface_c = clamp(ts + dts * h, 10.0, 260.0);
-        temperature_c = clamp(tc + dtc * h, 10.0, 180.0);
+        surface_c = clamp(ts + dts * h, -15.0, 260.0);
+        temperature_c = clamp(tc + dtc * h, -15.0, 180.0);
     }
-    // Inflation gas: warms with the core (it sees the inner liner, ~55 % of the core's rise above 20 C), constant
-    // volume: p_abs = p_abs,cold * T_gas / T_cold.
+    // Inflation gas: warms with the core & ambient air (45% ambient air + 55% inner-liner core temperature, p_abs = p_abs,cold * T_gas / T_cold).
     const double p_cold = p ? p->p_cold_kpa : 200.0;
-    const double t_gas = 20.0 + 0.55 * (temperature_c - 20.0);
+    const double amb_offset = (Tair - 30.0) * 0.45;
+    const double t_gas = 20.0 + amb_offset + 0.55 * (temperature_c - 20.0);
     pressure_kpa = (p_cold + 101.3) * (t_gas + 273.15) / 293.15 - 101.3;
     // Wear: sliding work above normal cornering
     if (slip_power_w > 18000.0) wear = clamp(wear + (slip_power_w - 18000.0) * 1.2e-9 * dt, 0.0, 1.0);
@@ -143,17 +150,22 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
     // High inflation pressure (dpi > 0.08) biases heating slightly toward middle_c
     const double mid_bias = rel_dpi > 0.08 ? clamp((rel_dpi - 0.08) * 1.8, 0.04, 0.40) : 0.0;
 
-    double w_mid = 1.0 + 2.0 * mid_bias;
-    double w_in = clamp(1.0 + net_in_out - mid_bias, 0.12, 2.6);
-    double w_out = clamp(1.0 - net_in_out - mid_bias, 0.12, 2.6);
+    double w_mid = (1.0 + 2.0 * mid_bias) * (0.4 + 1.8 * rib_contact_shares[1]);
+    double w_in = clamp(1.0 + net_in_out - mid_bias, 0.12, 2.6) * (0.4 + 1.8 * rib_contact_shares[0]);
+    double w_out = clamp(1.0 - net_in_out - mid_bias, 0.12, 2.6) * (0.4 + 1.8 * rib_contact_shares[2]);
     const double w_sum = w_in + w_mid + w_out;
     w_in *= 3.0 / w_sum;
     w_mid *= 3.0 / w_sum;
     w_out *= 3.0 / w_sum;
 
-    constexpr double Cs = 1500.0, G = 400.0, G_zone = 90.0, Tair = 30.0;
+    constexpr double Cs = 1500.0, G = 400.0, G_zone = 90.0;
+    const double Tair = ambient_air_c;
+    const double Ttrack = track_surface_c;
     const double v = std::abs(speed_mps);
-    const double ha = 20.0 + 2.5 * v;
+    const double ha_total = 20.0 + 2.5 * v;
+    const double g_road = (std::abs(Ttrack - Tair) > 1e-4 && load_n > 50.0)
+                        ? 38.0 * clamp(load_n / 4000.0, 0.0, 1.6) : 0.0;
+    const double ha = std::max(5.0, ha_total - g_road * 0.45);
     const double q_asym = std::max(0.0, slip_power_w) + 0.018 * std::max(0.0, load_n) * v;
     const double q_in = slip_power_w + (w_in - 1.0) * q_asym;
     const double q_mid = slip_power_w + (w_mid - 1.0) * q_asym;
@@ -166,12 +178,12 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
         const double tc = tc_before + (temperature_c - tc_before) * frac;
         const double ts = ts_before + (surface_c - ts_before) * frac;
         const double ti = inner_c, tm = middle_c, to = outer_c;
-        const double dti = (q_in - G * (ti - tc) - ha * (ti - Tair) - G_zone * (ti - ts)) / Cs;
-        const double dtm = (q_mid - G * (tm - tc) - ha * (tm - Tair) - G_zone * (tm - ts)) / Cs;
-        const double dto = (q_out - G * (to - tc) - ha * (to - Tair) - G_zone * (to - ts)) / Cs;
-        inner_c = clamp(ti + dti * h, 10.0, 260.0);
-        middle_c = clamp(tm + dtm * h, 10.0, 260.0);
-        outer_c = clamp(to + dto * h, 10.0, 260.0);
+        const double dti = (q_in - G * (ti - tc) - ha * (ti - Tair) - g_road * w_in * (ti - Ttrack) - G_zone * (ti - ts)) / Cs;
+        const double dtm = (q_mid - G * (tm - tc) - ha * (tm - Tair) - g_road * w_mid * (tm - Ttrack) - G_zone * (tm - ts)) / Cs;
+        const double dto = (q_out - G * (to - tc) - ha * (to - Tair) - g_road * w_out * (to - Ttrack) - G_zone * (to - ts)) / Cs;
+        inner_c = clamp(ti + dti * h, -15.0, 260.0);
+        middle_c = clamp(tm + dtm * h, -15.0, 260.0);
+        outer_c = clamp(to + dto * h, -15.0, 260.0);
     }
 
     // WLF Micro-Asperity Flash Temperature (~8 ms thermal relaxation time constant):
@@ -390,9 +402,9 @@ TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, do
         const double top_inward = clamp(op.wheel_side_sign * gamma, -0.35, 0.35);
         const double corner_roll = clamp(-op.wheel_side_sign * alpha * 1.8, -0.45, 0.45);
         const double crown = dpi > 0.05 ? clamp((dpi - 0.05) * 0.85, 0.0, 0.25) : 0.0;
-        double w_mid = 1.0 + 1.6 * crown;
-        double w_in  = clamp(1.0 + 3.2 * top_inward - 1.4 * corner_roll - 0.8 * crown, 0.15, 2.4);
-        double w_out = clamp(1.0 - 3.2 * top_inward + 1.4 * corner_roll - 0.8 * crown, 0.15, 2.4);
+        double w_mid = (1.0 + 1.6 * crown) * (0.4 + 1.8 * tc.rib_contact_shares[1]);
+        double w_in  = clamp(1.0 + 3.2 * top_inward - 1.4 * corner_roll - 0.8 * crown, 0.15, 2.4) * (0.4 + 1.8 * tc.rib_contact_shares[0]);
+        double w_out = clamp(1.0 - 3.2 * top_inward + 1.4 * corner_roll - 0.8 * crown, 0.15, 2.4) * (0.4 + 1.8 * tc.rib_contact_shares[2]);
         const double w_sum = w_in + w_mid + w_out;
         w_in /= w_sum; w_mid /= w_sum; w_out /= w_sum;
 
