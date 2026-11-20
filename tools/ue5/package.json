@@ -1,0 +1,16 @@
+{
+  "name": "opengrid-ue5-tools",
+  "private": true,
+  "description": "Export the web build's car models (meshopt, quantized, KTX2/WebP) as plain glTF that Unreal can import",
+  "type": "module",
+  "scripts": {
+    "export-cars": "node export_cars_for_ue.mjs"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "4.1.1",
+    "@gltf-transform/extensions": "4.1.1",
+    "@gltf-transform/functions": "4.1.1",
+    "meshoptimizer": "0.22.0",
+    "sharp": "0.33.5"
+  }
+}

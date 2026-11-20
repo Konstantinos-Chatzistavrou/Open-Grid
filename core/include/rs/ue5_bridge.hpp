@@ -12,6 +12,7 @@
 //   - Orientation quaternion (w, x, y, z):     ( w, -x,  y, -z)  (exact M * R_rs * M conjugation)
 #pragma once
 #include "rs/math.hpp"
+#include "rs/vehicle.hpp"
 
 namespace rs::ue5 {
 
@@ -75,6 +76,29 @@ inline Vec3 omega_from_ue(const UeVec3& w_rads) {
 
 inline Quat quat_from_ue(const UeQuat& q) {
     return {q.w, -q.x, q.y, -q.z};
+}
+
+// ---- Cached ground planes (async physics stepping) --------------------------------------------------------------
+// The engine traces each suspension ray once per rendered frame and keeps the hit as a plane (point + normal). The
+// physics thread, stepping several times per frame, intersects its fresh rays with those planes, so suspension
+// compression follows the body between frames without physics-thread scene queries. All in core space (m).
+//   no hit when: nothing was cached, the ray runs parallel to / away from the plane, the plane lies above the mount by
+//   more than `above_tolerance`, or beyond the ray's length (wheel in the air).
+inline WheelContact intersect_ground_plane(const WheelRay& ray, bool cached_hit, const Vec3& plane_point,
+                                           const Vec3& plane_normal, int surface, double above_tolerance = 0.05) {
+    WheelContact c;
+    if (!cached_hit) return c;
+    const double denom = dot(ray.direction, plane_normal);
+    if (denom > -1e-4) return c;
+    double t = dot(plane_point - ray.origin, plane_normal) / denom;
+    if (t < -above_tolerance || t > ray.length) return c;
+    if (t < 0.0) t = 0.0;
+    c.hit = true;
+    c.distance = t;
+    c.point = ray.origin + ray.direction * t;
+    c.normal = plane_normal;
+    c.surface = surface;
+    return c;
 }
 
 // Standard quaternion vector rotation matching UE5 FQuat::RotateVector(V) = q * V * q^-1.

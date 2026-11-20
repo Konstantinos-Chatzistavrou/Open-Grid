@@ -33,6 +33,12 @@ set_target_properties(rs_core PROPERTIES POSITION_INDEPENDENT_CODE ON)   # neede
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(rs_core PRIVATE -Wall -Wextra -Wpedantic -Wshadow)
 endif()
+if(MSVC)
+  target_compile_options(rs_core PRIVATE /W3 /EHsc /utf-8)
+endif()
+if(WIN32)
+  target_link_libraries(rs_core PUBLIC ws2_32)   # UDP telemetry sockets (src/telemetry.cpp)
+endif()
 
 # Per-tick CPU cost benchmark (not a test: timings depend on the machine).
 add_executable(rs_bench bench/bench_race.cpp)
