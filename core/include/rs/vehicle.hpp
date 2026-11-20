@@ -27,6 +27,8 @@ struct DriverInput {
     double handbrake = 0;   // 0..1
     int gear = 1;           // index into gear_ratios: 0 = reverse, 1 = neutral, 2 = 1st, ...
     bool auto_clutch = false;   // ASSIST: clutch handled automatically (launch, anti-stall, shifts)
+    bool nos = false;           // N2O nitrous solenoid trigger
+    bool starter = false;       // manual starter motor cranking button
 };
 
 struct ChassisState {       // rigid body state of the car, world frame, origin = CG
@@ -40,6 +42,13 @@ struct WheelRay {
     Vec3 origin;            // world, suspension top mount
     Vec3 direction;         // world, unit, pointing down the suspension axis
     double length = 0;      // m, rest length + tyre radius
+};
+
+// 3-ray circular-arc tire contact patch query (center, leading edge, trailing edge along steered wheel plane).
+// Bridges sharp curb lips and potholes in UE5 Chaos and Rapier so tires roll smoothly onto curbs instead of stepping abruptly.
+struct WheelContactPatchRays {
+    std::array<WheelRay, 3> rays{};                  // [0] = center, [1] = leading (+dx), [2] = trailing (-dx)
+    std::array<double, 3> longitudinal_offsets_m{};  // m from wheel axle center along steered rolling direction
 };
 
 struct WheelContact {
@@ -87,6 +96,13 @@ struct VehicleOutput {
     double engine_rpm = 0;
     int gear = 1;
     bool engine_stalled = false;
+    // Forced induction (Turbo + Blow-Off Valve), Nitrous Oxide (N2O), Oil Thermal & Engine Health telemetry
+    double boost_bar = 0.0;
+    bool bov_venting = false;
+    double nos_remaining_l = 4.5;
+    double oil_temp_c = 85.0;
+    double engine_health = 1.0;
+    bool engine_misfire = false;
 };
 
 // Physical effect multipliers (filled from DamageModel each tick when damage is enabled).
@@ -115,8 +131,15 @@ public:
     bool damage_enabled = true;
     AssistSettings& assists() { return assists_; }
     const AssistSettings& assists() const { return assists_; }
+    EngineSystemState& engine_systems() { return drivetrain_.systems; }
+    const EngineSystemState& engine_systems() const { return drivetrain_.systems; }
 
     std::array<WheelRay, 4> wheel_rays(const ChassisState& s) const;
+    // 3-ray fan along each wheel's steered rolling plane + circular-arc contact resolver for sharp street curbs.
+    std::array<WheelContactPatchRays, 4> wheel_contact_patch_rays(const ChassisState& s) const;
+    static WheelContact resolve_contact_patch(const WheelContactPatchRays& patch,
+                                              const std::array<WheelContact, 3>& hits,
+                                              double tire_radius);
     // Start already rolling at `forward_speed` (m/s): wheels spin at v/r, slips cleared.
     // If gear >= 0, the engine is also set to the matching rpm (clutch engaged at that speed).
     void reset_motion(double forward_speed, int gear = -1);

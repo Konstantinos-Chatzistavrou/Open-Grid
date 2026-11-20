@@ -25,6 +25,19 @@ private:
     int surface_;
 };
 
+// Step / Curb test ground: flat road at z = 0 for x < curb_x_m, sharp curb step at z = curb_height_m for x >= curb_x_m.
+class CurbGround : public Ground {
+public:
+    CurbGround(double curb_x_m, double curb_height_m, int surface = 0)
+        : curb_x_(curb_x_m), curb_h_(curb_height_m), surface_(surface) {}
+    WheelContact raycast(const WheelRay& ray) const override;
+
+private:
+    double curb_x_;
+    double curb_h_;
+    int surface_;
+};
+
 // Rigid body with a diagonal inertia tensor in body axes.
 //   linear:  m dv/dt = F
 //   angular (Euler's equations, body frame):  I dw/dt = tau - w x (I w)
@@ -47,6 +60,7 @@ public:
 
     double dt = 1.0 / 240.0;
     double time = 0;
+    bool use_contact_patch = false;   // true: cast 3-ray circular-arc tire contact patch per wheel (smooth curb climbing)
     Vehicle vehicle;
     RigidBody body;
     VehicleOutput last;

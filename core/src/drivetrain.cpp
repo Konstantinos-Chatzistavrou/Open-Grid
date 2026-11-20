@@ -119,17 +119,37 @@ double Drivetrain::gear_ratio(int gear) const {
     return g[gear] * cfg_.drivetrain.final_drive;      // total ratio engine : wheel
 }
 
+double Drivetrain::max_boost_for_stage(int stage) {
+    switch (stage) {
+        case 1: return 0.70;   // Stage 1 Street Turbo (0.70 bar)
+        case 2: return 1.15;   // Stage 2 Sport Turbo  (1.15 bar)
+        case 3: return 1.65;   // Stage 3 Race Twin-Scroll (1.65 bar)
+        default: return 0.0;
+    }
+}
+
 void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& tyre_torque,
                       const std::array<double, 4>& rolling_torque, double h) {
     const EngineParams& e = cfg_.engine;
     const double idle_w = e.idle_rpm * kRpmToRad;
     const double G = gear_ratio(in.gear);
-    const double clutch_cap = cfg_.drivetrain.clutch_max_torque * clamp(1.0 - in.clutch, 0.0, 1.0);
+    // Holding the starter button disengages the clutch interlock so the starter motor doesn't crank against locked wheels
+    const double eff_clutch = in.starter_crank ? 1.0 : in.clutch;
+    const double clutch_cap = cfg_.drivetrain.clutch_max_torque * clamp(1.0 - eff_clutch, 0.0, 1.0);
 
-    // ---- engine torque
-    if (stalled && (in.clutch > 0.9 || G == 0.0)) {     // restart (starter) when declutched
-        stalled = false;
-        engine_omega = idle_w;
+    // ---- engine torque & physical starter cranking
+    if (stalled && (eff_clutch > 0.9 || G == 0.0 || in.starter_crank)) {
+        if (in.starter_crank) {
+            // Physical starter motor cranks flywheel up toward idle speed
+            engine_omega += h * (220.0 / std::max(e.inertia, 0.08));
+            if (engine_omega >= idle_w) {
+                stalled = false;
+                engine_omega = idle_w;
+            }
+        } else {
+            stalled = false;
+            engine_omega = idle_w;
+        }
     }
     double t_engine = 0;
     if (!stalled) {
@@ -137,9 +157,74 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         // Idle controller: opens the throttle a little when revs fall below idle.
         double thr = std::max(in.throttle, clamp((e.idle_rpm - rpm) / 300.0, 0.0, 1.0) * 0.5);
         if (rpm > e.redline_rpm) thr = 0;               // rev limiter (fuel cut)
+
+        // ---- Turbocharger spool, boost pressure & Blow-Off Valve (BOV)
+        double turbo_mult = 1.0;
+        if (systems.turbo_stage > 0) {
+            const double max_boost = max_boost_for_stage(systems.turbo_stage);
+            const double rpm_norm = clamp((rpm - e.idle_rpm) / std::max(e.redline_rpm - e.idle_rpm, 1000.0), 0.0, 1.0);
+            const double exhaust_flow = clamp((rpm_norm - 0.18) / 0.55, 0.0, 1.0) * thr;
+            const double target_boost = thr > 0.15 ? exhaust_flow * max_boost : -0.35 * (1.0 - thr);
+            // Spool time constant depends on stage (larger turbo = slightly more lag, higher peak)
+            const double tau_spool = (target_boost > systems.boost_bar) ? (0.14 + 0.05 * systems.turbo_stage) : 0.065;
+            if (thr < 0.12 && systems.boost_bar > 0.32) {
+                systems.bov_venting = true;
+                systems.bov_timer_s = 0.22;
+            }
+            systems.boost_bar += (target_boost - systems.boost_bar) * std::min(1.0, h / tau_spool);
+            if (systems.bov_timer_s > 0.0) {
+                systems.bov_timer_s = std::max(0.0, systems.bov_timer_s - h);
+                if (systems.bov_timer_s <= 0.0) systems.bov_venting = false;
+            }
+            if (systems.boost_bar > 0.0) {
+                turbo_mult += systems.boost_bar * 0.24;   // +24% torque per bar of positive manifold gauge pressure
+            }
+        } else {
+            systems.boost_bar = 0.0;
+            systems.bov_venting = false;
+            systems.bov_timer_s = 0.0;
+        }
+
+        // ---- Nitrous Oxide (N2O) injection (requires WOT > 0.70, RPM > 2600, bottle > 0)
+        double nos_mult = 1.0;
+        if (in.nos_active && systems.nos_bottles_l > 0.0 && thr > 0.70 && rpm > 2600.0) {
+            const double consumed = std::min(systems.nos_bottles_l, 0.42 * h);
+            systems.nos_bottles_l = std::max(0.0, systems.nos_bottles_l - consumed);
+            nos_mult = 1.26;   // +26% chemical oxygen/fuel enrichment torque boost
+        }
+
+        // ---- Engine Oil Thermodynamics & Mechanical Health / Misfires
+        const double rpm_frac = clamp(rpm / std::max(e.redline_rpm, 1000.0), 0.0, 1.2);
+        const double heat_load = (14.0 * rpm_frac * rpm_frac * (0.3 + 0.7 * thr))
+                               * (1.0 + 0.35 * std::max(0.0, systems.boost_bar))
+                               * (nos_mult > 1.0 ? 1.45 : 1.0);
+        const double cooling = (0.16 + 0.008 * std::max(0.0, in.airspeed_mps)) * (systems.oil_temp_c - 82.0);
+        systems.oil_temp_c = clamp(systems.oil_temp_c + h * (heat_load - cooling) * 0.12, 20.0, 165.0);
+
+        if (systems.wear_enabled && (systems.oil_temp_c > 128.0 || rpm > e.redline_rpm * 0.985)) {
+            const double abuse = (systems.oil_temp_c > 128.0 ? (systems.oil_temp_c - 128.0) * 0.00015 : 0.0)
+                               + (rpm > e.redline_rpm * 0.985 ? 0.00025 : 0.0);
+            systems.engine_health = clamp(systems.engine_health - h * abuse, 0.15, 1.0);
+        }
+
+        double health_mult = 1.0;
+        systems.misfiring = false;
+        if (systems.engine_health < 0.999 || systems.oil_temp_c > 130.0) {
+            // Base compression/wear loss + thermal derate above 130 C
+            health_mult = (0.55 + 0.45 * systems.engine_health)
+                        * (systems.oil_temp_c > 130.0 ? clamp(1.0 - (systems.oil_temp_c - 130.0) * 0.008, 0.70, 1.0) : 1.0);
+            if (systems.engine_health < 0.65) {
+                systems.misfire_phase += h * (18.0 + 25.0 * (0.65 - systems.engine_health));
+                if (std::sin(systems.misfire_phase * 2.0 * kPi) > (0.35 + 0.85 * systems.engine_health)) {
+                    systems.misfiring = true;
+                    health_mult *= 0.38;   // sharp cylinder misfire cut
+                }
+            }
+        }
+
         // T = throttle * T_full(rpm) - (1 - throttle) * (c0 + c1 w): pumping/friction losses
         // are what produce engine braking when the throttle is closed.
-        t_engine = thr * engine_torque_full(rpm) * in.engine_power_scale
+        t_engine = thr * engine_torque_full(rpm) * in.engine_power_scale * turbo_mult * nos_mult * health_mult
                    - (1 - thr) * (e.friction_const + e.friction_linear * engine_omega);
     }
 
