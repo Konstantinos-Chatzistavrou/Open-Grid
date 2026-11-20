@@ -73,6 +73,10 @@ EMSCRIPTEN_KEEPALIVE int rs_create(const char* json) {
         c->vehicle->engine_systems().torsional_compliance_enabled = true;
         c->vehicle->engine_systems().dog_box_flat_shift_cut = true;
         c->vehicle->atmosphere().enabled = true;
+        // Engine wear (redline / overheating abuse -> misfires) and fuel use; R repairs and refuels (rs_repair).
+        // Same set as the Unreal plugin (UOpenGridVehicleComponent::ApplyFeatureFlagsLocked): keep them identical.
+        c->vehicle->engine_systems().wear_enabled = true;
+        c->vehicle->engine_systems().fuel_consumption_enabled = true;
         c->controls = std::make_unique<rs::Controls>(c->vehicle->config());
         c->buf[92] = -99;                                  // no H-pattern shifter until the page says so
         g_cars.push_back(std::move(c));
@@ -349,6 +353,7 @@ EMSCRIPTEN_KEEPALIVE void rs_damage(int id) {
 
 EMSCRIPTEN_KEEPALIVE void rs_repair(int id) {
     g_cars[id]->vehicle->damage_model().repair();
+    g_cars[id]->vehicle->service();   // full tank, healthy engine
     g_cars[id]->out.damage = rs::DamageReport{};
 }
 

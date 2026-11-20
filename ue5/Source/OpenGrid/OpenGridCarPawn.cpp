@@ -224,6 +224,7 @@ void AOpenGridCarPawn::OnRecover() { Recover(); }
 
 void AOpenGridCarPawn::Recover()
 {
+    Vehicle->RepairAndService();   // as the web build's R: fix damage, refuel, restore the engine
     const FRotator Yaw(0.0f, GetActorRotation().Yaw, 0.0f);
     Chassis->SetWorldLocationAndRotation(GetActorLocation() + FVector(0.0f, 0.0f, 100.0f), Yaw, false, nullptr, ETeleportType::TeleportPhysics);
     Chassis->SetPhysicsLinearVelocity(FVector::ZeroVector);

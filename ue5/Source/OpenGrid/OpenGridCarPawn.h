@@ -81,7 +81,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid")
     bool bShowDebugHud = true;
 
-    /** Put the car back on its wheels one metre up, facing the same way (R / pad B). */
+    /** Repair, refuel and put the car back on its wheels one metre up, facing the same way (R / pad B). */
     UFUNCTION(BlueprintCallable, Category="OpenGrid")
     void Recover();
 

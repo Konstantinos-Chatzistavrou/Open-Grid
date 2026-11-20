@@ -213,6 +213,9 @@ public:
     // Start already rolling at `forward_speed` (m/s): wheels spin at v/r, slips cleared.
     // If gear >= 0, the engine is also set to the matching rpm (clutch engaged at that speed).
     void reset_motion(double forward_speed, int gear = -1);
+    // Garage service (what the R / repair key does with damage_model().repair()): full tank, healthy engine, no
+    // misfire. With fuel use and engine wear on, the car would otherwise stop for good on an empty tank.
+    void service();
     double engine_rpm() const { return drivetrain_.engine_rpm(); }
     VehicleOutput update(const ChassisState& s, const std::array<WheelContact, 4>& contacts, double dt);
 

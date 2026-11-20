@@ -113,12 +113,6 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Config")
     float CgHeightCm = 47.0f;
 
-    /**
-     * Same simulation features as the web build (web/wasm/bridge.cpp), so the two feel the same.
-     * False additionally turns on tyre/engine wear and fuel use.
-     */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Config")
-    bool bMatchWebBuild = true;
 
     /** Set the car's mass and inertia on the root body from the car spec at BeginPlay. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Config")
@@ -242,6 +236,10 @@ public:
 
     UFUNCTION(BlueprintCallable, Category="OpenGrid|Input")
     void ShiftDown();
+
+    /** Repair key, as in the web build: fixes damage, refuels, restores the engine (rs::Vehicle::service). */
+    UFUNCTION(BlueprintCallable, Category="OpenGrid|Damage")
+    void RepairAndService();
 
     // ---- Live outputs (HUD, audio, visuals) -------------------------------------------------------------------------
 
