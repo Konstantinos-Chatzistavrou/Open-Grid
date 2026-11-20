@@ -144,8 +144,18 @@ export class Lane {
     return out;
   }
 
+  private _room = { left: 0, right: 0 };
+
   /** Room either side of the line at s (route half-widths, less a car's half width and a margin). */
-  room(s: number) { const i = this.idx(s); return { left: this.wl[i] - 1.9, right: this.wr[i] - 1.9 }; }
+  roomInto(s: number, out: { left: number; right: number }) {
+    const i = this.idx(s);
+    out.left = this.wl[i] - 1.9;
+    out.right = this.wr[i] - 1.9;
+    return out;
+  }
+
+  /** Room either side of the line at s (returns a reused scratch object — do not retain across calls). */
+  room(s: number) { return this.roomInto(s, this._room); }
 
   /** Arc length of the lane point nearest p (whole lane; fine for a one-off at the start). */
   project(p: { x: number; z: number }) {
@@ -207,11 +217,16 @@ export class AiTraffic {
   private a = new THREE.Vector3();
   private b = new THREE.Vector3();
   private of = new THREE.Vector3();
-  private ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+  private rayOrigin = { x: 0, y: 0, z: 0 };
+  private ray = new RAPIER.Ray(this.rayOrigin, { x: 0, y: -1, z: 0 });
   private player = new THREE.Vector3();
   private playerV = 0;
   private playerS = 0;
   private grid: { s: number; lat: number }[] = [];
+  private othersScratch: { car: AiCar | null; p: THREE.Vector3; v: number; lat: number }[] = [];
+  private roomScratch = { left: 0, right: 0 };
+  private tmpLin = { x: 0, y: 0, z: 0 };
+  private tmpAng = { x: 0, y: 0, z: 0 };
 
   private constructor(private pw: PhysicsWorld, samples: RouteSample[]) {
     this.lane = new Lane(samples);
@@ -466,7 +481,7 @@ export class AiTraffic {
   /** Static ground under (x, z) from height top down len m, ignoring every car and piece of debris (dynamic + kinematic bodies). */
   groundAt(x: number, z: number, top: number, len = 60) { return this.ground(x, z, top, len); }
   private ground(x: number, z: number, top: number, len = 60): number | null {
-    this.ray.origin = { x, y: top, z };
+    this.rayOrigin.x = x; this.rayOrigin.y = top; this.rayOrigin.z = z;
     const hit = this.pw.world.castRay(this.ray, len, true,
       RAPIER.QueryFilterFlags.EXCLUDE_DYNAMIC | RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC, GROUP_VIEW);
     return hit ? top - hit.timeOfImpact : null;
@@ -499,9 +514,20 @@ export class AiTraffic {
     this.player.set(player.x, player.y, player.z);
     this.playerS = this.sOf(player, this.playerS);
     const L = this.lane.length;
-    const others: { car: AiCar | null; p: THREE.Vector3; v: number; lat: number }[] =
-      [{ car: null, p: this.player, v: this.playerV, lat: this.latOf(this.player, this.playerS) }, ...this.cars.map((o) => ({ car: o, p: o.pos, v: o.v, lat: o.lat }))];
-    for (const [carIdx, c] of this.cars.entries()) {
+    const nCars = this.cars.length;
+    const others = this.othersScratch;
+    const needLen = nCars + 1;
+    while (others.length < needLen) others.push({ car: null, p: this.player, v: 0, lat: 0 });
+    others.length = needLen;
+    const o0 = others[0];
+    o0.car = null; o0.p = this.player; o0.v = this.playerV; o0.lat = this.latOf(this.player, this.playerS);
+    for (let k = 0; k < nCars; k++) {
+      const oc = this.cars[k];
+      const slot = others[k + 1];
+      slot.car = oc; slot.p = oc.pos; slot.v = oc.v; slot.lat = oc.lat;
+    }
+    for (let carIdx = 0; carIdx < nCars; carIdx++) {
+      const c = this.cars[carIdx];
       c.prevPos.copy(c.pos); c.prevQuat.copy(c.quat);
       // headlight pool: fades out as the player's car comes under it AND turns off past 90 m (Clustered Forward+ skips 0-intensity lights!)
       if (c.light) {
@@ -547,7 +573,7 @@ export class AiTraffic {
         const f = dx * fwd.x + dz * fwd.z, l = dz * fwd.x - dx * fwd.z;
         if (f > 0 && f < look && Math.abs(l) < 2.3 && f < bF) { bF = f; bV = o.v; bLat = o.lat; }
       }
-      const room = this.lane.room(c.s);
+      const room = this.lane.roomInto(c.s, this.roomScratch);
       if (bF < Infinity) {
         if (bV < target - 1) {
           // pass on the side with more room, 3 m clear of it
@@ -631,8 +657,12 @@ export class AiTraffic {
    */
   afterStep(playerCollider: RAPIER.Collider, playerBody: RAPIER.RigidBody, preV: THREE.Vector3, preW: THREE.Vector3): boolean {
     if (this.mode === 'off') return false;
+    const p = playerBody.translation();
     let hit: AiCar | null = null;
-    for (const c of this.cars) {
+    for (let i = 0; i < this.cars.length; i++) {
+      const c = this.cars[i];
+      const dx = p.x - c.pos.x, dz = p.z - c.pos.z;
+      if (dx * dx + dz * dz > 36) continue;   // > 6 m away: cannot touch (skips WASM contactPair closure)
       let touching = false;
       this.pw.world.contactPair(playerCollider, c.collider, (m) => { if (m.numContacts() > 0) touching = true; });
       if (touching) { hit = c; break; }
@@ -641,8 +671,10 @@ export class AiTraffic {
     const c = hit, lv = playerBody.linvel(), av = playerBody.angvel();
     const dvx = lv.x - preV.x, dvz = lv.z - preV.z, dv = Math.hypot(dvx, dvz);
     if (dv < 0.02) return true;   // resting against it
-    playerBody.setLinvel({ x: (preV.x + lv.x) / 2, y: lv.y, z: (preV.z + lv.z) / 2 }, true);
-    playerBody.setAngvel({ x: (preW.x + av.x) / 2, y: (preW.y + av.y) / 2, z: (preW.z + av.z) / 2 }, true);
+    this.tmpLin.x = (preV.x + lv.x) / 2; this.tmpLin.y = lv.y; this.tmpLin.z = (preV.z + lv.z) / 2;
+    this.tmpAng.x = (preW.x + av.x) / 2; this.tmpAng.y = (preW.y + av.y) / 2; this.tmpAng.z = (preW.z + av.z) / 2;
+    playerBody.setLinvel(this.tmpLin, true);
+    playerBody.setAngvel(this.tmpAng, true);
     // the rival's half, in its own frame (forward along its heading, right across it)
     const i = this.lane.idx(c.s), right = this.lane.right[i];
     const fwd = this.tmpV.set(0, 0, 1).applyQuaternion(c.quat);
@@ -651,7 +683,7 @@ export class AiTraffic {
     c.v = Math.max(0, c.v + along);
     c.latV += across;
     // where the player is along the rival's length: a shove behind its middle swings the tail out (the nose turns the other way)
-    const p = playerBody.translation(), lever = Math.max(-1, Math.min(1, ((p.x - c.pos.x) * fwd.x + (p.z - c.pos.z) * fwd.z) / 2.2));
+    const lever = Math.max(-1, Math.min(1, ((p.x - c.pos.x) * fwd.x + (p.z - c.pos.z) * fwd.z) / 2.2));
     c.yawRate += across * lever * 0.55;
     // pushing is not crashing (same rule as the core: under 3 g of contact force nothing breaks)
     if (dv / 2 > 3 * G * this.dt) this.damage(c, dv / 2);

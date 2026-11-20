@@ -47,6 +47,8 @@ export class WorldClock {
   wetness = 0.28;
   private targetWetness = 0.28;
   private skyCol = new THREE.Color(0x05060c);
+  /** twilight tint (reused: was a new THREE.Color every frame of dawn / dusk) */
+  private twCol = new THREE.Color();
 
   constructor() {
     this.rollWeather(false);
@@ -112,7 +114,7 @@ export class WorldClock {
 
     this.skyCol.setHex(this.season.skyTint);
     if (twilight > 0.01) {
-      this.skyCol.lerp(new THREE.Color(dawnGlow > duskGlow ? 0x1a1d34 : 0x1e1128), twilight * 0.65);
+      this.skyCol.lerp(this.twCol.setHex(dawnGlow > duskGlow ? 0x1a1d34 : 0x1e1128), twilight * 0.65);
     }
     if (scene.background instanceof THREE.Color) scene.background.copy(this.skyCol);
     if (scene.fog instanceof THREE.FogExp2) scene.fog.color.copy(this.skyCol);

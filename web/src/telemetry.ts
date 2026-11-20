@@ -41,8 +41,40 @@ const RAD2DEG = 180 / Math.PI;
 const MAX_SAMPLES = 60 * 600; // 10 minutes at 60 Hz (~36,000 samples)
 const SIMHUB_BYTES = 311;
 
+const MOTEC_CHANNELS: readonly { name: string; short: string; unit: string }[] = [
+  { name: 'Ground Speed', short: 'Speed', unit: 'km/h' },
+  { name: 'Engine RPM', short: 'RPM', unit: 'rpm' },
+  { name: 'Throttle Pos', short: 'Thr', unit: '%' },
+  { name: 'Brake Pos', short: 'Brk', unit: '%' },
+  { name: 'Steering Angle', short: 'Steer', unit: 'deg' },
+  { name: 'Gear', short: 'Gear', unit: '' },
+  { name: 'G Force Lat', short: 'GLat', unit: 'G' },
+  { name: 'G Force Long', short: 'GLong', unit: 'G' },
+  { name: 'Susp Pos FL', short: 'SuspFL', unit: 'mm' },
+  { name: 'Susp Pos FR', short: 'SuspFR', unit: 'mm' },
+  { name: 'Susp Pos RL', short: 'SuspRL', unit: 'mm' },
+  { name: 'Susp Pos RR', short: 'SuspRR', unit: 'mm' },
+  { name: 'Tire Temp FL', short: 'TTmpFL', unit: 'C' },
+  { name: 'Tire Temp FR', short: 'TTmpFR', unit: 'C' },
+  { name: 'Tire Temp RL', short: 'TTmpRL', unit: 'C' },
+  { name: 'Tire Temp RR', short: 'TTmpRR', unit: 'C' },
+  { name: 'Sideslip Angle', short: 'Slip', unit: 'deg' },
+  { name: 'Yaw Rate', short: 'YawR', unit: 'deg/s' },
+  { name: 'Tire Inner FL', short: 'TInFL', unit: 'C' },
+  { name: 'Tire Outer FL', short: 'TOutFL', unit: 'C' },
+  { name: 'Tire Flash FL', short: 'TFshFL', unit: 'C' },
+  { name: 'Boost Pressure', short: 'Boost', unit: 'bar' },
+  { name: 'Oil Temp', short: 'OilT', unit: 'C' },
+  { name: 'Fuel Level', short: 'Fuel', unit: 'L' },
+  { name: 'Chassis Twist', short: 'Twist', unit: 'deg' },
+  { name: 'Air Density', short: 'AirRho', unit: 'kg/m3' },
+];
+
 export class TelemetrySystem {
-  private samples: WebTelemetrySample[] = [];
+  /** O(1) circular ring buffer (SoA: 26 Float32Array channels, lazily allocated on first sample — zero per-tick allocations). */
+  private chans: Float32Array[] | null = null;
+  private head = 0;
+  private count = 0;
   private beacons: number[] = [];
   private acc = 0;
   private elapsed = 0;
@@ -53,13 +85,21 @@ export class TelemetrySystem {
   private pktBuf = new ArrayBuffer(SIMHUB_BYTES);
   private pktView = new DataView(this.pktBuf);
   private pktBytes = new Uint8Array(this.pktBuf);
+  /** Persistent scratch sample reused only when live SimHub UDP streaming is open. */
+  private simSample: WebTelemetrySample = {
+    t: 0, speedMs: 0, rpm: 0, maxRpm: 8000, gear: 1, throttle: 0, brake: 0, steer: 0,
+    gLat: 0, gLong: 0, sideslipDeg: 0, yawRateDeg: 0,
+    suspMm: [0, 0, 0, 0], tireTempC: [78, 78, 78, 78], tireInnerC: [78, 78, 78, 78], tireOuterC: [78, 78, 78, 78],
+    tireFlashFlC: 78, boostBar: 0, oilTempC: 85, fuelLiters: 55, chassisTwistDeg: 0, airDensity: 1.225,
+    slipRatio: [0, 0, 0, 0], lap: 0, lapCur: 0, lapLast: 0, lapBest: 0, distM: 0,
+  };
 
   driver = 'OpenGrid Driver';
   vehicle = 'Vela GT';
   venue = 'New York Midtown';
 
-  get sampleCount() { return this.samples.length; }
-  get durationSec() { return this.samples.length / 60; }
+  get sampleCount() { return this.count; }
+  get durationSec() { return this.count / 60; }
   get simhubConnected() { return this.ws?.readyState === WebSocket.OPEN; }
   get simhubEnabled() { return this.udpEnabled; }
 
@@ -67,7 +107,8 @@ export class TelemetrySystem {
     this.driver = driver;
     this.vehicle = vehicle;
     this.venue = venue;
-    this.samples.length = 0;
+    this.head = 0;
+    this.count = 0;
     this.beacons.length = 0;
     this.acc = 0;
     this.elapsed = 0;
@@ -106,69 +147,108 @@ export class TelemetrySystem {
     if (this.acc < step) return;
     this.acc = Math.min(this.acc - step, step);
 
+    if (!this.chans) {
+      this.chans = Array.from({ length: MOTEC_CHANNELS.length }, () => new Float32Array(MAX_SAMPLES));
+    }
+
     const w0 = OUT.wheel(0), w1 = OUT.wheel(1), w2 = OUT.wheel(2), w3 = OUT.wheel(3);
     const mass = Math.max(400, info.mass || 1450);
-    const sample: WebTelemetrySample = {
-      t: this.elapsed,
-      speedMs: Math.abs(out[OUT.speed] || 0),
-      rpm: out[OUT.rpm] || 0,
-      maxRpm: info.redline || 8000,
-      gear: Math.round(out[OUT.gear] ?? 1),
-      throttle,
-      brake,
-      steer,
-      gLat: (out[OUT.force] || 0) / (mass * G),
-      gLong: (out[OUT.force + 2] || 0) / (mass * G),
-      sideslipDeg: (out[OUT.sideslip] || 0) * RAD2DEG,
-      yawRateDeg: ((out[OUT.torque + 1] || 0) / Math.max(100, info.inertia[1] || 2100)) * RAD2DEG,
-      suspMm: [
-        (out[w0 + 9] || 0) * 1000,
-        (out[w1 + 9] || 0) * 1000,
-        (out[w2 + 9] || 0) * 1000,
-        (out[w3 + 9] || 0) * 1000,
-      ],
-      tireTempC: [
-        out[OUT.treadSurface(0)] || out[OUT.wheelExt(0) + 2] || 78,
-        out[OUT.treadSurface(1)] || out[OUT.wheelExt(1) + 2] || 78,
-        out[OUT.treadSurface(2)] || out[OUT.wheelExt(2) + 2] || 78,
-        out[OUT.treadSurface(3)] || out[OUT.wheelExt(3) + 2] || 78,
-      ],
-      tireInnerC: [
-        out[OUT.tireInner(0)] || out[OUT.treadSurface(0)] || 78,
-        out[OUT.tireInner(1)] || out[OUT.treadSurface(1)] || 78,
-        out[OUT.tireInner(2)] || out[OUT.treadSurface(2)] || 78,
-        out[OUT.tireInner(3)] || out[OUT.treadSurface(3)] || 78,
-      ],
-      tireOuterC: [
-        out[OUT.tireOuter(0)] || out[OUT.treadSurface(0)] || 78,
-        out[OUT.tireOuter(1)] || out[OUT.treadSurface(1)] || 78,
-        out[OUT.tireOuter(2)] || out[OUT.treadSurface(2)] || 78,
-        out[OUT.tireOuter(3)] || out[OUT.treadSurface(3)] || 78,
-      ],
-      tireFlashFlC: out[OUT.tireFlash(0)] || out[OUT.treadSurface(0)] || 78,
-      boostBar: out[OUT.boostBar] || 0,
-      oilTempC: out[OUT.oilTemp] || 85,
-      fuelLiters: out[OUT.fuelLiters] || 55,
-      chassisTwistDeg: out[OUT.chassisTwist] || 0,
-      airDensity: out[OUT.airDensity] || 1.225,
-      slipRatio: [
-        out[w0 + 7] || 0,
-        out[w1 + 7] || 0,
-        out[w2 + 7] || 0,
-        out[w3 + 7] || 0,
-      ],
-      lap: lap?.laps ?? 0,
-      lapCur: lap?.current ?? 0,
-      lapLast: lap?.last ?? 0,
-      lapBest: lap?.best ?? 0,
-      distM: lap?.distance ?? 0,
-    };
+    const speedMs = Math.abs(out[OUT.speed] || 0);
+    const rpm = out[OUT.rpm] || 0;
+    const gear = Math.round(out[OUT.gear] ?? 1);
+    const gLat = (out[OUT.force] || 0) / (mass * G);
+    const gLong = (out[OUT.force + 2] || 0) / (mass * G);
+    const sideslipDeg = (out[OUT.sideslip] || 0) * RAD2DEG;
+    const yawRateDeg = ((out[OUT.torque + 1] || 0) / Math.max(100, info.inertia[1] || 2100)) * RAD2DEG;
+    const s0 = (out[w0 + 9] || 0) * 1000;
+    const s1 = (out[w1 + 9] || 0) * 1000;
+    const s2 = (out[w2 + 9] || 0) * 1000;
+    const s3 = (out[w3 + 9] || 0) * 1000;
+    const t0 = out[OUT.treadSurface(0)] || out[OUT.wheelExt(0) + 2] || 78;
+    const t1 = out[OUT.treadSurface(1)] || out[OUT.wheelExt(1) + 2] || 78;
+    const t2 = out[OUT.treadSurface(2)] || out[OUT.wheelExt(2) + 2] || 78;
+    const t3 = out[OUT.treadSurface(3)] || out[OUT.wheelExt(3) + 2] || 78;
+    const ti0 = out[OUT.tireInner(0)] || out[OUT.treadSurface(0)] || 78;
+    const to0 = out[OUT.tireOuter(0)] || out[OUT.treadSurface(0)] || 78;
+    const tf0 = out[OUT.tireFlash(0)] || out[OUT.treadSurface(0)] || 78;
+    const boostBar = out[OUT.boostBar] || 0;
+    const oilTempC = out[OUT.oilTemp] || 85;
+    const fuelLiters = out[OUT.fuelLiters] || 55;
+    const chassisTwistDeg = out[OUT.chassisTwist] || 0;
+    const airDensity = out[OUT.airDensity] || 1.225;
 
-    if (this.samples.length >= MAX_SAMPLES) this.samples.shift();
-    this.samples.push(sample);
+    const idx = this.head;
+    const ch = this.chans;
+    ch[0][idx] = speedMs * 3.6;
+    ch[1][idx] = rpm;
+    ch[2][idx] = throttle * 100;
+    ch[3][idx] = brake * 100;
+    ch[4][idx] = steer * 360;
+    ch[5][idx] = gear - 1;
+    ch[6][idx] = gLat;
+    ch[7][idx] = gLong;
+    ch[8][idx] = s0;
+    ch[9][idx] = s1;
+    ch[10][idx] = s2;
+    ch[11][idx] = s3;
+    ch[12][idx] = t0;
+    ch[13][idx] = t1;
+    ch[14][idx] = t2;
+    ch[15][idx] = t3;
+    ch[16][idx] = sideslipDeg;
+    ch[17][idx] = yawRateDeg;
+    ch[18][idx] = ti0;
+    ch[19][idx] = to0;
+    ch[20][idx] = tf0;
+    ch[21][idx] = boostBar;
+    ch[22][idx] = oilTempC;
+    ch[23][idx] = fuelLiters;
+    ch[24][idx] = chassisTwistDeg;
+    ch[25][idx] = airDensity;
+
+    this.head = idx + 1 >= MAX_SAMPLES ? 0 : idx + 1;
+    if (this.count < MAX_SAMPLES) this.count++;
 
     if (this.udpEnabled && this.ws?.readyState === WebSocket.OPEN) {
-      this.packSimHub(sample);
+      const s = this.simSample;
+      s.t = this.elapsed;
+      s.speedMs = speedMs;
+      s.rpm = rpm;
+      s.maxRpm = info.redline || 8000;
+      s.gear = gear;
+      s.throttle = throttle;
+      s.brake = brake;
+      s.steer = steer;
+      s.gLat = gLat;
+      s.gLong = gLong;
+      s.sideslipDeg = sideslipDeg;
+      s.yawRateDeg = yawRateDeg;
+      s.suspMm[0] = s0; s.suspMm[1] = s1; s.suspMm[2] = s2; s.suspMm[3] = s3;
+      s.tireTempC[0] = t0; s.tireTempC[1] = t1; s.tireTempC[2] = t2; s.tireTempC[3] = t3;
+      s.tireInnerC[0] = ti0;
+      s.tireInnerC[1] = out[OUT.tireInner(1)] || out[OUT.treadSurface(1)] || 78;
+      s.tireInnerC[2] = out[OUT.tireInner(2)] || out[OUT.treadSurface(2)] || 78;
+      s.tireInnerC[3] = out[OUT.tireInner(3)] || out[OUT.treadSurface(3)] || 78;
+      s.tireOuterC[0] = to0;
+      s.tireOuterC[1] = out[OUT.tireOuter(1)] || out[OUT.treadSurface(1)] || 78;
+      s.tireOuterC[2] = out[OUT.tireOuter(2)] || out[OUT.treadSurface(2)] || 78;
+      s.tireOuterC[3] = out[OUT.tireOuter(3)] || out[OUT.treadSurface(3)] || 78;
+      s.tireFlashFlC = tf0;
+      s.boostBar = boostBar;
+      s.oilTempC = oilTempC;
+      s.fuelLiters = fuelLiters;
+      s.chassisTwistDeg = chassisTwistDeg;
+      s.airDensity = airDensity;
+      s.slipRatio[0] = out[w0 + 7] || 0;
+      s.slipRatio[1] = out[w1 + 7] || 0;
+      s.slipRatio[2] = out[w2 + 7] || 0;
+      s.slipRatio[3] = out[w3 + 7] || 0;
+      s.lap = lap?.laps ?? 0;
+      s.lapCur = lap?.current ?? 0;
+      s.lapLast = lap?.last ?? 0;
+      s.lapBest = lap?.best ?? 0;
+      s.distM = lap?.distance ?? 0;
+      this.packSimHub(s);
       this.ws.send(this.pktBuf);
     }
   }
@@ -209,38 +289,11 @@ export class TelemetrySystem {
 
   /** Generate genuine MoTeC i2 Pro `.ld` binary payload. */
   buildMotecLd(): Uint8Array {
-    const channels: { name: string; short: string; unit: string; fn: (s: WebTelemetrySample) => number }[] = [
-      { name: 'Ground Speed', short: 'Speed', unit: 'km/h', fn: (s) => s.speedMs * 3.6 },
-      { name: 'Engine RPM', short: 'RPM', unit: 'rpm', fn: (s) => s.rpm },
-      { name: 'Throttle Pos', short: 'Thr', unit: '%', fn: (s) => s.throttle * 100 },
-      { name: 'Brake Pos', short: 'Brk', unit: '%', fn: (s) => s.brake * 100 },
-      { name: 'Steering Angle', short: 'Steer', unit: 'deg', fn: (s) => s.steer * 360 },
-      { name: 'Gear', short: 'Gear', unit: '', fn: (s) => s.gear - 1 },
-      { name: 'G Force Lat', short: 'GLat', unit: 'G', fn: (s) => s.gLat },
-      { name: 'G Force Long', short: 'GLong', unit: 'G', fn: (s) => s.gLong },
-      { name: 'Susp Pos FL', short: 'SuspFL', unit: 'mm', fn: (s) => s.suspMm[0] },
-      { name: 'Susp Pos FR', short: 'SuspFR', unit: 'mm', fn: (s) => s.suspMm[1] },
-      { name: 'Susp Pos RL', short: 'SuspRL', unit: 'mm', fn: (s) => s.suspMm[2] },
-      { name: 'Susp Pos RR', short: 'SuspRR', unit: 'mm', fn: (s) => s.suspMm[3] },
-      { name: 'Tire Temp FL', short: 'TTmpFL', unit: 'C', fn: (s) => s.tireTempC[0] },
-      { name: 'Tire Temp FR', short: 'TTmpFR', unit: 'C', fn: (s) => s.tireTempC[1] },
-      { name: 'Tire Temp RL', short: 'TTmpRL', unit: 'C', fn: (s) => s.tireTempC[2] },
-      { name: 'Tire Temp RR', short: 'TTmpRR', unit: 'C', fn: (s) => s.tireTempC[3] },
-      { name: 'Sideslip Angle', short: 'Slip', unit: 'deg', fn: (s) => s.sideslipDeg },
-      { name: 'Yaw Rate', short: 'YawR', unit: 'deg/s', fn: (s) => s.yawRateDeg },
-      { name: 'Tire Inner FL', short: 'TInFL', unit: 'C', fn: (s) => s.tireInnerC[0] },
-      { name: 'Tire Outer FL', short: 'TOutFL', unit: 'C', fn: (s) => s.tireOuterC[0] },
-      { name: 'Tire Flash FL', short: 'TFshFL', unit: 'C', fn: (s) => s.tireFlashFlC },
-      { name: 'Boost Pressure', short: 'Boost', unit: 'bar', fn: (s) => s.boostBar },
-      { name: 'Oil Temp', short: 'OilT', unit: 'C', fn: (s) => s.oilTempC },
-      { name: 'Fuel Level', short: 'Fuel', unit: 'L', fn: (s) => s.fuelLiters },
-      { name: 'Chassis Twist', short: 'Twist', unit: 'deg', fn: (s) => s.chassisTwistDeg },
-      { name: 'Air Density', short: 'AirRho', unit: 'kg/m3', fn: (s) => s.airDensity },
-    ];
-
+    const channels = MOTEC_CHANNELS;
     const HEADER = 1762;
     const CHAN_HDR = 124;
-    const n = this.samples.length;
+    const n = this.count;
+    const start = this.count === MAX_SAMPLES ? this.head : 0;
     const metaPtr = HEADER;
     const dataPtr = metaPtr + channels.length * CHAN_HDR;
     const chanBytes = n * 4;
@@ -287,8 +340,13 @@ export class TelemetrySystem {
       putStr(off + 0x20, 32, channels[c].name);
       putStr(off + 0x40, 8, channels[c].short);
       putStr(off + 0x48, 12, channels[c].unit);
-      const fn = channels[c].fn;
-      for (let i = 0; i < n; i++) view.setFloat32(cDataPtr + i * 4, fn(this.samples[i]), true);
+      const src = this.chans?.[c];
+      if (src) {
+        for (let i = 0; i < n; i++) {
+          const ri = start + i < MAX_SAMPLES ? start + i : start + i - MAX_SAMPLES;
+          view.setFloat32(cDataPtr + i * 4, src[ri], true);
+        }
+      }
     }
     return out;
   }
@@ -316,6 +374,6 @@ export class TelemetrySystem {
     };
     dl(new Blob([ld.buffer as ArrayBuffer], { type: 'application/octet-stream' }), `${base}.ld`);
     dl(new Blob([ldx], { type: 'application/xml' }), `${base}.ldx`);
-    return { samples: this.samples.length, bytes: ld.byteLength };
+    return { samples: this.count, bytes: ld.byteLength };
   }
 }
