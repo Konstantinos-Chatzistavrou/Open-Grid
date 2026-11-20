@@ -1438,13 +1438,17 @@ async function main() {
     },
     garageIgnition: () => {
       syncAudioEngine();
-      audio.triggerIgnition();
-      visual.setExhaustFlame(0.65, false);
+      menu.garageEngineOn = audio.toggleGarageIgnition();
+      menu.render();
+    },
+    garageRevHold: (held) => {
+      if (held) syncAudioEngine();
+      menu.garageEngineOn = audio.setGarageRev(held);
     },
     garageRev: () => {
       syncAudioEngine();
-      audio.triggerGarageRev();
-      visual.setExhaustFlame(1.2, false);
+      audio.pulseGarageRev();
+      menu.garageEngineOn = audio.garageEngineOn;
     },
     garageWalk: (on) => {
       garageWalk.active = on;
@@ -2769,7 +2773,15 @@ async function main() {
     }
     prof.vis += performance.now() - tVis;
     const tAud = performance.now();
-    if (driving()) audio.update(car.out, car.out[OUT.speed]);
+    if (driving()) {
+      if (audio.garageEngineOn) { audio.stopGarageEngine(); menu.garageEngineOn = false; }
+      audio.update(car.out, car.out[OUT.speed]);
+    } else if (state === 'garage') {
+      audio.updateGarage(frame);
+    } else if (audio.garageEngineOn) {
+      audio.stopGarageEngine();
+      menu.garageEngineOn = false;
+    }
     // Environment audio (~10 Hz): 3 short rays (left, right, up) pick tunnel / urban-canyon reverb; road wetness and the
     // adaptive music follow the weather, speed, cops and heat
     if (state === 'race' && now - envAudioAt > 100) {
@@ -2872,7 +2884,7 @@ async function main() {
         replay.record(frame, pos, quat, car.out[OUT.speed], car.out[OUT.rpm], input.raw.steer, input.raw.brake, ai.cars.map((c) => ({ pos: c.pos, yaw: c.root.rotation.y })));
       } else {
         car.nosThrustN = 0;
-        if (inGarage && audio.revvingInGarage) visual.setExhaustFlame(0.95, false);
+        if (state === 'garage' && audio.garageFlameLevel > 0.02) visual.setExhaustFlame(audio.garageFlameLevel, false);
         else visual.setExhaustFlame(0, false);
       }
       const wh = inFreeRoam ? (wagers.hudBanner() || raceNodes.promptHtml()) : '';

@@ -133,6 +133,7 @@ export interface MenuHooks {
   reportPlayer?(player: string, category: ReportCategory): void;
   garageIgnition?(): void;
   garageRev?(): void;
+  garageRevHold?(held: boolean): void;
   garageWalk?(on: boolean): void;
   nrChanged?(): void;
   buyAuction?(lotId: string): void;
@@ -220,6 +221,8 @@ export class Menu {
   voiceMode: 'ptt' | 'open' = 'ptt';
   voiceMutedPeers = new Set<string>();
   garageWalkActive = false;
+  garageEngineOn = false;
+  private revHoldActive = false;
   musicOn = true;
   specClass = false;
   modHub: ModHubStore = loadModHub();
@@ -251,6 +254,39 @@ export class Menu {
   constructor(readonly sel: Selection, private cars: CatalogCar[], private physics: Record<string, unknown>, private hooks: MenuHooks) {
     this.market = loadAuctionMarket(this.cars.map((c) => c.id));
     this.root.addEventListener('click', (e) => this.click(e));
+    // Press-and-hold momentary Garage Rev button (mouse + touch, never toggled, no DOM re-render mid-hold)
+    const releaseRev = () => {
+      if (!this.revHoldActive) return;
+      this.revHoldActive = false;
+      this.hooks.garageRevHold?.(false);
+      this.root.querySelectorAll('.g-rev-btn.revving').forEach((el) => el.classList.remove('revving'));
+    };
+    this.root.addEventListener('pointerdown', (e) => {
+      const btn = (e.target as HTMLElement | null)?.closest?.('[data-hold="g-rev"]') as HTMLElement | null;
+      if (!btn) return;
+      e.preventDefault();
+      this.revHoldActive = true;
+      btn.classList.add('revving');
+      this.hooks.garageRevHold?.(true);
+      // Sync Ignition toggle button in-place without re-rendering (keeps pointer hold uninterrupted!)
+      const ign = document.getElementById('g-ign-btn');
+      if (ign && this.garageEngineOn) {
+        ign.classList.add('on');
+        const lbl = ign.querySelector('.lbl');
+        if (lbl) lbl.textContent = ' Stop';
+      }
+    });
+    this.root.addEventListener('pointerout', (e) => {
+      if (!this.revHoldActive) return;
+      const btn = (e.target as HTMLElement | null)?.closest?.('[data-hold="g-rev"]') as HTMLElement | null;
+      if (!btn) return;
+      const to = (e as PointerEvent).relatedTarget as HTMLElement | null;
+      if (to && btn.contains(to)) return;
+      releaseRev();
+    });
+    window.addEventListener('pointerup', releaseRev);
+    window.addEventListener('pointercancel', releaseRev);
+    window.addEventListener('blur', releaseRev);
     // live previews: hovering a part shows what it would do without applying it
     this.root.addEventListener('pointerover', (e) => this.hoverPart(e, true));
     this.root.addEventListener('pointerout', (e) => this.hoverPart(e, false));
@@ -743,8 +779,8 @@ export class Menu {
         <div class="g-top-actions">
           ${dmgPill}
           <button class="chip g-eye-btn" data-act="g-hide-ui" title="Hide UI &amp; inspect car full-screen">👁<span class="lbl"> View</span></button>
-          <button class="chip" data-act="g-ignition" title="Crank starter">🔑<span class="lbl"> Start</span></button>
-          <button class="chip on" data-act="g-rev" title="Rev engine &amp; shoot exhaust flames">🔥<span class="lbl"> Rev</span></button>
+          <button id="g-ign-btn" class="chip ${this.garageEngineOn ? 'on' : ''}" data-act="g-ignition" title="Toggle engine ignition ON / OFF">🔑<span class="lbl"> ${this.garageEngineOn ? 'Stop' : 'Start'}</span></button>
+          <button class="chip g-rev-btn" data-hold="g-rev" title="Hold to rev engine &amp; shoot exhaust flames" oncontextmenu="return false">🔥<span class="lbl"> Rev</span></button>
           <button class="chip" data-act="g-cam-cycle" title="Cycle showroom camera angle">📷<span class="lbl"> ${camNow.label}</span></button>
           ${this.nr.walkableGarage ? `<button class="chip ${this.garageWalkActive ? 'on' : ''}" data-act="g-walk" title="Walk around your car">🚶</button>` : ''}
           <button class="primary g-drive-btn" data-act="play">DRIVE ▶</button>
