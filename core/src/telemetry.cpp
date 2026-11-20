@@ -5,7 +5,9 @@
 #include <fstream>
 #include <sstream>
 
-#if defined(_WIN32)
+#if defined(__EMSCRIPTEN__)
+  // Browser WASM build: UDP transport is handled by WebSocket -> tools/simhub_udp_bridge.mjs
+#elif defined(_WIN32)
   #include <winsock2.h>
   #include <ws2tcpip.h>
 #else
@@ -191,8 +193,8 @@ std::array<std::uint8_t, kSimHubPacketBytes> pack_simhub_udp(const TelemetrySamp
     for (std::size_t i = 0; i < 4; ++i) {
         put_f32(p, 256 + i * 4, static_cast<float>(s.tire_temp_c[i] * 1.8 + 32.0));
     }
-    put_f32(p, 272, 0.0f);  // boost
-    put_f32(p, 276, 1.0f);  // fuel
+    put_f32(p, 272, static_cast<float>(s.boost_bar * 14.5038));  // boost (PSI in Forza Dash V2)
+    put_f32(p, 276, static_cast<float>(std::clamp(s.fuel_liters / 55.0, 0.0, 1.0)));  // normalized fuel level (0..1)
     put_f32(p, 280, static_cast<float>(s.distance_m));
     put_f32(p, 284, static_cast<float>(s.best_lap_s));
     put_f32(p, 288, static_cast<float>(s.last_lap_s));
@@ -220,7 +222,9 @@ bool UdpTelemetrySender::open(const std::string& host, std::uint16_t port) {
     close();
     host_ = host;
     port_ = port;
-#if defined(_WIN32)
+#if defined(__EMSCRIPTEN__)
+    return false;
+#elif defined(_WIN32)
     WSADATA wsa{};
     WSAStartup(MAKEWORD(2, 2), &wsa);
     SOCKET s = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -241,7 +245,9 @@ bool UdpTelemetrySender::open(const std::string& host, std::uint16_t port) {
 
 void UdpTelemetrySender::close() {
     if (fd_ < 0) return;
-#if defined(_WIN32)
+#if defined(__EMSCRIPTEN__)
+    fd_ = -1;
+#elif defined(_WIN32)
     ::closesocket(static_cast<SOCKET>(fd_));
 #else
     ::close(fd_);
@@ -251,6 +257,9 @@ void UdpTelemetrySender::close() {
 
 bool UdpTelemetrySender::send_raw(const std::uint8_t* data, std::size_t len) {
     if (fd_ < 0 || !data || len == 0) return false;
+#if defined(__EMSCRIPTEN__)
+    return false;
+#else
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port_);
@@ -262,6 +271,7 @@ bool UdpTelemetrySender::send_raw(const std::uint8_t* data, std::size_t len) {
     ssize_t sent = ::sendto(fd_, data, len, 0, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr));
 #endif
     return sent == static_cast<decltype(sent)>(len);
+#endif
 }
 
 bool UdpTelemetrySender::send(const TelemetrySample& sample) {
