@@ -319,5 +319,763 @@
       200,
       2
     ]
+  },
+  "chicago": {
+    "name": "Chicago",
+    "district": "The Loop & River North",
+    "country": "US",
+    "origin": [
+      41.88202,
+      -87.6278
+    ],
+    "area": [
+      41.866,
+      -87.645,
+      41.898,
+      -87.612
+    ],
+    "data": "assets_source/downloads/cities/chicago",
+    "pbf": "Chicago.osm.pbf",
+    "out": "web/public/assets/cities/chicago/tiles",
+    "route": "web/public/data/tracks/chicago_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 0,
+    "drive": "right",
+    "style": "chicago",
+    "skip_elevated": true,
+    "floors": {
+      "default": 4,
+      "residential": 4,
+      "apartments": 10,
+      "house": 2,
+      "commercial": 6,
+      "office": 18,
+      "retail": 3,
+      "industrial": 3
+    },
+    "widths": {
+      "primary": 19.0,
+      "secondary": 15.0,
+      "tertiary": 12.0,
+      "residential": 10.0,
+      "unclassified": 9.0,
+      "living_street": 6.5,
+      "service": 5.0
+    },
+    "spawn": [
+      41.88202,
+      -87.6278,
+      "State & Madison"
+    ],
+    "route_via": [
+      [
+        41.88202,
+        -87.6278
+      ],
+      [
+        41.8866,
+        -87.6279
+      ],
+      [
+        41.8865,
+        -87.6346
+      ],
+      [
+        41.878,
+        -87.6352
+      ],
+      [
+        41.8781,
+        -87.6243
+      ],
+      [
+        41.8847,
+        -87.6244
+      ]
+    ],
+    "small_floors": [
+      200,
+      2
+    ]
+  },
+  "miami": {
+    "name": "Miami",
+    "district": "Downtown & Brickell",
+    "country": "US",
+    "origin": [
+      25.7744,
+      -80.1878
+    ],
+    "area": [
+      25.752,
+      -80.205,
+      25.792,
+      -80.18
+    ],
+    "data": "assets_source/downloads/cities/miami",
+    "pbf": "Miami.osm.pbf",
+    "out": "web/public/assets/cities/miami/tiles",
+    "route": "web/public/data/tracks/miami_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 89,
+    "drive": "right",
+    "style": "miami",
+    "skip_elevated": true,
+    "floors": {
+      "default": 4,
+      "residential": 6,
+      "apartments": 18,
+      "house": 2,
+      "commercial": 5,
+      "office": 16,
+      "retail": 2,
+      "industrial": 2
+    },
+    "widths": {
+      "primary": 19.0,
+      "secondary": 15.0,
+      "tertiary": 12.0,
+      "residential": 10.0,
+      "unclassified": 9.0,
+      "living_street": 6.5,
+      "service": 5.0
+    },
+    "spawn": [
+      25.7744,
+      -80.1878,
+      "Biscayne Blvd & Flagler"
+    ],
+    "route_via": [
+      [
+        25.7744,
+        -80.1878
+      ],
+      [
+        25.785023,
+        -80.189161
+      ],
+      [
+        25.7845,
+        -80.1938
+      ],
+      [
+        25.765027,
+        -80.193262
+      ],
+      [
+        25.765131,
+        -80.190883
+      ],
+      [
+        25.770905,
+        -80.189226
+      ]
+    ],
+    "small_floors": [
+      200,
+      2
+    ]
+  },
+  "toronto": {
+    "name": "Toronto",
+    "district": "Downtown",
+    "country": "CA",
+    "origin": [
+      43.6561,
+      -79.3802
+    ],
+    "area": [
+      43.639,
+      -79.403,
+      43.67,
+      -79.362
+    ],
+    "data": "assets_source/downloads/cities/toronto",
+    "pbf": "Toronto.osm.pbf",
+    "out": "web/public/assets/cities/toronto/tiles",
+    "route": "web/public/data/tracks/toronto_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 74,
+    "drive": "right",
+    "style": "toronto",
+    "skip_elevated": true,
+    "floors": {
+      "default": 4,
+      "residential": 4,
+      "apartments": 16,
+      "house": 2,
+      "commercial": 5,
+      "office": 14,
+      "retail": 3,
+      "industrial": 3
+    },
+    "widths": {
+      "primary": 19.0,
+      "secondary": 15.0,
+      "tertiary": 12.0,
+      "residential": 10.0,
+      "unclassified": 9.0,
+      "living_street": 6.5,
+      "service": 5.0
+    },
+    "spawn": [
+      43.656413,
+      -79.380062,
+      "Yonge-Dundas Square"
+    ],
+    "route_via": [
+      [
+        43.6561,
+        -79.3802
+      ],
+      [
+        43.6488,
+        -79.3778
+      ],
+      [
+        43.647,
+        -79.3871
+      ],
+      [
+        43.6545,
+        -79.3887
+      ]
+    ],
+    "small_floors": [
+      180,
+      2
+    ]
+  },
+  "berlin": {
+    "name": "Berlin",
+    "district": "Mitte",
+    "country": "DE",
+    "origin": [
+      52.516,
+      13.3768
+    ],
+    "area": [
+      52.503,
+      13.365,
+      52.53,
+      13.42
+    ],
+    "data": "assets_source/downloads/cities/berlin",
+    "pbf": "Berlin.osm.pbf",
+    "out": "web/public/assets/cities/berlin/tiles",
+    "route": "web/public/data/tracks/berlin_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 84,
+    "drive": "right",
+    "style": "berlin",
+    "skip_elevated": false,
+    "floors": {
+      "default": 5,
+      "residential": 5,
+      "apartments": 6,
+      "house": 3,
+      "commercial": 6,
+      "office": 7,
+      "retail": 4,
+      "industrial": 3
+    },
+    "widths": {
+      "primary": 14.0,
+      "secondary": 12.0,
+      "tertiary": 10.0,
+      "residential": 8.0,
+      "unclassified": 8.0,
+      "living_street": 6.0,
+      "service": 4.5
+    },
+    "spawn": [
+      52.516,
+      13.3768,
+      "Brandenburger Tor"
+    ],
+    "route_via": [
+      [
+        52.516,
+        13.3768
+      ],
+      [
+        52.5096,
+        13.3764
+      ],
+      [
+        52.5103,
+        13.3887
+      ],
+      [
+        52.5172,
+        13.3889
+      ],
+      [
+        52.516848,
+        13.380691
+      ]
+    ],
+    "small_floors": [
+      120,
+      2
+    ]
+  },
+  "barcelona": {
+    "name": "Barcelona",
+    "district": "Eixample & Ciutat Vella",
+    "country": "ES",
+    "origin": [
+      41.387,
+      2.17
+    ],
+    "area": [
+      41.376,
+      2.15,
+      41.405,
+      2.182
+    ],
+    "data": "assets_source/downloads/cities/barcelona",
+    "pbf": "Barcelona.osm.pbf",
+    "out": "web/public/assets/cities/barcelona/tiles",
+    "route": "web/public/data/tracks/barcelona_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 46,
+    "drive": "right",
+    "style": "barcelona",
+    "skip_elevated": false,
+    "floors": {
+      "default": 6,
+      "residential": 6,
+      "apartments": 7,
+      "house": 3,
+      "commercial": 6,
+      "office": 8,
+      "retail": 4,
+      "industrial": 3
+    },
+    "widths": {
+      "primary": 18.0,
+      "secondary": 12.0,
+      "tertiary": 10.0,
+      "residential": 9.0,
+      "unclassified": 8.0,
+      "living_street": 6.0,
+      "service": 4.5
+    },
+    "spawn": [
+      41.386668,
+      2.169343,
+      "Plaça de Catalunya"
+    ],
+    "route_via": [
+      [
+        41.387,
+        2.17
+      ],
+      [
+        41.395,
+        2.161
+      ],
+      [
+        41.4032,
+        2.1735
+      ],
+      [
+        41.3915,
+        2.179
+      ]
+    ],
+    "small_floors": [
+      100,
+      3
+    ]
+  },
+  "amsterdam": {
+    "name": "Amsterdam",
+    "district": "Centrum & the canal ring",
+    "country": "NL",
+    "origin": [
+      52.3738,
+      4.8936
+    ],
+    "area": [
+      52.355,
+      4.875,
+      52.382,
+      4.915
+    ],
+    "data": "assets_source/downloads/cities/amsterdam",
+    "pbf": "Amsterdam.osm.pbf",
+    "out": "web/public/assets/cities/amsterdam/tiles",
+    "route": "web/public/data/tracks/amsterdam_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 68,
+    "drive": "right",
+    "style": "amsterdam",
+    "skip_elevated": false,
+    "floors": {
+      "default": 4,
+      "residential": 4,
+      "apartments": 5,
+      "house": 4,
+      "commercial": 4,
+      "office": 5,
+      "retail": 3,
+      "industrial": 3
+    },
+    "widths": {
+      "primary": 12.0,
+      "secondary": 10.0,
+      "tertiary": 8.0,
+      "residential": 6.5,
+      "unclassified": 6.5,
+      "living_street": 5.0,
+      "service": 4.0
+    },
+    "spawn": [
+      52.3738,
+      4.8936,
+      "Damrak"
+    ],
+    "route_via": [
+      [
+        52.3738,
+        4.8936
+      ],
+      [
+        52.367075,
+        4.893955
+      ],
+      [
+        52.359547,
+        4.89141
+      ],
+      [
+        52.362702,
+        4.880345
+      ],
+      [
+        52.373627,
+        4.881578
+      ],
+      [
+        52.373303,
+        4.889008
+      ]
+    ],
+    "small_floors": [
+      80,
+      3
+    ]
+  },
+  "singapore": {
+    "name": "Singapore",
+    "district": "Marina Bay & the CBD",
+    "country": "SG",
+    "origin": [
+      1.2908,
+      103.8592
+    ],
+    "area": [
+      1.272,
+      103.835,
+      1.302,
+      103.868
+    ],
+    "data": "assets_source/downloads/cities/singapore",
+    "pbf": "Singapore.osm.pbf",
+    "out": "web/public/assets/cities/singapore/tiles",
+    "route": "web/public/data/tracks/singapore_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 32,
+    "drive": "left",
+    "style": "singapore",
+    "skip_elevated": true,
+    "floors": {
+      "default": 5,
+      "residential": 10,
+      "apartments": 20,
+      "house": 2,
+      "commercial": 6,
+      "office": 25,
+      "retail": 4,
+      "industrial": 4
+    },
+    "widths": {
+      "primary": 19.0,
+      "secondary": 15.0,
+      "tertiary": 12.0,
+      "residential": 10.0,
+      "unclassified": 9.0,
+      "living_street": 6.5,
+      "service": 5.0
+    },
+    "spawn": [
+      1.291459,
+      103.859171,
+      "Raffles Avenue (Marina Bay)"
+    ],
+    "route_via": [
+      [
+        1.2908,
+        103.8592
+      ],
+      [
+        1.2894,
+        103.8541
+      ],
+      [
+        1.291,
+        103.8516
+      ],
+      [
+        1.293843,
+        103.85624
+      ],
+      [
+        1.292687,
+        103.8609
+      ]
+    ],
+    "small_floors": [
+      150,
+      2
+    ]
+  },
+  "melbourne": {
+    "name": "Melbourne",
+    "district": "CBD & Southbank",
+    "country": "AU",
+    "origin": [
+      -37.818,
+      144.9671
+    ],
+    "area": [
+      -37.83,
+      144.945,
+      -37.803,
+      144.98
+    ],
+    "data": "assets_source/downloads/cities/melbourne",
+    "pbf": "Melbourne.osm.pbf",
+    "out": "web/public/assets/cities/melbourne/tiles",
+    "route": "web/public/data/tracks/melbourne_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 8,
+    "drive": "left",
+    "style": "melbourne",
+    "skip_elevated": true,
+    "floors": {
+      "default": 4,
+      "residential": 4,
+      "apartments": 15,
+      "house": 2,
+      "commercial": 5,
+      "office": 15,
+      "retail": 3,
+      "industrial": 3
+    },
+    "widths": {
+      "primary": 19.0,
+      "secondary": 15.0,
+      "tertiary": 12.0,
+      "residential": 10.0,
+      "unclassified": 9.0,
+      "living_street": 6.5,
+      "service": 5.0
+    },
+    "spawn": [
+      -37.817691,
+      144.966951,
+      "Flinders Street Station"
+    ],
+    "route_via": [
+      [
+        -37.818,
+        144.9671
+      ],
+      [
+        -37.8205,
+        144.955
+      ],
+      [
+        -37.8135,
+        144.952
+      ],
+      [
+        -37.8098,
+        144.964
+      ],
+      [
+        -37.813448,
+        144.973197
+      ]
+    ],
+    "small_floors": [
+      150,
+      2
+    ]
+  },
+  "madrid": {
+    "name": "Madrid",
+    "district": "Gran Vía & the Prado",
+    "country": "ES",
+    "origin": [
+      40.4193,
+      -3.6931
+    ],
+    "area": [
+      40.405,
+      -3.716,
+      40.432,
+      -3.68
+    ],
+    "data": "assets_source/downloads/cities/madrid",
+    "pbf": "Madrid.osm.pbf",
+    "out": "web/public/assets/cities/madrid/tiles",
+    "route": "web/public/data/tracks/madrid_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 4,
+    "drive": "right",
+    "style": "madrid",
+    "skip_elevated": true,
+    "floors": {
+      "default": 6,
+      "residential": 6,
+      "apartments": 7,
+      "house": 3,
+      "commercial": 6,
+      "office": 8,
+      "retail": 4,
+      "industrial": 3
+    },
+    "widths": {
+      "primary": 16.0,
+      "secondary": 12.0,
+      "tertiary": 10.0,
+      "residential": 8.0,
+      "unclassified": 8.0,
+      "living_street": 6.0,
+      "service": 4.5
+    },
+    "spawn": [
+      40.4193,
+      -3.6931,
+      "Plaza de Cibeles"
+    ],
+    "route_via": [
+      [
+        40.4193,
+        -3.6931
+      ],
+      [
+        40.42,
+        -3.7055
+      ],
+      [
+        40.4232,
+        -3.7115
+      ],
+      [
+        40.41605,
+        -3.713456
+      ],
+      [
+        40.418,
+        -3.6995
+      ],
+      [
+        40.4078,
+        -3.6925
+      ]
+    ],
+    "small_floors": [
+      100,
+      3
+    ]
+  },
+  "seoul": {
+    "name": "Seoul",
+    "district": "Gangnam",
+    "country": "KR",
+    "origin": [
+      37.4979,
+      127.0276
+    ],
+    "area": [
+      37.488,
+      127.015,
+      37.515,
+      127.065
+    ],
+    "data": "assets_source/downloads/cities/seoul",
+    "pbf": "Seoul.osm.pbf",
+    "out": "web/public/assets/cities/seoul/tiles",
+    "route": "web/public/data/tracks/seoul_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 69,
+    "drive": "right",
+    "style": "seoul",
+    "skip_elevated": true,
+    "floors": {
+      "default": 6,
+      "residential": 5,
+      "apartments": 15,
+      "house": 3,
+      "commercial": 8,
+      "office": 15,
+      "retail": 5,
+      "industrial": 4
+    },
+    "widths": {
+      "primary": 19.0,
+      "secondary": 15.0,
+      "tertiary": 12.0,
+      "residential": 10.0,
+      "unclassified": 9.0,
+      "living_street": 6.5,
+      "service": 5.0
+    },
+    "spawn": [
+      37.4979,
+      127.0276,
+      "Gangnam Station"
+    ],
+    "route_via": [
+      [
+        37.4979,
+        127.0276
+      ],
+      [
+        37.5045,
+        127.025
+      ],
+      [
+        37.509873,
+        127.042304
+      ],
+      [
+        37.5088,
+        127.059
+      ],
+      [
+        37.5012,
+        127.0365
+      ]
+    ],
+    "small_floors": [
+      150,
+      3
+    ]
   }
 }
