@@ -120,7 +120,7 @@ const muralTex = () => canvasTex(2048, 640, (x, w, h) => {
   x.globalAlpha = 1;
   x.fillStyle = '#f2f4f8';
   x.font = `italic 900 76px ${FONT}`;
-  x.fillText('NO LIMITS  ·  NIGHT SHIFT', 150, h - 26);
+  x.fillText('OPEN GRID  ·  GARAGE', 150, h - 26);
   wear(x, w, h, 1.6, 11);
 });
 const stencilTex = (text: string, color = '#e8e2d2') => canvasTex(512, 256, (x, w, h) => {

@@ -203,7 +203,7 @@ export class AiTraffic {
   dragCarIdx = -1;
   /** Held during the 3-2-1 drag countdown right beside the player. */
   dragHeld = false;
-  readonly lane: Lane;
+  lane: Lane;
   private a = new THREE.Vector3();
   private b = new THREE.Vector3();
   private of = new THREE.Vector3();
@@ -310,6 +310,29 @@ export class AiTraffic {
     }
     ai.setMode('off');
     return ai;
+  }
+
+  /** Rebind traffic & rivals to a new city's route during seamless city switching. */
+  setRoute(samples: RouteSample[]) {
+    this.lane = new Lane(samples);
+    this.grid = [];
+    this.playerS = 0;
+    this.dragCarIdx = -1;
+    this.dragHeld = false;
+    for (let i = 0; i < this.cars.length; i++) {
+      const c = this.cars[i] as AiCar & { lim?: CarLimits };
+      const rival = RIVALS[i % RIVALS.length];
+      const lim = c.lim ?? { mu: 1.1, muX: 1.1 };
+      const aLat = rival.skill * 0.82 * lim.mu * G;
+      const aBrake = rival.skill * 0.85 * lim.muX * G;
+      c.vprof = this.lane.profile(aLat, aBrake, 75);
+      c.s = 0;
+      c.v = 0;
+      c.y = 0;
+      c.yTick = 0;
+      c.wrecked = false;
+    }
+    this.setMode('off');
   }
 
   /**

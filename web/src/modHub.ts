@@ -33,7 +33,7 @@ export const MOD_CATALOG: ModEntry[] = [
     blurb: 'Real-width 8.4 km Japanese touge switchbacks with 3 Drift Zones & fog-bank lighting.', downloads: '56.1k',
   },
   {
-    id: 'mod_gt3_liveries', title: 'Night Shift Pro Livery Pack (24x)', kind: 'livery', author: 'OpenGrid Community', version: '3.0.1',
+    id: 'mod_gt3_liveries', title: 'Apex Midnight Pro Livery Pack (24x)', kind: 'livery', author: 'OpenGrid Community', version: '3.0.1',
     polyCount: 0, hasLods: true, validated: true, workshopId: 'WS-404011',
     blurb: 'Moderation-cleared racing stripes, metallic fades, and Japanese street club decals.', downloads: '63.9k',
   },

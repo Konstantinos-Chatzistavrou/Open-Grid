@@ -55,22 +55,90 @@ html, body { font-family: var(--text); font-size: 15px; }
 #menu .nav-focus { outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 5px #ff2d6a70; }
 .spin { border-top-color: var(--hot); }
 
-/* ---- enter gate + loading -------------------------------------------------------------------------------------- */
-#enter, #loading, #loader { background: radial-gradient(90% 70% at 50% 110%, #2a0716 0%, #0a0d16 46%, var(--ink) 78%); }
-.enter-brand, .load-brand { font: italic 900 clamp(64px, 11vw, 150px)/.84 var(--display); letter-spacing: -.01em; }
+/* ---- enter gate + loading (compositor-only, zero GPU/canvas cost on phones) ----------------------------------- */
+#enter, #loading, #loader {
+  background: radial-gradient(95% 75% at 50% 112%, #32091d 0%, #0b1020 44%, #05070c 82%);
+  overflow: hidden;
+}
+.ld-bg { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.ld-grid {
+  position: absolute; left: -30%; right: -30%; bottom: -28%; height: 64%;
+  background:
+    repeating-linear-gradient(90deg, #ff2d6a18 0 1px, transparent 1px 64px),
+    repeating-linear-gradient(0deg, #00e5ff20 0 1px, transparent 1px 44px);
+  transform: perspective(420px) rotateX(68deg) translateY(0);
+  animation: ldroad 2.4s linear infinite;
+  will-change: transform;
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 58%, #000 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 58%, #000 100%);
+}
+.ld-streak {
+  position: absolute; height: 2px; width: 42vw; left: 0; opacity: .55;
+  will-change: transform;
+}
+.ld-streak.s1 {
+  top: 26%;
+  background: linear-gradient(90deg, transparent, #ff2d6a, #ff7a3d, transparent);
+  animation: ldstreak 2.8s cubic-bezier(.4, 0, .2, 1) infinite;
+}
+.ld-streak.s2 {
+  top: 72%;
+  background: linear-gradient(90deg, transparent, #00e5ff, #7be4ff, transparent);
+  animation: ldstreak 3.6s cubic-bezier(.4, 0, .2, 1) -1.5s infinite;
+}
+@keyframes ldroad { from { transform: perspective(420px) rotateX(68deg) translateY(0); } to { transform: perspective(420px) rotateX(68deg) translateY(44px); } }
+@keyframes ldstreak { from { transform: translateX(-48vw); } to { transform: translateX(118vw); } }
+
+.enter-box, .load-box { position: relative; z-index: 1; width: min(500px, 86vw); text-align: center; }
+.enter-brand, .load-brand { font: italic 900 clamp(60px, 10.5vw, 136px)/.84 var(--display); letter-spacing: -.012em; text-shadow: 0 8px 38px #000c, 0 0 28px #ff2d6a2e; }
 .enter-brand span, .load-brand span { color: var(--hot); }
-.enter-msg { font: 700 clamp(13px, 1.5vw, 18px)/1 var(--display); letter-spacing: .42em; }
-.enter-hint, .load-sub, #load-msg, #loader .load-msg { font-family: var(--display); font-weight: 600; letter-spacing: .3em; }
-.load-sub { font-size: 13px; color: var(--hot); margin: 14px 0 36px; }
-.load-bar, .ld-bar { height: 2px; border-radius: 0; }
-.load-bar i { background: linear-gradient(90deg, var(--hot), var(--hot2)); }
-.ld-tip { font-size: 14px; }
+.enter-msg { font: 700 clamp(13px, 1.5vw, 18px)/1 var(--display); letter-spacing: .42em; margin-top: 22px; }
+.enter-hint, .load-sub, #load-msg, #loader .load-msg { font-family: var(--display); font-weight: 600; letter-spacing: .24em; }
+.load-sub { font-size: clamp(13px, 1.5vw, 16px); color: #f0f4ffdd; letter-spacing: .16em; text-transform: uppercase; margin: 12px 0 22px; }
+.ld-tach { position: relative; width: 92px; height: 92px; margin: 4px auto 16px; display: grid; place-items: center; }
+.ld-tach svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ld-tach .t-track { fill: none; stroke: #ffffff14; stroke-width: 4; }
+.ld-tach .t-arc {
+  fill: none; stroke: var(--hot); stroke-width: 4.5; stroke-linecap: round;
+  stroke-dasharray: 118 200; transform-origin: 60px 60px;
+  animation: ldspin 1.15s linear infinite; will-change: transform;
+}
+.ld-tach .t-arc2 {
+  fill: none; stroke: var(--cy); stroke-width: 2.5; stroke-linecap: round;
+  stroke-dasharray: 64 190; transform-origin: 60px 60px;
+  animation: ldspin 1.8s linear infinite reverse; will-change: transform;
+}
+.ld-tach b { font: italic 800 20px/1 var(--display); letter-spacing: .04em; color: #fff; }
+.ld-badge {
+  display: inline-block; margin: 0 auto 10px; padding: 4px 14px;
+  font: 700 12px/1.2 var(--display); letter-spacing: .22em; text-transform: uppercase;
+  color: #fff; background: #ff2d6a24; border: 1px solid #ff2d6a70; clip-path: var(--lean);
+}
+.load-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 0 0 8px; }
+#load-msg, #loader .load-msg { margin: 0; font-size: 13px; letter-spacing: .16em; text-transform: uppercase; color: var(--fg); text-align: left; }
+.ld-tag { font: 700 10px/1 var(--display); letter-spacing: .24em; color: var(--cy); opacity: .88; white-space: nowrap; }
+.load-bar, .ld-bar { height: 4px; border-radius: 0; background: #ffffff18; }
+.load-bar i { background: linear-gradient(90deg, var(--hot), var(--hot2), var(--cy)); }
+.ld-bar.det i { width: 0%; animation: none; background: linear-gradient(90deg, var(--hot), var(--hot2), var(--cy)); transition: width .22s ease-out; }
+.ld-tip {
+  margin-top: 20px; min-height: 36px; padding: 8px 14px;
+  font: 500 13px/1.45 var(--text); color: #cfd8e8cc;
+  background: #090d1688; border-left: 2px solid var(--hot); text-align: left;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ld-grid, .ld-streak, .ld-tach .t-arc, .ld-tach .t-arc2 { animation: none; }
+}
 
 /* ---- title ------------------------------------------------------------------------------------------------------ */
 #menu[data-screen="title"]::before { background: linear-gradient(90deg, #05070cf2 0%, #05070cc4 24%, #05070c55 42%, #05070c00 60%),
   linear-gradient(0deg, #05070cb0 0%, #05070c00 22%); }
 #menu .title { left: clamp(28px, 4.6vw, 96px); top: 0; bottom: 0; transform: none; justify-content: center; gap: 18px; max-width: 520px; }
 #menu .t-brand .kicker { margin-bottom: 10px; }
+#menu .t-slogan {
+  margin-top: 8px; font: 600 clamp(14px, 1.45vw, 18px)/1.25 var(--display);
+  letter-spacing: .16em; text-transform: uppercase; color: #eef3ffe0;
+  text-shadow: 0 2px 14px #000a;
+}
 #menu .logo { font: italic 900 clamp(72px, 8.6vw, 148px)/.8 var(--display); letter-spacing: -.012em; text-transform: uppercase; }
 #menu .logo span { color: var(--hot); margin-left: .06em; }
 #menu .title-btns { display: flex; flex-direction: column; gap: 6px; width: min(460px, 100%); margin-top: 10px; }

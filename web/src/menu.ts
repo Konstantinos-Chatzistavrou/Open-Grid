@@ -329,8 +329,8 @@ export class Menu {
     return `${this.tuning ? '<div class="cover"><div class="card center"><div class="spin"></div><p>Tuning graphics for this device…</p><span class="dim">Measuring the street once to pick resolution and effects.</span></div></div>' : ''}
       <div class="title">
         <div class="t-brand">
-          <div class="kicker">NIGHT SHIFT // OPEN-WORLD STREET RACING</div>
           <div class="logo">OPEN<span>GRID</span></div>
+          <div class="t-slogan">The ultimate driving and racing experience</div>
         </div>
         <nav class="title-btns">
           ${nav('play', '01', t('menu.play'), t('menu.play.sub'), true)}
@@ -422,9 +422,11 @@ export class Menu {
   private careerCard(k: 'sp' | 'mp') {
     const c = k === 'sp' ? this.sp : this.mp, L = levelOf(c.xp);
     const pct = L.need ? Math.round((L.into / L.need) * 100) : 100;
-    const extra = k === 'mp' ? (this.mp.ready ? ` · <span class="credits">${fmt(c.credits)}</span>` : ` · <span class="dim">${esc(this.mp.note || 'Offline')}</span>`) : '';
+    const extra = k === 'mp'
+      ? (this.mp.ready ? ` · <span class="credits">${fmt(c.credits)}</span>` : ` · <span class="dim">${esc(this.mp.note || 'Offline')}</span>`)
+      : (this.sp.testingMode ? ` · <span class="pill gold">🧪 TESTING FREE</span>` : '');
     return `<div class="ccard"><span class="dim">${k === 'sp' ? 'SINGLE PLAYER' : 'ONLINE'}</span><b>Level ${L.level}</b>${extra}
-      <div class="xpbar"><i style="width:${pct}%"></i></div><small class="dim">${L.need ? `${fmtXp(L.into)} / ${fmtXp(L.need)}` : 'Max level'}</small></div>`;
+      <div class="xpbar"><i style="width:${pct}%"></i></div><small class="dim">${this.sp.testingMode && k === 'sp' ? 'All cars & upgrades unlocked' : L.need ? `${fmtXp(L.into)} / ${fmtXp(L.need)}` : 'Max level'}</small></div>`;
   }
   /** The single player / online switch on the garage and shop. */
   private careerBar() {
@@ -574,7 +576,9 @@ export class Menu {
           ${this.nr.walkableGarage ? `<button class="chip ${this.garageWalkActive ? 'on' : ''}" data-act="g-walk">🚶 ${this.garageWalkActive ? 'Stop Walk' : 'Walk Garage'}</button>` : ''}
         </div>
       </header>
-      <aside class="g-carlist panel"><h3>Your cars (${ownedList.length}/${this.cars.length})</h3>${filterBar}${cards}
+      <aside class="g-carlist panel"><h3>Your cars (${ownedList.length}/${this.cars.length})</h3>
+        <div class="chips" style="margin-bottom:6px"><button class="chip ${this.sp.testingMode ? 'on' : ''}" data-act="toggle-testing" title="Unlock every car, upgrade, turbo, engine swap &amp; skin for free">${this.sp.testingMode ? '🧪 Testing Mode ON (All Free)' : '🧪 Unlock All (Testing Mode)'}</button></div>
+        ${filterBar}${cards}
         <div class="dim small-note" style="margin-top:6px">Tip: click any 3D part on the car to jump directly to its tab!</div>
         ${this.cars.some((c) => !w.owns(c.id)) ? '<button class="small more-cars" data-act="shop-open">+ More cars / Mod Hub</button>' : ''}</aside>
       <nav class="g-rail">${rail}</nav>
@@ -742,26 +746,27 @@ export class Menu {
 
   private gEngine() {
     const eng = engineOf(this.nr, this.sel.car);
-    const canSwap = eng.health <= ENGINE_SWAP_THRESHOLD;
+    const freeTest = this.sp.testingMode && this.sel.career === 'sp';
+    const canSwap = freeTest || eng.health <= ENGINE_SWAP_THRESHOLD;
     const tagsHtml = eng.tags.length ? `<div style="margin:6px 0">${eng.tags.map((tg) => `<span class="tag-chip">${esc(tg)}</span>`).join('')}</div>` : '';
     const turboBtns = (Object.keys(TURBOS) as TurboId[]).map((id) =>
       `<button class="chip ${eng.turbo === id ? 'on' : ''}" data-act="nr-turbo" data-v="${id}">${TURBOS[id].label} (${Math.round((TURBOS[id].powerMul - 1) * 100)}% pwr)</button>`).join('');
     const manBtns = (Object.keys(MANIFOLDS) as ManifoldId[]).map((id) =>
       `<button class="chip ${eng.manifold === id ? 'on' : ''}" data-act="nr-man" data-v="${id}">${MANIFOLDS[id].label}</button>`).join('');
     const swapBtns = (Object.keys(ENGINE_SWAPS) as SwapId[]).map((id) =>
-      `<button class="chip ${eng.swap === id ? 'on' : ''}" data-act="nr-swap" data-v="${id}" ${!canSwap && id !== 'stock' && id !== eng.swap ? 'disabled title="Wear current engine to <= 20% health to unlock swaps"' : ''}>${ENGINE_SWAPS[id].label}</button>`).join('');
+      `<button class="chip ${eng.swap === id ? 'on' : ''}" data-act="nr-swap" data-v="${id}" ${!canSwap && id !== 'stock' && id !== eng.swap ? 'disabled title="Wear current engine to <= 20% health to unlock swaps (or enable Testing Mode)"' : ''}>${ENGINE_SWAPS[id].label}</button>`).join('');
     return `<h3>Maintenance &amp; Health</h3>
       <div class="dim small-note">Engine Health: <b>${Math.round(eng.health)}%</b> · Oil Life: <b>${Math.round(eng.oilLife)}%</b> · Odometer: <b>${Math.round(eng.mileageKm).toLocaleString()} km</b></div>
       ${tagsHtml}
       <div class="chips" style="margin:8px 0">
-        <button class="chip" data-act="nr-oil">🛢 Change Oil (50 XP)</button>
-        <button class="chip" data-act="nr-rebuild">🔧 Engine Overhaul (350 XP)</button>
+        <button class="chip" data-act="nr-oil">🛢 Change Oil (${freeTest ? 'FREE' : '50 XP'})</button>
+        <button class="chip" data-act="nr-rebuild">🔧 Engine Overhaul (${freeTest ? 'FREE' : '350 XP'})</button>
       </div>
       <h3>💨 Nitrous Oxide <small class="dim">(${eng.nosLiters.toFixed(1)} / ${NOS_MAX_LITERS} L · [X] in race · overuse fries engine!)</small></h3>
-      <div class="chips"><button class="chip on" data-act="nr-nos" data-v="5">+5 L Refill (${5 * NOS_PRICE_PER_LITER_XP} XP)</button><button class="chip" data-act="nr-nos" data-v="15">Fill Full Bottle</button></div>
+      <div class="chips"><button class="chip on" data-act="nr-nos" data-v="5">+5 L Refill (${freeTest ? 'FREE' : `${5 * NOS_PRICE_PER_LITER_XP} XP`})</button><button class="chip" data-act="nr-nos" data-v="15">Fill Full Bottle${freeTest ? ' (FREE)' : ''}</button></div>
       <h3>Turbocharger <small class="dim">(trades reliability for boost)</small></h3><div class="chips">${turboBtns}</div>
       <h3>Exhaust Manifold <small class="dim">(more backfire flames &amp; flow)</small></h3><div class="chips">${manBtns}</div>
-      <h3>Under-the-Hood Engine Swap <small class="dim">${canSwap ? '✓ UNLOCKED (engine worn <= 20%)' : `🔒 Locked until engine health <= ${ENGINE_SWAP_THRESHOLD}%`}</small></h3><div class="chips">${swapBtns}</div>`;
+      <h3>Under-the-Hood Engine Swap <small class="dim">${freeTest ? '✓ UNLOCKED (Testing Mode · Free)' : canSwap ? '✓ UNLOCKED (engine worn <= 20%)' : `🔒 Locked until engine health <= ${ENGINE_SWAP_THRESHOLD}%`}</small></h3><div class="chips">${swapBtns}</div>`;
   }
 
   private gPerf() {
@@ -823,7 +828,20 @@ export class Menu {
           <div class="mcard-top"><span class="micon">02</span><b>Free Roam</b><span class="dim">No Cops · AI Traffic · Social Sandbox</span></div>
           <p class="dim">Cruising, car meets, Speed Traps &amp; Drift Zones with Global Leaderboards, and spontaneous headlight-flash [F] 1v1 Cash or Pink Slip drags from traffic lights.</p>
           <div class="opts"><span class="pill">NO POLICE</span><span class="dim small-note">[F] Flash Wager · [V] Cash/Pink Slip · [B] Leaderboards</span></div>
-          <button class="primary huge" data-act="start-free">Cruise Free Roam</button>
+          <div class="opts" style="margin-top:4px;gap:8px;flex-wrap:wrap">
+            <button class="primary huge" data-act="start-free" style="flex:1;min-width:160px">Cruise Free Roam</button>
+          </div>
+          <div class="opts" style="margin-top:8px;padding-top:10px;border-top:1px solid #ffffff16;flex-direction:column;align-items:stretch;gap:6px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+              <span class="pill gold">🧪 TESTING PURPOSES</span>
+              <span class="dim small-note">All ${this.cars.length} cars, Stage 3 mods, turbos &amp; engine swaps 100% FREE</span>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="primary" data-act="start-test-free" style="flex:1">🧪 Testing Free Roam (All Cars Free)</button>
+              <button class="small" data-act="start-test-garage">🔧 Testing Garage</button>
+              ${this.sp.testingMode ? '<button class="small" data-act="toggle-testing" title="Return to normal progression">Exit Testing</button>' : ''}
+            </div>
+          </div>
         </div>
         <div class="mcard">
           <div class="mcard-top"><span class="micon">03</span><b>Multiplayer</b><span class="dim">${FREE_ROAM_MAX_PLAYERS} Free Roam · ${RACE_MAX_PLAYERS} Race Events</span></div>
@@ -1026,7 +1044,7 @@ export class Menu {
     const b = (e.target as HTMLElement).closest('[data-act]') as HTMLElement | null;
     if (!b || (b as HTMLButtonElement).disabled) return;
     const act = b.dataset.act!;
-    if (['play', 'garage-open', 'start-race', 'start-free', 'pstart', 'invite', 'prejoin'].includes(act)) this.askFullscreen();
+    if (['play', 'garage-open', 'start-race', 'start-free', 'start-test-free', 'start-test-garage', 'pstart', 'invite', 'prejoin'].includes(act)) this.askFullscreen();
     const v = b.dataset.v ?? '', sel = this.sel;
     if (act === 'controls-open') { this.controlsFrom = this.screen; this.show('controls'); return; }
     if (act === 'settings-open') { this.settingsFrom = this.screen; this.show('settings'); return; }
@@ -1108,7 +1126,7 @@ export class Menu {
       case 'nr-man': engineOf(this.nr, sel.car).manifold = v as ManifoldId; this.hooks.nrChanged?.(); this.render(); break;
       case 'nr-swap': {
         const eng = engineOf(this.nr, sel.car);
-        if (eng.health <= ENGINE_SWAP_THRESHOLD || v === 'stock') {
+        if (this.sp.testingMode || eng.health <= ENGINE_SWAP_THRESHOLD || v === 'stock') {
           eng.swap = v as SwapId;
           eng.health = 100;
           eng.oilLife = 100;
@@ -1219,6 +1237,28 @@ export class Menu {
       case 'copmode': sel.copMode = v === '1'; this.save(); this.render(); break;
       case 'start-race': sel.mode = 'race'; this.setCareer('sp'); this.save(); this.hooks.play('race'); break;
       case 'start-free': sel.mode = 'free'; this.setCareer('sp'); this.save(); this.hooks.play('free'); break;
+      case 'start-test-free':
+        this.sp.setTestingMode(true);
+        sel.mode = 'free';
+        this.setCareer('sp');
+        this.save();
+        this.hooks.play('free');
+        break;
+      case 'start-test-garage':
+        this.sp.setTestingMode(true);
+        this.setCareer('sp');
+        this.save();
+        this.show('garage');
+        this.hooks.preview();
+        break;
+      case 'toggle-testing':
+        this.sp.setTestingMode(!this.sp.testingMode);
+        this.setCareer('sp');
+        this.career.fit(sel);
+        this.save();
+        this.render();
+        this.hooks.preview();
+        break;
       case 'resume': this.hooks.resume(); break;
       case 'restart': this.hooks.restart(); break;
       case 'quit': this.lastResults = null; this.hooks.quit('title'); break;

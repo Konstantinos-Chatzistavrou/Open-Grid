@@ -16,6 +16,7 @@ export class CarProbe {
   private face = 0;
   private tick = 0;
   private hidden: THREE.Object3D[] = [];
+  private lastCyclePos = new THREE.Vector3(Infinity, Infinity, Infinity);
   /** probe centre offset above the car origin (m): at 0.9 the cube was mostly tarmac; 1.2 puts the skyline and the
    *  neon signs behind the car into the upper hemisphere, which is what the coat actually mirrors */
   height = 1.2;
@@ -51,17 +52,27 @@ export class CarProbe {
     for (let i = 0; i < 6; i++) this.renderFace(i);
     this.end();
     this.filter();
+    this.lastCyclePos.copy(pos);
     this.face = 0;
   }
+
+  /** Force next update() to re-capture even if the car has not moved (e.g., after weather/city change). */
+  invalidate() { this.lastCyclePos.set(Infinity, Infinity, Infinity); }
 
   /** One probe tick: renders the next cube face (every Nth call); the 6th also re-filters. Call AFTER the main render. */
   update(pos: THREE.Vector3, hide: THREE.Object3D) {
     if (this.every <= 0 || ++this.tick % this.every !== 0) return;
+    // Motion-gated probe: if the car hasn't moved >= 1.2 m since the last completed 6-face cycle, skip redundant scene passes!
+    if (this.face === 0 && pos.distanceToSquared(this.lastCyclePos) < 1.44) return;
     if (this.face === 0) this.begin(pos, hide);   // the probe centre is fixed for the six faces of one cycle
     else this.hideCar(hide);
     this.renderFace(this.face);
     this.end();
-    if (++this.face === 6) { this.filter(); this.face = 0; }
+    if (++this.face === 6) {
+      this.filter();
+      this.lastCyclePos.copy(pos);
+      this.face = 0;
+    }
   }
 
   /** Fill the probe from a ready cube map of the same size (the garage's own capture) instead of rendering the city. */

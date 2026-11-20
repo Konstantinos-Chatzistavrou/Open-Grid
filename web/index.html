@@ -13,18 +13,26 @@
 <body>
   <canvas id="view"></canvas>
   <div id="enter">
+    <div class="ld-bg" aria-hidden="true"><div class="ld-grid"></div><i class="ld-streak s1"></i><i class="ld-streak s2"></i></div>
     <div class="enter-box">
       <div class="enter-brand">OPEN<span>GRID</span></div>
+      <div class="load-sub">The ultimate driving and racing experience</div>
       <div class="enter-msg">CLICK ANYWHERE FOR FULL SCREEN</div>
-      <div class="enter-hint">the city is loading in the background…</div>
+      <div class="enter-hint">streaming 1:1 city &amp; WebGPU shaders in the background…</div>
     </div>
   </div>
   <div id="loading" hidden>
+    <div class="ld-bg" aria-hidden="true"><div class="ld-grid"></div><i class="ld-streak s1"></i><i class="ld-streak s2"></i></div>
     <div class="load-box">
       <div class="load-brand">OPEN<span>GRID</span></div>
-      <div class="load-sub">NIGHT SHIFT // OPEN-WORLD STREET RACING</div>
+      <div class="load-sub">The ultimate driving and racing experience</div>
+      <div class="ld-tach" aria-hidden="true">
+        <svg viewBox="0 0 120 120"><circle class="t-track" cx="60" cy="60" r="50"/><circle class="t-arc" cx="60" cy="60" r="50"/><circle class="t-arc2" cx="60" cy="60" r="40"/></svg>
+        <b id="load-pct">0%</b>
+      </div>
+      <div class="load-meta"><span id="load-msg">Initializing WebGPU…</span><span class="ld-tag">2400 Hz TIRE SIM · 1:1 CITIES</span></div>
       <div class="load-bar"><i id="load-fill"></i></div>
-      <div id="load-msg">Loading…</div>
+      <div class="ld-tip" id="load-tip">Tip · Every city is built 1:1 from real-world street networks: New York, London, Paris, Tokyo &amp; Los Angeles.</div>
     </div>
   </div>
   <div id="menu" hidden></div>

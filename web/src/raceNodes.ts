@@ -105,6 +105,21 @@ export class RaceNodes {
     if (!on) this.nearby = null;
   }
 
+  /** Remove all node rings/pillars and free GPU resources (for seamless city switching). */
+  dispose() {
+    this.cancelMatchmaking();
+    this.nearby = null;
+    this.rings.length = 0;
+    this.root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.geometry?.dispose();
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      for (const mat of mats) mat?.dispose();
+    });
+    this.root.removeFromParent();
+  }
+
   update(dt: number, enabled: boolean, playerPos: THREE.Vector3) {
     if (!enabled) { this.nearby = null; return; }
     for (const r of this.rings) r.rotation.z += dt * 0.9;

@@ -202,6 +202,19 @@ export class CityZones {
     scene.add(this.root);
   }
 
+  /** Remove all zone gates from the scene and free GPU resources (for seamless city switching). */
+  dispose() {
+    this.activeDrift = null;
+    this.root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.geometry?.dispose();
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      for (const mat of mats) mat?.dispose();
+    });
+    this.root.removeFromParent();
+  }
+
   private loadSaved() {
     let saved: Record<string, LeaderboardEntry[]> = {};
     try {

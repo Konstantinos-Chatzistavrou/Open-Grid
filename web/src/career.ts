@@ -44,6 +44,7 @@ const fitSel = (c: Career, sel: Selection) => {
 
 // ---- single player ----------------------------------------------------------------------------------------------------
 const SP_KEY = 'nr.sp.v1';
+const TEST_KEY = 'nr.testing.v1';
 export class SpCareer implements Career {
   readonly kind = 'sp' as const;
   readonly credits = 0;
@@ -51,13 +52,23 @@ export class SpCareer implements Career {
   readonly note = '';
   last: Earned | null = null;
   private data = { xp: 0 };
+  private _testing = false;
 
   constructor(private unlockAll = false) {
     try {
       const s = JSON.parse(localStorage.getItem(SP_KEY) ?? 'null');
       if (s && Number.isFinite(s.xp)) this.data.xp = Math.max(0, Math.floor(s.xp));
       else this.migrate();
+      this._testing = localStorage.getItem(TEST_KEY) === '1';
     } catch { /* storage blocked */ }
+  }
+
+  /** Testing Purposes sandbox mode: every car, upgrade stage, swap, skin, and service is 100% free & instantly accessible. */
+  get testingMode() { return this.unlockAll || this._testing; }
+  setTestingMode(on: boolean) {
+    this._testing = on;
+    try { localStorage.setItem(TEST_KEY, on ? '1' : '0'); } catch { /* blocked */ }
+    (this as { onChange?: () => void }).onChange?.();
   }
 
   /** Players of the one-day credits shop keep the best car they bought: they start at the level that unlocks it. */
@@ -73,13 +84,14 @@ export class SpCareer implements Career {
   }
 
   private save() { try { localStorage.setItem(SP_KEY, JSON.stringify(this.data)); } catch { /* blocked */ } }
-  get xp() { return this.unlockAll ? 10_000_000 : this.data.xp; }
+  get xp() { return this.testingMode ? 10_000_000 : this.data.xp; }
   get level() { return levelOf(this.xp).level; }
-  owns(car: string) { return this.level >= reqOf('car', car).spLevel; }
-  stage(_car: string, k: ModKey) { return MOD_REQ[k].filter((r) => r.spLevel <= this.level).length; }
-  ownsSkin(id: string) { return this.level >= reqOf('skin', id).spLevel; }
+  owns(car: string) { return this.testingMode || this.level >= reqOf('car', car).spLevel; }
+  stage(_car: string, k: ModKey) { return this.testingMode ? MOD_REQ[k].length : MOD_REQ[k].filter((r) => r.spLevel <= this.level).length; }
+  ownsSkin(id: string) { return this.testingMode || this.level >= reqOf('skin', id).spLevel; }
   req = reqOf;
   async buy(kind: 'car' | 'mod' | 'skin', id: string, stage?: number) {
+    if (this.testingMode) return '';
     const r = reqOf(kind, id, stage);
     return this.level >= r.spLevel ? '' : `Unlocks at level ${r.spLevel} in single player.`;
   }
@@ -88,6 +100,7 @@ export class SpCareer implements Career {
   /** Add XP; returns what it did (level-ups, newly unlocked items) and remembers it for the menus. */
   /** Spend reputation: an impound fine, or paying to lay low (docs/design/heat-and-cops.md). */
   penalty(xp: number): number {
+    if (this.testingMode) return this.xp;
     this.data.xp = Math.max(0, this.data.xp - Math.max(0, Math.round(xp)));
     try { localStorage.setItem(SP_KEY, JSON.stringify(this.data)); } catch { /* blocked */ }
     (this as { onChange?: () => void }).onChange?.();
