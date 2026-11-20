@@ -91,5 +91,7 @@ Suggested, change the numbers before you start, not after:
 - Ground under each wheel is traced once per rendered frame and intersected as a plane on the physics thread: exact
   on flat or smoothly sloped ground, approximate across sharp edges (kerb lips) between frames.
 - Cars whose wheels are not separate parts (K-Concept, Tornado GT/GT3) export as one body: no spinning wheels yet.
+- Fuel burns (about 1 L a minute flat out) and an empty tank cuts the throttle; R repairs and refuels. The fuel's
+  weight (up to ~41 kg) does not change the car's mass yet: the core tracks it but nothing uses it.
 - Packaging a standalone game needs `data/` copied into `ue5/Content/OpenGridData` first (`DefaultGame.ini` stages
   that folder as loose files).

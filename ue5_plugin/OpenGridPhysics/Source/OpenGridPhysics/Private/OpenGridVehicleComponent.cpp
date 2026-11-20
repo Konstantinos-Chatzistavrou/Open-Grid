@@ -161,7 +161,7 @@ bool UOpenGridVehicleComponent::LoadCar()
 
 void UOpenGridVehicleComponent::ApplyFeatureFlagsLocked()
 {
-    // The web build's set (web/wasm/bridge.cpp rs_create): keep the two in step so handling matches.
+    // Exactly the web build's set (web/wasm/bridge.cpp rs_create): keep the two identical so they feel the same.
     Vehicle_->unsprung_dynamics_enabled = true;
     Vehicle_->tire_zones_enabled = true;
     Vehicle_->aero_wake().yaw_aero_enabled = true;
@@ -172,9 +172,8 @@ void UOpenGridVehicleComponent::ApplyFeatureFlagsLocked()
     Vehicle_->engine_systems().torsional_compliance_enabled = true;
     Vehicle_->engine_systems().dog_box_flat_shift_cut = true;
     Vehicle_->atmosphere().enabled = true;
-    // Not in the web build: long-run wear and fuel.
-    Vehicle_->engine_systems().wear_enabled = !bMatchWebBuild;
-    Vehicle_->engine_systems().fuel_consumption_enabled = !bMatchWebBuild;
+    Vehicle_->engine_systems().wear_enabled = true;               // redline / overheating abuse -> misfires
+    Vehicle_->engine_systems().fuel_consumption_enabled = true;   // empty tank cuts the throttle; RepairAndService refuels
 }
 
 void UOpenGridVehicleComponent::CreateVehicleLocked()
@@ -649,6 +648,14 @@ void UOpenGridVehicleComponent::HandleBodyHit(UPrimitiveComponent* HitComponent,
     Impact.OtherId = OtherActor ? static_cast<uint64>(OtherActor->GetUniqueID()) : 0;
     FScopeLock L(&Lock_);
     Impacts_.Add(Impact);
+}
+
+void UOpenGridVehicleComponent::RepairAndService()
+{
+    FScopeLock L(&Lock_);
+    if (!Vehicle_) return;
+    Vehicle_->damage_model().repair();
+    Vehicle_->service();
 }
 
 void UOpenGridVehicleComponent::ShiftUp() { bShiftUpRequested_ = true; }

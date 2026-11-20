@@ -33,6 +33,14 @@ void Vehicle::add_contact(std::uint64_t id, const Vec3& point_body, double impul
     if (damage_enabled) damage_model_.add_contact(id, point_body, impulse, time_, last_dt_);
 }
 
+void Vehicle::service() {
+    EngineSystemState& sys = drivetrain_.systems;
+    sys.fuel_liters = sys.fuel_capacity_liters;
+    sys.engine_health = 1.0;
+    sys.misfiring = false;
+    sys.misfire_phase = 0.0;
+}
+
 void Vehicle::reset_motion(double v, int gear) {
     for (int w = 0; w < 4; ++w) {
         drivetrain_.wheel_omega[w] = v / cfg_.tire(w).radius;
