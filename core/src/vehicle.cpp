@@ -347,7 +347,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         double caster = ax.caster_deg * kPi / 180.0 + damage_.caster[w], kpi = ax.kpi_deg * kPi / 180.0;
         double side = (w % 2 == 0) ? -1.0 : 1.0;   // FL/RL = -1 (left), FR/RR = +1 (right)
         k.gamma = clamp(roll_gamma - side * susp_camber + caster * std::sin(d) - side * kpi * (1.0 - std::cos(d)), -0.35, 0.35);
-        k.re = effective_rolling_radius(tp, k.load);
+        k.re = tire_zones_enabled ? effective_rolling_radius_mf62(tp, k.load, k.gamma) : effective_rolling_radius(tp, k.load);
         relaxation_lengths(tp, k.load, k.gamma, k.sigma_x, k.sigma_y);
     }
 
@@ -459,6 +459,9 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             op.slip_speed = std::hypot(v_sx, k.vy);           // contact patch sliding speed
             op.dpi = tire_condition_[w].dpi(tp);              // hot inflation pressure vs. nominal
             op.phi = -yaw_rate / std::max(std::abs(k.vx), 0.5);       // turn slip: patch spin / rolling speed
+            op.enable_mf62_hybrid = tire_zones_enabled;
+            op.wheel_side_sign = (w % 2 == 0) ? -1.0 : 1.0;
+            op.condition = &tire_condition_[w];
             TireForces f = magic_formula(tp, kappa_[w], tan_alpha_[w], k.load, k.mu, k.gamma, op);
             fx_sum[w] += f.fx;
             fy_sum[w] += f.fy;
