@@ -27,7 +27,7 @@ import { ENGINE_SWAPS, MANIFOLDS, NOS_MAX_LITERS, NOS_PRICE_PER_LITER_XP, TURBOS
 import { AUCTION_MARKET_FEE, DEALER_SPREAD, MOD_OVERPAY_RATE, appraiseCarForSale, generateLiveAuctionLots, gradeFromFloat, loadAuctionMarket, marketEntryOf, recordMarketTrade, renderPriceSparklineSvg, saveAuctionMarket, trendPctOf, type AuctionMarketStore, type LiveAuctionLot } from './auctionMarket';
 import { brandBadgeSvg, brandOfCar, stockEngineOfCar } from './brands';
 import { PARTY_BONUS_MUL, type RetentionStore } from './retention';
-import { checkSplitScreen } from './splitScreen';
+import { checkSplitScreen, type SplitLayout } from './splitScreen';
 import { MOD_CATALOG, loadModHub, toggleModSub, type ModHubStore } from './modHub';
 import { ACADEMY_LESSONS, WEEKLY_CALENDAR, loadCompletedLessons, todayCalendarEvent, type AcademyLesson, type CalendarEvent } from './careerEvents';
 
@@ -82,6 +82,8 @@ export interface MenuHooks {
   preview(): void;
   /** game modes screen: start a single-player session */
   play(mode: Mode): void;
+  /** game modes screen: start 2-player local Split-Screen (Laptop + Smart TV / 2 Controllers / Shared Keyboard) */
+  playSplit?(mode: 'race' | 'free', layout: SplitLayout, p2CarId: string): void;
   gfx(g: Gfx): void;
   resume(): void;
   restart(): void;
@@ -232,6 +234,8 @@ export class Menu {
   simhubOn = false;
   telemetrySamples = 0;
   private shopTab: 'lots' | 'market' | 'sell' | 'mods' = 'lots';
+  private splitLayout: SplitLayout = 'horizontal';
+  private splitP2Car = '';
   market!: AuctionMarketStore;
   private lotWindowOffset = 0;
   private garageNote = '';
@@ -1105,6 +1109,35 @@ export class Menu {
           <div class="opts">${inParty || '<span class="dim">Create or join a party</span>'}</div>
           <button class="primary huge" data-act="lobby">Party Lobby</button>
         </div>
+        ${(() => {
+          const ss = checkSplitScreen();
+          const p2Id = this.splitP2Car && this.cars.some((c) => c.id === this.splitP2Car)
+            ? this.splitP2Car
+            : (this.cars.find((c) => c.id !== sel.car)?.id ?? this.cars[0]?.id ?? sel.car);
+          this.splitP2Car = p2Id;
+          const p2Chips = this.cars.map((c) => `<button class="chip ${c.id === p2Id ? 'on' : ''}" data-act="split-p2car" data-v="${c.id}">${esc(c.name)}</button>`).join('');
+          return `<div class="mcard">
+            <div class="mcard-top"><span class="micon">04</span><b>Split-Screen</b><span class="dim">2P Couch · Laptop + Smart TV</span></div>
+            <p class="dim">${esc(ss.reason)}</p>
+            <div class="opts">
+              <span class="dim">PADS</span>
+              <span class="pill ${ss.padsCount >= 2 ? 'gold' : ''}">🎮 ${ss.padsCount}/2 · ${esc(ss.modeLabel)}</span>
+            </div>
+            <div class="opts">
+              <span class="dim">LAYOUT</span>
+              <button class="chip ${this.splitLayout === 'horizontal' ? 'on' : ''}" data-act="split-layout" data-v="horizontal">📺 Top / Bottom (TV)</button>
+              <button class="chip ${this.splitLayout === 'vertical' ? 'on' : ''}" data-act="split-layout" data-v="vertical">🖥 Left / Right</button>
+            </div>
+            <div class="opts" style="flex-direction:column;align-items:stretch;gap:6px">
+              <span class="dim">PLAYER 2 CAR (P1 = ${esc(this.car().name)})</span>
+              <div class="chips" style="max-height:92px;overflow-y:auto">${p2Chips}</div>
+            </div>
+            <div class="opts" style="margin-top:4px;gap:8px;flex-wrap:wrap">
+              <button class="primary huge" data-act="start-split-race" style="flex:1;min-width:150px" ${ss.eligible ? '' : 'disabled'}>🏁 2P Race (${sel.laps}L)</button>
+              <button class="huge" data-act="start-split-free" style="flex:1;min-width:150px" ${ss.eligible ? '' : 'disabled'}>🌆 2P Free Roam</button>
+            </div>
+          </div>`;
+        })()}
       </div>
       <div class="career-strips">
         <div class="cstrip">
@@ -1630,6 +1663,10 @@ export class Menu {
       case 'copmode': sel.copMode = v === '1'; this.save(); this.render(); break;
       case 'start-race': sel.mode = 'race'; this.setCareer('sp'); this.save(); this.hooks.play('race'); break;
       case 'start-free': sel.mode = 'free'; this.setCareer('sp'); this.save(); this.hooks.play('free'); break;
+      case 'split-layout': this.splitLayout = v === 'vertical' ? 'vertical' : 'horizontal'; this.render(); break;
+      case 'split-p2car': this.splitP2Car = v; this.render(); break;
+      case 'start-split-race': sel.mode = 'race'; this.setCareer('sp'); this.save(); this.hooks.playSplit?.('race', this.splitLayout, this.splitP2Car); break;
+      case 'start-split-free': sel.mode = 'free'; this.setCareer('sp'); this.save(); this.hooks.playSplit?.('free', this.splitLayout, this.splitP2Car); break;
       case 'start-test-free':
         this.sp.setTestingMode(true);
         sel.mode = 'free';

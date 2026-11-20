@@ -1086,3 +1086,68 @@ body.touch #zone-hud {
   transform: scale(0.95);
   box-shadow: 0 0 18px rgba(255, 45, 106, 0.65);
 }
+
+
+/* ---- 2-Player Local Split-Screen HUD (Laptop + Smart TV Couch Play) ---- */
+#split-hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 32;
+}
+#split-hud[hidden] { display: none; }
+#split-hud .split-divider {
+  position: absolute;
+  background: linear-gradient(90deg, #ff2d6a, #00e5ff, #ff2d6a);
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.55);
+}
+#split-hud[data-layout="horizontal"] .split-divider {
+  left: 0; right: 0; top: 50%; height: 3px; transform: translateY(-50%);
+}
+#split-hud[data-layout="vertical"] .split-divider {
+  top: 0; bottom: 0; left: 50%; width: 3px; transform: translateX(-50%);
+  background: linear-gradient(180deg, #ff2d6a, #00e5ff, #ff2d6a);
+}
+#split-hud .split-badge {
+  position: absolute;
+  min-width: 176px;
+  padding: 9px 13px 10px;
+  border-radius: 12px;
+  background: rgba(8, 10, 18, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(10px);
+  color: #f4f1ea;
+  font-family: inherit;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+#split-hud[data-layout="horizontal"] .split-p1 { right: 18px; top: calc(50% - 92px); }
+#split-hud[data-layout="horizontal"] .split-p2 { right: 18px; bottom: 18px; }
+#split-hud[data-layout="vertical"] .split-p1 { left: 18px; bottom: 18px; }
+#split-hud[data-layout="vertical"] .split-p2 { right: 18px; bottom: 18px; }
+#split-hud .sb-top {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+  margin-bottom: 4px;
+}
+#split-hud .sb-top i {
+  font-style: normal; font-weight: 900; padding: 1px 6px; border-radius: 5px; font-size: 10px;
+}
+#split-hud .sb-top i.p1 { background: #ff2d6a; color: #fff; }
+#split-hud .sb-top i.p2 { background: #00d8ff; color: #050812; }
+#split-hud .sb-top em { margin-left: auto; font-style: normal; color: #a8b0c4; font-weight: 600; }
+#split-hud .sb-main {
+  display: flex; align-items: baseline; gap: 6px;
+}
+#split-hud .sb-main b { font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+#split-hud .sb-main small { font-size: 10px; opacity: 0.65; letter-spacing: 0.08em; }
+#split-hud .sb-main u {
+  margin-left: auto; text-decoration: none; font-weight: 900; font-size: 18px;
+  color: #ffcf40; padding: 1px 7px; border-radius: 6px; background: rgba(255, 207, 64, 0.14);
+}
+#split-hud .sb-rpm {
+  margin-top: 6px; height: 4px; border-radius: 99px; background: rgba(255, 255, 255, 0.14); overflow: hidden;
+}
+#split-hud .sb-rpm i {
+  display: block; height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, #00e5ff, #ffcf40 72%, #ff2d6a);
+}
