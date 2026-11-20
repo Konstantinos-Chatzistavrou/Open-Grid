@@ -103,6 +103,7 @@ void Simulation::step(const DriverInput& in) {
         for (int i = 0; i < 4; ++i) contacts[i] = ground_->raycast(rays[i]);
     }
     last = vehicle.update(body.state, contacts, dt);
+    body.mass = last.mass_kg;   // burnt fuel makes the car lighter
     Vec3 gravity{0, 0, -kGravity * body.mass};
     Vec3 f = last.force + gravity;
     Vec3 v0 = body.state.velocity;

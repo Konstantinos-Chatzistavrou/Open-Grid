@@ -273,6 +273,7 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     b[263] = c.out.air_density_kg_m3;
     b[264] = c.out.ayc_yaw_moment_nm;
     b[273] = pitch_sum * 0.5;
+    b[274] = c.out.mass_kg;   // current mass (fuel burnt off the spec's full-tank mass): world.ts applies it to the body
 }
 }  // namespace
 

@@ -13,6 +13,9 @@
 #pragma once
 #include "rs/math.hpp"
 #include "rs/vehicle.hpp"
+#include <algorithm>
+#include <cmath>
+#include <vector>
 
 namespace rs::ue5 {
 
@@ -100,6 +103,67 @@ inline WheelContact intersect_ground_plane(const WheelRay& ray, bool cached_hit,
     c.surface = surface;
     return c;
 }
+
+// ---- Swept ground strip (kerbs between rendered frames) ---------------------------------------------------------
+// A per-frame plane per ray only knows the ground where the ray was when the frame started; at 200 km/h and 30 fps a
+// wheel travels 1.85 m before the next trace, so a 20 cm kerb is missed or smeared. Instead, once per frame the engine
+// traces a strip of samples under each wheel: `lanes` lines across the tread, `count` samples `spacing` apart along
+// the direction of travel, covering where the wheel will be until the next frame. The physics thread then asks the
+// strip for the ground under each ray at every step: kerb edges resolve at `spacing` (5 cm) whatever the frame rate.
+struct GroundSample {
+    bool hit = false;
+    Vec3 point;            // core space (m)
+    Vec3 normal{0, 0, 1};
+    int surface = 0;
+};
+
+struct GroundStrip {
+    Vec3 origin;           // world (m): first sample of the middle lane (or the midpoint between the middle two)
+    Vec3 along{1, 0, 0};   // unit, direction of travel
+    Vec3 across{0, 1, 0};  // unit, across the tread
+    double spacing = 0.05;       // m between samples along
+    double lane_spacing = 0.12;  // m between lanes
+    int count = 0;               // samples per lane
+    int lanes = 0;
+    std::vector<GroundSample> samples;   // lanes x count, lane-major: samples[lane * count + i]
+
+    void resize(int n_lanes, int n_count) {
+        lanes = n_lanes;
+        count = n_count;
+        samples.assign(static_cast<std::size_t>(n_lanes) * static_cast<std::size_t>(n_count), GroundSample{});
+    }
+    /** World position of sample (lane, i): where the engine should trace (straight down its suspension axis). */
+    Vec3 position(int lane, int i) const {
+        const double lane_offset = (lane - 0.5 * (lanes - 1)) * lane_spacing;
+        return origin + along * (i * spacing) + across * lane_offset;
+    }
+    GroundSample& at(int lane, int i) { return samples[static_cast<std::size_t>(lane) * count + i]; }
+    const GroundSample& at(int lane, int i) const { return samples[static_cast<std::size_t>(lane) * count + i]; }
+
+    /**
+     * Ground under a suspension ray. Returns false when the ray's footprint is outside the strip (the caller then
+     * falls back to its per-ray plane). Otherwise fills `out`: the two samples bracketing the ray along the nearest
+     * lane are each treated as a small plane, and the higher hit wins, so a tyre climbs a kerb as soon as its
+     * footprint reaches the edge (as a real tyre envelops it) instead of dropping into the gap between samples.
+     */
+    bool lookup(const WheelRay& ray, WheelContact& out) const {
+        out = WheelContact{};
+        if (count < 1 || lanes < 1) return false;
+        const Vec3 d = ray.origin - origin;
+        const double s = dot(d, along) / spacing;
+        const double l = dot(d, across) / lane_spacing + 0.5 * (lanes - 1);
+        if (s < -0.5 || s > count - 0.5 || l < -0.5 || l > lanes - 0.5) return false;
+        const int lane = std::min(lanes - 1, std::max(0, static_cast<int>(std::lround(l))));
+        const int i0 = std::min(count - 1, std::max(0, static_cast<int>(std::floor(s))));
+        const int i1 = std::min(count - 1, i0 + 1);
+        for (int i : {i0, i1}) {
+            const GroundSample& g = at(lane, i);
+            const WheelContact c = intersect_ground_plane(ray, g.hit, g.point, g.normal, g.surface);
+            if (c.hit && (!out.hit || c.distance < out.distance)) out = c;
+        }
+        return true;   // inside the strip: no hit means the wheel is in the air there
+    }
+};
 
 // Standard quaternion vector rotation matching UE5 FQuat::RotateVector(V) = q * V * q^-1.
 inline UeVec3 ue_rotate(const UeQuat& q, const UeVec3& v) {

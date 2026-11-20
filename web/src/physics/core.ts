@@ -188,6 +188,7 @@ export const OUT = {
   blistering: (i: number) => 265 + i,   // internal rubber blistering 0..1
   graining: (i: number) => 269 + i,     // cold-tire surface graining 0..1
   treadPitchHz: 273,                    // tread block impact pitch frequency, Hz
+  massKg: 274,                          // current total mass: spec (full tank) minus burnt fuel, kg
 } as const;
 
 export interface LapInfo { laps: number; current: number; last: number; best: number; distance: number; position: number; finished: boolean; routeLength: number }

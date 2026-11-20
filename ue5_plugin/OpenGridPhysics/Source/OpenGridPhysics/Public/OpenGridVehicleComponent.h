@@ -114,7 +114,7 @@ public:
     float CgHeightCm = 47.0f;
 
 
-    /** Set the car's mass and inertia on the root body from the car spec at BeginPlay. */
+    /** Set the car's mass and inertia on the root body from the car spec, and keep the mass current as fuel burns. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Config")
     bool bApplyMassFromSpec = true;
 
@@ -149,6 +149,30 @@ public:
      */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Suspension")
     TMap<TObjectPtr<UPhysicalMaterial>, FName> SurfaceByPhysicalMaterial;
+
+    /**
+     * Kerbs between rendered frames (async stepping only). Each frame, trace a strip of ground samples under each
+     * wheel along its path until the next frame; every physics step reads the ground from it. Kerb edges then resolve
+     * at GroundStripSpacingCm whatever the frame rate. Off = one plane per ray per frame (kerbs smear at speed).
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Suspension")
+    bool bUseGroundStrip = true;
+
+    /** Distance between strip samples along the path (cm). Smaller = sharper kerbs, more traces. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Suspension", meta=(ClampMin="1.0", ClampMax="50.0"))
+    float GroundStripSpacingCm = 5.0f;
+
+    /** Lines of samples across each tyre's tread. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Suspension", meta=(ClampMin="1", ClampMax="5"))
+    int32 GroundStripLanes = 3;
+
+    /** Cap on samples per lane per frame (at very high speed or low fps the spacing grows instead). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Suspension", meta=(ClampMin="4", ClampMax="256"))
+    int32 GroundStripMaxSamples = 64;
+
+    /** Ground traces this component made last frame (strip + per-ray planes): measure the cost in session one. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Suspension")
+    int32 GroundTracesLastFrame = 0;
 
     // ---- Atmosphere -------------------------------------------------------------------------------------------------
 
@@ -276,6 +300,10 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float FuelLiters = 55.0f;
 
+    /** Current total mass (spec mass is with a full tank; burnt fuel comes off). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float MassKg = 0.0f;
+
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     bool bGearGrind = false;
 
@@ -398,6 +426,7 @@ private:
         bool bShiftUp = false;   // one-shot: consumed by the next step
         bool bShiftDown = false;
         int32 RaysPerWheel = 3;
+        bool bUseStrip = true;
     };
 
     struct FPendingImpact
@@ -423,7 +452,7 @@ public:
 private:
     void CreateVehicleLocked();
     void ApplyFeatureFlagsLocked();
-    void ApplyMassFromSpec(UPrimitiveComponent* Body) const;
+    void ApplyMass(UPrimitiveComponent* Body, double MassKg);
     int32 RaysPerWheel() const;
     int32 SurfaceFromPhysicalMaterial(UPhysicalMaterial* Material) const;
 
@@ -432,6 +461,10 @@ private:
     /** Game thread: trace Rays_ (copied under lock) and store the ground under each in Ground_. */
     void TraceGround(const std::array<std::array<rs::WheelRay, MaxRaysPerWheel>, 4>& Rays, int32 PerWheel,
                      std::array<std::array<FGroundSample, MaxRaysPerWheel>, 4>& OutGround) const;
+    /** Game thread: trace a ground strip under each wheel along its path until the next frame. Returns traces made. */
+    int32 TraceGroundStrips(UPrimitiveComponent* Body, float FrameDt,
+                            const std::array<std::array<rs::WheelRay, MaxRaysPerWheel>, 4>& Rays, int32 PerWheel,
+                            std::array<rs::ue5::GroundStrip, 4>& OutStrips) const;
     /** Contacts for the current Rays_ against Ground_ (caller holds Lock_). */
     std::array<rs::WheelContact, 4> ResolveContactsLocked() const;
     /** One core step (caller holds Lock_). Returns the output to apply. */
@@ -457,6 +490,8 @@ private:
     std::array<rs::WheelFootprint16Rays, 4> FootprintRays_{};
     std::array<std::array<rs::WheelRay, MaxRaysPerWheel>, 4> Rays_{};
     std::array<std::array<FGroundSample, MaxRaysPerWheel>, 4> Ground_{};
+    std::array<rs::ue5::GroundStrip, 4> Strips_{};
+    bool bHaveStrips_ = false;
     std::array<double, 4> Spin_{};
     bool bHaveRays_ = false;
     bool bHaveOutput_ = false;
@@ -467,6 +502,7 @@ private:
 
     // Game thread only.
     TWeakObjectPtr<UPrimitiveComponent> Body_;
+    double AppliedMassKg_ = 0.0;
     bool bShiftUpRequested_ = false;
     bool bShiftDownRequested_ = false;
     rs::UdpTelemetrySender UdpSender_;

@@ -33,6 +33,12 @@ void Vehicle::add_contact(std::uint64_t id, const Vec3& point_body, double impul
     if (damage_enabled) damage_model_.add_contact(id, point_body, impulse, time_, last_dt_);
 }
 
+double Vehicle::current_mass() const {
+    const EngineSystemState& sys = drivetrain_.systems;
+    const double burnt_l = std::max(0.0, sys.fuel_capacity_liters - sys.fuel_liters);
+    return std::max(0.5 * cfg_.mass, cfg_.mass - burnt_l * 0.745);
+}
+
 void Vehicle::service() {
     EngineSystemState& sys = drivetrain_.systems;
     sys.fuel_liters = sys.fuel_capacity_liters;
@@ -802,7 +808,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
 
     out.force = force;
     out.torque = torque;
-    out.accel = s.orientation.inv_rotate(force) / cfg_.mass;
+    out.mass_kg = current_mass();
+    out.accel = s.orientation.inv_rotate(force) / out.mass_kg;
     out.engine_rpm = drivetrain_.engine_rpm();
     out.gear = drivetrain_.systems.engaged_gear >= 0 ? drivetrain_.systems.engaged_gear : input_.gear;
     out.engine_stalled = drivetrain_.stalled;
