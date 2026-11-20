@@ -7,6 +7,7 @@
 // y = up, z = forward) from the world position and a per-car inverse matrix (updated every frame by syncLivery).
 import * as THREE from 'three/webgpu';
 import { float, materialColor, mix, smoothstep, texture, uniform, uv, vec4 } from 'three/tsl';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { installDualLayerCarPaint, type CarPaintWgslUniforms } from '../fx/carPaintWgsl';
 /** a colour uniform as an rgb node (the typings keep 'color' and 'vec3' apart; the shader does not) */
 const rgb = (u: THREE.UniformNode<'color', THREE.Color>) => u as unknown as THREE.Node<'vec3'>;
@@ -36,6 +37,8 @@ function sculptedWidebodyFlares(
   const g = new THREE.Group();
   const boltGeo = p.bolts ? new THREE.CylinderGeometry(0.0055, 0.0055, 0.006, 8) : null;
   if (boltGeo) boltGeo.rotateZ(Math.PI / 2);
+  // One mesh per material for the whole kit (4 domes, 4 liners, ~36 rivets: 44 draws -> 3), all in model space.
+  const domes: THREE.BufferGeometry[] = [], liners: THREE.BufferGeometry[] = [], bolts: THREE.BufferGeometry[] = [];
 
   for (const w of fit.wheels) {
     const s: 1 | -1 = w.x >= 0 ? 1 : -1;
@@ -112,11 +115,7 @@ function sculptedWidebodyFlares(
         const zB = clampZ(w.z + ca * radB);
         const bodyB = fit.bodySideAt(yB, zB, s);
         const xB = s * (bodyB + outMax * 0.38 + 0.002);
-        const bolt = new THREE.Mesh(boltGeo, linerMat);
-        bolt.position.set(xB, yB, zB);
-        bolt.name = 'fender_bolt';
-        bolt.castShadow = false;
-        g.add(bolt);
+        bolts.push(boltGeo.clone().translate(xB, yB, zB));
       }
     }
 
@@ -155,24 +154,47 @@ function sculptedWidebodyFlares(
     domeGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
     domeGeo.setIndex(idx);
     domeGeo.computeVertexNormals();
-    const domeMesh = new THREE.Mesh(domeGeo, paintMat);
-    domeMesh.name = 'fender_flare';
-    domeMesh.castShadow = false;
-    domeMesh.receiveShadow = true;
-    g.add(domeMesh);
+    domes.push(domeGeo);
 
     const linerGeo = new THREE.BufferGeometry();
     linerGeo.setAttribute('position', new THREE.Float32BufferAttribute(lPos, 3));
     linerGeo.setAttribute('uv', new THREE.Float32BufferAttribute(lUv, 2));
     linerGeo.setIndex(lIdx);
     linerGeo.computeVertexNormals();
-    const linerMesh = new THREE.Mesh(linerGeo, linerMat);
-    linerMesh.name = 'fender_liner';
-    linerMesh.castShadow = false;
-    linerMesh.receiveShadow = false;
-    g.add(linerMesh);
+    liners.push(linerGeo);
   }
+  const one = (geos: THREE.BufferGeometry[], mat: THREE.Material, name: string, receive: boolean) => {
+    if (!geos.length) return;
+    const merged = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+    if (merged && merged !== geos[0]) for (const x of geos) x.dispose();
+    for (const geo of merged ? [merged] : geos) {   // (mismatched attributes: one mesh each, as before)
+      geo.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.name = name;
+      mesh.castShadow = false;
+      mesh.receiveShadow = receive;
+      g.add(mesh);
+    }
+  };
+  one(domes, paintMat, 'fender_flare', true);
+  one(liners, linerMat, 'fender_liner', false);
+  one(bolts, linerMat, 'fender_bolt', false);
+  boltGeo?.dispose();
   return g;
+}
+
+/**
+ * Hidden garage parts (every wing, kit, bumper, hood, flare kit and rim set a car offers: hundreds of nodes) still had
+ * their world matrices recomputed every frame: three walks hidden subtrees in updateMatrixWorld, and the car moves every
+ * frame. A hidden part now skips that walk. Shown again, its next update recomputes it (updateMatrix() marks it dirty).
+ * Raycasts and box fits use updateWorldMatrix, which is not affected.
+ */
+const frozen = new WeakSet<THREE.Object3D>();
+function freezeWhenHidden(o: THREE.Object3D) {
+  if (frozen.has(o)) return;
+  frozen.add(o);
+  const base = o.updateMatrixWorld;
+  o.updateMatrixWorld = function (this: THREE.Object3D, force?: boolean) { if (this.visible) base.call(this, force); };
 }
 
 // ---- shader nodes installed once on a car's paint / carbon material (setupCarMaterials) -------------------------------
@@ -479,6 +501,19 @@ export class CarCustomizer {
     for (const o of this.optional()) { o.visible = true; o.scale.setScalar(1e-4); }
     const lu = this.paint?.userData.livery as LiveryUniforms | undefined;
     if (lu) { lu.bottom.value = this.box.min.y + 0.1; lu.top.value = this.box.max.y; }
+    for (const o of this.ownedNodes()) freezeWhenHidden(o);
+  }
+
+  /**
+   * Every node this customizer shows, hides or moves, and every part it built: the player's car keeps these out of its
+   * draw-call merge (CarVisual), so a garage choice still toggles exactly the meshes it did.
+   */
+  ownedNodes(): THREE.Object3D[] {
+    const out: THREE.Object3D[] = [...this.stockWing, ...this.stockPanels.splitter, ...this.stockPanels.skirt, ...this.rimMeshes, this.glow];
+    for (const o of [this.bodyStock.front, this.bodyStock.rear, this.bodyStock.hood]) if (o) out.push(o);
+    for (const o of [...Object.values(this.wings), ...Object.values(this.kits), ...Object.values(this.bodyParts), ...Object.values(this.fenderParts)]) if (o) out.push(o);
+    for (const list of Object.values(this.wheelRims)) out.push(...list);
+    return out;
   }
 
   /**
@@ -501,6 +536,7 @@ export class CarCustomizer {
       });
       g.name = 'shell_' + id;
       g.visible = false;
+      freezeWhenHidden(g);
       this.bodyParts[id] = g;
       this.model.add(g);
     }
@@ -523,6 +559,7 @@ export class CarCustomizer {
       });
       g.name = 'extra_' + id;
       g.visible = false;
+      freezeWhenHidden(g);
       this.bodyParts[id] = g;
       this.model.add(g);
     }

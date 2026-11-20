@@ -49,6 +49,7 @@ export class InstanceSet {
   constructor(geometry: THREE.BufferGeometry, material: THREE.Material, readonly capacity: number, private extraStride = 0, name = 'nyc', extraAttr?: THREE.InstancedBufferAttribute) {
     this.mesh = new THREE.InstancedMesh(geometry, material, instanceSlots(capacity));   // static usage, vertex-buffer matrices (instancing.ts)
     this.mesh.name = name;
+    this.mesh.matrixAutoUpdate = false;   // identity, never moved: no per-frame compose
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = false;
     this.mesh.receiveShadow = false;
@@ -60,6 +61,10 @@ export class InstanceSet {
   }
 
   get used() { return this.high - this.free.length; }
+  /** written since the last flush(), and the slot range that was (lo > hi: none). Read them before flush(). */
+  get isDirty() { return this.dirty; }
+  get dirtyLo() { return this.lo; }
+  get dirtyHi() { return this.hi; }
 
   add(key: string, rows: number[][] | undefined, fill: InstanceFill): number[] {
     this.remove(key);

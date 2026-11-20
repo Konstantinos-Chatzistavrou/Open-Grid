@@ -13,35 +13,60 @@ function toFloat(a: THREE.BufferAttribute | THREE.InterleavedBufferAttribute): T
   return new THREE.BufferAttribute(out, a.itemSize);
 }
 
-const NO_DENT_PREFIX = ['wheel_', 'caliper_', 'interior', 'seat', 'dashboard', 'steering', 'wheel_well', 'underbody', 'hood_inner'];
+const NO_DENT_PREFIX = ['wheel_', 'Wheel', 'caliper_', 'interior', 'seat', 'dashboard', 'steering', 'wheel_well', 'underbody', 'hood_inner', 'glass'];
+/** The merged mesh's name: damage.ts skips (never dents) the 'glass' / 'underbody' prefixes; ai.ts matches 'merged_<material>'. */
+const mergedName = (mat: THREE.Material, noDent: boolean, isGlass: boolean) =>
+  isGlass ? `glass_merged_${mat.name}` : noDent ? `underbody_merged_${mat.name}` : `merged_${mat.name}`;
 
 /**
- * Merge the meshes under `model` that are not inside any of `keep` (nodes that move, e.g. the wheels)
- * and have a single material, grouped by (material, castShadow, receiveShadow, renderOrder, visible, noDent).
- * The merged meshes are added to `model`; the originals are removed. Returns the draw calls saved.
+ * Merge the meshes under `model` that are not inside any of `keep` (nodes that move, e.g. the wheels) or matched by
+ * `keepPredicate` (tested on the mesh and every ancestor up to `model`), and have a single material, grouped by
+ * (material, castShadow, receiveShadow, renderOrder, visible, layers, noDent, isGlass, tag). A mesh under a hidden
+ * ancestor is never merged (the merged mesh would show it). `tagOf` (optional) splits groups further and is appended to
+ * the merged mesh's name (the player's car keeps the garage's click-a-part classification this way); without it the
+ * names are `merged_<material>` (ai.ts matches those). The merged meshes are added to `model`; the originals are
+ * removed. Returns the draw calls saved.
  */
-export function mergeStaticMeshes(model: THREE.Object3D, keep: THREE.Object3D[]): number {
+export function mergeStaticMeshes(model: THREE.Object3D, keep: THREE.Object3D[], keepPredicate?: (o: THREE.Object3D) => boolean,
+  tagOf?: (m: THREE.Mesh, mat: THREE.Material, mergedName: string) => string): number {
   model.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(model.matrixWorld).invert();
-  const groups = new Map<string, { mat: THREE.Material; src: THREE.Mesh; parts: THREE.Mesh[]; noDent: boolean }>();
+  const groups = new Map<string, { mat: THREE.Material; src: THREE.Mesh; parts: THREE.Mesh[]; noDent: boolean; isGlass: boolean; tag: string }>();
   const ids = new Map<THREE.Material, number>();
-  const isKept = (o: THREE.Object3D) => { for (let p: THREE.Object3D | null = o; p && p !== model; p = p.parent) if (keep.includes(p)) return true; return false; };
+  const keepSet = new Set(keep);
+  const isKept = (o: THREE.Object3D) => {
+    for (let p: THREE.Object3D | null = o; p && p !== model; p = p.parent) {
+      if (keepSet.has(p) || keepPredicate?.(p)) return true;
+    }
+    return false;
+  };
+  const hiddenAbove = (o: THREE.Object3D) => {
+    for (let p = o.parent; p && p !== model; p = p.parent) if (!p.visible) return true;
+    return false;
+  };
   model.traverse((o) => {
     const m = o as THREE.Mesh;
-    if (!m.isMesh || (m as THREE.SkinnedMesh).isSkinnedMesh || m.morphTargetInfluences?.length || isKept(m)) return;
+    if (!m.isMesh || (m as THREE.SkinnedMesh).isSkinnedMesh || m.morphTargetInfluences?.length || isKept(m) || hiddenAbove(m)) return;
     if (Array.isArray(m.material) || !m.geometry.attributes.position) return;
     const mat = materialsOf(m)[0];
     if (!ids.has(mat)) ids.set(mat, ids.size);
-    const noDent = NO_DENT_PREFIX.some((p) => m.name.startsWith(p));
+    let noDent = false;
+    let isGlass = mat.name === 'glass';
+    for (let p: THREE.Object3D | null = m; p && p !== model; p = p.parent) {
+      if (p.name.startsWith('glass')) isGlass = true;
+      if (!noDent && NO_DENT_PREFIX.some((pre) => p!.name.startsWith(pre))) noDent = true;
+    }
+    if (isGlass) noDent = true;
+    const tag = tagOf ? tagOf(m, mat, mergedName(mat, noDent, isGlass)) : '';
     const attrs = Object.keys(m.geometry.attributes).sort().join(',');
-    const key = `${ids.get(mat)}|${+m.castShadow}${+m.receiveShadow}${+m.visible}${+noDent}|${m.renderOrder}|${attrs}`;
+    const key = `${ids.get(mat)}|${+m.castShadow}${+m.receiveShadow}${+m.visible}${+noDent}${+isGlass}|${m.renderOrder}|${m.layers.mask}|${tag}|${attrs}`;
     let g = groups.get(key);
-    if (!g) groups.set(key, (g = { mat, src: m, parts: [], noDent }));
+    if (!g) groups.set(key, (g = { mat, src: m, parts: [], noDent, isGlass, tag }));
     g.parts.push(m);
   });
   let saved = 0;
   const rel = new THREE.Matrix4();
-  for (const { mat, src, parts, noDent } of groups.values()) {
+  for (const { mat, src, parts, noDent, isGlass, tag } of groups.values()) {
     if (parts.length < 2) continue;
     // attributes present on every part
     const names = Object.keys(parts[0].geometry.attributes).filter((n) => parts.every((p) => p.geometry.attributes[n]));
@@ -59,7 +84,7 @@ export function mergeStaticMeshes(model: THREE.Object3D, keep: THREE.Object3D[])
       return g;
     });
     const indexed = geos.every((g) => g.index);
-    if (!indexed) for (let i = 0; i < geos.length; i++) if (geos[i].index) geos[i] = geos[i].toNonIndexed();
+    if (!indexed) for (let i = 0; i < geos.length; i++) if (geos[i].index) { const old = geos[i]; geos[i] = old.toNonIndexed(); old.dispose(); }
     let count = 0, vcount = 0;
     for (const g of geos) { vcount += g.attributes.position.count; count += g.index ? g.index.count : 0; }
     const merged = new THREE.BufferGeometry();
@@ -76,12 +101,24 @@ export function mergeStaticMeshes(model: THREE.Object3D, keep: THREE.Object3D[])
       for (const g of geos) { const ia = g.index!.array; for (let i = 0; i < ia.length; i++) arr[io + i] = ia[i] + vo; io += ia.length; vo += g.attributes.position.count; }
       merged.setIndex(new THREE.BufferAttribute(arr, 1));
     }
+    for (const g of geos) g.dispose();
     merged.computeBoundingSphere();
     const mesh = new THREE.Mesh(merged, mat);
-    mesh.name = noDent ? `underbody_merged_${mat.name}` : `merged_${mat.name}`;
+    mesh.name = mergedName(mat, noDent, isGlass) + (tag ? `_${tag}` : '');
     mesh.castShadow = src.castShadow; mesh.receiveShadow = src.receiveShadow; mesh.visible = src.visible; mesh.renderOrder = src.renderOrder;
+    mesh.layers.mask = src.layers.mask;
     model.add(mesh);
-    for (const p of parts) p.removeFromParent();
+    for (const p of parts) {
+      const parent = p.parent;
+      p.removeFromParent();
+      // Prune now-empty non-kept wrapper groups to keep scene-graph traversal lean
+      let cur = parent;
+      while (cur && cur !== model && cur.children.length === 0 && !(cur as THREE.Mesh).isMesh && !isKept(cur)) {
+        const next = cur.parent;
+        cur.removeFromParent();
+        cur = next;
+      }
+    }
     saved += parts.length - 1;
   }
   return saved;

@@ -14,6 +14,28 @@ import { CarCustomizer, installAero, installLivery } from './custom';
 import type { CarPaintWgslUniforms } from '../fx/carPaintWgsl';
 import { exactBox } from './parts/fit';
 import { Driver } from './driver';
+import { mergeStaticMeshes } from './merge';
+
+/**
+ * The garage's click-a-part classes, in the order main.ts (partTab) tests them on "mesh name + material name + ancestor
+ * names". When a part's own or ancestor names give it a class its merged mesh's name and material would not, the merged
+ * mesh carries that class's token, so a click on it opens the same tab a click on the original part did (each token
+ * matches its own class and no earlier one).
+ */
+const PICK: [RegExp, string][] = [
+  [/wheel|rim|tire|tyre|caliper|disc/i, 'disc'],
+  [/headlight|tail|lamp|light/i, 'lamp'],
+  [/glass|window|windshield|exhaust/i, 'window'],
+  [/wing|spoiler|diffuser|splitter|skirt/i, 'diffuser'],
+  [/fender/i, 'fender'],
+  [/hood|bumper/i, 'bumper'],
+  [/driver|helmet/i, 'helmet'],
+];
+const pickClass = (s: string) => PICK.findIndex(([re]) => re.test(s));
+/** main.ts dimLamps finds the showroom-dimmed lamp materials by material OR mesh name */
+const DIM = /light|drl|lens|beam|tail/i;
+/** CarVisual.detectExhaustNozzles finds the tailpipes by mesh OR material name (cars without baked exhaust_nozzles) */
+const EXH = /exhaust|tailpipe|muffler/i;
 
 export interface CarVisualConfig extends DamageVisualConfig {
   model: string;
@@ -468,6 +490,54 @@ export class CarVisual {
     this.driver.root.scale.setScalar(cfg.driver_scale ?? 0.93);
     model.add(this.driver.root);
     for (const nm of cfg.hide_for_driver ?? []) { const o = model.getObjectByName(nm); if (o) o.visible = false; }
+    if (typeof location === 'undefined' || new URLSearchParams(location.search).get('merge') !== '0') this.mergeStatic();
+  }
+
+  /**
+   * Draw calls: the hero models are 34-143 meshes, and the car is drawn in the main pass, the planar road reflection and
+   * the rear-view mirror (each draw costs CPU in three's WebGPU backend). Meshes that never move or change on their own
+   * are merged by material (merge.ts) into the model; the rigid parts that move as one (the detachable bumpers and mirrors:
+   * they sag and break off) are merged inside themselves. Kept as they are: wheels and calipers, every node the garage
+   * swaps, hides or moves (custom.ts ownedNodes), the lamp nodes crash damage darkens (front_lights / rear_lights), a lamp
+   * or tailpipe mesh whose material name does not say so (dimLamps and the flame anchors find those by mesh name), the
+   * cockpit shells hidden for the driver, the driver, the contact shadow and anything hidden. Dents, paint and part colours
+   * are per material and the dent matrices are taken after this (DamageVisuals), so they work on the merged meshes.
+   * ?merge=0 keeps every mesh.
+   */
+  private mergeStatic() {
+    const cfg = this.cfg, model = this.model;
+    const keep: THREE.Object3D[] = [this.contactShadow, this.driver.root, ...this.custom.ownedNodes()];
+    for (const w of this.wheels) { keep.push(w.node); if (w.caliper) keep.push(w.caliper); }
+    for (const nm of [...(cfg.front_lights ?? []), ...(cfg.rear_lights ?? []), ...(cfg.hide_for_driver ?? [])]) {
+      const o = model.getObjectByName(nm);
+      if (o) keep.push(o);
+    }
+    const scanExhaust = !(cfg as unknown as { exhaust_nozzles?: unknown[] }).exhaust_nozzles?.length;
+    const named = (o: THREE.Object3D) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return false;
+      const mat = materialsOf(m)[0]?.name ?? '';
+      return (DIM.test(m.name) && !DIM.test(mat)) || (scanExhaust && EXH.test(m.name) && !EXH.test(mat));
+    };
+    // garage click class: the part's (mesh + material + ancestors) against the merged mesh's (name + material + ancestors)
+    const tagFor = (root: THREE.Object3D) => {
+      let above = '';
+      for (let p: THREE.Object3D | null = root; p && p !== model; p = p.parent) above += ` ${p.name}`;
+      return (m: THREE.Mesh, mat: THREE.Material, mergedName: string) => {
+        let s = `${m.name} ${mat.name}`;
+        for (let p = m.parent; p && p !== model; p = p.parent) s += ` ${p.name}`;
+        const c = pickClass(s);
+        return c < 0 || c === pickClass(`${mergedName} ${mat.name}${above}`) ? '' : PICK[c][1];
+      };
+    };
+    const rigid = Object.keys(cfg.detachable ?? {}).map((nm) => model.getObjectByName(nm)).filter((o): o is THREE.Object3D => !!o);
+    let saved = 0;
+    for (const r of rigid) saved += mergeStaticMeshes(r, keep.filter((k) => k !== r), named, tagFor(r));
+    saved += mergeStaticMeshes(model, [...keep, ...rigid], named, tagFor(model));
+    let drawn = 0;
+    model.traverseVisible((o) => { if ((o as THREE.Mesh).isMesh) drawn++; });
+    model.userData.mergedAway = saved;
+    console.info(`car ${cfg.model}: ${saved} meshes merged away, ${drawn} visible meshes left`);
   }
 
   /**

@@ -23,18 +23,24 @@ export class DrivingLine {
   private cGo = BLUE.clone();
   private cCaution = YELLOW.clone();
   private cBrake = RED.clone();
+  /** what the buffers were last built from: unchanged -> no rebuild, no upload */
+  private lastI0 = -1;
+  private lastV = -1;
+  private lastMode: LineMode | null = null;
 
   /** Update racing-line colours dynamically for Colorblind accessibility modes. */
   setPalette(go: [number, number, number], caution: [number, number, number], brake: [number, number, number]) {
     this.cGo.setRGB(go[0], go[1], go[2]);
     this.cCaution.setRGB(caution[0], caution[1], caution[2]);
     this.cBrake.setRGB(brake[0], brake[1], brake[2]);
+    this.lastI0 = -1;
   }
 
   constructor(scene: THREE.Scene, private ai: AiTraffic) {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
-    g.setAttribute('color', new THREE.BufferAttribute(this.col, 3).setUsage(THREE.DynamicDrawUsage));
+    // static usage + needsUpdate when rebuilt: three r186 re-uploads DynamicDrawUsage attributes whole at EVERY draw
+    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
     const idx: number[] = [];
     for (let i = 0; i < N - 1; i++) { const a = 2 * i; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
     g.setIndex(idx);
@@ -56,6 +62,7 @@ export class DrivingLine {
     if (this.groundY.length !== this.ai.lane.n) this.groundY = new Float32Array(this.ai.lane.n).fill(NaN);
     else this.groundY.fill(NaN);
     this.s = -1;
+    this.lastI0 = -1;
   }
 
   private y(i: number) {
@@ -90,6 +97,9 @@ export class DrivingLine {
     const lane = this.ai.lane, n = lane.n;
     const i0 = Math.floor(lane.wrap(this.s - BEHIND) / STEP);
     const v = Math.max(0, speed);
+    // same window, same speed (to 0.05 m/s) and mode: the buffers already hold this line
+    if (i0 === this.lastI0 && mode === this.lastMode && Math.abs(v - this.lastV) < 0.05) { this.mesh.visible = true; return; }
+    this.lastI0 = i0; this.lastV = v; this.lastMode = mode;
     for (let k = 0; k < N; k++) {
       const i = (i0 + k) % n, p = lane.pts[i], r = lane.right[i];
       const d = k * STEP - BEHIND;
