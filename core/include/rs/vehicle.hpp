@@ -58,6 +58,7 @@ struct WheelFootprint16Rays {
     std::array<double, 16> longitudinal_offsets_m{}; // dx along steered wheel rolling plane (m)
     std::array<double, 16> lateral_offsets_m{};      // dy across tread width (- = Inner rib, 0 = Middle rib, + = Outer rib, m)
     std::array<int, 16> rib_index{};                 // 0 = Inner rib, 1 = Middle rib, 2 = Outer rib
+    double outward_sign = 1.0;                       // +1 for left wheels (outer = +Y left), -1 for right wheels (outer = -Y right)
 };
 
 struct WheelContact {
@@ -69,6 +70,7 @@ struct WheelContact {
     double water_depth_mm = 0.0; // mm of standing water at this specific wheel contact patch (0 = dry/damp, > 1.5 mm = puddle/flooded curb)
     std::array<double, 3> rib_contact_shares{1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0}; // 3D geometric normal load shares (Inner, Middle, Outer)
     double enveloping_slope_tan = 0.0; // Simcenter 2606 MF-Swift 3D tandem-cam obstacle enveloping road slope tan(beta_env)
+    ContactPatchProfile patch_profile{}; // optional 4x4 multi-point road height / kerb / partial-contact profile
 };
 
 struct WheelOutput {
@@ -196,9 +198,10 @@ public:
     /** Compute aerodynamic slipstream drag reduction (up to -28%) and dirty-air front downforce loss (up to -30%) behind lead cars. */
     static AeroWakeState compute_slipstream_wake(const Vec3& my_pos, const Vec3& my_fwd, const std::vector<Vec3>& lead_car_positions);
 
-    /** Enable 15 Hz 2-DOF unsprung wheel-hop & radial tyre carcass vertical dynamics, and 3-zone I/M/O tread thermals + flat-spotting. */
+    /** Enable 15 Hz 2-DOF unsprung wheel-hop & radial tyre carcass vertical dynamics, 3-zone I/M/O tread thermals, and 4x4 contact patch grid. */
     bool unsprung_dynamics_enabled = false;
     bool tire_zones_enabled = false;
+    bool tire_patch_grid_enabled = true;
 
     std::array<WheelRay, 4> wheel_rays(const ChassisState& s) const;
     // 3-ray fan along each wheel's steered rolling plane + circular-arc contact resolver for sharp street curbs.

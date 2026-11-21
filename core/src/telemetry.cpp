@@ -131,6 +131,10 @@ TelemetrySample make_telemetry_sample(
         s.tire_temp_inner_c[i] = w.condition.inner_c;
         s.tire_temp_middle_c[i] = w.condition.middle_c;
         s.tire_temp_outer_c[i] = w.condition.outer_c;
+        s.tire_carcass_temp_c[i] = w.condition.temperature_c;
+        s.tire_inner_air_temp_c[i] = w.condition.inner_air_c;
+        s.tire_pressure_kpa[i] = w.condition.pressure_kpa;
+        s.tire_patch_length_m[i] = w.condition.contact_patch_length_m;
         s.flat_spot_depth_mm[i] = w.condition.flat_spot_depth_mm;
         s.brake_temp_c[i] = w.brake_temp_c;
         s.wheel_load_n[i] = w.load;

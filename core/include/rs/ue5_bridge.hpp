@@ -163,6 +163,50 @@ struct GroundStrip {
         }
         return true;   // inside the strip: no hit means the wheel is in the air there
     }
+
+    /**
+     * Sample the swept GroundStrip onto a 4x4 ContactPatchProfile under a wheel so kerbs and surface transitions
+     * feed directly into the multi-point contact patch tyre solver.
+     */
+    bool fill_patch_profile(const WheelRay& center_ray, const Vec3& wheel_fwd, const Vec3& wheel_left,
+                            double half_len_a, double half_width_b, const Vec3& ref_point, const Vec3& ref_normal,
+                            const CarConfig* cfg, ContactPatchProfile& out) const {
+        if (count < 1 || lanes < 1) return false;
+        static constexpr double kXi[kPatchRows] = {-0.75, -0.25, 0.25, 0.75};
+        static constexpr double kEta[kPatchCols] = {-0.75, -0.25, 0.25, 0.75};
+        bool any_inside = false, any_nonflat = false;
+        double min_dz = 1e9, max_dz = -1e9;
+        const double ref_mu = cfg ? cfg->grip_for_surface(0) : 1.0;
+        for (int i = 0; i < kPatchRows; ++i) {
+            for (int j = 0; j < kPatchCols; ++j) {
+                const int idx = i * kPatchCols + j;
+                WheelRay sub = center_ray;
+                sub.origin = center_ray.origin + wheel_fwd * (kXi[i] * half_len_a) + wheel_left * (kEta[j] * half_width_b);
+                WheelContact hit;
+                if (!lookup(sub, hit)) continue;
+                any_inside = true;
+                if (hit.hit) {
+                    const double dz = std::clamp(dot(hit.point - ref_point, ref_normal), -0.08, 0.08);
+                    out.road_dz_m[idx] = dz;
+                    out.contact_mask[idx] = true;
+                    const double cell_mu = (cfg && ref_mu > 1e-6) ? (cfg->grip_for_surface(hit.surface) / ref_mu) : 1.0;
+                    out.mu_cell[idx] = cell_mu;
+                    min_dz = std::min(min_dz, dz);
+                    max_dz = std::max(max_dz, dz);
+                    if (std::abs(cell_mu - 1.0) > 1e-3) any_nonflat = true;
+                } else {
+                    out.road_dz_m[idx] = 0.0;
+                    out.contact_mask[idx] = false;
+                    any_nonflat = true;
+                }
+            }
+        }
+        if (any_inside && (any_nonflat || (max_dz - min_dz) > 1e-3)) {
+            out.has_height_map = true;
+            return true;
+        }
+        return false;
+    }
 };
 
 // Standard quaternion vector rotation matching UE5 FQuat::RotateVector(V) = q * V * q^-1.
