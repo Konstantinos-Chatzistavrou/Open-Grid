@@ -24,6 +24,11 @@ html, body { margin: 0; height: 100%; overscroll-behavior: none; touch-action: n
 
 /* ---- HUD ---------------------------------------------------------------------------------- */
 #hud { position: fixed; inset: 0; pointer-events: none; contain: strict; }
+#hud[hidden], #touch[hidden] { display: none !important; }
+body.menu #hud, body.menu #hud-actions, body.menu #touch, body.menu #minimap, body.menu #mirror,
+body.menu #spectate, body.menu #countdown, body.menu #launch, body.menu #split-hud { display: none !important; }
+body.overlay-menu #hud-actions, body.overlay-menu #touch, body.overlay-menu #help,
+body.overlay-menu #countdown, body.overlay-menu #launch { display: none !important; }
 #hud-top-left { position: absolute; top: 12px; left: 14px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 #hud-actions { display: flex; gap: 6px; pointer-events: auto; }
 #hud-actions button { font: 600 12px/1 inherit; font-family: inherit; color: var(--fg); padding: 8px 12px; border-radius: 9px; cursor: pointer;

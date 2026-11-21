@@ -817,14 +817,30 @@ async function main() {
   const driving = () => state === 'race' || state === 'countdown' || state === 'paused' || state === 'spectate' || state === 'results';
   const setState = (st: State) => {
     state = st;
-    if (!driving()) settledShowroom = 0;
-    document.body.classList.toggle('menu', !driving());
+    const inDriving = driving();
+    const overlayOpen = st === 'paused' || st === 'results';
+    if (!inDriving) settledShowroom = 0;
+    document.body.classList.toggle('menu', !inDriving);
+    document.body.classList.toggle('overlay-menu', overlayOpen);
+    if (!inDriving) {
+      hud.hide();
+      if (st !== 'garage') audio.muted = true;
+      else audio.silenceAll();
+    } else if (overlayOpen) {
+      audio.muted = true;
+    }
+    if ((!inDriving || overlayOpen) && input.touch) {
+      input.touch.state.steer = 0;
+      input.touch.state.throttle = 0;
+      input.touch.state.brake = 0;
+      input.touch.state.handbrake = 0;
+    }
     // full realism race: no reset button (R does nothing)
     hud.canRecover = !realism();
     document.body.classList.toggle('noreset', !hud.canRecover);
     document.body.classList.toggle('spectating', st === 'spectate');
     syncHeadlights();
-    if (city) city.props.drawScale = driving() ? DRAW_SCALE[post.preset] : Math.min(0.45, DRAW_SCALE[post.preset]);
+    if (city) city.props.drawScale = inDriving ? DRAW_SCALE[post.preset] : Math.min(0.45, DRAW_SCALE[post.preset]);
   };
   // In the showroom (title/garage/busy) the nose spots are nearly off so they never bloom into a white veil over the bumper.
   const syncHeadlights = () => { visual.dim = driving() ? 1 : 0.008; visual.applyHeadlights(); };
@@ -2512,6 +2528,7 @@ async function main() {
     rig.setTarget(car.body, core.info.redline);
     hud.hide();
     hud.board(null);
+    if (minimap.expanded) minimap.toggleExpand(false);
     cops.breakOff();
     wagers.cancel();
     zones.setVisible(false);

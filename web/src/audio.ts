@@ -197,9 +197,63 @@ export class GameAudio {
   private garageLimCutUntil = 0;
   private garageFlame = 0;
   private garageWasHighRpm = false;
-  muted = false;
+  private _muted = false;
   /** Low-power mobile/potato audio mode: skips heavy stereo FFT ConvolverNode reverb to save phone ARM CPU. */
   lowPower = false;
+
+  get muted(): boolean { return this._muted; }
+  set muted(v: boolean) {
+    this._muted = v;
+    if (v) this.silenceAll();
+  }
+
+  /** Immediately ramp every continuous driving & engine sound layer to 0 (called when returning to menu or pausing). */
+  silenceAll() {
+    this.garageRunning = false;
+    this.garageRevHeld = false;
+    this.garagePulseUntil = 0;
+    this.garageCrankUntil = 0;
+    this.garageFlareUntil = 0;
+    this.garageRpm = 0;
+    this.garageThr = 0;
+    this.garageFlame = 0;
+    this.boostSpool = 0;
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const zero = (g?: GainNode) => {
+      if (!g) return;
+      g.gain.cancelScheduledValues(t);
+      g.gain.setTargetAtTime(0, t, 0.02);
+    };
+    zero(this.eng?.g);
+    zero(this.eng?.boostGain);
+    zero(this.eng?.gearGain);
+    zero(this.tyre?.g);
+    zero(this.roadRoll?.g);
+    zero(this.cavity?.g);
+    zero(this.wind?.g);
+    zero(this.reverbSend ?? undefined);
+    zero(this.srn?.g);
+  }
+
+  /** Silence only road/tyre/wind/siren/gearbox layers (used before starting the Garage stationary ignition). */
+  private silenceDrivingLayers() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const zero = (g?: GainNode) => {
+      if (!g) return;
+      g.gain.cancelScheduledValues(t);
+      g.gain.setTargetAtTime(0, t, 0.02);
+    };
+    zero(this.eng?.gearGain);
+    zero(this.tyre?.g);
+    zero(this.roadRoll?.g);
+    zero(this.cavity?.g);
+    zero(this.wind?.g);
+    zero(this.srn?.g);
+  }
 
   /** Apply authentic engine acoustic architecture (factory stock engine OR installed engine swap + turbo kit). */
   setCarProfile(carId: string, swapVoice?: EngineVoiceId | null, hasAftermarketTurbo = false) {
@@ -256,6 +310,8 @@ export class GameAudio {
 
   private startGarageEngine() {
     this.unlock();
+    this._muted = false;
+    this.silenceDrivingLayers();
     this.applyVoice();
     const ctx = this.ctx;
     const now = performance.now();
@@ -299,6 +355,8 @@ export class GameAudio {
   /** Brief automatic rev blip when installing a new Engine Swap so you immediately hear its real voice. */
   pulseGarageRev(ms = 680) {
     this.unlock();
+    this._muted = false;
+    this.silenceDrivingLayers();
     this.applyVoice();
     if (!this.garageRunning) {
       this.garageRunning = true;
