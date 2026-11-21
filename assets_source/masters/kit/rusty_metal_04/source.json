@@ -1,0 +1,26 @@
+{
+  "name": "Rusty Metal 04",
+  "url": "https://polyhaven.com/a/rusty_metal_04",
+  "author": "Amal Kumar",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "rusty_metal_04_Diffuse_4k.exr",
+    "rusty_metal_04_nor_gl_4k.exr",
+    "rusty_metal_04_Rough_4k.exr",
+    "rusty_metal_04_AO_4k.exr",
+    "rusty_metal_04_Displacement_4k.exr",
+    "rusty_metal_04_Metal_4k.exr"
+  ],
+  "notes": "Poly Haven texture set, 4K Diffuse EXR 26.6 MB, nor_gl EXR 26.0 MB, Rough EXR 8.9 MB, AO EXR 3.2 MB, Displacement EXR 3.0 MB, Metal EXR 14.8 MB (MD5 of every file checked) through the official API; stored as assets of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 16K. Real-world size 2 x 2 m (API record).",
+  "sha256": {
+    "rusty_metal_04_Diffuse_4k.exr": "2a8fcadb374fe85bd86be5cfb9bf271bdee67af24fc8507025c90293e80cab7c",
+    "rusty_metal_04_nor_gl_4k.exr": "c2247803c2802733ef9ccf36fc972f010c2bbd18d8ddde3a07496906bc241b87",
+    "rusty_metal_04_Rough_4k.exr": "6844b563b330450237031ae1ba879e318684c0270e5b210a37b6866e4d25063e",
+    "rusty_metal_04_AO_4k.exr": "76e67efb0250053c6baf22b505167e0467bef787b04705df327e68f1e1011f97",
+    "rusty_metal_04_Displacement_4k.exr": "b344c96769c78d13c57a385ad7da20b05756b1447b7c4b272cea595405b062cc",
+    "rusty_metal_04_Metal_4k.exr": "ce639d52399599f5b503d8d4dc02a15eb3eda01b09ae81851d12f447c7165748"
+  },
+  "master_release": "kit-masters-v1"
+}

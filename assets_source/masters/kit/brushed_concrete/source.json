@@ -1,0 +1,24 @@
+{
+  "name": "Brushed Concrete ",
+  "url": "https://polyhaven.com/a/brushed_concrete",
+  "author": "Dario Barresi (Processing), Dimitrios Savva (Photography)",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "brushed_concrete_Diffuse_4k.exr",
+    "brushed_concrete_nor_gl_4k.exr",
+    "brushed_concrete_Rough_4k.exr",
+    "brushed_concrete_AO_4k.exr",
+    "brushed_concrete_Displacement_4k.exr"
+  ],
+  "notes": "Poly Haven texture set, 4K Diffuse EXR 21.4 MB, nor_gl EXR 26.1 MB, Rough EXR 12.0 MB, AO EXR 17.9 MB, Displacement EXR 13.4 MB (MD5 of every file checked) through the official API; stored as assets of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 8K. Real-world size 2.5 x 2.5 m (API record).",
+  "sha256": {
+    "brushed_concrete_Diffuse_4k.exr": "f190bed8036f6cc1d74123ea4e5b21820720e3234ed252e97bd6d4415674d90b",
+    "brushed_concrete_nor_gl_4k.exr": "e7bb37a263bd85eee850a2af3986e77280601d61e0db314a44ecf251e3237db9",
+    "brushed_concrete_Rough_4k.exr": "aeb31e465bad81164977472791c0e2740e37e3930b715e13cfb3015ab4a46dbd",
+    "brushed_concrete_AO_4k.exr": "9bde8607f7200348837f4b6d4f7b544f7ca9badd0de8b078c9fe0293d0e3b9d5",
+    "brushed_concrete_Displacement_4k.exr": "ffd12dd452707cfaa9b73e8d1037f8ecc028d94bd63a9667c0fe2e4c01cc405e"
+  },
+  "master_release": "kit-masters-v1"
+}

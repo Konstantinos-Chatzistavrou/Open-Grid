@@ -1,0 +1,24 @@
+{
+  "name": "Rough Plaster 03",
+  "url": "https://polyhaven.com/a/rough_plaster_03",
+  "author": "Rob Tuytel",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "rough_plaster_03_Diffuse_4k.exr",
+    "rough_plaster_03_nor_gl_4k.exr",
+    "rough_plaster_03_Rough_4k.exr",
+    "rough_plaster_03_AO_4k.exr",
+    "rough_plaster_03_Displacement_4k.exr"
+  ],
+  "notes": "Poly Haven texture set, 4K Diffuse EXR 18.7 MB, nor_gl EXR 27.7 MB, Rough EXR 7.1 MB, AO EXR 10.1 MB, Displacement EXR 2.3 MB (MD5 of every file checked) through the official API; stored as assets of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 8K. Real-world size 1.5 x 1.5 m (API record).",
+  "sha256": {
+    "rough_plaster_03_Diffuse_4k.exr": "b8e0d4b8a866f3ff12b8e02024038f42c35ace6031dd864a3af06e9a0e1da3c5",
+    "rough_plaster_03_nor_gl_4k.exr": "7cd632c8bb3f9e8d195601e1fde2a9e16d474173a65e7aee303066ed4d4d8dab",
+    "rough_plaster_03_Rough_4k.exr": "ada19d0ca75bf6a76c209ad9bbc79113ddb60e2e128534fd145d68af3beba074",
+    "rough_plaster_03_AO_4k.exr": "3562d493cc3ed112b5c07297cfe26581b37852e7f2767513e2e951cadaf92ae2",
+    "rough_plaster_03_Displacement_4k.exr": "d637c5ffaa4d927df18c90142bb2b8dbe7371b759a0dee50b4eb0b36cdd2d1a2"
+  },
+  "master_release": "kit-masters-v1"
+}

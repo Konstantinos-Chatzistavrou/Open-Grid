@@ -1,0 +1,24 @@
+{
+  "name": "Clay Roof Tiles 02",
+  "url": "https://polyhaven.com/a/clay_roof_tiles_02",
+  "author": "Amal Kumar",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "clay_roof_tiles_02_Diffuse_4k.exr",
+    "clay_roof_tiles_02_nor_gl_4k.exr",
+    "clay_roof_tiles_02_Rough_4k.exr",
+    "clay_roof_tiles_02_AO_4k.exr",
+    "clay_roof_tiles_02_Displacement_4k.exr"
+  ],
+  "notes": "Poly Haven texture set, 4K Diffuse EXR 27.4 MB, nor_gl EXR 19.2 MB, Rough EXR 4.2 MB, AO EXR 8.1 MB, Displacement EXR 2.7 MB (MD5 of every file checked) through the official API; stored as assets of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 8K. Real-world size 2.5 x 2.5 m (API record).",
+  "sha256": {
+    "clay_roof_tiles_02_Diffuse_4k.exr": "3a7d2605e69747b3d5414f515f7e976032999d747d921abb1ab29d33df7e9832",
+    "clay_roof_tiles_02_nor_gl_4k.exr": "5a033a2858fe03815c032c9d0ff7bf708ddc1d9c1436422557e7d4f0f586b8ae",
+    "clay_roof_tiles_02_Rough_4k.exr": "5d993151596815eeb7229703e884c5de66b70129ee5d7b99db72f675224c04a1",
+    "clay_roof_tiles_02_AO_4k.exr": "a3fd86e7f35da90aa319474f3b8bff086c7d80e4853154dc82c596926892049a",
+    "clay_roof_tiles_02_Displacement_4k.exr": "c281ecaf27c4aab568561538e1da50cb497264a0e6b2edc7d56773783b63aa77"
+  },
+  "master_release": "kit-masters-v1"
+}

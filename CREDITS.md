@@ -161,8 +161,20 @@ represents or is endorsed by any real manufacturer.
 
 CC0 1.0 (no credit required; listed with thanks):
 
+- **Asphalt 02** by Rob Tuytel (https://polyhaven.com/a/asphalt_02). Kit id `asphalt_02`.
+- **Blue Metal Plate** by Rob Tuytel (https://polyhaven.com/a/blue_metal_plate). Kit id `blue_metal_plate`.
+- **Brushed Concrete ** by Dario Barresi (Processing), Dimitrios Savva (Photography) (https://polyhaven.com/a/brushed_concrete). Kit id `brushed_concrete`.
+- **Clay Roof Tiles 02** by Amal Kumar (https://polyhaven.com/a/clay_roof_tiles_02). Kit id `clay_roof_tiles_02`.
+- **Clean Asphalt** by Dimitrios Savva (https://polyhaven.com/a/clean_asphalt). Kit id `clean_asphalt`.
 - **Cobblestone Street Night** by Greg Zaal, Jenelle van Heerden (Backplates) (https://polyhaven.com/a/cobblestone_street_night). Kit id `cobblestone_street_night`.
+- **Concrete Pavers 02** by Amal Kumar (https://polyhaven.com/a/concrete_pavers_02). Kit id `concrete_pavers_02`.
 - **Hansaplatz** by Greg Zaal (https://polyhaven.com/a/hansaplatz). Kit id `hansaplatz`.
+- **Painted Concrete 02** by Rob Tuytel (https://polyhaven.com/a/painted_concrete_02). Kit id `painted_concrete_02`.
+- **Plastered Wall** by Amal Kumar (https://polyhaven.com/a/plastered_wall). Kit id `plastered_wall`.
+- **Red Brick** by Rob Tuytel (https://polyhaven.com/a/red_brick). Kit id `red_brick`.
+- **Rough Plaster 03** by Rob Tuytel (https://polyhaven.com/a/rough_plaster_03). Kit id `rough_plaster_03`.
+- **Rustic Stone Wall** by Dimitrios Savva (https://polyhaven.com/a/rustic_stone_wall). Kit id `rustic_stone_wall`.
+- **Rusty Metal 04** by Amal Kumar (https://polyhaven.com/a/rusty_metal_04). Kit id `rusty_metal_04`.
 - **Shanghai Bund** by Greg Zaal (https://polyhaven.com/a/shanghai_bund). Kit id `shanghai_bund`.
 - **Urban Street 01** by Andreas Mischok (https://polyhaven.com/a/urban_street_01). Kit id `urban_street_01`.
 

@@ -1,0 +1,24 @@
+{
+  "name": "Plastered Wall",
+  "url": "https://polyhaven.com/a/plastered_wall",
+  "author": "Amal Kumar",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "plastered_wall_Diffuse_4k.exr",
+    "plastered_wall_nor_gl_4k.exr",
+    "plastered_wall_Rough_4k.exr",
+    "plastered_wall_AO_4k.exr",
+    "plastered_wall_Displacement_4k.exr"
+  ],
+  "notes": "Poly Haven texture set, 4K Diffuse EXR 11.3 MB, nor_gl EXR 34.2 MB, Rough EXR 11.7 MB, AO EXR 14.5 MB, Displacement EXR 18.6 MB (MD5 of every file checked) through the official API; stored as assets of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 16K. Real-world size 2 x 2 m (API record).",
+  "sha256": {
+    "plastered_wall_Diffuse_4k.exr": "df21d7d8c2c4396214212e76736592187e2a528819316ce97d19940ecb271d67",
+    "plastered_wall_nor_gl_4k.exr": "ae43a3aec2f7d60c1c41fa9639cd738adf436bfb85a65d5519d703d8dd1b683f",
+    "plastered_wall_Rough_4k.exr": "409b5eb1d10d4a63152a8dd621730752218a29fe77b074bd443833f539c3a8a0",
+    "plastered_wall_AO_4k.exr": "ad954114fe023b474b07554d8588192c7918cffb276c48b070b4d2b4213d86ea",
+    "plastered_wall_Displacement_4k.exr": "05b73030e1ddaf9dbc21104c865cc13c0f57ea6e8314b78815bf7dd2f130aa01"
+  },
+  "master_release": "kit-masters-v1"
+}

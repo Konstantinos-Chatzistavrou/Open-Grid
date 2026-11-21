@@ -1,0 +1,24 @@
+{
+  "name": "Concrete Pavers 02",
+  "url": "https://polyhaven.com/a/concrete_pavers_02",
+  "author": "Amal Kumar",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "concrete_pavers_02_Diffuse_4k.exr",
+    "concrete_pavers_02_nor_gl_4k.exr",
+    "concrete_pavers_02_Rough_4k.exr",
+    "concrete_pavers_02_AO_4k.exr",
+    "concrete_pavers_02_Displacement_4k.exr"
+  ],
+  "notes": "Poly Haven texture set, 4K Diffuse EXR 20.5 MB, nor_gl EXR 27.0 MB, Rough EXR 15.7 MB, AO EXR 12.6 MB, Displacement EXR 10.4 MB (MD5 of every file checked) through the official API; stored as assets of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 16K. Real-world size 2 x 2 m (API record).",
+  "sha256": {
+    "concrete_pavers_02_Diffuse_4k.exr": "3bbea2d83da89e8edc0d1eed4bb6decd6f5dfb8c88d94374fdce5795eacca237",
+    "concrete_pavers_02_nor_gl_4k.exr": "11fa1fc851fe056e38d7268920a045f5cd2713365b892e821987a6f82c80e367",
+    "concrete_pavers_02_Rough_4k.exr": "ec6d8f5fb5f777683cf182e16ec10d811b4f88a2d9d4dc5aefd3378b01cb0e95",
+    "concrete_pavers_02_AO_4k.exr": "e269d1a8a4c9067985068de2bb460ce444f189848fb4be257840e1a12659c106",
+    "concrete_pavers_02_Displacement_4k.exr": "421ddc2fc92cddd6105b22f45ff66415a3bd9fa35c4bcbb47e7003064934523c"
+  },
+  "master_release": "kit-masters-v1"
+}

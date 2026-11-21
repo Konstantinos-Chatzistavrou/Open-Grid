@@ -1,0 +1,24 @@
+{
+  "name": "Painted Concrete 02",
+  "url": "https://polyhaven.com/a/painted_concrete_02",
+  "author": "Rob Tuytel",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "painted_concrete_02_Diffuse_4k.exr",
+    "painted_concrete_02_nor_gl_4k.exr",
+    "painted_concrete_02_Rough_4k.exr",
+    "painted_concrete_02_AO_4k.exr",
+    "painted_concrete_02_Displacement_4k.exr"
+  ],
+  "notes": "Poly Haven texture set, 4K Diffuse EXR 13.1 MB, nor_gl EXR 27.4 MB, Rough EXR 11.8 MB, AO EXR 0.5 MB, Displacement EXR 1.6 MB (MD5 of every file checked) through the official API; stored as assets of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 16K. Real-world size 4 x 4 m (API record).",
+  "sha256": {
+    "painted_concrete_02_Diffuse_4k.exr": "40df0780ebde0d6aa9fc142a9b865f3585aa08bdb418d8d8004e524ec6111d00",
+    "painted_concrete_02_nor_gl_4k.exr": "e1d1ffb2b1c56bfb9567df68c8fbc92edae32a02eac8f907f79bb0fa1014de36",
+    "painted_concrete_02_Rough_4k.exr": "02db12df0a4f142681c58108b6c682968a413f84175f0e32dad263b4de23db3f",
+    "painted_concrete_02_AO_4k.exr": "5fb8babdf0192d4d676454dbcb327816545c0fdef4a7f2968b85511d68c60156",
+    "painted_concrete_02_Displacement_4k.exr": "666f9ea8e7bc409c69094f41b1b6f7374f88e245b9021678c6ea400599a89e4c"
+  },
+  "master_release": "kit-masters-v1"
+}

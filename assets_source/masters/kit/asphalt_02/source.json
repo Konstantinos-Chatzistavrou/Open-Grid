@@ -1,0 +1,24 @@
+{
+  "name": "Asphalt 02",
+  "url": "https://polyhaven.com/a/asphalt_02",
+  "author": "Rob Tuytel",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "asphalt_02_Diffuse_4k.exr",
+    "asphalt_02_nor_gl_4k.exr",
+    "asphalt_02_Rough_4k.exr",
+    "asphalt_02_AO_4k.exr",
+    "asphalt_02_Displacement_4k.exr"
+  ],
+  "notes": "Poly Haven texture set, 4K Diffuse EXR 24.6 MB, nor_gl EXR 34.5 MB, Rough EXR 16.9 MB, AO EXR 16.8 MB, Displacement EXR 5.4 MB (MD5 of every file checked) through the official API; stored as assets of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 8K. Real-world size 3 x 3 m (API record).",
+  "sha256": {
+    "asphalt_02_Diffuse_4k.exr": "8c28393a8e59fea7f6aa8ee06f1a294e1247eeeb1ee995c5e21c34574e979d8a",
+    "asphalt_02_nor_gl_4k.exr": "f49f8fc042eb4c6b2dbab079b41a57909b1e72748a1bc4ca6251fef79fa0f33e",
+    "asphalt_02_Rough_4k.exr": "37132a6acf0ba6625ea5f402780c91ed90846fddb9745d095c4cc18bdc93fe90",
+    "asphalt_02_AO_4k.exr": "95cc763297768f8d85eca495772d6e65f6f277408f7d7c8dfdc54c0bb528972e",
+    "asphalt_02_Displacement_4k.exr": "64fe325c54a41c32f69d17c8d8f2c0318f6ed3afca93c157bff4067fec18fa6e"
+  },
+  "master_release": "kit-masters-v1"
+}

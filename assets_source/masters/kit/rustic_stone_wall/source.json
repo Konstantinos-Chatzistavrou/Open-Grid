@@ -1,0 +1,24 @@
+{
+  "name": "Rustic Stone Wall",
+  "url": "https://polyhaven.com/a/rustic_stone_wall",
+  "author": "Dimitrios Savva",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "rustic_stone_wall_Diffuse_4k.exr",
+    "rustic_stone_wall_nor_gl_4k.exr",
+    "rustic_stone_wall_Rough_4k.exr",
+    "rustic_stone_wall_AO_4k.exr",
+    "rustic_stone_wall_Displacement_4k.exr"
+  ],
+  "notes": "Poly Haven texture set, 4K Diffuse EXR 20.4 MB, nor_gl EXR 35.0 MB, Rough EXR 9.7 MB, AO EXR 15.8 MB, Displacement EXR 7.9 MB (MD5 of every file checked) through the official API; stored as assets of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 8K. Real-world size 1.52 x 1.52 m (API record).",
+  "sha256": {
+    "rustic_stone_wall_Diffuse_4k.exr": "f051c02a377a4d9876c1f1ba9e794c4db7eb9d7787a6a6fda3068edf9e680e76",
+    "rustic_stone_wall_nor_gl_4k.exr": "69c65731950136e5055da239792be8f5d8ac10778d626fd3d83e91388d27e367",
+    "rustic_stone_wall_Rough_4k.exr": "fce5a51ddc21842b4177b54fee7fc7337221b87e081a0baca3eda384f59e04f8",
+    "rustic_stone_wall_AO_4k.exr": "6a89137d7d1d3df27b363959e58cffbb27061fa7f05f1fbdd1ed7f7c9a0d70af",
+    "rustic_stone_wall_Displacement_4k.exr": "424f8bed9d0d0d9cd8174982172a24d9ec63fa0bdfb74c1124bf086039513649"
+  },
+  "master_release": "kit-masters-v1"
+}

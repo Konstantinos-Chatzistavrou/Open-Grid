@@ -1,0 +1,24 @@
+{
+  "name": "Blue Metal Plate",
+  "url": "https://polyhaven.com/a/blue_metal_plate",
+  "author": "Rob Tuytel",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "blue_metal_plate_Diffuse_4k.exr",
+    "blue_metal_plate_nor_gl_4k.exr",
+    "blue_metal_plate_Rough_4k.exr",
+    "blue_metal_plate_AO_4k.exr",
+    "blue_metal_plate_Displacement_4k.exr"
+  ],
+  "notes": "Poly Haven texture set, 4K Diffuse EXR 10.6 MB, nor_gl EXR 6.4 MB, Rough EXR 7.4 MB, AO EXR 0.2 MB, Displacement EXR 0.3 MB (MD5 of every file checked) through the official API; stored as assets of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 16K. Real-world size 2.5 x 2.5 m (API record).",
+  "sha256": {
+    "blue_metal_plate_Diffuse_4k.exr": "7016bbbff4da20737fb6deb0b8d5eda822e017f0c384a5ba3da365a9fd9b171f",
+    "blue_metal_plate_nor_gl_4k.exr": "61d53cc22841673843b501769884d36f2023626fe22a50b9bfce08d7be14412d",
+    "blue_metal_plate_Rough_4k.exr": "79b9edb5608ec64fae46fe3a1e3d71ad020f7799fcb5673ee30737a7e86e302f",
+    "blue_metal_plate_AO_4k.exr": "d9b2451758d3fad24b38bb42959cdeaa932390ddf24917e1704391fff3e46307",
+    "blue_metal_plate_Displacement_4k.exr": "1c9e45e054a0b93da38f571d701467f1185a89f1ddd8e50c820c5f16c74212c5"
+  },
+  "master_release": "kit-masters-v1"
+}

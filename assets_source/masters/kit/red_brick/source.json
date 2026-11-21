@@ -1,0 +1,24 @@
+{
+  "name": "Red Brick",
+  "url": "https://polyhaven.com/a/red_brick",
+  "author": "Rob Tuytel",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "red_brick_Diffuse_4k.exr",
+    "red_brick_nor_gl_4k.exr",
+    "red_brick_Rough_4k.exr",
+    "red_brick_AO_4k.exr",
+    "red_brick_Displacement_4k.exr"
+  ],
+  "notes": "Poly Haven texture set, 4K Diffuse EXR 23.5 MB, nor_gl EXR 31.8 MB, Rough EXR 1.1 MB, AO EXR 10.2 MB, Displacement EXR 3.2 MB (MD5 of every file checked) through the official API; stored as assets of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 16K. Real-world size 1.4 x 1.4 m (API record).",
+  "sha256": {
+    "red_brick_Diffuse_4k.exr": "c6cbcf2e70bc48c1993008b0a99dbecf1e07259e4494206dc918697448d11213",
+    "red_brick_nor_gl_4k.exr": "df31f41ebf211789d8ff27c92dd866681639ad6ff7ece8100109a94cbc5f0eae",
+    "red_brick_Rough_4k.exr": "9d50629ddd796465dfee1a466534449bee44062d37b7df22c42719c3ec633f78",
+    "red_brick_AO_4k.exr": "478ede6de3fda2d232446cdbc781dec264e87ea2e589acdf675a8d7e0232eff5",
+    "red_brick_Displacement_4k.exr": "cd0b8a65f0a2b3f70c131c13427a500ff31c34532cfbb122495181867c9cdf15"
+  },
+  "master_release": "kit-masters-v1"
+}
