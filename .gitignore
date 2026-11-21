@@ -61,3 +61,12 @@ __pycache__/
 # UE-ready car exports: regenerate with `node tools/ue5/export_cars_for_ue.mjs`
 /ue5/Import/
 /tools/ue5/node_modules/
+/tools/assets/node_modules/
+
+# Kit masters live on GitHub Releases, not in git (docs/kit.md): only their ledgers and licence evidence are committed.
+# Fetch them with `node tools/assets/masters.mjs fetch`.
+/assets_source/masters/kit/*/*
+!/assets_source/masters/kit/*/source.json
+!/assets_source/masters/kit/*/evidence/
+# Unreal kit exports are generated locally from the masters (tools/assets/build_kit_*.py)
+/ue5/SourceArt/Kit/

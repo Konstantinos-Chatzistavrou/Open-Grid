@@ -1,0 +1,5 @@
+{
+  "masterResolution": 4096,
+  "maxFileMB": 50,
+  "notes": "Kit v1 (docs/kit.md). Masters are locked at 4K (4096 px on the long side) for the final Unreal game; the web gets smaller generated copies. No single master over maxFileMB. Masters live on GitHub Releases (tag in each ledger), not in git."
+}

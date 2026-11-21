@@ -3,16 +3,20 @@
 //
 // Every kit asset has assets_source/masters/kit/<id>/source.json and every car has assets_source/masters/cars/<id>/source.json:
 //   { name, url, author, licence, licence_url, downloaded (YYYY-MM-DD), files: [master files in that folder], notes }
+//   kit ledgers also: sha256 { file: hex } and master_release (the GitHub release tag holding the masters: they are NOT
+//   in git; `node tools/assets/masters.mjs fetch` downloads them).
 //   cars also list `shipped`: the files under web/public/assets/cars/ made from them (no car master lives in the repo).
 //   optional: `changes` (what we changed, for the CC BY credit), `owner_approval` (date: required for CC-BY-SA).
 //
 // It fails (exit 1) when:
 //   - a ledger is missing a field, has an unparseable date, or a licence outside the allowed list
 //     (CC0-1.0, CC-BY-3.0, CC-BY-4.0, CC-BY-NC-4.0; CC-BY-SA-3.0 / CC-BY-SA-4.0 only with `owner_approval`);
-//   - a kit master listed in `files` is missing, is not tracked by Git LFS, or is over the size budget
-//     (data/asset_budgets.json `maxFileMB` if that file exists, else 50 MB; LFS pointer files are measured by their size line);
+//   - a kit ledger has no sha256 for one of its files or no master_release; a kit master is tracked by git;
+//   - a kit master present here differs from its sha256 (masters are read-only) or is over the size budget
+//     (data/asset_budgets.json `maxFileMB` if that file exists, else 50 MB); masters not fetched are not checked;
 //   - a file in a kit folder is not listed in its ledger (masters are added on purpose, with their licence);
-//   - a generated kit file (web/public/assets/kit/, ue5/SourceArt/Kit/) is not under a folder named after a kit id;
+//   - a generated kit file (web/public/assets/kit/, ue5/SourceArt/Kit/) is not under a folder named after a kit id
+//     (generated manifest.json indexes are allowed; every id they name must have a ledger);
 //   - a car model or texture under web/public/assets/cars/ is in no car ledger, or a `shipped` file does not exist;
 //   - the "Kit assets" section of CREDITS.md is not what the ledgers generate.
 //
@@ -21,6 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -60,12 +65,16 @@ function fileSize(p) {
   return st.size;
 }
 
-function lfsTracked(file) {
+function sha256(p) {
+  return createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+}
+
+/** files git tracks under a folder ([] when git is not available) */
+function tracked(dir) {
   try {
-    const out = execFileSync('git', ['check-attr', 'filter', '--', rel(file)], { cwd: ROOT, encoding: 'utf8' });
-    return /filter: lfs/.test(out);
+    return execFileSync('git', ['ls-files', '--', rel(dir)], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
   } catch {
-    return true;   // no git here: cannot tell, do not fail
+    return [];
   }
 }
 
@@ -109,12 +118,19 @@ const cars = readLedgers(CARS, 'car');
 // ---- kit masters
 for (const L of kit) {
   const listed = new Set((L.d.files ?? []).map((f) => path.normalize(f)));
+  if (!L.d.master_release) bad(rel(L.path), 'missing "master_release" (the GitHub release tag that holds the masters)');
   for (const f of listed) {
     const p = path.join(L.folder, f);
-    if (!fs.existsSync(p)) { bad(rel(L.path), `listed master ${f} does not exist`); continue; }
+    const want = L.d.sha256?.[f];
+    if (!/^[0-9a-f]{64}$/.test(want ?? '')) bad(rel(L.path), `missing "sha256" for ${f}`);
+    if (!fs.existsSync(p)) continue;   // not fetched here (CI, a fresh clone): the ledger is what is checked
     const mb = fileSize(p) / 1048576;
     if (mb > maxMB) bad(rel(p), `${mb.toFixed(1)} MB is over the ${maxMB} MB per-file budget`);
-    if (!lfsTracked(p)) bad(rel(p), 'binary master not tracked by Git LFS (.gitattributes)');
+    if (want && sha256(p) !== want) bad(rel(p), 'differs from its ledger sha256 (masters are read-only once added)');
+  }
+  for (const t of tracked(L.folder)) {
+    const r = path.normalize(path.relative(rel(L.folder), t));
+    if (r !== 'source.json' && !r.startsWith(`evidence${path.sep}`)) bad(t, 'a master is tracked by git: masters live on the GitHub release (.gitignore)');
   }
   for (const p of walk(L.folder)) {
     const r = path.normalize(path.relative(L.folder, p));
@@ -128,6 +144,14 @@ const kitIds = new Set(kit.map((L) => L.id));
 for (const g of GENERATED) {
   for (const p of walk(path.join(ROOT, g))) {
     const parts = rel(p).split('/');
+    if (path.basename(p) === 'manifest.json') {   // a generated index: every asset it names must have a ledger
+      let m;
+      try { m = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) { bad(rel(p), `not valid JSON (${e.message})`); continue; }
+      const ids = [];
+      JSON.stringify(m, (k, v) => { if (k === 'id' && typeof v === 'string') ids.push(v); return v; });
+      for (const id of ids) if (!kitIds.has(id)) bad(rel(p), `names "${id}", which has no kit ledger`);
+      continue;
+    }
     if (!parts.some((s) => kitIds.has(s))) bad(rel(p), 'generated kit file outside a folder named after a kit id (no licence ledger)');
   }
 }
