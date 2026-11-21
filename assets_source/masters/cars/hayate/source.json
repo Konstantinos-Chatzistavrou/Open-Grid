@@ -1,0 +1,13 @@
+{
+  "name": "Generic Coupe \"Azura\"",
+  "url": "https://sketchfab.com/3d-models/2e1a3699de7e4f688d328dc005ef1aac",
+  "author": "mk2design",
+  "licence": "CC-BY-4.0",
+  "licence_url": "http://creativecommons.org/licenses/by/4.0/",
+  "downloaded": "2026-11-15",
+  "files": [],
+  "shipped": [
+    "web/public/assets/cars/v5/hayate_hero.glb"
+  ],
+  "notes": "Licence read 2026-11-21 from the official Sketchfab API (https://api.sketchfab.com/v3/models/2e1a3699de7e4f688d328dc005ef1aac: license 'CC Attribution'). Marks, badges, plates and liveries removed; renamed; see CREDITS.md."
+}

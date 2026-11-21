@@ -1,0 +1,13 @@
+{
+  "name": "Tokii Abyss GT.7 V12",
+  "url": "https://sketchfab.com/3d-models/c399568541104e0e903cf138b1e24908",
+  "author": "Glas'kavin (fiendishfarlander76)",
+  "licence": "CC-BY-4.0",
+  "licence_url": "http://creativecommons.org/licenses/by/4.0/",
+  "downloaded": "2026-11-15",
+  "files": [],
+  "shipped": [
+    "web/public/assets/cars/v5/strix_gt7_hero.glb"
+  ],
+  "notes": "Licence read 2026-11-21 from the official Sketchfab API (https://api.sketchfab.com/v3/models/c399568541104e0e903cf138b1e24908: license 'CC Attribution'). Marks, badges, plates and liveries removed; renamed; see CREDITS.md."
+}

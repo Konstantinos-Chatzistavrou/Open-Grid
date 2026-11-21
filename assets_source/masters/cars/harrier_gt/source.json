@@ -1,0 +1,13 @@
+{
+  "name": "2018 Mercedes C-Coupe DTM",
+  "url": "https://sketchfab.com/3d-models/5708f2acc5ef40839b6eb50970e1c173",
+  "author": "Dave Love SketchFab (Tyler_Dave)",
+  "licence": "CC-BY-4.0",
+  "licence_url": "http://creativecommons.org/licenses/by/4.0/",
+  "downloaded": "2026-10-18",
+  "files": [],
+  "shipped": [
+    "web/public/assets/cars/v4/harrier_gt_hero.glb"
+  ],
+  "notes": "Licence read 2026-11-21 from the official Sketchfab API (https://api.sketchfab.com/v3/models/5708f2acc5ef40839b6eb50970e1c173: license 'CC Attribution'). Marks, badges, plates and liveries removed; renamed; see CREDITS.md. Provenance caution: internal names (EXT_/INT_ materials, 'drf_amg_dtm_2018') look like a racing-sim mod export; it could not be confirmed that the uploader made the model."
+}
