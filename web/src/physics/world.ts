@@ -199,6 +199,15 @@ export class CarBody {
     return c;
   }
 
+  /** Trace the 12 wheel contact-patch rays once against Rapier and return 12 x [hit, px, py, pz, nx, ny, nz, surface]. */
+  sampleGroundPlanes(): Float64Array {
+    const prev = this.usePatchRays;
+    this.usePatchRays = true;
+    const c = this.raycastWheels();
+    this.usePatchRays = prev;
+    return c;
+  }
+
   private stepCore(c: Float64Array, raw: RawInput, assists: AssistToggles, dt: number): Float64Array {
     return this.usePatchRays ? this.core.stepPatch(c, raw, assists, dt) : this.core.step(c, raw, assists, dt);
   }

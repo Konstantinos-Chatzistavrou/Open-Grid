@@ -16,7 +16,6 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "HAL/CriticalSection.h"
 
 THIRD_PARTY_INCLUDES_START
 #include "rs/config.hpp"
@@ -408,33 +407,7 @@ protected:
     virtual void AsyncPhysicsTickComponent(float DeltaTime, float SimTime) override;
 
 private:
-    static constexpr int32 MaxRaysPerWheel = 16;
-
-    struct FGroundSample
-    {
-        bool bHit = false;
-        rs::Vec3 Point;          // core space (m)
-        rs::Vec3 Normal{0, 0, 1};
-        int32 Surface = 0;
-    };
-
-    struct FPendingInput
-    {
-        bool bCoreControls = true;
-        rs::RawInput Raw;        // with core controls
-        rs::DriverInput Direct;  // without
-        bool bShiftUp = false;   // one-shot: consumed by the next step
-        bool bShiftDown = false;
-        int32 RaysPerWheel = 3;
-        bool bUseStrip = true;
-    };
-
-    struct FPendingImpact
-    {
-        FVector PointUe;
-        double ImpulseNs = 0.0;
-        uint64 OtherId = 0;
-    };
+    static constexpr int32 MaxRaysPerWheel = rs::ue5::kMaxRaysPerWheel;
 
     bool LoadCar();
     /** Load the car spec as early as possible (the owner may need VisualSpec in its own BeginPlay). Idempotent. */
@@ -450,25 +423,20 @@ public:
     bool PreloadCarSpec() { return EnsureCarLoaded(); }
 
 private:
-    void CreateVehicleLocked();
-    void ApplyFeatureFlagsLocked();
+    void CreateVehicle();
+    void ApplyFeatureFlags();
+    void QuiesceAsyncPhysics();
     void ApplyMass(UPrimitiveComponent* Body, double MassKg);
     int32 RaysPerWheel() const;
     int32 SurfaceFromPhysicalMaterial(UPhysicalMaterial* Material) const;
 
-    /** Rays for this chassis state into Rays_ (caller holds Lock_). */
-    void BuildRaysLocked(const rs::ChassisState& Chassis);
-    /** Game thread: trace Rays_ (copied under lock) and store the ground under each in Ground_. */
+    /** Game thread: trace Rays and store the ground plane under each in OutGround. */
     void TraceGround(const std::array<std::array<rs::WheelRay, MaxRaysPerWheel>, 4>& Rays, int32 PerWheel,
-                     std::array<std::array<FGroundSample, MaxRaysPerWheel>, 4>& OutGround) const;
+                     std::array<std::array<rs::ue5::GroundSample, MaxRaysPerWheel>, 4>& OutGround) const;
     /** Game thread: trace a ground strip under each wheel along its path until the next frame. Returns traces made. */
     int32 TraceGroundStrips(UPrimitiveComponent* Body, float FrameDt,
                             const std::array<std::array<rs::WheelRay, MaxRaysPerWheel>, 4>& Rays, int32 PerWheel,
                             std::array<rs::ue5::GroundStrip, 4>& OutStrips) const;
-    /** Contacts for the current Rays_ against Ground_ (caller holds Lock_). */
-    std::array<rs::WheelContact, 4> ResolveContactsLocked() const;
-    /** One core step (caller holds Lock_). Returns the output to apply. */
-    const rs::VehicleOutput& StepLocked(const rs::ChassisState& Chassis, double Dt);
     void PublishOutputs(const rs::VehicleOutput& Out, const std::array<double, 4>& Spin);
     static rs::ChassisState ChassisFromUe(const FVector& PosCm, const FQuat& Rot, const FVector& VelCms, const FVector& OmegaRad);
 
@@ -476,28 +444,16 @@ private:
     void HandleBodyHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp,
                        FVector NormalImpulse, const FHitResult& Hit);
 
-    // Everything below is shared between the game thread and the physics thread: guard with Lock_.
-    mutable FCriticalSection Lock_;
+    // Lock-free cross-thread bridge: SPSC rings (commands, impacts, step records) + wait-free triple buffers
+    // (rays physics -> game, ground planes + strips game -> physics). Zero mutexes on the hot async path.
     rs::CarConfig Config_;
     TUniquePtr<rs::Vehicle> Vehicle_;
     TUniquePtr<rs::Controls> Controls_;
-    rs::VehicleOutput LastOut_;
-    rs::DriverInput LastIn_;
-    FPendingInput Pending_;
-    TArray<FPendingImpact> Impacts_;
-    rs::ChassisState LastChassis_;
-    std::array<rs::WheelContactPatchRays, 4> PatchRays_{};
-    std::array<rs::WheelFootprint16Rays, 4> FootprintRays_{};
-    std::array<std::array<rs::WheelRay, MaxRaysPerWheel>, 4> Rays_{};
-    std::array<std::array<FGroundSample, MaxRaysPerWheel>, 4> Ground_{};
-    std::array<rs::ue5::GroundStrip, 4> Strips_{};
-    bool bHaveStrips_ = false;
-    std::array<double, 4> Spin_{};
-    bool bHaveRays_ = false;
-    bool bHaveOutput_ = false;
+    TUniquePtr<rs::ue5::AsyncVehicleBridge> Bridge_;
 
-    // Read by the physics thread without the lock.
+    // Atomic lifecycle gate for BeginPlay / EndPlay / ApplyBopEqualizer (never locks during normal stepping).
     std::atomic<bool> bAsyncRun_{false};
+    std::atomic<bool> bInAsyncStep_{false};
     UPrimitiveComponent* BodyRaw_ = nullptr;   // the owner's root; it outlives this component's play session
 
     // Game thread only.
@@ -505,6 +461,9 @@ private:
     double AppliedMassKg_ = 0.0;
     bool bShiftUpRequested_ = false;
     bool bShiftDownRequested_ = false;
+    bool bRepairRequested_ = false;
+    rs::rt::StepRecord LastRecord_{};
+    bool bHaveRecord_ = false;
     rs::UdpTelemetrySender UdpSender_;
     rs::MotecLogger MotecLogger_;
     double ElapsedTimeS_ = 0.0;
