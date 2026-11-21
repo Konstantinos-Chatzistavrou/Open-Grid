@@ -200,6 +200,10 @@ export const OUT = {
   graining: (i: number) => 269 + i,     // cold-tire surface graining 0..1
   treadPitchHz: 273,                    // tread block impact pitch frequency, Hz
   massKg: 274,                          // current total mass: spec (full tank) minus burnt fuel, kg
+  // Dynamic kinematic suspension telemetry [376..381] (camber is at wheelExt(i) + 1)
+  wheelToe: (i: number) => 376 + i,     // dynamic alignment toe-in (+ = toe-in), rad
+  rollCentreFront: 380,                 // dynamic front axle kinematic roll-centre height, m
+  rollCentreRear: 381,                  // dynamic rear axle kinematic roll-centre height, m
 } as const;
 
 export interface LapInfo { laps: number; current: number; last: number; best: number; distance: number; position: number; finished: boolean; routeLength: number }
