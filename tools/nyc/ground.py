@@ -25,6 +25,7 @@ import tilelib
 from tilelib import Mesh, TILE, write_glb, tile_bounds, tile_name
 
 MARGIN = 26.0
+RURAL = bool(tilelib.CITY.get("rural", False))
 KERB_H = 0.15
 KERB_TOP_W = 0.2
 Z_MARK = 0.025
@@ -35,6 +36,7 @@ DRIVE = {"motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary
 GRAPH_HW = DRIVE - {"service"}
 XW_HW = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}   # legs that get crosswalks
 MARK_HW = {"motorway", "trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}
+RURAL_EDGE_HW = {"motorway", "trunk", "primary", "secondary", "tertiary"}
 PARK_KINDS = {"park", "grass", "pitch", "cemetery"}
 PLAZA_KINDS = {"plaza", "pedestrian", "fountain"}
 YELLOW = (1.0, 0.78, 0.12, 1.0)
@@ -320,7 +322,7 @@ class Network:
     """Drivable graph for the whole island: edges between intersection / way-end nodes, plus per-leg crosswalk setbacks."""
 
     def __init__(self, world):
-        roads = [r for r in world.items["roads"] if r["hw"] in DRIVE and not r["tunnel"]]
+        roads = [r for r in world.items["roads"] if r["hw"] in DRIVE and (RURAL or not r["tunnel"])]
         deg = defaultdict(int)
         ways = []
         for r in roads:
@@ -433,6 +435,10 @@ class Context:
         self.extent = tilelib.manhattan_polygon(0).buffer(0)   # what gets tiles: the island, or the box + fringe
         self.land_far = self.extent.buffer(120)
         self.net = Network(self.world)
+        self.sea = Polygon()
+        if RURAL:
+            import terrain
+            self.sea = terrain.sea_polygon()
         self.load_s = time.time() - t
 
 
@@ -445,6 +451,238 @@ def distance_alpha(tree, lo=0.6, span=1.0):
         t = np.clip(d / span, 0, 1)
         return lo + (1 - lo) * t * t * (3 - 2 * t)
     return f
+
+
+def _guardrail_run(pts, out_n, acc):
+    """W-beam steel highway guard rail along polyline pts (N,2), facing inward (-out_n): horizontal corrugated rail
+    (z=0.52..0.82) + vertical posts every ~4 m (z=-0.35..0.84), draped later onto terrain.H."""
+    if len(pts) < 2:
+        return []
+    rail_col = (0.76, 0.78, 0.80, 1.0)
+    post_col = (0.48, 0.50, 0.52, 1.0)
+    thick = 0.16
+    inner = pts
+    outer = pts + out_n * thick
+    ln_in = LineString(inner)
+    ln_out = LineString(outer)
+    # Determine face_left by checking whether out_n points to the left of travel
+    d0 = pts[1] - pts[0]
+    out_is_left = (out_n[0, 0] * (-d0[1]) + out_n[0, 1] * d0[0]) > 0
+    for ln, fl in ((ln_in, not out_is_left), (ln_out, out_is_left)):
+        w = wall_strip(ln, 0.52, 0.82, fl, rail_col)
+        if w:
+            acc.add("guardrail", *w)
+    # Top cap of the rail beam
+    m = len(inner)
+    pos = np.zeros((m * 2, 3)); pos[:m, :2] = inner; pos[m:, :2] = outer; pos[:, 2] = 0.82
+    idx = []
+    for i in range(m - 1):
+        idx += [[i, i + 1, m + i + 1], [i, m + i + 1, m + i]]
+    idx = np.asarray(idx, dtype=np.int64)
+    e1 = pos[idx[0, 1]] - pos[idx[0, 0]]; e2 = pos[idx[0, 2]] - pos[idx[0, 0]]
+    if np.cross(e1, e2)[2] < 0:
+        idx = idx[:, ::-1]
+    s = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(inner, axis=0), axis=1))])
+    uv = np.concatenate([np.column_stack([s, np.zeros(m)]), np.column_stack([s, np.full(m, thick)])]).astype(np.float32)
+    nrm = np.tile(np.array([0, 0, 1], np.float32), (m * 2, 1))
+    acc.add("guardrail", pos, idx, uv, np.tile(np.array(rail_col, np.float32), (m * 2, 1)), nrm)
+    # Vertical steel support posts at each vertex (~4 m apart)
+    pw = 0.12
+    for i in range(0, m):
+        p = inner[i] + out_n[i] * (thick * 0.5)
+        t = pts[min(i + 1, m - 1)] - pts[max(i - 1, 0)]
+        lt = math.hypot(t[0], t[1]) or 1.0
+        tx, ty = t[0] / lt, t[1] / lt
+        nx, ny = out_n[i, 0], out_n[i, 1]
+        c0 = p - np.array([tx, ty]) * (pw * 0.5) - np.array([nx, ny]) * (pw * 0.5)
+        c1 = p + np.array([tx, ty]) * (pw * 0.5) - np.array([nx, ny]) * (pw * 0.5)
+        c2 = p + np.array([tx, ty]) * (pw * 0.5) + np.array([nx, ny]) * (pw * 0.5)
+        c3 = p - np.array([tx, ty]) * (pw * 0.5) + np.array([nx, ny]) * (pw * 0.5)
+        ring = LineString([c0, c1, c2, c3, c0])
+        w = wall_strip(ring, -0.35, 0.84, False, post_col)
+        if w:
+            acc.add("curb", *w)
+    # Matching physics wall boxes along the guard rail (for col.json `walls`)
+    boxes = []
+    # Merge into ~12-16 m straight-ish runs so collider count stays lean
+    simp = np.asarray(LineString(inner).simplify(0.25).coords)
+    for a, b in zip(simp[:-1], simp[1:]):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy)
+        if L < 0.8:
+            continue
+        mx, my = (a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5
+        # Push box slightly outward (behind the rail face)
+        ux, uy = dx / L, dy / L
+        onx, ony = (-uy, ux) if out_is_left else (uy, -ux)
+        thick_col = 0.4
+        boxes.append({
+            "cx": round(mx + onx * thick_col, 2), "cy": round(my + ony * thick_col, 2),
+            "z0": -0.5, "z1": 1.15, "hx": round(L * 0.5 + 0.15, 2), "hy": thick_col,
+            "yaw": round(math.atan2(uy, ux), 4),
+        })
+    return boxes
+
+
+def _retaining_wall_run(pts, heights, out_n, acc):
+    """Cretan limestone / concrete retaining wall along a steep uphill rock cut."""
+    if len(pts) < 2:
+        return
+    col = (0.58, 0.54, 0.46, 1.0)
+    thick = 0.45
+    inner = pts
+    outer = pts + out_n * thick
+    d0 = pts[1] - pts[0]
+    out_is_left = (out_n[0, 0] * (-d0[1]) + out_n[0, 1] * d0[0]) > 0
+    h_med = float(np.clip(np.median(heights), 1.1, 2.0))
+    ln_in = LineString(inner)
+    w = wall_strip(ln_in, -0.4, h_med, not out_is_left, col)
+    if w:
+        acc.add("curb", *w)
+    # Top coping strip
+    m = len(inner)
+    pos = np.zeros((m * 2, 3)); pos[:m, :2] = inner; pos[m:, :2] = outer; pos[:, 2] = h_med
+    idx = []
+    for i in range(m - 1):
+        idx += [[i, i + 1, m + i + 1], [i, m + i + 1, m + i]]
+    idx = np.asarray(idx, dtype=np.int64)
+    e1 = pos[idx[0, 1]] - pos[idx[0, 0]]; e2 = pos[idx[0, 2]] - pos[idx[0, 0]]
+    if np.cross(e1, e2)[2] < 0:
+        idx = idx[:, ::-1]
+    s = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(inner, axis=0), axis=1))])
+    uv = np.concatenate([np.column_stack([s, np.zeros(m)]), np.column_stack([s, np.full(m, thick)])]).astype(np.float32)
+    nrm = np.tile(np.array([0, 0, 1], np.float32), (m * 2, 1))
+    acc.add("curb", pos, idx, uv, np.tile(np.array(col, np.float32), (m * 2, 1)), nrm)
+
+
+def _add_rural_edges(ctx, road, T, B, owns, acc):
+    """Rural/mountain guard rails on steep drop-offs and limestone retaining walls on steep uphill cuts."""
+    import terrain
+    if not terrain.active():
+        return []
+    rail_boxes = []
+    x0, y0, x1, y1 = T.bounds
+    road_chk = road.buffer(0.15) if not road.is_empty else None
+    if road_chk is not None:
+        shapely.prepare(road_chk)
+    for ei in ctx.net.edges_in(B):
+        e = ctx.net.edges[ei]
+        if e["hw"] not in RURAL_EDGE_HW or e["L"] < 12.0:
+            continue
+        s0, s1 = min(e["ta"], 8.0), e["L"] - min(e["tb"], 8.0)
+        if s1 - s0 < 8.0:
+            continue
+        sub = substring(e["ls"], s0, s1)
+        c = densify(np.asarray(sub.coords)[:, :2], 4.0)
+        if len(c) < 3:
+            continue
+        t = np.zeros_like(c)
+        t[1:-1] = c[2:] - c[:-2]; t[0] = c[1] - c[0]; t[-1] = c[-1] - c[-2]
+        ln = np.linalg.norm(t, axis=1, keepdims=True); ln[ln < 1e-6] = 1.0
+        t /= ln
+        n_left = np.column_stack([-t[:, 1], t[:, 0]])
+        hw = e["w"] * 0.5
+
+        for side in (-1.0, 1.0):
+            out_n = n_left * side
+            ep = c + out_n * (hw + 0.55)
+            op = c + out_n * (hw + 5.5)
+            rp = c + out_n * (hw + 0.85)
+            h_e = terrain.H(ep[:, 0], ep[:, 1])
+            h_o = terrain.H(op[:, 0], op[:, 1])
+            h_nat = terrain.H_nat(op[:, 0], op[:, 1])
+            in_tile = (ep[:, 0] >= x0 - 4) & (ep[:, 0] <= x1 + 4) & (ep[:, 1] >= y0 - 4) & (ep[:, 1] <= y1 + 4)
+            clear = np.ones(len(c), dtype=bool)
+            if road_chk is not None and in_tile.any():
+                idx_t = np.nonzero(in_tile)[0]
+                clear[idx_t] = ~shapely.contains_xy(road_chk, ep[idx_t, 0], ep[idx_t, 1])
+
+            # Downhill steep drop-off -> W-beam guard rail + physics collider
+            is_drop = in_tile & clear & ((h_o < h_e - 1.25) | (h_nat < h_e - 1.8))
+            # Uphill steep cut -> limestone retaining wall
+            cut_h = np.maximum(h_o - h_e, h_nat - h_e)
+            is_cut = in_tile & clear & (~is_drop) & (cut_h > 2.2)
+
+            # Extract contiguous runs for guard rails (clipped to tile ownership on midpoints)
+            for mask, kind in ((is_drop, "rail"), (is_cut, "wall")):
+                k = 0
+                npts = len(mask)
+                while k < npts:
+                    if not mask[k]:
+                        k += 1; continue
+                    k0 = k
+                    while k < npts and mask[k]:
+                        k += 1
+                    if k - k0 < 2:
+                        continue
+                    pts_run = (ep if kind == "rail" else rp)[k0:k]
+                    nrm_run = out_n[k0:k]
+                    # Keep only segments whose midpoint belongs to this tile (no duplicate geometry across tile borders)
+                    mids = (pts_run[:-1] + pts_run[1:]) * 0.5
+                    own_seg = np.array([owns(m[0], m[1]) for m in mids])
+                    if not own_seg.any():
+                        continue
+                    # Split by ownership runs
+                    s_i = 0
+                    while s_i < len(own_seg):
+                        if not own_seg[s_i]:
+                            s_i += 1; continue
+                        s_a = s_i
+                        while s_i < len(own_seg) and own_seg[s_i]:
+                            s_i += 1
+                        sub_p = pts_run[s_a:s_i + 1]
+                        sub_n = nrm_run[s_a:s_i + 1]
+                        if kind == "rail":
+                            rail_boxes.extend(_guardrail_run(sub_p, sub_n, acc))
+                        else:
+                            _retaining_wall_run(sub_p, cut_h[k0 + s_a:k0 + s_i + 1] * 0.55, sub_n, acc)
+    return rail_boxes
+
+
+def make_far_terrain(ix, iy, ncells=8):
+    """Coarse distant terrain LOD mesh for rural/mountain tiles ({ix}_{iy}.far.glb): ncells x ncells grid aligned to the
+    exact tile edges so neighbouring far tiles meet with zero seams (128 tris, ~2 KB)."""
+    import terrain
+    if not terrain.active():
+        return []
+    x0, y0, x1, y1 = tile_bounds(ix, iy)
+    xs = np.linspace(x0, x1, ncells + 1)
+    ys = np.linspace(y0, y1, ncells + 1)
+    X, Y = np.meshgrid(xs, ys)
+    Z = terrain.H(X, Y)
+    gx, gy = terrain.grad(X.ravel(), Y.ravel())
+    tn = np.column_stack([-gx, -gy, np.ones(X.size)])
+    tn /= np.linalg.norm(tn, axis=1, keepdims=True)
+    pos = np.column_stack([X.ravel(), Y.ravel(), Z.ravel()])
+    uv = np.column_stack([X.ravel(), Y.ravel()]).astype(np.float32)
+    col = np.ones((X.size, 4), dtype=np.float32)
+
+    sea = terrain.sea_polygon()
+    in_sea = np.zeros(X.size, dtype=bool)
+    if not sea.is_empty:
+        shapely.prepare(sea)
+        in_sea = shapely.contains_xy(sea, X.ravel(), Y.ravel())
+    slvl = terrain.sea_level()
+
+    w = ncells + 1
+    ter_idx, wat_idx = [], []
+    for j in range(ncells):
+        for i in range(ncells):
+            a = j * w + i; b = a + 1; c = a + w; d = c + 1
+            for tri in ((a, b, d), (a, d, c)):
+                if in_sea[tri[0]] and in_sea[tri[1]] and in_sea[tri[2]]:
+                    wat_idx.append(tri)
+                else:
+                    ter_idx.append(tri)
+    meshes = []
+    if ter_idx:
+        meshes.append(Mesh("terrain", pos, np.asarray(ter_idx, dtype=np.int64), tn.astype(np.float32), uv, col))
+    if wat_idx:
+        wpos = pos.copy()
+        wpos[:, 2] = slvl
+        wnrm = np.tile(np.array([0.0, 0.0, 1.0], dtype=np.float32), (len(wpos), 1))
+        meshes.append(Mesh("water", wpos, np.asarray(wat_idx, dtype=np.int64), wnrm, uv, col))
+    return meshes
 
 
 # ---------------------------------------------------------------- the tile
@@ -461,7 +699,8 @@ def road_surface(drive_polys, park_lot, B):
         park_lot = [clean(p) for p in park_lot]
     road = unary_union(drive_polys) if drive_polys else Polygon()
     if not road.is_empty:
-        road = road.buffer(CORNER_R, quad_segs=5).buffer(-CORNER_R, quad_segs=5)
+        cr = 2.5 if RURAL else CORNER_R
+        road = road.buffer(cr, quad_segs=5).buffer(-cr, quad_segs=5)
         road = strip_small_holes(road, 60.0)
     if park_lot:
         road = unary_union([road] + [p.simplify(0.1) for p in park_lot])
@@ -487,7 +726,7 @@ def build_tile(ctx, ix, iy, debug=False):
     drive_polys, ped_polys, path_lines, park_p, plaza_p, water_p, pier_p, park_lot = [], [], [], [], [], [], [], []
     for r, g in roads:
         hw = r["hw"]
-        if r["tunnel"]:
+        if not RURAL and r["tunnel"]:
             continue
         if hw in DRIVE:
             drive_polys.append(road_poly(r, g))
@@ -503,6 +742,10 @@ def build_tile(ctx, ix, iy, debug=False):
         elif k == "water": water_p.append(g)
         elif k == "pier": pier_p.append(g)
         elif k == "parking": park_lot.append(g)
+    if RURAL and not ctx.sea.is_empty:
+        sp = ctx.sea.intersection(B)
+        if not sp.is_empty:
+            water_p.append(sp)
 
     if SNAP > 0.002:
         ped_polys = [clean(p) for p in ped_polys]   # drive_polys / park_lot: in road_surface
@@ -518,19 +761,6 @@ def build_tile(ctx, ix, iy, debug=False):
         wat = polyonly(wat.difference(unary_union(pier_p)))
     land = clean(land.difference(wat)) if not wat.is_empty else land
     water = clean(polyonly(B.difference(land)))
-
-    plaza = polyonly(unary_union(plaza_p + ped_polys).intersection(B)) if (plaza_p or ped_polys) else Polygon()
-    plaza = clean(plaza.simplify(0.08).intersection(land).difference(road))
-    park = polyonly(unary_union(park_p).intersection(B)) if park_p else Polygon()
-    park = clean(park.simplify(0.1).intersection(land).difference(plaza).difference(road))
-    sidewalk0 = clean(land.difference(road).difference(plaza).difference(park))
-    ext = road.buffer(KERB_TOP_W, join_style="mitre", mitre_limit=2.0) if not road.is_empty else Polygon()
-    ext = clean(ext)
-    raised0 = unary_union([sidewalk0, plaza, park])
-    curb_top = clean(ext.difference(road).intersection(raised0))
-    sidewalk = clean(sidewalk0.difference(ext))
-    plaza_r = clean(plaza.difference(ext))
-    park_r = clean(park.difference(ext))
 
     # --- baked edge darkening (gutter / kerb AO): bands near the road boundary get alpha from the distance to it
     segs = []
@@ -551,28 +781,63 @@ def build_tile(ctx, ix, iy, debug=False):
         if not inner.is_empty:
             acc.flat(mat, tri_geom(inner.intersection(T), z, None, color))
 
-    banded(road, afn_road, "road", 0.0)
-    banded(sidewalk, afn, "sidewalk", KERB_H)
-    acc.flat("plaza", tri_geom(plaza_r.intersection(T), KERB_H, afn))
-    acc.flat("grass", tri_geom(park_r.intersection(T), KERB_H))
-    acc.flat("curb", tri_geom(curb_top.intersection(T), KERB_H, None, (0.78, 0.78, 0.76)))
-    acc.flat("water", tri_geom(water.intersection(T), Z_WATER))
+    rail_boxes = []
+    if RURAL:
+        def _diff(a, b):
+            return a if (a.is_empty or b.is_empty) else clean(polyonly(a.difference(b)))
+        shoulder = clean(polyonly(road.buffer(1.5, quad_segs=2).difference(road).intersection(land))) if not road.is_empty else Polygon()
+        plaza = polyonly(unary_union(plaza_p + ped_polys).intersection(B)) if (plaza_p or ped_polys) else Polygon()
+        plaza = _diff(_diff(clean(polyonly(plaza.simplify(0.08).intersection(land))) if not plaza.is_empty else Polygon(), road), shoulder)
+        park = polyonly(unary_union(park_p).intersection(B)) if park_p else Polygon()
+        park = _diff(_diff(_diff(clean(polyonly(park.simplify(0.1).intersection(land))) if not park.is_empty else Polygon(), plaza), road), shoulder)
+        terrain_land = _diff(_diff(_diff(_diff(land, road), shoulder), plaza), park)
+        sidewalk = curb_top = Polygon()
+        plaza_r, park_r = plaza, park
 
-    # --- kerb faces: road boundary where it touches a raised surface (road is on the left of the oriented boundary)
-    if not road.is_empty:
-        zone = raised0.buffer(0.1)
-        for l in linesof(road.boundary.intersection(zone).intersection(T)):
-            w = wall_strip(l, 0.0, KERB_H, True, (0.82, 0.82, 0.8, 1.0))
-            if w:
-                acc.add("curb", w[0], w[1], w[2], w[3], w[4])
-    # --- sea wall / pond banks: raised boundary facing water
-    if not water.is_empty and not raised0.is_empty:
-        rz = clean(unary_union([orient(p, 1.0) for p in polys(raised0)]))
-        for l in linesof(rz.boundary.intersection(water.buffer(0.15)).intersection(T)):
-            for ll in (l,):
-                w = wall_strip(ll, Z_WATER - 0.1, KERB_H, False, (0.55, 0.55, 0.55, 1.0))   # raised surface is on the left, wall faces right (water)
+        banded(road, afn_road, "road", 0.0)
+        acc.flat("shoulder", tri_geom(shoulder.intersection(T), 0.0, afn))
+        acc.flat("terrain", tri_geom(terrain_land.intersection(T), 0.0))
+        acc.flat("plaza", tri_geom(plaza_r.intersection(T), 0.02, afn))
+        acc.flat("grass", tri_geom(park_r.intersection(T), 0.02))
+        acc.flat("water", tri_geom(water.intersection(T), 0.0))
+
+        rail_boxes = _add_rural_edges(ctx, road, T, B, owns, acc)
+    else:
+        plaza = polyonly(unary_union(plaza_p + ped_polys).intersection(B)) if (plaza_p or ped_polys) else Polygon()
+        plaza = clean(plaza.simplify(0.08).intersection(land).difference(road))
+        park = polyonly(unary_union(park_p).intersection(B)) if park_p else Polygon()
+        park = clean(park.simplify(0.1).intersection(land).difference(plaza).difference(road))
+        sidewalk0 = clean(land.difference(road).difference(plaza).difference(park))
+        ext = road.buffer(KERB_TOP_W, join_style="mitre", mitre_limit=2.0) if not road.is_empty else Polygon()
+        ext = clean(ext)
+        raised0 = unary_union([sidewalk0, plaza, park])
+        curb_top = clean(ext.difference(road).intersection(raised0))
+        sidewalk = clean(sidewalk0.difference(ext))
+        plaza_r = clean(plaza.difference(ext))
+        park_r = clean(park.difference(ext))
+
+        banded(road, afn_road, "road", 0.0)
+        banded(sidewalk, afn, "sidewalk", KERB_H)
+        acc.flat("plaza", tri_geom(plaza_r.intersection(T), KERB_H, afn))
+        acc.flat("grass", tri_geom(park_r.intersection(T), KERB_H))
+        acc.flat("curb", tri_geom(curb_top.intersection(T), KERB_H, None, (0.78, 0.78, 0.76)))
+        acc.flat("water", tri_geom(water.intersection(T), Z_WATER))
+
+        # --- kerb faces: road boundary where it touches a raised surface (road is on the left of the oriented boundary)
+        if not road.is_empty:
+            zone = raised0.buffer(0.1)
+            for l in linesof(road.boundary.intersection(zone).intersection(T)):
+                w = wall_strip(l, 0.0, KERB_H, True, (0.82, 0.82, 0.8, 1.0))
                 if w:
                     acc.add("curb", w[0], w[1], w[2], w[3], w[4])
+        # --- sea wall / pond banks: raised boundary facing water
+        if not water.is_empty and not raised0.is_empty:
+            rz = clean(unary_union([orient(p, 1.0) for p in polys(raised0)]))
+            for l in linesof(rz.boundary.intersection(water.buffer(0.15)).intersection(T)):
+                for ll in (l,):
+                    w = wall_strip(ll, Z_WATER - 0.1, KERB_H, False, (0.55, 0.55, 0.55, 1.0))   # raised surface is on the left, wall faces right (water)
+                    if w:
+                        acc.add("curb", w[0], w[1], w[2], w[3], w[4])
 
     # --- barriers: where the drivable area ends on the asphalt (bridges off the island, the area cities' limits) a concrete
     #     barrier stands across the road; buildings.py puts the matching invisible walls into col.json (tilelib.edge_walls)
@@ -585,17 +850,18 @@ def build_tile(ctx, ix, iy, debug=False):
             if l.length >= 0.8:
                 for g in barrier(l, D):
                     acc.add("curb", *g)
-        rest = edge.difference(road.buffer(0.6)) if not road.is_empty else edge
-        for l in linesof(rest):
-            if l.length >= 0.8:
-                for g in barrier(l, D, h=0.75, t=0.35):
-                    acc.add("curb", *g)
+        if not RURAL:
+            rest = edge.difference(road.buffer(0.6)) if not road.is_empty else edge
+            for l in linesof(rest):
+                if l.length >= 0.8:
+                    for g in barrier(l, D, h=0.75, t=0.35):
+                        acc.add("curb", *g)
 
     # --- park paths (footways inside parks)
     if path_lines and not park_r.is_empty:
         pp = unary_union([g.buffer(w / 2, quad_segs=2, cap_style="flat") for g, w in path_lines if g.intersects(park_r)])
         pp = clean(pp.intersection(park_r).simplify(0.05)) if not pp.is_empty else pp
-        acc.flat("plaza", tri_geom(pp.intersection(T), KERB_H + 0.012, None, (0.92, 0.9, 0.86)))
+        acc.flat("plaza", tri_geom(pp.intersection(T), (0.03 if RURAL else KERB_H + 0.012), None, (0.92, 0.9, 0.86)))
 
     # --- surface rail
     rails = [(r, g) for r, g in world.query("rails", B.bounds, margin=2) if r["kind"] in ("rail", "tram", "light_rail") and not r["tunnel"]]
@@ -610,12 +876,21 @@ def build_tile(ctx, ix, iy, debug=False):
         hw = e["hw"]
         if hw not in MARK_HW or e["L"] < 12:
             continue
-        s0, s1 = e["ta"], e["L"] - e["tb"]
+        s0, s1 = (min(e["ta"], 6.0), e["L"] - min(e["tb"], 6.0)) if RURAL else (e["ta"], e["L"] - e["tb"])
         if s1 - s0 < 8:
             continue
         sub = substring(e["ls"], s0, s1)
         c = densify(np.asarray(sub.coords)[:, :2], 4.0)
         w, n, ow = e["w"], e["lanes"], e["oneway"]
+        if RURAL:
+            if hw in RURAL_EDGE_HW:
+                # Mountain pass road markings: solid white edge lines on both sides + crisp white dashed centre line
+                edge_off = max(2.0, w * 0.5 - 0.28)
+                ribbon(offset_pts(c, edge_off), 0.12, Z_MARK, WHITE, owns, acc)
+                ribbon(offset_pts(c, -edge_off), 0.12, Z_MARK, WHITE, owns, acc)
+                if not ow and w >= 6.5:
+                    dashes(c, 0.0, 0.14, 4.0, 5.0, Z_MARK, WHITE, owns, acc)
+            continue
         park_w = 5.0 if hw in ("primary", "secondary", "tertiary", "residential", "unclassified") else 0.0
         tw = max(w - park_w, 3.0)
         lw = tw / n
@@ -635,31 +910,33 @@ def build_tile(ctx, ix, iy, debug=False):
         elif ow and n >= 2:
             for k in range(1, n):
                 dashes(c, (k - n / 2) * lw, 0.14, 3.0, 9.0, Z_MARK, WHITE, owns, acc)
-    for cx, cy, dx, dy, w, kind in net.crossings:
-        if not owns(cx, cy):
-            continue
-        d = np.array([dx, dy]); nn = np.array([-dy, dx]); c0 = np.array([cx, cy])
-        if kind == "cw":
-            hw_, dep = w / 2 - 0.25, 1.6
-            P = np.array([c0 - nn * hw_ - d * dep, c0 + nn * hw_ - d * dep, c0 + nn * hw_ + d * dep, c0 - nn * hw_ + d * dep])
-            pos = np.column_stack([P, np.full(4, Z_MARK)])
-            uv = np.array([[0, 0], [2 * hw_, 0], [2 * hw_, 2 * dep], [0, 2 * dep]], dtype=np.float32)   # local metres: u across, v along the road
-            acc.add("crosswalk", pos, np.array([[0, 2, 1], [0, 3, 2]]), uv, np.tile(np.array([1, 1, 1, 1], dtype=np.float32), (4, 1)))
-        else:
-            right = np.array([-dy, dx])      # right of the approaching traffic (heading -d)
-            if kind == "stop1":
-                a, b = -(w / 2 - 0.3), (w / 2 - 0.3)
+    if not RURAL:
+        for cx, cy, dx, dy, w, kind in net.crossings:
+            if not owns(cx, cy):
+                continue
+            d = np.array([dx, dy]); nn = np.array([-dy, dx]); c0 = np.array([cx, cy])
+            if kind == "cw":
+                hw_, dep = w / 2 - 0.25, 1.6
+                P = np.array([c0 - nn * hw_ - d * dep, c0 + nn * hw_ - d * dep, c0 + nn * hw_ + d * dep, c0 - nn * hw_ + d * dep])
+                pos = np.column_stack([P, np.full(4, Z_MARK)])
+                uv = np.array([[0, 0], [2 * hw_, 0], [2 * hw_, 2 * dep], [0, 2 * dep]], dtype=np.float32)   # local metres: u across, v along the road
+                acc.add("crosswalk", pos, np.array([[0, 2, 1], [0, 3, 2]]), uv, np.tile(np.array([1, 1, 1, 1], dtype=np.float32), (4, 1)))
             else:
-                a, b = 0.25, w / 2 - 0.3
-            sgn = 1.0
-            pa, pb = c0 + right * a * sgn, c0 + right * b * sgn
-            P = np.array([pa - d * 0.25, pb - d * 0.25, pb + d * 0.25, pa + d * 0.25])
-            pos = np.column_stack([P, np.full(4, Z_MARK)])
-            acc.add("marking", pos, np.array([[0, 2, 1], [0, 3, 2]]), P.astype(np.float32), np.tile(np.array(WHITE, dtype=np.float32), (4, 1)))
+                right = np.array([-dy, dx])      # right of the approaching traffic (heading -d)
+                if kind == "stop1":
+                    a, b = -(w / 2 - 0.3), (w / 2 - 0.3)
+                else:
+                    a, b = 0.25, w / 2 - 0.3
+                sgn = 1.0
+                pa, pb = c0 + right * a * sgn, c0 + right * b * sgn
+                P = np.array([pa - d * 0.25, pb - d * 0.25, pb + d * 0.25, pa + d * 0.25])
+                pos = np.column_stack([P, np.full(4, Z_MARK)])
+                acc.add("marking", pos, np.array([[0, 2, 1], [0, 3, 2]]), P.astype(np.float32), np.tile(np.array(WHITE, dtype=np.float32), (4, 1)))
 
     meshes = acc.meshes()
     graph = net.graph(T)
     graph["tile"] = [ix, iy]
+    info["rail_boxes"] = rail_boxes
     if debug:
         info["polys"] = {"curb": curb_top.intersection(T), "road": road.intersection(T), "sidewalk": sidewalk.intersection(T), "plaza": plaza_r.intersection(T), "park": park_r.intersection(T),
                          "water": water.intersection(T), "land": land.intersection(T), "T": T}
@@ -670,10 +947,11 @@ def write_tile(ctx, ix, iy, outdir):
     t = time.time()
     global SNAP
     meshes = None
+    info = {}
     for snap in (0.002, 0.02, 0.1):    # GEOS topology errors on bad OSM data: retry with all inputs snapped to a coarser grid
         SNAP = snap
         try:
-            meshes, graph, _ = build_tile(ctx, ix, iy)
+            meshes, graph, info = build_tile(ctx, ix, iy)
             break
         except Exception as ex:
             print(f"tile {ix},{iy} failed at snap {snap}: {ex!r}", flush=True)
@@ -687,9 +965,20 @@ def write_tile(ctx, ix, iy, outdir):
     tris = sum(len(m.idx) for m in meshes)
     if tris:
         size = write_glb(os.path.join(outdir, f"{name}.ground.glb"), meshes, (ix, iy), name)
+    if RURAL and terrain.active():
+        far_m = make_far_terrain(ix, iy)
+        if far_m:
+            write_glb(os.path.join(outdir, f"{name}.far.glb"), far_m, (ix, iy), name + "_far")
     os.makedirs(tilelib.GRAPH_DIR, exist_ok=True)
     with open(os.path.join(tilelib.GRAPH_DIR, f"{name}.graph.json"), "w") as f:
         json.dump(graph, f, separators=(",", ":"))
+    rails_p = os.path.join(tilelib.GRAPH_DIR, f"{name}.rails.json")
+    rail_boxes = info.get("rail_boxes") or []
+    if rail_boxes:
+        with open(rails_p, "w") as f:
+            json.dump(rail_boxes, f, separators=(",", ":"))
+    elif os.path.exists(rails_p):
+        os.remove(rails_p)
     return {"tile": (ix, iy), "tris": int(tris), "bytes": size, "secs": time.time() - t, "edges": len(graph["edges"])}
 
 
@@ -753,6 +1042,8 @@ def main():
         print(f"{len(res)}/{len(tiles)} tiles in {dt:.0f}s ({len(res) / dt:.2f} tiles/s); tris mean {np.mean(tr):.0f} max {max(tr)}; raw KB mean {np.mean(by) / 1024:.0f} max {max(by) / 1024:.0f}; total {sum(by) / 1e6:.1f} MB")
     if a.meshopt:
         meshopt_all(_OUT, [r["tile"] for r in res])
+        if RURAL:
+            meshopt_all(_OUT, [r["tile"] for r in res], ext="far")
 
 
 def meshopt_all(outdir, tiles, ext="ground", level=None):

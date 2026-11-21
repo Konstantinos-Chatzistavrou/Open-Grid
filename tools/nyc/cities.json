@@ -1276,5 +1276,102 @@
       3
     ],
     "billboards": 0.05
+  },
+  "crete": {
+    "name": "Crete",
+    "district": "Imbros Pass · Sfakia",
+    "country": "GR",
+    "origin": [
+      35.224,
+      24.1597
+    ],
+    "area": [
+      35.192,
+      24.128,
+      35.258,
+      24.18
+    ],
+    "fringe_m": 256,
+    "data": "assets_source/downloads/cities/crete",
+    "pbf": "sfakia_wide.osm.pbf",
+    "out": "web/public/assets/cities/crete/tiles",
+    "route": "web/public/data/tracks/crete_route.json",
+    "route_name": "Imbros Gorge Mountain Pass",
+    "route_closed": false,
+    "buildings": "osm",
+    "mask": "area",
+    "rural": true,
+    "dem": "copernicus_glo30",
+    "terrain_step": 4.0,
+    "terrain_open_m": 24,
+    "terrain_sigma_m": 8.0,
+    "grid_deg": 0,
+    "drive": "right",
+    "style": "crete",
+    "skip_elevated": false,
+    "floors": {
+      "default": 2,
+      "residential": 2,
+      "apartments": 2,
+      "house": 2,
+      "commercial": 2,
+      "office": 2,
+      "retail": 1,
+      "church": 2,
+      "industrial": 1
+    },
+    "widths": {
+      "primary": 9.0,
+      "secondary": 8.6,
+      "tertiary": 7.0,
+      "residential": 5.8,
+      "unclassified": 5.8,
+      "living_street": 5.0,
+      "service": 4.2
+    },
+    "spawn": [
+      35.25373,
+      24.1708,
+      "Imbros Village"
+    ],
+    "route_via": [
+      [
+        35.25373,
+        24.1708
+      ],
+      [
+        35.24303,
+        24.16432
+      ],
+      [
+        35.23228,
+        24.16053
+      ],
+      [
+        35.22014,
+        24.1618
+      ],
+      [
+        35.21188,
+        24.1592
+      ],
+      [
+        35.2053,
+        24.16321
+      ],
+      [
+        35.20119,
+        24.15225
+      ],
+      [
+        35.20085,
+        24.13811
+      ]
+    ],
+    "small_floors": [
+      80,
+      1
+    ],
+    "billboards": 0.0
   }
 }

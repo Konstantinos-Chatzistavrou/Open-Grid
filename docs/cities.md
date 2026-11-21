@@ -10,6 +10,7 @@ Since 2026-11-15 the game streams one of its real cities (17 since 2026-11-21), 
 | `paris` | Paris | Arc de Triomphe / Trocadéro to Notre-Dame | 40k | OSM tags (64 %), neighbours |
 | `tokyo` | Tokyo | Shibuya to Shinjuku (Harajuku, Yoyogi, Omotesando) | 48k | OSM tags (21 %), neighbours, typical floors (small lots 2-3 storeys) |
 | `losangeles` | Los Angeles | Downtown (Bunker Hill, Financial District, Broadway, Little Tokyo) | 9k | OSM tags (97 %, LA County import) |
+| `crete` | Crete — Imbros Pass | Imbros Village through Imbros Gorge & Komitades to Chora Sfakion (15.6 km pass, 17 hairpins) | 0.2k | OSM villages + Copernicus DEM GLO-30 (rural mountain mode) |
 
 The player picks the city on the Game Modes screen (`web/src/cities.ts`; the choice is kept on the device, `?city=<id>`
 overrides it for tests). Changing city reloads the game: tiles, colliders, routes and materials belong to one city.
@@ -75,6 +76,38 @@ How the stages use it:
 `terrain: false` keeps a city flat. Flat on purpose: Chicago, Miami, Amsterdam, Berlin and Singapore (a few metres of real
 relief; their surface-model data mostly measured the towers), and New York until Manhattan is rebuilt. Hilly by design:
 San Francisco (Nob Hill and Russian Hill, grades over 20 %) and Lisbon (Baixa between Chiado, the Bairro Alto and the castle).
+
+### Copernicus DEM GLO-30 and rural / mountain pass mode (2026-11-21)
+
+For dramatic mountain passes (`crete`: Imbros Pass in Sfakia, Crete, 15.6 km and 760 m drop down to the Libyan Sea),
+`tools/nyc/cities.json` supports two opt-in fields that leave every existing city unchanged when omitted:
+
+- `"dem": "copernicus_glo30"` — `tools/nyc/terrain.py` reads 1×1° Cloud Optimized GeoTIFF tiles directly (via pure-Python
+  `tools/nyc/geotiff.py`, no GDAL needed) from the AWS Registry of Open Data public bucket
+  (`https://registry.opendata.aws/copernicus-dem/`, `https://copernicus-dem-30m.s3.amazonaws.com/readme.html`).
+  Licence: *Licence for Copernicus DEM instance COP-DEM-GLO-30-F Global 30m Full, Free & Open — Licence for the use of the
+  Copernicus WorldDEM-30* (`https://spacedata.copernicus.eu/en/web/guest/collections/copernicus-digital-elevation-model/#Licencing`).
+  Required attribution (Article 6(b)): "produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence
+  and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved".
+  Required notice (Article 6(c)): "The organisations in charge of the Copernicus programme by law or by delegation do not
+  incur any liability for any use of the Copernicus WorldDEM-30".
+  Because GLO-30 is a Digital Surface Model (DSM), `terrain_open_m` (e.g. `24` m for rural Crete) still removes local
+  village/tree bumps without blunting steep gorge ridges. When elevation relief exceeds ±320 m, `terrain.bin` picks a
+  matching int16 `scale` (e.g. `0.025` m) and quantizes `terrain.npz` to the same step so visual draping and Rapier
+  heightfields agree identically.
+- `"rural": true` — mountain terrain (`terrain` procedural limestone/maquis material) is the primary ground surface
+  instead of urban concrete sidewalks and kerbs. `terrain.py` carves every drivable road corridor into a 4 m export grid
+  (longitudinal smoothing, portal-to-portal rock gallery interpolation, grade limiting, curvature-based superelevation
+  banking, flat shoulders, and uphill rock-cut / downhill fill embankments). `ground.py` adds gravel shoulders, white
+  edge lines, W-beam steel guard rails with retroreflective delineators (plus matching physics walls in `col.json`) on
+  steep drop-offs, limestone retaining walls on steep cuts, a sea coastline water mask from the DEM, and coarse 128-tri
+  distant terrain LOD meshes (`far.glb`). `props.py` keeps streetlights inside villages and scatters Mediterranean trees
+  on gentler slopes. `"route_closed": false` builds a point-to-point pass stage instead of a closed city loop.
+- Country-scale Geofabrik OSM extracts (e.g. `greece-latest.osm.pbf`, ODbL) are clipped to a regional box first with
+  `tools/nyc/cut_pbf.py`.
+- Optional manual workflow note: artists who want to inspect DEMs and OSM roads interactively in Blender can use the
+  third-party **Blender GIS** add-on as an external manual tool; note that Blender GIS is **GPL-3.0**, so none of its
+  code is ever added to or shipped with this Apache-2.0 repository.
 
 Route fix (same day): the tile road graphs store an edge's interior points only; build_index read them as the whole edge,
 so every route skipped its corner nodes and, where an interior point lay far from a corner, cut straight across a block

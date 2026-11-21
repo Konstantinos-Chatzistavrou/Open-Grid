@@ -304,11 +304,16 @@ CITY_PALETTES = {
               1: [(0.60, 0.59, 0.56), (0.54, 0.52, 0.48), (0.58, 0.54, 0.46), (0.42, 0.42, 0.43)],
               2: [(0.56, 0.56, 0.55), (0.40, 0.42, 0.44), (0.22, 0.24, 0.27), (0.58, 0.56, 0.52)],
               4: [(0.48, 0.47, 0.45), (0.40, 0.40, 0.41)]},
+    # Crete (Sfakia / Imbros): whitewashed Cretan plaster, warm cream/ochre stucco, pale mountain limestone
+    "crete": {0: [(0.74, 0.73, 0.70), (0.70, 0.66, 0.58), (0.66, 0.60, 0.48), (0.62, 0.58, 0.50)],
+              1: [(0.72, 0.70, 0.66), (0.68, 0.63, 0.54), (0.64, 0.56, 0.46)],
+              2: [(0.70, 0.68, 0.64), (0.62, 0.58, 0.50)],
+              4: [(0.58, 0.54, 0.46), (0.64, 0.60, 0.52)]},
 }
 # typical construction year by city (OSM rarely has start_date): spread around it per building
 CITY_YEAR = {"london": (1885, 45), "paris": (1868, 25), "tokyo": (1988, 18), "losangeles": (1955, 30),
              "chicago": (1925, 32), "miami": (1990, 18), "toronto": (1975, 30), "berlin": (1910, 40), "barcelona": (1895, 30),
-             "amsterdam": (1780, 70), "singapore": (1992, 16), "melbourne": (1930, 40), "madrid": (1910, 35), "seoul": (1997, 12), "sanfrancisco": (1915, 35), "lisbon": (1790, 60)}
+             "amsterdam": (1780, 70), "singapore": (1992, 16), "melbourne": (1930, 40), "madrid": (1910, 35), "seoul": (1997, 12), "sanfrancisco": (1915, 35), "lisbon": (1790, 60), "crete": (1965, 35)}
 OFFICE_CODES = {"office", "commercial", "hotel", "government", "bank"}
 HOUSE_CODES = {"house", "terrace", "detached", "semidetached_house", "townhouse", "residential", "apartments"}
 
@@ -842,6 +847,13 @@ def tile_walls(ix, iy):
         g = g.buffer(0) if not g.is_valid else g
         if a["kind"] == "water": water.append(g)
         elif a["kind"] == "pier": piers.append(g)
+    if tl.CITY.get("rural"):
+        import terrain
+        sea = terrain.sea_polygon()
+        if not sea.is_empty:
+            sp = sea.intersection(B)
+            if not sp.is_empty:
+                water.append(sp)
     land = _LAND.intersection(B)
     if piers:
         land = land.union(unary_union(piers).intersection(B))
@@ -851,12 +863,16 @@ def tile_walls(ix, iy):
             w = w.difference(unary_union(piers))
         land = land.difference(w)
     land = land.buffer(0)
-    if tl.drive_box() is None and land.contains(T):
-        return []
-    D = tl.drivable(land, asphalt(ix, iy), B)
-    if D.contains(T):
-        return []
-    return tl.edge_walls(D, T)
+    out = []
+    if not (tl.drive_box() is None and land.contains(T)):
+        D = tl.drivable(land, asphalt(ix, iy), B)
+        if not D.contains(T):
+            out = tl.edge_walls(D, T)
+    if tl.CITY.get("rural"):
+        rails_p = os.path.join(tl.GRAPH_DIR, f"{tl.tile_name(ix, iy)}.rails.json")
+        if os.path.exists(rails_p):
+            out = out + json.load(open(rails_p))
+    return out
 
 
 SINK = 0.5    # a building's ground ring goes this far below the lowest ground under it: planted on a slope, never floating
@@ -936,8 +952,12 @@ def build_tile(ix, iy, outdir, compress=True):
         build_building(Fa, p, it, k, lms.get(k), 0, far=True)
         _seat(Fa, marks, bases[k])
     far_path = os.path.join(outdir, f"{name}.far.glb")
-    res["far_tris"] = Fa["facade"].tris + Fa["roof"].tris
-    res["far_bytes"] = tl.write_glb(far_path, [m for m in (Fa["facade"].mesh(True), Fa["roof"].mesh(False)) if m], (ix, iy), name + "_far")
+    far_meshes = [m for m in (Fa["facade"].mesh(True), Fa["roof"].mesh(False)) if m]
+    if tl.CITY.get("rural"):
+        from ground import make_far_terrain
+        far_meshes = make_far_terrain(ix, iy) + far_meshes
+    res["far_tris"] = sum(len(m.idx) for m in far_meshes)
+    res["far_bytes"] = tl.write_glb(far_path, far_meshes, (ix, iy), name + "_far")
     # colliders: tiny neighbours merged into one box when they touch; none may reach onto the drawn road
     cols = []
     A = asphalt(ix, iy)

@@ -281,10 +281,92 @@ def vnoise(x, y, scale, seed):
 
 
 # --- the generator ------------------------------------------------------------------------------------------------------------------
+def gen_rural_tile(t, seed0):
+    """Rural/mountain pass props: village streetlights near buildings, occasional pass markers/lamps at hairpins,
+    OSM trees/benches, and scattered Mediterranean olive/pine trees on gentle hillsides (no urban clutter)."""
+    import terrain
+    O = t.out
+    x0, y0, x1, y1 = t.b
+    sea = terrain.sea_polygon()
+    if not sea.is_empty:
+        shapely.prepare(sea)
+    # Warm village streetlights near buildings + sparse warm mountain-pass lamps along main road (~140 m) for night depth
+    for ri, d in enumerate(t.roads):
+        if d["hw"] not in HOST or d["bridge"]:
+            continue
+        pts = d["pts"]; line = t.rlines[ri]; L = line.length
+        if L < 18:
+            continue
+        hw = t.rw[ri]
+        is_main = d["hw"] in ("primary", "secondary", "tertiary")
+        sp = 38.0 if t.bgeoms else (140.0 if is_main else 0.0)
+        if sp <= 0:
+            continue
+        n = max(1, int(round((L - 12.0) / sp)))
+        step = (L - 12.0) / n
+        for k in range(n):
+            s = 6.0 + step * (k + 0.5)
+            x, y, tx, ty = point_at(pts, s)
+            # Outside villages, place sparse lamps only on the main pass road
+            near_bld = t.btree is not None and len(t.btree.query(Point(x, y).buffer(55.0))) > 0
+            if not near_bld and not (is_main and k % 3 == 0):
+                continue
+            nx, ny = -ty, tx
+            side = 1.0 if (k % 2 == 0) else -1.0
+            lx, ly = x + nx * side * (hw + 1.35), y + ny * side * (hw + 1.35)
+            if not t.inside(lx, ly) or t.blocked(lx, ly, ri, d.get("name"), clear=1.5):
+                continue
+            if not sea.is_empty and sea.contains(Point(lx, ly)):
+                continue
+            O["lamp"].append([lx, ly, math.atan2(-ny * side, -nx * side)])
+
+    # OSM trees & village benches
+    for d, g in t.w.query("nodes", t.b, 2.0):
+        x, y = d["x"], d["y"]
+        if not t.inside(x, y):
+            continue
+        if d["kind"] == "tree" and not t.blocked(x, y, clear=2.5, bld=True):
+            O["tree"].append([x, y, hf(seed0, int(x * 10), int(y * 10), 1) * 6.283, 0.85 + 0.35 * hf(seed0, int(x * 10), int(y * 10), 2)])
+
+    # Scattered Mediterranean olive / pine trees on gentler mountain hillsides (kept off roads, sea, cliffs and buildings)
+    slvl = terrain.sea_level()
+    cell = 28.0
+    gx0, gy0 = int(math.floor(x0 / cell)), int(math.floor(y0 / cell))
+    gx1, gy1 = int(math.floor(x1 / cell)), int(math.floor(y1 / cell))
+    for gx in range(gx0, gx1 + 1):
+        for gy in range(gy0, gy1 + 1):
+            tx = (gx + 0.15 + 0.7 * hf(seed0, gx, gy, 11)) * cell
+            ty = (gy + 0.15 + 0.7 * hf(seed0, gx, gy, 12)) * cell
+            if not t.inside(tx, ty):
+                continue
+            if hf(seed0, gx, gy, 13) > 0.42:
+                continue
+            if not sea.is_empty and sea.contains(Point(tx, ty)):
+                continue
+            if terrain.active():
+                hz = terrain.H(tx, ty)
+                if hz < slvl + 6.0:
+                    continue
+                dx, dy = terrain.grad(tx, ty, e=2.0)
+                if math.hypot(float(dx), float(dy)) > 0.42:
+                    continue        # keep bare rocky cliffs free of trees
+            if t.blocked(tx, ty, clear=4.5, bld=True):
+                continue
+            O["tree"].append([tx, ty, hf(seed0, gx, gy, 14) * 6.283, 0.75 + 0.45 * hf(seed0, gx, gy, 15)])
+
+    for k in ("lamp", "tree"):
+        O[k] = [r for r in (t.off_road(k, v) for v in O[k]) if r is not None and x0 <= r[0] < x1 and y0 <= r[1] < y1]
+    if len(O["tree"]) > 28:
+        O["tree"] = O["tree"][:28]
+    return O
+
+
 def gen_tile(world, ix, iy, debug=False):
     t = Tile(world, ix, iy)
     O = t.out
     seed0 = ix * 7919 + iy * 104729
+    if T.CITY.get("rural"):
+        return gen_rural_tile(t, seed0)
     if T.CITY_ID == "nyc":
         mid_zone = abs(ix * 256 + 128) < 1500 and -1200 < iy * 256 + 128 < 2200       # Midtown: steam stacks, scaffolds, shop signs
     else:   # other cities: the busy centre gets the shop signs and scaffolds; steam stacks are a New York thing
@@ -751,7 +833,14 @@ def main():
     global _WORLD
     world = _WORLD = T.World()
     if a.all:
-        tiles = sorted(world.tiles_with_content())
+        if T.CITY.get("rural"):
+            import glob
+            tiles = sorted(
+                tuple(int(v) for v in os.path.basename(f).split(".")[0].split("_"))
+                for f in glob.glob(os.path.join(a.out, "*.ground.glb"))
+            )
+        else:
+            tiles = sorted(world.tiles_with_content())
     elif a.box:
         i0, i1, j0, j1 = a.box
         tiles = [(i, j) for i in range(i0, i1 + 1) for j in range(j0, j1 + 1)]

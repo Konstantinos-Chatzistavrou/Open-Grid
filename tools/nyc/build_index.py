@@ -50,10 +50,12 @@ def build_index():
             except ValueError:
                 pass
 
+    import terrain
     total_blds = 0
     for ix, iy, k in sorted(keys):
         x0, y0, x1, y1 = ix * TILE, iy * TILE, (ix + 1) * TILE, (iy + 1) * TILE
-        zmax = 30.0
+        zmin, zmax = terrain.tile_z_range(ix, iy) if terrain.active() else (0.0, 0.0)
+        zmax = max(zmax + 20.0, 30.0)
         files = []
         bytes_map = {}
         for ext in ("ground.glb", "bld.glb", "far.glb", "col.json", "props.json"):
@@ -84,7 +86,8 @@ def build_index():
         tiles[k] = {
             "files": files,
             "bytes": bytes_map,
-            "bbox": [round(x0, 1), round(y0, 1), round(x1, 1), round(y1, 1), round(zmax, 1)],
+            "bbox": [round(x0, 1), round(y0, 1), round(x1, 1), round(y1, 1), round(zmax, 1)]
+            + ([round(zmin, 1)] if terrain.active() and zmin < -4.0 else []),
         }
 
     # Find best spawn on 7th Avenue looking south-southwest straight through the Times Square bowtie (tile 0_0)
@@ -235,8 +238,10 @@ def build_route(spawn):
         (160.0, 240.0),
     ] if IS_NYC else [(spawn["x"], spawn["y"])] + [to_frame(a, b) for a, b in tl.CITY["route_via"][1:]]
     wp_nodes = [nearest_node(x, y) for x, y in waypoints]
+    is_closed = bool(tl.CITY.get("route_closed", True))
+    n_legs = len(wp_nodes) if is_closed else max(0, len(wp_nodes) - 1)
     raw_pts, raw_w = [], []
-    for i in range(len(wp_nodes)):
+    for i in range(n_legs):
         u = wp_nodes[i]
         v = wp_nodes[(i + 1) % len(wp_nodes)]
         seg = dijkstra(u, v)
@@ -244,8 +249,9 @@ def build_route(spawn):
             print(f"WARNING route leg {i}: no street path between waypoints {waypoints[i]} and {waypoints[(i + 1) % len(waypoints)]}")
         for a_, b_, _, _ in seg:
             used.add((min(a_, b_), max(a_, b_)))
-        for _, _, pts, w in seg:
-            for p in pts[:-1]:
+        for si, (_, _, pts, w) in enumerate(seg):
+            end_pts = pts if (not is_closed and i == n_legs - 1 and si == len(seg) - 1) else pts[:-1]
+            for p in end_pts:
                 if not raw_pts or math.hypot(p[0] - raw_pts[-1][0], p[1] - raw_pts[-1][1]) > 0.5:
                     raw_pts.append((float(p[0]), float(p[1])))
                     raw_w.append(float(w))
@@ -255,10 +261,10 @@ def build_route(spawn):
         raw_pts = waypoints
         raw_w = [18.0] * len(raw_pts)
 
-    # Resample closed loop every ~8 metres with smooth headings
-    closed = raw_pts + [raw_pts[0]]
+    # Resample loop (or point-to-point stage when route_closed=False) every ~8 metres with smooth headings
+    closed = raw_pts + ([raw_pts[0]] if is_closed else [])
     cum = [0.0]
-    for i in range(len(raw_pts)):
+    for i in range(len(closed) - 1):
         dx = closed[i + 1][0] - closed[i][0]
         dy = closed[i + 1][1] - closed[i][1]
         cum.append(cum[-1] + math.hypot(dx, dy))
@@ -268,32 +274,33 @@ def build_route(spawn):
     samples = []
     idx = 0
     for k in range(n_samples):
-        s = (k * total_len) / n_samples
+        s = (k * total_len) / (n_samples if is_closed else max(1, n_samples - 1))
         while idx + 1 < len(cum) - 1 and cum[idx + 1] < s:
             idx += 1
         seg_len = max(1e-6, cum[idx + 1] - cum[idx])
         t = (s - cum[idx]) / seg_len
         x = closed[idx][0] + t * (closed[idx + 1][0] - closed[idx][0])
         y = closed[idx][1] + t * (closed[idx + 1][1] - closed[idx][1])
+        w_here = raw_w[min(idx, len(raw_w) - 1)]
         samples.append({
             "x": round(x, 2),
             "y": round(y, 2),
             "z": round(float(terrain.H(x, y)), 2),     # the road's real height (0 in a flat city): checkpoints, lanes, cops
             "heading": 0.0,
             "curvature": 0.0,
-            "width_left": round(max(3.0, raw_w[idx] / 2), 1) if not IS_NYC else 9.0,
-            "width_right": round(max(3.0, raw_w[idx] / 2), 1) if not IS_NYC else 9.0,
+            "width_left": round(max(3.0, w_here / 2), 1) if not IS_NYC else 9.0,
+            "width_right": round(max(3.0, w_here / 2), 1) if not IS_NYC else 9.0,
         })
 
     for k in range(n_samples):
-        nxt = samples[(k + 1) % n_samples]
-        prv = samples[(k - 1) % n_samples]
+        nxt = samples[(k + 1) % n_samples] if is_closed else samples[min(n_samples - 1, k + 1)]
+        prv = samples[(k - 1) % n_samples] if is_closed else samples[max(0, k - 1)]
         samples[k]["heading"] = round(math.atan2(nxt["y"] - prv["y"], nxt["x"] - prv["x"]), 4)
 
     route = {
         "schema": "route/1",
-        "name": "Midtown Manhattan Circuit" if IS_NYC else f"{tl.CITY['name']} Street Circuit",
-        "closed": True,
+        "name": "Midtown Manhattan Circuit" if IS_NYC else tl.CITY.get("route_name", f"{tl.CITY['name']} Street Circuit"),
+        "closed": is_closed,
         "units": "SI (m, rad); Z-up right-handed",
         "length_m": round(total_len, 2),
         "samples": samples,
