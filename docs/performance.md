@@ -420,3 +420,24 @@ each pipeline also costs driver time, which is why the pipeline column matters m
 potato start: 15.2 MB uncompressed in 183 requests (the 6.3 MB script is 2.3 MB gzipped), down from 18.7 MB.
 NOT measured: a real phone.
 
+
+## City frame GPU breakdown (2026-11-21)
+
+Paris street view (photo mode, static camera), ultra, laptop iGPU, GPU timestamps, median of 6 s, hiding one ingredient
+at a time in the same session (run-to-run noise about +-0.5 ms):
+
+| hidden | GPU ms | share |
+|---|---|---|
+| nothing (baseline) | 17.8 - 18.4 | |
+| near facade material (`nyc-facade`) | 12.8 | ~5 ms |
+| all street props (`nyc_props`) | 13.8 | ~4.2 ms |
+| - the low-poly trees beyond the photoreal range (~1,000 instances) | 15.3 | ~3 ms |
+| - photoreal near tree leaves (22 trees) | 16.5 | ~1.8 ms |
+| ground (roads, sidewalks ...) | 16.3 | ~1.7 ms |
+| far facades, roofs | ~18 | ~0 |
+
+Tried, no measurable change (kept only where the picture is identical): the facade room trace only where glass shows;
+96 sub-pixel guard triangles off each low-poly tree (440 -> 344); street props drawn after the city (early-Z).
+Next levers, each structural: per-instance GPU culling of the low-poly trees (every instance is processed today, also
+behind the camera; must serve the mirror and probe passes too); a cheaper facade path for the pixels where its
+interior / reflection detail has faded (dfade); then the CPU-side ones above (merged wheels, instanced AI cars).

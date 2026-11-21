@@ -356,7 +356,9 @@ function facadeGraph() {
   // munt, shopGlass, sign, frame, gAA) and the sign atlas UV gradients are materialized as vars before them, and the
   // atlas is read with explicit gradients. Inputs shared by both branches are vars too, so they are computed once.
   // The room trace only shows through glass: both emissive terms are multiplied by the window, shop-glass or sign
-  // coverage, so where all three are 0 (solid wall, most of a facade) they are exactly 0 and the trace is skipped.
+  // coverage, so where all three are 0 (solid wall) they are exactly 0 and the trace is skipped. Measured 2026-11-21
+  // (Paris street, ultra, 4 alternating runs): 18.0 ms GPU either way - window and wall pixels share GPU warps, so the
+  // branch saves nothing measurable here; kept because the picture is identical and it cannot cost more.
   const emissiveSplit = Fn(() => {
     const rbu = rbU.toVar(), rbv = rbV.toVar(), rbd = rbD.toVar(), rxv = rayX.toVar(), ryv = rayY.toVar(), rzv = rayZ.toVar();
     const glassHere = max(win, max(shopGlass, sign)).toVar();
