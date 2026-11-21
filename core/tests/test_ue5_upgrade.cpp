@@ -5,10 +5,13 @@
 //   4. Physical Starter Motor Cranking from Stall
 //   5. 3-Ray Circular-Arc Tire Contact Patch Curb Climbing vs Single Ray
 #include <cmath>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include "harness.hpp"
 #include "rs/config.hpp"
 #include "rs/sim.hpp"
+#include "rs/ue5_bridge.hpp"
 #include "rs/vehicle.hpp"
 
 RS_TEST(ue5_upgrade) {
@@ -518,5 +521,143 @@ RS_TEST(ue5_upgrade) {
         TireForces tf_gyro = magic_formula(tp, 0.0, 0.04, 4200.0, 1.0, 0.02, op_gyro);
         test::check("PAC2002 QTZ1=0.2 & MBELT=5.4kg generate gyroscopic steel-belt precession torque M_z,gyr under bump camber rate at speed",
                     std::abs(tf_gyro.mz - tf_no_gyro.mz) > 20.0);
+    }
+
+    // 19. UE 5.8 UOpenGridVehicleComponent (FOpenGridWheelState, Telemetry, Async Wheel Pose Interpolation) &
+    //     AOpenGridCarPawn (6-Zone Crash Morph Weights & Modular Visual Mods)
+    {
+        Simulation sim_ue(cfg, flat);
+        sim_ue.use_contact_patch = true;
+        sim_ue.vehicle.unsprung_dynamics_enabled = true;
+        sim_ue.vehicle.tire_zones_enabled = true;
+        sim_ue.reset({}, 0.0, 42.0, 4);
+
+        DriverInput corner_in;
+        corner_in.throttle = 0.85;
+        corner_in.steer = 0.25;
+        corner_in.gear = 4;
+        corner_in.auto_clutch = true;
+
+        rt::StepRecord prev_rec{}, curr_rec{};
+        for (int i = 0; i < 30; ++i) {
+            prev_rec.tick = static_cast<std::uint64_t>(i);
+            prev_rec.dt = sim_ue.dt;
+            prev_rec.chassis = sim_ue.body.state;
+            prev_rec.out = sim_ue.last;
+            for (int w = 0; w < 4; ++w) {
+                prev_rec.spin[w] = std::fmod(curr_rec.spin[w], 2.0 * kPi);
+            }
+            sim_ue.step(corner_in);
+            curr_rec.tick = static_cast<std::uint64_t>(i + 1);
+            curr_rec.dt = sim_ue.dt;
+            curr_rec.chassis = sim_ue.body.state;
+            curr_rec.out = sim_ue.last;
+            for (int w = 0; w < 4; ++w) {
+                curr_rec.spin[w] = std::fmod(prev_rec.spin[w] + sim_ue.last.wheels[w].angular_velocity * sim_ue.dt, 2.0 * kPi);
+            }
+        }
+
+        // Game-thread interpolated chassis halfway between prev_rec.chassis and curr_rec.chassis
+        ChassisState render_chassis = prev_rec.chassis;
+        render_chassis.position = lerp(prev_rec.chassis.position, curr_rec.chassis.position, 0.6);
+        render_chassis.orientation = nlerp(prev_rec.chassis.orientation, curr_rec.chassis.orientation, 0.6);
+        const double alpha = ue5::compute_render_alpha(prev_rec.chassis, curr_rec.chassis, render_chassis);
+        test::check("UE 5.8 render alpha recovers exact 0.60 interpolation fraction between StepRecords",
+                    std::abs(alpha - 0.6) < 1e-3);
+
+        Vec3 interp_center_m{};
+        double interp_steer = 0.0, interp_spin = 0.0, interp_toe = 0.0, interp_camber = 0.0;
+        ue5::interpolate_wheel_pose(prev_rec, curr_rec, render_chassis, alpha, FL,
+                                    interp_center_m, interp_steer, interp_spin, interp_toe, interp_camber);
+
+        // Verify zero longitudinal wheel lag relative to render_chassis (vs un-interpolated curr_rec.out.wheels[FL].centre_world)
+        const Vec3 local_on_render = render_chassis.orientation.inv_rotate(interp_center_m - render_chassis.position);
+        const Vec3 local_truth = curr_rec.chassis.orientation.inv_rotate(
+            curr_rec.out.wheels[FL].centre_world - curr_rec.chassis.position);
+        test::check("UE 5.8 interpolated wheel pose eliminates 1-step longitudinal chassis lag (< 0.1 mm error)",
+                    std::abs(local_on_render.x - local_truth.x) < 1e-4 &&
+                    std::abs(local_on_render.y - local_truth.y) < 1e-4);
+
+        const ue5::UeWheelState ws = ue5::make_ue_wheel_state(
+            curr_rec.out.wheels[FL], cfg.tire(FL).radius, interp_center_m,
+            interp_steer, interp_spin, interp_toe, interp_camber);
+        test::check("FOpenGridWheelState populates kinematicCaster/KPI/Scrub/MotionRatio & 3-node InnerAir/Flash/CavityRingGain",
+                    ws.in_contact &&
+                    std::abs(ws.caster_angle_deg) > 1.0f &&
+                    std::abs(ws.kpi_angle_deg) > 1.0f &&
+                    std::isfinite(ws.toe_angle_deg) &&
+                    std::isfinite(ws.scrub_radius_cm) &&
+                    ws.motion_ratio > 0.3f && ws.motion_ratio < 1.8f &&
+                    ws.inner_air_temp_c > 20.0f &&
+                    ws.flash_temp_c >= ws.surface_temp_c - 1.0f &&
+                    ws.cavity_ring_gain >= 0.0f && ws.cavity_ring_gain <= 1.0f);
+
+        const float roll_front_cm = static_cast<float>(curr_rec.out.roll_centre_front_m * 100.0);
+        const float roll_rear_cm = static_cast<float>(curr_rec.out.roll_centre_rear_m * 100.0);
+        const float exhaust_hz = static_cast<float>(curr_rec.out.engine_rpm * 6.0 / 120.0);
+        const float whine_hz = ue5::compute_gear_whine_hz(curr_rec.out, cfg);
+        test::check("UOpenGridVehicleComponent telemetry computes RollCentreCm, Clutch/Gearbox health, ExhaustPrimaryHz & GearWhineHz",
+                    std::isfinite(roll_front_cm) && std::isfinite(roll_rear_cm) &&
+                    curr_rec.out.clutch_temp_c >= 20.0 &&
+                    curr_rec.out.clutch_health > 0.5 && curr_rec.out.gearbox_health > 0.5 &&
+                    exhaust_hz > 100.0f && whine_hz > 250.0f);
+
+        // Inflict front + left crashes and verify AOpenGridCarPawn::GetCrushMorphWeights (6 directional morph targets in 0..1)
+        sim_ue.vehicle.add_contact(701, {2.15, 0.0, 0.45}, 24000.0); // front-center hit -> front & hood crush
+        sim_ue.vehicle.add_contact(702, {0.10, 0.90, 0.45}, 16000.0); // left flank hit -> left & top crush
+        sim_ue.step(corner_in);
+        const ue5::UeCrushMorphWeights morph = ue5::compute_crush_morph_weights(sim_ue.last.damage);
+        test::check("AOpenGridCarPawn GetCrushMorphWeights computes 6 normalized directional crash morph weights in [0, 1]",
+                    morph.crush_front > 0.25f && morph.crush_front <= 1.0f &&
+                    morph.crush_hood > 0.30f && morph.crush_hood <= 1.0f &&
+                    morph.crush_left > 0.15f && morph.crush_left <= 1.0f &&
+                    morph.crush_top > 0.04f && morph.crush_top <= 1.0f &&
+                    morph.crush_rear >= 0.0f && morph.crush_rear <= 1.0f &&
+                    morph.crush_right >= 0.0f && morph.crush_right <= 1.0f);
+
+        // Verify UE 5.8 C++ headers declare all required UPROPERTY fields and helpers
+        auto read_file_text = [](const std::string& path) {
+            std::ifstream f(path);
+            std::ostringstream ss;
+            ss << f.rdbuf();
+            return ss.str();
+        };
+        const std::string comp_h = read_file_text(
+            std::string(RS_DATA_DIR) + "/../ue5_plugin/OpenGridPhysics/Source/OpenGridPhysics/Public/OpenGridVehicleComponent.h");
+        const std::string pawn_h = read_file_text(
+            std::string(RS_DATA_DIR) + "/../ue5/Source/OpenGrid/OpenGridCarPawn.h");
+        test::check("OpenGridVehicleComponent.h declares FOpenGridWheelState & new telemetry/event UPROPERTY fields",
+                    comp_h.find("struct OPENGRIDPHYSICS_API FOpenGridWheelState") != std::string::npos &&
+                    comp_h.find("ToeAngleDeg") != std::string::npos &&
+                    comp_h.find("CasterAngleDeg") != std::string::npos &&
+                    comp_h.find("KpiAngleDeg") != std::string::npos &&
+                    comp_h.find("ScrubRadiusCm") != std::string::npos &&
+                    comp_h.find("MotionRatio") != std::string::npos &&
+                    comp_h.find("InnerAirTempC") != std::string::npos &&
+                    comp_h.find("FlashTempC") != std::string::npos &&
+                    comp_h.find("FlatSpotDepthMm") != std::string::npos &&
+                    comp_h.find("CavityRingGain") != std::string::npos &&
+                    comp_h.find("RollCentreFrontCm") != std::string::npos &&
+                    comp_h.find("RollCentreRearCm") != std::string::npos &&
+                    comp_h.find("ClutchTempC") != std::string::npos &&
+                    comp_h.find("ClutchHealth") != std::string::npos &&
+                    comp_h.find("GearboxHealth") != std::string::npos &&
+                    comp_h.find("MissedShifts") != std::string::npos &&
+                    comp_h.find("bMissedShiftEvent") != std::string::npos &&
+                    comp_h.find("ExhaustPrimaryHz") != std::string::npos &&
+                    comp_h.find("GearWhineHz") != std::string::npos &&
+                    comp_h.find("OnMissedShiftCount") != std::string::npos &&
+                    comp_h.find("LastMissedShiftTime") != std::string::npos &&
+                    comp_h.find("bBackfireActive") != std::string::npos &&
+                    comp_h.find("bScrapeActive") != std::string::npos);
+        test::check("OpenGridCarPawn.h declares modular visual mod meshes, ApplyVisualMods, DeformableBodyMesh & GetCrushMorphWeights",
+                    pawn_h.find("WidebodyMesh") != std::string::npos &&
+                    pawn_h.find("WingMesh") != std::string::npos &&
+                    pawn_h.find("SplitterMesh") != std::string::npos &&
+                    pawn_h.find("DiffuserMesh") != std::string::npos &&
+                    pawn_h.find("SkirtsMesh") != std::string::npos &&
+                    pawn_h.find("ApplyVisualMods") != std::string::npos &&
+                    pawn_h.find("DeformableBodyMesh") != std::string::npos &&
+                    pawn_h.find("GetCrushMorphWeights") != std::string::npos);
     }
 }

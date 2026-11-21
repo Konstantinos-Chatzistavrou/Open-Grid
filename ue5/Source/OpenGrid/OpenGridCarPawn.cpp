@@ -3,9 +3,11 @@
 
 #include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -47,6 +49,25 @@ AOpenGridCarPawn::AOpenGridCarPawn()
         BodyMesh->SetRelativeScale3D(FVector(4.4f, 1.85f, 0.75f));   // 4.4 x 1.85 x 0.75 m
         BodyMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 20.0f));
     }
+
+    DeformableBodyMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("DeformableBodyMesh"));
+    DeformableBodyMesh->SetupAttachment(Chassis);
+    DeformableBodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    DeformableBodyMesh->SetVisibility(false);
+
+    auto MakeModPart = [&](const TCHAR* Name) -> UStaticMeshComponent*
+    {
+        UStaticMeshComponent* Part = CreateDefaultSubobject<UStaticMeshComponent>(Name);
+        Part->SetupAttachment(BodyMesh);
+        Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        Part->SetVisibility(false);
+        return Part;
+    };
+    WidebodyMesh = MakeModPart(TEXT("WidebodyMesh"));
+    WingMesh = MakeModPart(TEXT("WingMesh"));
+    SplitterMesh = MakeModPart(TEXT("SplitterMesh"));
+    DiffuserMesh = MakeModPart(TEXT("DiffuserMesh"));
+    SkirtsMesh = MakeModPart(TEXT("SkirtsMesh"));
 
     static const TCHAR* WheelNames[4] = {TEXT("WheelFL"), TEXT("WheelFR"), TEXT("WheelRL"), TEXT("WheelRR")};
     static const TCHAR* CaliperNames[4] = {TEXT("CaliperFL"), TEXT("CaliperFR"), TEXT("CaliperRL"), TEXT("CaliperRR")};
@@ -109,7 +130,17 @@ void AOpenGridCarPawn::BeginPlay()
         {
             BodyMesh->SetRelativeScale3D(FVector(Extent.X * 2.0 / 100.0, Extent.Y * 2.0 / 100.0, 0.75));
         }
+        if (DeformableBodyMesh && DeformableBodyMeshAsset)
+        {
+            DeformableBodyMesh->SetSkeletalMeshAsset(DeformableBodyMeshAsset);
+            DeformableBodyMesh->SetRelativeScale3D(FVector::OneVector);
+            DeformableBodyMesh->SetRelativeLocation(FVector::ZeroVector - V.CgInModelCm);
+            DeformableBodyMesh->SetRelativeRotation(BodyMeshRotation);
+            DeformableBodyMesh->SetVisibility(true);
+            BodyMesh->SetVisibility(false);
+        }
     }
+    ApplyVisualMods();
     for (int32 i = 0; i < 4 && i < WheelMeshes.Num(); ++i)
     {
         if (WheelMeshes[i]) Wheels[i]->SetStaticMesh(WheelMeshes[i]);
@@ -250,7 +281,85 @@ void AOpenGridCarPawn::Tick(float DeltaSeconds)
     Vehicle->HandbrakeInput = FMath::Clamp(ActionValue(Handbrake), 0.0f, 1.0f);
 
     PlaceWheels();
+    UpdateCrushMorphTargets();
     if (bShowDebugHud) DrawHud();
+}
+
+void AOpenGridCarPawn::ApplyVisualMods()
+{
+    struct FModSlot
+    {
+        UStaticMeshComponent* Comp;
+        UStaticMesh* Asset;
+        const TCHAR* SocketName;
+    };
+    const FModSlot Slots[] = {
+        {WidebodyMesh.Get(), WidebodyMeshAsset.Get(), NAME_None},
+        {WingMesh.Get(), WingMeshAsset.Get(), TEXT("SOCKET_Wing")},
+        {SplitterMesh.Get(), SplitterMeshAsset.Get(), TEXT("SOCKET_Splitter")},
+        {DiffuserMesh.Get(), DiffuserMeshAsset.Get(), TEXT("SOCKET_Diffuser")},
+        {SkirtsMesh.Get(), SkirtsMeshAsset.Get(), TEXT("SOCKET_Skirts")},
+    };
+    USceneComponent* ParentComp = (DeformableBodyMesh && DeformableBodyMesh->IsVisible())
+                                      ? static_cast<USceneComponent*>(DeformableBodyMesh.Get())
+                                      : static_cast<USceneComponent*>(BodyMesh.Get());
+    for (const FModSlot& S : Slots)
+    {
+        if (!S.Comp) continue;
+        if (S.Asset)
+        {
+            const FName Socket(S.SocketName);
+            const FName AttachSocket = (ParentComp && Socket != NAME_None && ParentComp->DoesSocketExist(Socket))
+                                           ? Socket
+                                           : NAME_None;
+            if (ParentComp)
+            {
+                S.Comp->AttachToComponent(ParentComp, FAttachmentTransformRules::SnapToTargetNotIncludingScale, AttachSocket);
+            }
+            S.Comp->SetStaticMesh(S.Asset);
+            S.Comp->SetRelativeLocation(FVector::ZeroVector);
+            S.Comp->SetRelativeRotation(FRotator::ZeroRotator);
+            S.Comp->SetRelativeScale3D(FVector::OneVector);
+            S.Comp->SetVisibility(true);
+        }
+        else
+        {
+            S.Comp->SetStaticMesh(nullptr);
+            S.Comp->SetVisibility(false);
+        }
+    }
+}
+
+FOpenGridCrushMorphWeights AOpenGridCarPawn::GetCrushMorphWeights() const
+{
+    if (!Vehicle) return FOpenGridCrushMorphWeights{};
+    const TArray<float> Zones = Vehicle->GetZoneDamage();
+    std::array<double, 4> ZoneArr{0.0, 0.0, 0.0, 0.0};
+    for (int32 i = 0; i < 4 && i < Zones.Num(); ++i) ZoneArr[i] = Zones[i];
+    std::array<double, 8> NodeArr{};
+    for (int32 i = 0; i < 8 && i < Vehicle->CrushNodeWeights.Num(); ++i) NodeArr[i] = Vehicle->CrushNodeWeights[i];
+    const rs::ue5::UeCrushMorphWeights Computed = rs::ue5::compute_crush_morph_weights(
+        ZoneArr, NodeArr, Vehicle->bHoodUnlatched, static_cast<double>(Vehicle->CrushMorphWeights.crush_top));
+    FOpenGridCrushMorphWeights Out;
+    Out.crush_front = Computed.crush_front;
+    Out.crush_rear = Computed.crush_rear;
+    Out.crush_left = Computed.crush_left;
+    Out.crush_right = Computed.crush_right;
+    Out.crush_top = Computed.crush_top;
+    Out.crush_hood = Computed.crush_hood;
+    return Out;
+}
+
+void AOpenGridCarPawn::UpdateCrushMorphTargets()
+{
+    if (!DeformableBodyMesh || !DeformableBodyMesh->GetSkeletalMeshAsset()) return;
+    const FOpenGridCrushMorphWeights W = GetCrushMorphWeights();
+    DeformableBodyMesh->SetMorphTarget(TEXT("crush_front"), W.crush_front);
+    DeformableBodyMesh->SetMorphTarget(TEXT("crush_rear"), W.crush_rear);
+    DeformableBodyMesh->SetMorphTarget(TEXT("crush_left"), W.crush_left);
+    DeformableBodyMesh->SetMorphTarget(TEXT("crush_right"), W.crush_right);
+    DeformableBodyMesh->SetMorphTarget(TEXT("crush_top"), W.crush_top);
+    DeformableBodyMesh->SetMorphTarget(TEXT("crush_hood"), W.crush_hood);
 }
 
 void AOpenGridCarPawn::PlaceWheels()

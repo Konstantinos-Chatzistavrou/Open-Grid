@@ -9,6 +9,7 @@
 
 THIRD_PARTY_INCLUDES_START
 #include "src/config.cpp"
+#include "src/kinematics.cpp"
 #include "src/tire.cpp"
 #include "src/drivetrain.cpp"
 #include "src/vehicle.cpp"

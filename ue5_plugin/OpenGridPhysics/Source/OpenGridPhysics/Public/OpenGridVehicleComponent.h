@@ -36,6 +36,131 @@ class UPhysicalMaterial;
 class UPrimitiveComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBlowOffValveVent, float, BoostBarReleased);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnOpenGridMissedShift, int32, TotalMissedShifts, float, SimTimeSeconds);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnOpenGridGearGrind, int32, AttemptedGear);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnOpenGridBackfire, float, Intensity);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnOpenGridScrape, float, ImpactEnergyKj);
+
+/**
+ * Per-wheel kinematic, thermal, acoustic, and interpolated visual pose state exposed to UE 5.8 Blueprints,
+ * AnimInstances, MetaSounds, and Niagara systems.
+ */
+USTRUCT(BlueprintType)
+struct OPENGRIDPHYSICS_API FOpenGridWheelState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    bool bInContact = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    FVector WorldCenterCm = FVector::ZeroVector;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    FVector ContactPointWorldCm = FVector::ZeroVector;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float SteerAngleRad = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float SteerAngleDeg = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float CamberAngleDeg = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float SpinAngleRad = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float AngularVelocityRadS = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float NormalLoadN = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float SuspensionCompressionCm = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float SlipRatio = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float SlipAngleDeg = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float SurfaceTempC = 80.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float CarcassTempC = 80.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float PressureKpa = 220.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float BrakeDiscTempC = 45.0f;
+
+    /** Dynamic toe-in angle (deg, w.toe_angle * 180 / pi): static toe + bump steer + damage. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float ToeAngleDeg = 0.0f;
+
+    /** Instantaneous 3D steering-axis caster angle (deg, w.caster_angle * 180 / pi). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float CasterAngleDeg = 0.0f;
+
+    /** Instantaneous 3D kingpin inclination angle (deg, w.kpi_angle * 180 / pi). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float KpiAngleDeg = 0.0f;
+
+    /** Instantaneous kingpin scrub radius at the road plane (cm, w.scrub_radius_m * 100). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float ScrubRadiusCm = 0.0f;
+
+    /** Wheel-to-shock kinematic motion ratio |dL_shock / dz| (w.motion_ratio). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float MotionRatio = 1.0f;
+
+    /** 3-node tyre thermal network Node 3 enclosed cavity inner air temperature (C, w.condition.inner_air_c). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float InnerAirTempC = 53.0f;
+
+    /** WLF micro-asperity flash temperature (~8 ms response, C, w.condition.flash_c). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float FlashTempC = 80.0f;
+
+    /** Local tread flat-spot depth ground during locked-wheel skids (mm, w.condition.flat_spot_depth_mm). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float FlatSpotDepthMm = 0.0f;
+
+    /** Simcenter 2606 ~225 Hz toroidal tire cavity resonance excitation gain (0..1). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float CavityRingGain = 0.0f;
+};
+
+/**
+ * 6 directional crash morph-target weights (0..1) for driving GPU morph targets on AOpenGridCarPawn.
+ */
+USTRUCT(BlueprintType)
+struct OPENGRIDPHYSICS_API FOpenGridCrushMorphWeights
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    float crush_front = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    float crush_rear = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    float crush_left = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    float crush_right = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    float crush_top = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    float crush_hood = 0.0f;
+};
 
 /**
  * The parts of data/cars/<car>.visual.json a renderer needs, in Unreal axes (X forward, Y right, Z up, cm).
@@ -307,6 +432,48 @@ public:
     bool bGearGrind = false;
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    bool bMissedShiftEvent = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float RollCentreFrontCm = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float RollCentreRearCm = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float ClutchTempC = 40.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float ClutchHealth = 1.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float GearboxHealth = 1.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    int32 MissedShifts = 0;
+
+    /** Primary exhaust firing pulse frequency (Hz, EngineRpm * 6.0 / 120.0). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float ExhaustPrimaryHz = 0.0f;
+
+    /** Engaged gear tooth-mesh whine frequency (Hz, computed from wheel/engine speed and engaged gear ratio). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float GearWhineHz = 0.0f;
+
+    /** Cumulative missed-shift notification counter and timestamp (s) for HUD / audio triggers. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    int32 OnMissedShiftCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float LastMissedShiftTime = -1.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    bool bBackfireActive = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    bool bScrapeActive = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     bool bShiftCutActive = false;
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
@@ -332,6 +499,13 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float BrakeVaporLockSponge = 0.0f;
+
+    /** Per-wheel kinematic, thermal, acoustic, and interpolated pose state (FL=0, FR=1, RL=2, RR=3). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    TArray<FOpenGridWheelState> WheelStates;
+
+    UFUNCTION(BlueprintPure, Category="OpenGrid|Wheels")
+    FOpenGridWheelState GetWheelState(int32 WheelIndex) const;
 
     /** Wheel visuals, FL FR RL RR: centre in world space (cm), steer angle (rad, + = left), spin angle (rad). */
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
@@ -377,6 +551,20 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Acoustics")
     float OverrunPopIntensity = 0.0f;
 
+    /** 4 directional zone crush levels (0..1): Front=0, Rear=1, Left=2, Right=3. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    TArray<float> ZoneDamage;
+
+    /** 6 normalized directional crash morph-target weights (crush_front..crush_hood in 0..1). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    FOpenGridCrushMorphWeights CrushMorphWeights;
+
+    UFUNCTION(BlueprintPure, Category="OpenGrid|Damage")
+    TArray<float> GetZoneDamage() const { return ZoneDamage; }
+
+    UFUNCTION(BlueprintPure, Category="OpenGrid|Damage")
+    FOpenGridCrushMorphWeights GetCrushMorphWeights() const { return CrushMorphWeights; }
+
     /** 8 crush nodes (0..1) for morph targets: FL, FrontCentre, FR, Left, Right, RL, RearCentre, RR. */
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
     TArray<float> CrushNodeWeights;
@@ -395,6 +583,18 @@ public:
 
     UPROPERTY(BlueprintAssignable, Category="OpenGrid|Audio")
     FOnBlowOffValveVent OnBlowOffValveVent;
+
+    UPROPERTY(BlueprintAssignable, Category="OpenGrid|Audio")
+    FOnOpenGridMissedShift OnMissedShift;
+
+    UPROPERTY(BlueprintAssignable, Category="OpenGrid|Audio")
+    FOnOpenGridGearGrind OnGearGrind;
+
+    UPROPERTY(BlueprintAssignable, Category="OpenGrid|Audio")
+    FOnOpenGridBackfire OnBackfire;
+
+    UPROPERTY(BlueprintAssignable, Category="OpenGrid|Audio")
+    FOnOpenGridScrape OnScrape;
 
     /** Write the recorded lap telemetry as MoTeC i2 Pro files (.ld + .ldx). */
     UFUNCTION(BlueprintCallable, Category="OpenGrid|Telemetry")
@@ -437,7 +637,8 @@ private:
     int32 TraceGroundStrips(UPrimitiveComponent* Body, float FrameDt,
                             const std::array<std::array<rs::WheelRay, MaxRaysPerWheel>, 4>& Rays, int32 PerWheel,
                             std::array<rs::ue5::GroundStrip, 4>& OutStrips) const;
-    void PublishOutputs(const rs::VehicleOutput& Out, const std::array<double, 4>& Spin);
+    void PublishOutputs(const rs::VehicleOutput& Out, const std::array<double, 4>& Spin,
+                        const rs::ChassisState* RenderChassis = nullptr);
     static rs::ChassisState ChassisFromUe(const FVector& PosCm, const FQuat& Rot, const FVector& VelCms, const FVector& OmegaRad);
 
     UFUNCTION()
@@ -462,10 +663,17 @@ private:
     bool bShiftUpRequested_ = false;
     bool bShiftDownRequested_ = false;
     bool bRepairRequested_ = false;
+    rs::rt::StepRecord PrevRecord_{};
     rs::rt::StepRecord LastRecord_{};
+    bool bHavePrevRecord_ = false;
     bool bHaveRecord_ = false;
     rs::UdpTelemetrySender UdpSender_;
     rs::MotecLogger MotecLogger_;
     double ElapsedTimeS_ = 0.0;
     bool bPrevBov_ = false;
+    bool bPrevGearGrind_ = false;
+    bool bPrevBackfire_ = false;
+    bool bPrevScrape_ = false;
+    int32 PrevMissedShifts_ = 0;
+    double PrevDamageEnergyKj_ = 0.0;
 };

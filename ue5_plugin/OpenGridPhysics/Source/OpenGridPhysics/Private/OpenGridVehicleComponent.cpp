@@ -51,7 +51,9 @@ UOpenGridVehicleComponent::UOpenGridVehicleComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
     PrimaryComponentTick.TickGroup = TG_PrePhysics;   // inputs and traces are ready before physics runs
+    ZoneDamage.Init(0.0f, 4);
     CrushNodeWeights.Init(0.0f, 8);
+    WheelStates.Init(FOpenGridWheelState{}, 4);
     WheelCentresWorld.Init(FVector::ZeroVector, 4);
     WheelSteerRad.Init(0.0f, 4);
     WheelSpinRad.Init(0.0f, 4);
@@ -183,7 +185,9 @@ void UOpenGridVehicleComponent::CreateVehicle()
     Controls_ = MakeUnique<rs::Controls>(Vehicle_->config());   // Controls keeps a reference: use the vehicle's copy
     Controls_->settings.auto_clutch = true;
     Bridge_ = MakeUnique<rs::ue5::AsyncVehicleBridge>(*Vehicle_, *Controls_);
+    PrevRecord_ = rs::rt::StepRecord{};
     LastRecord_ = rs::rt::StepRecord{};
+    bHavePrevRecord_ = false;
     bHaveRecord_ = false;
 }
 
@@ -553,12 +557,36 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
         Body->AddTorqueInRadians(FVector(Torque.x, Torque.y, Torque.z));
     }
 
-    // 3. Drain the physics->game record ring and publish the latest step to Blueprint, audio, visuals and telemetry.
-    if (Bridge_->latest_record(LastRecord_)) bHaveRecord_ = true;
+    // 3. Drain the physics->game record ring (keeping both the previous and latest StepRecord snapshots for wheel pose
+    //    interpolation, and latching any single-tick events that fired on intermediate physics sub-steps).
+    bool bSawMissedShiftEdge = false;
+    bool bSawGearGrindEdge = false;
+    bool bSawBovEdge = false;
+    Bridge_->drain_records([&](const rs::rt::StepRecord& Rec)
+    {
+        if (bHaveRecord_)
+        {
+            PrevRecord_ = LastRecord_;
+            bHavePrevRecord_ = true;
+        }
+        LastRecord_ = Rec;
+        bHaveRecord_ = true;
+        if (Rec.out.missed_shift_event) bSawMissedShiftEdge = true;
+        if (Rec.out.gear_grind) bSawGearGrindEdge = true;
+        if (Rec.out.bov_venting) bSawBovEdge = true;
+    });
     if (!bHaveRecord_) return;
+    if (bSawMissedShiftEdge) LastRecord_.out.missed_shift_event = true;
+    if (bSawGearGrindEdge) LastRecord_.out.gear_grind = true;
+    if (bSawBovEdge) LastRecord_.out.bov_venting = true;
+
+    const rs::ChassisState RenderChassis = ChassisFromUe(
+        Body->GetComponentLocation(), Body->GetComponentQuat(),
+        Body->GetPhysicsLinearVelocity(),
+        FMath::DegreesToRadians(Body->GetPhysicsAngularVelocityInDegrees()));
 
     ElapsedTimeS_ += DeltaTime;
-    PublishOutputs(LastRecord_.out, LastRecord_.spin);
+    PublishOutputs(LastRecord_.out, LastRecord_.spin, &RenderChassis);
     // Burnt fuel makes the car lighter: refresh the body every 0.25 kg (game thread; rare, so cheap).
     if (bApplyMassFromSpec && LastRecord_.out.mass_kg > 0.0 && FMath::Abs(LastRecord_.out.mass_kg - AppliedMassKg_) > 0.25)
     {
@@ -570,7 +598,13 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     if (bEnableSimHubUdp && UdpSender_.is_open()) UdpSender_.send(Sample);
 }
 
-void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, const std::array<double, 4>& Spin)
+FOpenGridWheelState UOpenGridVehicleComponent::GetWheelState(int32 WheelIndex) const
+{
+    return WheelStates.IsValidIndex(WheelIndex) ? WheelStates[WheelIndex] : FOpenGridWheelState{};
+}
+
+void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, const std::array<double, 4>& Spin,
+                                               const rs::ChassisState* RenderChassis)
 {
     SpeedKmh = static_cast<float>(Out.speed * 3.6);
     EngineRpm = static_cast<float>(Out.engine_rpm);
@@ -585,6 +619,15 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
     FuelLiters = static_cast<float>(Out.fuel_liters);
     MassKg = static_cast<float>(Out.mass_kg);
     bGearGrind = Out.gear_grind;
+    bMissedShiftEvent = Out.missed_shift_event;
+    RollCentreFrontCm = static_cast<float>(Out.roll_centre_front_m * rs::ue5::kMetersToCm);
+    RollCentreRearCm = static_cast<float>(Out.roll_centre_rear_m * rs::ue5::kMetersToCm);
+    ClutchTempC = static_cast<float>(Out.clutch_temp_c);
+    ClutchHealth = static_cast<float>(Out.clutch_health);
+    GearboxHealth = static_cast<float>(Out.gearbox_health);
+    MissedShifts = Out.missed_shifts;
+    ExhaustPrimaryHz = static_cast<float>(EngineRpm * 6.0 / 120.0);
+    GearWhineHz = rs::ue5::compute_gear_whine_hz(Out, Config_);
     bShiftCutActive = Out.shift_cut_active;
     DrivelineClunkNm = static_cast<float>(Out.driveline_clunk_nm);
     ChassisTwistDeg = static_cast<float>(Out.chassis_twist_deg);
@@ -595,11 +638,63 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
     AirDensityKgPerM3 = static_cast<float>(Out.air_density_kg_m3);
     BrakeVaporLockSponge = static_cast<float>(Out.brake_vapor_lock_sponge);
 
+    // Interpolate wheel poses in body-local space between PrevRecord_ and LastRecord_ and transform by the live
+    // game-thread RenderChassis so wheels in UE 5.8 never lag the interpolated chassis by one step.
+    const rs::rt::StepRecord& Prev = bHavePrevRecord_ ? PrevRecord_ : LastRecord_;
+    const rs::ChassisState& PoseForWheels = RenderChassis ? *RenderChassis : LastRecord_.chassis;
+    const double Alpha = (bHavePrevRecord_ && RenderChassis)
+                             ? rs::ue5::compute_render_alpha(Prev.chassis, LastRecord_.chassis, *RenderChassis)
+                             : 1.0;
+
+    if (WheelStates.Num() != 4) WheelStates.Init(FOpenGridWheelState{}, 4);
     for (int32 w = 0; w < 4; ++w)
     {
-        WheelCentresWorld[w] = ToFVector(rs::ue5::pos_to_ue(Out.wheels[w].centre_world));
-        WheelSteerRad[w] = static_cast<float>(Out.wheels[w].steer_angle);
-        WheelSpinRad[w] = static_cast<float>(Spin[w]);
+        rs::Vec3 InterpWorldCenter = Out.wheels[w].centre_world;
+        double InterpSteerRad = Out.wheels[w].steer_angle;
+        double InterpSpinRad = Spin[w];
+        double InterpToeRad = Out.wheels[w].toe_angle;
+        double InterpCamberRad = Out.wheels[w].camber;
+        if (bHaveRecord_)
+        {
+            rs::ue5::interpolate_wheel_pose(Prev, LastRecord_, PoseForWheels, Alpha, w,
+                                            InterpWorldCenter, InterpSteerRad, InterpSpinRad,
+                                            InterpToeRad, InterpCamberRad);
+        }
+
+        const rs::ue5::UeWheelState WS = rs::ue5::make_ue_wheel_state(
+            Out.wheels[w], Config_.tire(w).radius, InterpWorldCenter,
+            InterpSteerRad, InterpSpinRad, InterpToeRad, InterpCamberRad);
+
+        FOpenGridWheelState& Dst = WheelStates[w];
+        Dst.bInContact = WS.in_contact;
+        Dst.WorldCenterCm = ToFVector(WS.world_center_cm);
+        Dst.ContactPointWorldCm = ToFVector(WS.contact_point_world_cm);
+        Dst.SteerAngleRad = WS.steer_angle_rad;
+        Dst.SteerAngleDeg = WS.steer_angle_deg;
+        Dst.CamberAngleDeg = WS.camber_angle_deg;
+        Dst.SpinAngleRad = WS.spin_angle_rad;
+        Dst.AngularVelocityRadS = WS.angular_velocity_rads;
+        Dst.NormalLoadN = WS.normal_load_n;
+        Dst.SuspensionCompressionCm = WS.suspension_compression_cm;
+        Dst.SlipRatio = WS.slip_ratio;
+        Dst.SlipAngleDeg = WS.slip_angle_deg;
+        Dst.SurfaceTempC = WS.surface_temp_c;
+        Dst.CarcassTempC = WS.carcass_temp_c;
+        Dst.PressureKpa = WS.pressure_kpa;
+        Dst.BrakeDiscTempC = WS.brake_disc_temp_c;
+        Dst.ToeAngleDeg = WS.toe_angle_deg;
+        Dst.CasterAngleDeg = WS.caster_angle_deg;
+        Dst.KpiAngleDeg = WS.kpi_angle_deg;
+        Dst.ScrubRadiusCm = WS.scrub_radius_cm;
+        Dst.MotionRatio = WS.motion_ratio;
+        Dst.InnerAirTempC = WS.inner_air_temp_c;
+        Dst.FlashTempC = WS.flash_temp_c;
+        Dst.FlatSpotDepthMm = WS.flat_spot_depth_mm;
+        Dst.CavityRingGain = WS.cavity_ring_gain;
+
+        WheelCentresWorld[w] = Dst.WorldCenterCm;
+        WheelSteerRad[w] = Dst.SteerAngleRad;
+        WheelSpinRad[w] = Dst.SpinAngleRad;
     }
 
     const rs::EngineAcousticState Acoustics = rs::compute_engine_acoustics(
@@ -608,15 +703,58 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
     FundamentalFiringHz = static_cast<float>(Acoustics.fundamental_firing_hz);
     TurboImpellerRpm = static_cast<float>(Acoustics.turbo_impeller_rpm);
     TurboWhistleHz = static_cast<float>(Acoustics.turbo_whistle_hz);
-    TransmissionWhineHz = static_cast<float>(Acoustics.transmission_whine_hz);
+    TransmissionWhineHz = GearWhineHz > 0.0f ? GearWhineHz : static_cast<float>(Acoustics.transmission_whine_hz);
     OverrunPopIntensity = static_cast<float>(Acoustics.overrun_pop_intensity);
+
+    if (ZoneDamage.Num() != 4) ZoneDamage.SetNumZeroed(4);
+    for (int32 i = 0; i < 4; ++i) ZoneDamage[i] = static_cast<float>(Out.damage.zone[i]);
 
     if (CrushNodeWeights.Num() != 8) CrushNodeWeights.SetNumZeroed(8);
     for (int32 i = 0; i < 8; ++i) CrushNodeWeights[i] = static_cast<float>(Out.damage.node_norm[i]);
+
+    const rs::ue5::UeCrushMorphWeights Morph = rs::ue5::compute_crush_morph_weights(Out.damage);
+    CrushMorphWeights.crush_front = Morph.crush_front;
+    CrushMorphWeights.crush_rear = Morph.crush_rear;
+    CrushMorphWeights.crush_left = Morph.crush_left;
+    CrushMorphWeights.crush_right = Morph.crush_right;
+    CrushMorphWeights.crush_top = Morph.crush_top;
+    CrushMorphWeights.crush_hood = Morph.crush_hood;
+
     bHoodUnlatched = Out.damage.hood_unlatched;
     bTrunkUnlatched = Out.damage.trunk_unlatched;
     bFrontBumperDetached = Out.damage.front_bumper_detached;
     bRearBumperDetached = Out.damage.rear_bumper_detached;
+
+    // Event notifications & counters (MissedShift, GearGrind, Backfire, Scrape, BlowOffValve)
+    if (Out.missed_shift_event || Out.missed_shifts > PrevMissedShifts_)
+    {
+        OnMissedShiftCount = FMath::Max(OnMissedShiftCount + 1, Out.missed_shifts);
+        LastMissedShiftTime = static_cast<float>(ElapsedTimeS_);
+        OnMissedShift.Broadcast(OnMissedShiftCount, LastMissedShiftTime);
+    }
+    PrevMissedShifts_ = Out.missed_shifts;
+
+    if (Out.gear_grind && !bPrevGearGrind_)
+    {
+        OnGearGrind.Broadcast(Out.gear);
+    }
+    bPrevGearGrind_ = Out.gear_grind;
+
+    bBackfireActive = (OverrunPopIntensity > 0.35f) || Out.shift_cut_active || Out.engine_misfire;
+    if (bBackfireActive && !bPrevBackfire_)
+    {
+        OnBackfire.Broadcast(FMath::Max(OverrunPopIntensity, Out.shift_cut_active ? 0.8f : 0.5f));
+    }
+    bPrevBackfire_ = bBackfireActive;
+
+    const bool bNewDamageEnergy = Out.damage.total_energy_kj > PrevDamageEnergyKj_ + 1e-4;
+    bScrapeActive = bNewDamageEnergy || Out.front_splitter_stalled;
+    if (bScrapeActive && !bPrevScrape_)
+    {
+        OnScrape.Broadcast(static_cast<float>(FMath::Max(0.1, Out.damage.last_impact_kj)));
+    }
+    bPrevScrape_ = bScrapeActive;
+    PrevDamageEnergyKj_ = Out.damage.total_energy_kj;
 
     if (Out.bov_venting && !bPrevBov_) OnBlowOffValveVent.Broadcast(FMath::Max(0.35f, BoostBar));
     bPrevBov_ = Out.bov_venting;

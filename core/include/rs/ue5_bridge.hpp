@@ -389,4 +389,173 @@ private:
     std::array<WheelFootprint16Rays, 4> footprint_rays_{};
 };
 
+// ---- UE 5.8 Wheel State, Telemetry, Wheel Interpolation & Crash Morph-Target Helpers ----------------------------
+
+struct UeWheelState {
+    bool in_contact = false;
+    UeVec3 world_center_cm{};
+    UeVec3 contact_point_world_cm{};
+    float steer_angle_rad = 0.0f;
+    float steer_angle_deg = 0.0f;
+    float camber_angle_deg = 0.0f;
+    float spin_angle_rad = 0.0f;
+    float angular_velocity_rads = 0.0f;
+    float normal_load_n = 0.0f;
+    float suspension_compression_cm = 0.0f;
+    float slip_ratio = 0.0f;
+    float slip_angle_deg = 0.0f;
+    float surface_temp_c = 80.0f;
+    float carcass_temp_c = 80.0f;
+    float pressure_kpa = 220.0f;
+    float brake_disc_temp_c = 45.0f;
+    // Kinematic suspension & 3-node tyre fields exposed on FOpenGridWheelState:
+    float toe_angle_deg = 0.0f;
+    float caster_angle_deg = 0.0f;
+    float kpi_angle_deg = 0.0f;
+    float scrub_radius_cm = 0.0f;
+    float motion_ratio = 1.0f;
+    float inner_air_temp_c = 53.0f;
+    float flash_temp_c = 80.0f;
+    float flat_spot_depth_mm = 0.0f;
+    float cavity_ring_gain = 0.0f;
+};
+
+struct UeCrushMorphWeights {
+    float crush_front = 0.0f;
+    float crush_rear = 0.0f;
+    float crush_left = 0.0f;
+    float crush_right = 0.0f;
+    float crush_top = 0.0f;
+    float crush_hood = 0.0f;
+};
+
+/**
+ * Compute the render interpolation factor alpha in [0, 1] of `render_chassis` between `prev_chassis` and `curr_chassis`.
+ */
+inline double compute_render_alpha(const ChassisState& prev_chassis, const ChassisState& curr_chassis,
+                                   const ChassisState& render_chassis) {
+    const Vec3 d = curr_chassis.position - prev_chassis.position;
+    const double d2 = dot(d, d);
+    if (d2 > 1e-8) {
+        return clamp(dot(render_chassis.position - prev_chassis.position, d) / d2, 0.0, 1.0);
+    }
+    return 1.0;
+}
+
+/**
+ * Interpolate a wheel's pose in body-local space between `prev` and `curr` StepRecords and transform to world space
+ * using `render_chassis` (the game-thread interpolated rigid-body pose) so wheels never lag the chassis by one step.
+ */
+inline void interpolate_wheel_pose(const rt::StepRecord& prev, const rt::StepRecord& curr,
+                                   const ChassisState& render_chassis, double alpha, int wheel_index,
+                                   Vec3& out_world_center_m, double& out_steer_rad, double& out_spin_rad,
+                                   double& out_toe_rad, double& out_camber_rad) {
+    const int w = std::max(0, std::min(3, wheel_index));
+    const double t = clamp(alpha, 0.0, 1.0);
+    const Vec3 local_prev = prev.chassis.orientation.inv_rotate(prev.out.wheels[w].centre_world - prev.chassis.position);
+    const Vec3 local_curr = curr.chassis.orientation.inv_rotate(curr.out.wheels[w].centre_world - curr.chassis.position);
+    const Vec3 local_blend = lerp(local_prev, local_curr, t);
+    out_world_center_m = render_chassis.position + render_chassis.orientation.rotate(local_blend);
+    out_steer_rad = lerp(prev.out.wheels[w].steer_angle, curr.out.wheels[w].steer_angle, t);
+    out_toe_rad = lerp(prev.out.wheels[w].toe_angle, curr.out.wheels[w].toe_angle, t);
+    out_camber_rad = lerp(prev.out.wheels[w].camber, curr.out.wheels[w].camber, t);
+    out_spin_rad = lerp_angle(prev.spin[w], curr.spin[w], t);
+}
+
+/**
+ * Populate a UeWheelState (backing FOpenGridWheelState) from a WheelOutput and interpolated pose values.
+ */
+inline UeWheelState make_ue_wheel_state(const WheelOutput& w, double tire_radius_m,
+                                        const Vec3& interp_world_center_m, double interp_steer_rad,
+                                        double interp_spin_rad, double interp_toe_rad, double interp_camber_rad) {
+    constexpr double kRadToDeg = 180.0 / kPi;
+    UeWheelState st{};
+    st.in_contact = w.contact;
+    st.world_center_cm = pos_to_ue(interp_world_center_m);
+    st.contact_point_world_cm = pos_to_ue(w.contact_point);
+    st.steer_angle_rad = static_cast<float>(interp_steer_rad);
+    st.steer_angle_deg = static_cast<float>(interp_steer_rad * kRadToDeg);
+    st.camber_angle_deg = static_cast<float>(interp_camber_rad * kRadToDeg);
+    st.spin_angle_rad = static_cast<float>(interp_spin_rad);
+    st.angular_velocity_rads = static_cast<float>(w.angular_velocity);
+    st.normal_load_n = static_cast<float>(w.load);
+    st.suspension_compression_cm = static_cast<float>(w.compression * kMetersToCm);
+    st.slip_ratio = static_cast<float>(w.slip_ratio);
+    st.slip_angle_deg = static_cast<float>(w.slip_angle * kRadToDeg);
+    st.surface_temp_c = static_cast<float>(w.condition.surface_c);
+    st.carcass_temp_c = static_cast<float>(w.condition.temperature_c);
+    st.pressure_kpa = static_cast<float>(w.condition.pressure_kpa > 0.0
+                                             ? w.condition.pressure_kpa
+                                             : w.condition.ideal_gas_pressure_kpa());
+    st.brake_disc_temp_c = static_cast<float>(w.brake_temp_c);
+    st.toe_angle_deg = static_cast<float>(interp_toe_rad * kRadToDeg);
+    st.caster_angle_deg = static_cast<float>(w.caster_angle * kRadToDeg);
+    st.kpi_angle_deg = static_cast<float>(w.kpi_angle * kRadToDeg);
+    st.scrub_radius_cm = static_cast<float>(w.scrub_radius_m * kMetersToCm);
+    st.motion_ratio = static_cast<float>(w.motion_ratio);
+    st.inner_air_temp_c = static_cast<float>(w.condition.inner_air_c);
+    st.flash_temp_c = static_cast<float>(w.condition.flash_c);
+    st.flat_spot_depth_mm = static_cast<float>(w.condition.flat_spot_depth_mm);
+    const TireAcousticSource ac = w.condition.compute_acoustics(
+        w.angular_velocity, tire_radius_m, std::abs(w.unsprung_vel_mps));
+    st.cavity_ring_gain = static_cast<float>(ac.cavity_ring_gain);
+    return st;
+}
+
+/**
+ * Compute straight-cut / helical transmission gear tooth mesh whine frequency (Hz) from wheel/engine speed and engaged gear ratio.
+ */
+inline float compute_gear_whine_hz(const VehicleOutput& out, const CarConfig& cfg) {
+    if (out.gear == 1 || out.gear < 0 || out.gear >= static_cast<int>(cfg.drivetrain.gear_ratios.size())) {
+        return 0.0f;
+    }
+    const double ratio = std::abs(cfg.drivetrain.gear_ratios[out.gear]);
+    if (ratio <= 1e-3) return 0.0f;
+    double mean_wheel_omega = 0.0;
+    for (int w = 0; w < 4; ++w) mean_wheel_omega += std::abs(out.wheels[w].angular_velocity);
+    mean_wheel_omega *= 0.25;
+    const double wheel_rps = mean_wheel_omega / (2.0 * kPi);
+    const double final_drive = std::max(0.5, cfg.drivetrain.final_drive);
+    const double engine_out_rps = (std::max(0.0, out.engine_rpm) / 60.0) / ratio;
+    const double driveshaft_rps = std::max(wheel_rps * final_drive, engine_out_rps);
+    double driven_teeth = 22.0 + 2.5 * clamp(static_cast<double>(out.gear), 0.0, 7.0);
+    if (out.gear < static_cast<int>(cfg.drivetrain.gear_teeth.size()) &&
+        cfg.drivetrain.gear_teeth[out.gear][0] > 0) {
+        driven_teeth = static_cast<double>(cfg.drivetrain.gear_teeth[out.gear][0]);
+    }
+    return static_cast<float>(driveshaft_rps * driven_teeth);
+}
+
+/**
+ * Compute the 6 normalized directional crash morph-target weights (crush_front, crush_rear, crush_left,
+ * crush_right, crush_top, crush_hood in 0..1) from zone damage and 8-node perimeter crush weights.
+ */
+inline UeCrushMorphWeights compute_crush_morph_weights(const std::array<double, 4>& zone,
+                                                       const std::array<double, 8>& node_norm,
+                                                       bool hood_unlatched = false,
+                                                       double top_impact_factor = 0.0) {
+    UeCrushMorphWeights m{};
+    const double front_nodes = std::max(node_norm[NodeFrontCenter],
+                                        0.5 * (node_norm[NodeFLCorner] + node_norm[NodeFRCorner]));
+    const double rear_nodes = std::max(node_norm[NodeRearCenter],
+                                       0.5 * (node_norm[NodeRLCorner] + node_norm[NodeRRCorner]));
+    m.crush_front = static_cast<float>(clamp(std::max(zone[ZoneFront], front_nodes), 0.0, 1.0));
+    m.crush_rear = static_cast<float>(clamp(std::max(zone[ZoneRear], rear_nodes), 0.0, 1.0));
+    m.crush_left = static_cast<float>(clamp(std::max(zone[ZoneLeft], node_norm[NodeLeftFlank]), 0.0, 1.0));
+    m.crush_right = static_cast<float>(clamp(std::max(zone[ZoneRight], node_norm[NodeRightFlank]), 0.0, 1.0));
+    const double side_cabin = 0.35 * (static_cast<double>(m.crush_left) + static_cast<double>(m.crush_right));
+    m.crush_top = static_cast<float>(clamp(std::max(top_impact_factor, side_cabin), 0.0, 1.0));
+    const double hood_raw = std::max(node_norm[NodeFrontCenter] * 1.15,
+                                     hood_unlatched ? std::max(0.5, zone[ZoneFront]) : zone[ZoneFront] * 0.85);
+    m.crush_hood = static_cast<float>(clamp(hood_raw, 0.0, 1.0));
+    return m;
+}
+
+inline UeCrushMorphWeights compute_crush_morph_weights(const DamageReport& dmg) {
+    const double top_impact = (dmg.last_impact_point.z > 0.35 && dmg.impacts > 0)
+                                  ? clamp(dmg.total_energy_kj / 250.0, 0.0, 1.0)
+                                  : 0.0;
+    return compute_crush_morph_weights(dmg.zone, dmg.node_norm, dmg.hood_unlatched, top_impact);
+}
+
 }  // namespace rs::ue5
