@@ -72,6 +72,80 @@ struct StepRecord {
     std::array<double, 4> spin{};    // accumulated wheel rotation angle mod 2 pi, rad (for wheel visuals)
 };
 
+/**
+ * Interpolate two physics StepRecords at render blend factor `alpha` in [0, 1].
+ * Eliminates the 1-step wheel pose lag relative to the interpolated chassis by blending each wheel's
+ * centre_world, steer_angle, camber, toe_angle, compression, angular_velocity, load, slip_ratio, slip_angle,
+ * and spin[i] (using lerp_angle for wrap-around across 2*pi).
+ */
+inline StepRecord blend(const StepRecord& a, const StepRecord& b, double alpha) {
+    const double t = rs::clamp(alpha, 0.0, 1.0);
+    StepRecord r = (t < 0.5) ? a : b;
+    r.dt = rs::lerp(a.dt, b.dt, t);
+
+    r.chassis.position = rs::lerp(a.chassis.position, b.chassis.position, t);
+    r.chassis.orientation = rs::nlerp(a.chassis.orientation, b.chassis.orientation, t);
+    r.chassis.velocity = rs::lerp(a.chassis.velocity, b.chassis.velocity, t);
+    r.chassis.angular_velocity = rs::lerp(a.chassis.angular_velocity, b.chassis.angular_velocity, t);
+
+    r.input.steer = rs::lerp(a.input.steer, b.input.steer, t);
+    r.input.throttle = rs::lerp(a.input.throttle, b.input.throttle, t);
+    r.input.brake = rs::lerp(a.input.brake, b.input.brake, t);
+    r.input.clutch = rs::lerp(a.input.clutch, b.input.clutch, t);
+    r.input.handbrake = rs::lerp(a.input.handbrake, b.input.handbrake, t);
+
+    r.out.force = rs::lerp(a.out.force, b.out.force, t);
+    r.out.torque = rs::lerp(a.out.torque, b.out.torque, t);
+    r.out.steer_torque = rs::lerp(a.out.steer_torque, b.out.steer_torque, t);
+    r.out.speed = rs::lerp(a.out.speed, b.out.speed, t);
+    r.out.sideslip = rs::lerp(a.out.sideslip, b.out.sideslip, t);
+    r.out.yaw_rate = rs::lerp(a.out.yaw_rate, b.out.yaw_rate, t);
+    r.out.accel = rs::lerp(a.out.accel, b.out.accel, t);
+    r.out.throttle_applied = rs::lerp(a.out.throttle_applied, b.out.throttle_applied, t);
+    r.out.brake_applied = rs::lerp(a.out.brake_applied, b.out.brake_applied, t);
+    r.out.engine_rpm = rs::lerp(a.out.engine_rpm, b.out.engine_rpm, t);
+    r.out.boost_bar = rs::lerp(a.out.boost_bar, b.out.boost_bar, t);
+    r.out.fuel_liters = rs::lerp(a.out.fuel_liters, b.out.fuel_liters, t);
+    r.out.mass_kg = rs::lerp(a.out.mass_kg, b.out.mass_kg, t);
+    r.out.effective_inertia = rs::lerp(a.out.effective_inertia, b.out.effective_inertia, t);
+    r.out.exhaust_primary_hz = rs::lerp(a.out.exhaust_primary_hz, b.out.exhaust_primary_hz, t);
+    r.out.gear_whine_hz = rs::lerp(a.out.gear_whine_hz, b.out.gear_whine_hz, t);
+    r.out.turbo_surge = rs::lerp(a.out.turbo_surge, b.out.turbo_surge, t);
+    r.out.roll_centre_front_m = rs::lerp(a.out.roll_centre_front_m, b.out.roll_centre_front_m, t);
+    r.out.roll_centre_rear_m = rs::lerp(a.out.roll_centre_rear_m, b.out.roll_centre_rear_m, t);
+
+    for (std::size_t i = 0; i < 4; ++i) {
+        WheelOutput& w = r.out.wheels[i];
+        const WheelOutput& wa = a.out.wheels[i];
+        const WheelOutput& wb = b.out.wheels[i];
+        w.contact = (t < 0.5) ? wa.contact : wb.contact;
+        w.centre_world = rs::lerp(wa.centre_world, wb.centre_world, t);
+        w.contact_point = rs::lerp(wa.contact_point, wb.contact_point, t);
+        w.force_world = rs::lerp(wa.force_world, wb.force_world, t);
+        w.steer_angle = rs::lerp(wa.steer_angle, wb.steer_angle, t);
+        w.camber = rs::lerp(wa.camber, wb.camber, t);
+        w.toe_angle = rs::lerp(wa.toe_angle, wb.toe_angle, t);
+        w.caster_angle = rs::lerp(wa.caster_angle, wb.caster_angle, t);
+        w.kpi_angle = rs::lerp(wa.kpi_angle, wb.kpi_angle, t);
+        w.scrub_radius_m = rs::lerp(wa.scrub_radius_m, wb.scrub_radius_m, t);
+        w.motion_ratio = rs::lerp(wa.motion_ratio, wb.motion_ratio, t);
+        w.compression = rs::lerp(wa.compression, wb.compression, t);
+        w.angular_velocity = rs::lerp(wa.angular_velocity, wb.angular_velocity, t);
+        w.load = rs::lerp(wa.load, wb.load, t);
+        w.slip_ratio = rs::lerp(wa.slip_ratio, wb.slip_ratio, t);
+        w.slip_angle = rs::lerp(wa.slip_angle, wb.slip_angle, t);
+        w.fx = rs::lerp(wa.fx, wb.fx, t);
+        w.fy = rs::lerp(wa.fy, wb.fy, t);
+        w.mz = rs::lerp(wa.mz, wb.mz, t);
+        w.carcass_deflection_m = rs::lerp(wa.carcass_deflection_m, wb.carcass_deflection_m, t);
+        w.unsprung_vel_mps = rs::lerp(wa.unsprung_vel_mps, wb.unsprung_vel_mps, t);
+        w.kerb_load_ratio = rs::lerp(wa.kerb_load_ratio, wb.kerb_load_ratio, t);
+        w.surface_excitation = rs::lerp(wa.surface_excitation, wb.surface_excitation, t);
+        r.spin[i] = rs::lerp_angle(a.spin[i], b.spin[i], t);
+    }
+    return r;
+}
+
 /** Counters for the game's debug overlay. Written by the physics thread, read anywhere (relaxed). */
 struct RuntimeStats {
     std::atomic<std::uint64_t> steps{0};

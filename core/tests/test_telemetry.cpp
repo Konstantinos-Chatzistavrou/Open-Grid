@@ -98,4 +98,77 @@ RS_TEST(telemetry) {
     test::check("MoTeC channel count 18 * 120 floats", ld.size() == data_ptr + 18 * 120 * 4);
     test::check("MoTeC first sample Ground Speed km/h", std::fabs(read_f32(ld.data(), data_ptr) - 72.0f) < 0.1f);
     test::check("MoTeC .ldx contains Lap 1 beacon", ldx.find("Name=\"Lap 1\"") != std::string::npos);
+
+    // 4. Physical audio (exhaust_primary_hz, gear_whine_hz, turbo_surge) & surface excitation verification
+    {
+        const CarConfig cfg = test::car();
+        auto sim = test::make_sim(cfg);
+        sim->vehicle.engine_systems().turbo_stage = 2; // Sport Turbo (1.15 bar)
+        sim->reset({}, 0.0, 25.0, 4);                  // rolling in 3rd gear
+
+        DriverInput wot;
+        wot.gear = 4;
+        wot.throttle = 1.0;
+        wot.auto_clutch = true;
+        for (int i = 0; i < 120; ++i) sim->step(wot); // 0.5 s WOT to spool turbo
+
+        const VehicleOutput out_wot = sim->last;
+        const double expected_exhaust_hz = out_wot.engine_rpm * cfg.engine.cylinders / 120.0;
+        const int drive_teeth_3rd = std::abs(cfg.drivetrain.gear_teeth[4][1]);
+        const double expected_whine_hz = std::abs(sim->vehicle.engine_systems().input_shaft_omega)
+                                       * drive_teeth_3rd / (2.0 * kPi);
+
+        // Close throttle abruptly under high boost -> compressor surge flutter
+        DriverInput lift = wot;
+        lift.throttle = 0.0;
+        double peak_surge = 0.0;
+        for (int i = 0; i < 24; ++i) {
+            sim->step(lift);
+            peak_surge = std::max(peak_surge, sim->last.turbo_surge);
+        }
+
+        // Now test wheel kerb_load_ratio and surface_excitation on a half-patch 15 mm raised kerb
+        std::array<WheelContact, 4> contacts{};
+        const auto rays = sim->vehicle.wheel_rays(sim->body.state);
+        for (int w = 0; w < 4; ++w) {
+            contacts[w].hit = true;
+            contacts[w].distance = cfg.axle(w).spring_rest_length + cfg.tire(w).radius - cfg.wheels[w].static_compression;
+            contacts[w].point = rays[w].origin + rays[w].direction * contacts[w].distance;
+            contacts[w].normal = {0, 0, 1};
+            contacts[w].surface = 0;
+        }
+        const VehicleOutput out_flat = sim->vehicle.update(sim->body.state, contacts, sim->dt);
+
+        contacts[FL].patch_profile.has_height_map = true;
+        for (int i = 0; i < kPatchRows; ++i) {
+            for (int j = 0; j < kPatchCols; ++j) {
+                const int idx = i * kPatchCols + j;
+                contacts[FL].patch_profile.road_dz_m[idx] = (j >= 2) ? 0.015 : 0.0;
+                contacts[FL].patch_profile.mu_cell[idx] = (j >= 2) ? 0.92 : 1.0;
+                contacts[FL].patch_profile.contact_mask[idx] = true;
+            }
+        }
+        const VehicleOutput out_kerb = sim->vehicle.update(sim->body.state, contacts, sim->dt);
+        const TelemetrySample tel_kerb = make_telemetry_sample(out_kerb, sim->body.state, lift, cfg, sim->time);
+
+        std::printf("         Audio/Excitation: exhaust=%.1f Hz, whine=%.1f Hz, surge=%.3f | FL kerb_load=%.3f (flat %.3f), excite=%.3f (flat %.3f)\n",
+                    out_wot.exhaust_primary_hz, out_wot.gear_whine_hz, peak_surge,
+                    out_kerb.wheels[FL].kerb_load_ratio, out_flat.wheels[FL].kerb_load_ratio,
+                    out_kerb.wheels[FL].surface_excitation, out_flat.wheels[FL].surface_excitation);
+
+        test::check("exhaust_primary_hz matches engine_rpm * cylinders / 120",
+                    std::isfinite(out_wot.exhaust_primary_hz) && out_wot.exhaust_primary_hz > 200.0 &&
+                    std::abs(out_wot.exhaust_primary_hz - expected_exhaust_hz) < 1e-6);
+        test::check("gear_whine_hz matches |input_shaft_omega| * active_drive_teeth / (2*pi)",
+                    std::isfinite(out_wot.gear_whine_hz) && out_wot.gear_whine_hz > 1000.0 &&
+                    std::abs(out_wot.gear_whine_hz - expected_whine_hz) < 1e-6);
+        test::check("turbo_surge responds in (0.15, 1.0] on abrupt throttle lift under boost",
+                    out_wot.turbo_surge == 0.0 && peak_surge > 0.15 && peak_surge <= 1.0);
+        test::check("kerb_load_ratio is 0 on flat road and > 0.70 on half-patch raised kerb",
+                    out_flat.wheels[FL].kerb_load_ratio == 0.0 && out_kerb.wheels[FL].kerb_load_ratio > 0.70);
+        test::check("surface_excitation increases significantly on kerb strike and propagates to TelemetrySample",
+                    out_kerb.wheels[FL].surface_excitation > out_flat.wheels[FL].surface_excitation + 0.25 &&
+                    tel_kerb.wheel_kerb_load_ratio[FL] == out_kerb.wheels[FL].kerb_load_ratio &&
+                    tel_kerb.wheel_surface_excitation[FL] == out_kerb.wheels[FL].surface_excitation);
+    }
 }

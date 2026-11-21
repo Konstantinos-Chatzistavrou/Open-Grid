@@ -73,10 +73,17 @@ struct TelemetrySample {
     std::array<double, 4> flat_spot_depth_mm{};
     std::array<double, 4> brake_temp_c{220, 220, 220, 220};
     std::array<double, 4> wheel_load_n{};
+    std::array<double, 4> wheel_kerb_load_ratio{};
+    std::array<double, 4> wheel_surface_excitation{};
     double boost_bar = 0.0;
     double intake_air_temp_c = 28.0;
     double oil_temp_c = 85.0;
     double fuel_liters = 55.0;
+    double mass_kg = 1450.0;
+    Vec3 effective_inertia{};
+    double exhaust_primary_hz = 0.0;
+    double gear_whine_hz = 0.0;
+    double turbo_surge = 0.0;
     double slipstream_drag_scale = 1.0;
 };
 

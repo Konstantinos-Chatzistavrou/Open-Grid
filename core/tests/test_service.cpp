@@ -17,14 +17,41 @@ RS_TEST(service) {
     wot.gear = 3;
     wot.auto_clutch = true;
 
-    // 1. Fuel burns at full throttle
+    // 1. Fuel burns at full throttle and reduces mass_kg AND effective_inertia monotonically
     Simulation burn(cfg, flat);
     burn.vehicle.engine_systems().fuel_consumption_enabled = true;
     burn.reset({}, 0.0, 20.0, 3);
     const double before = burn.vehicle.engine_systems().fuel_liters;
-    for (int i = 0; i < 240 * 5; ++i) burn.step(wot);   // 5 s
+    const Vec3 inertia_spec{cfg.inertia_xx, cfg.inertia_yy, cfg.inertia_zz};
+    double prev_mass = cfg.mass;
+    Vec3 prev_inertia = inertia_spec;
+    bool mono_mass = true;
+    bool mono_inertia = true;
+    for (int i = 0; i < 240 * 5; ++i) {
+        burn.step(wot);   // 5 s
+        if (burn.last.mass_kg > prev_mass + 1e-12) mono_mass = false;
+        if (burn.last.effective_inertia.x > prev_inertia.x + 1e-12 ||
+            burn.last.effective_inertia.y > prev_inertia.y + 1e-12 ||
+            burn.last.effective_inertia.z > prev_inertia.z + 1e-12) {
+            mono_inertia = false;
+        }
+        prev_mass = burn.last.mass_kg;
+        prev_inertia = burn.last.effective_inertia;
+    }
     const double used = before - burn.vehicle.engine_systems().fuel_liters;
     test::check_range("fuel used in 5 s at full throttle", used, 0.02, 0.5, "L");
+    test::check("burning fuel reduces mass_kg and effective_inertia monotonically",
+                mono_mass && mono_inertia &&
+                burn.last.mass_kg < cfg.mass - 0.01 &&
+                burn.last.effective_inertia.x < inertia_spec.x &&
+                burn.last.effective_inertia.y < inertia_spec.y &&
+                burn.last.effective_inertia.z < inertia_spec.z);
+    burn.vehicle.service();
+    test::check("service() restores mass and effective_inertia to full-tank spec",
+                std::abs(burn.vehicle.current_mass() - cfg.mass) < 1e-9 &&
+                std::abs(burn.vehicle.current_inertia().x - inertia_spec.x) < 1e-9 &&
+                std::abs(burn.vehicle.current_inertia().y - inertia_spec.y) < 1e-9 &&
+                std::abs(burn.vehicle.current_inertia().z - inertia_spec.z) < 1e-9);
 
     // 2. Empty tank: no drive, the car only coasts down
     Simulation dry(cfg, flat);

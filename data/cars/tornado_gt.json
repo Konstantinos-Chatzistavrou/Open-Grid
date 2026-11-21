@@ -35,7 +35,60 @@
     "camber_gain2_deg_per_m2": -230,
     "roll_centre_gain": -1.8,
     "damper_knee_mps": 0.13,
-    "damper_high_speed_ratio": 0.45
+    "damper_high_speed_ratio": 0.45,
+    "kinematics": {
+      "type": "double_wishbone",
+      "lca_front": [
+        0.165,
+        0.356,
+        0.175
+      ],
+      "lca_rear": [
+        -0.175,
+        0.356,
+        0.175
+      ],
+      "lca_outer": [
+        0.005,
+        0.8,
+        0.219
+      ],
+      "uca_front": [
+        0.104,
+        0.541,
+        0.408
+      ],
+      "uca_rear": [
+        -0.166,
+        0.541,
+        0.408
+      ],
+      "uca_outer": [
+        -0.026,
+        0.768,
+        0.48
+      ],
+      "tie_inner": [
+        -0.116,
+        0.412,
+        0.215
+      ],
+      "tie_outer": [
+        -0.116,
+        0.777,
+        0.266
+      ],
+      "shock_lower": [
+        0.005,
+        0.676,
+        0.207
+      ],
+      "shock_upper": [
+        0.005,
+        0.576,
+        0.627
+      ]
+    }
   },
   "rear_axle": {
     "track_m": 1.73,
@@ -57,7 +110,60 @@
     "camber_gain2_deg_per_m2": -230,
     "roll_centre_gain": -1.5,
     "damper_knee_mps": 0.13,
-    "damper_high_speed_ratio": 0.45
+    "damper_high_speed_ratio": 0.45,
+    "kinematics": {
+      "type": "double_wishbone",
+      "lca_front": [
+        0.165,
+        0.366,
+        0.198
+      ],
+      "lca_rear": [
+        -0.175,
+        0.366,
+        0.198
+      ],
+      "lca_outer": [
+        0.005,
+        0.82,
+        0.229
+      ],
+      "uca_front": [
+        0.135,
+        0.587,
+        0.433
+      ],
+      "uca_rear": [
+        -0.135,
+        0.587,
+        0.433
+      ],
+      "uca_outer": [
+        0.005,
+        0.82,
+        0.5
+      ],
+      "tie_inner": [
+        -0.11,
+        0.438,
+        0.238
+      ],
+      "tie_outer": [
+        -0.11,
+        0.82,
+        0.277
+      ],
+      "shock_lower": [
+        0.005,
+        0.693,
+        0.22
+      ],
+      "shock_upper": [
+        0.005,
+        0.593,
+        0.64
+      ]
+    }
   },
   "tire_front": {
     "size": "245/35 R19",
@@ -73,7 +179,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -0.000037604,
+      "pEx4": -3.7604e-05,
       "slip_stiffness_per_load": 25.649,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -187,7 +293,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -0.000037604,
+      "pEx4": -3.7604e-05,
       "slip_stiffness_per_load": 26.599,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -350,7 +456,63 @@
       "power_ramp": 0.35,
       "coast_ramp": 0.2
     },
-    "awd_front_split": 0.3
+    "awd_front_split": 0.3,
+    "gear_teeth": [
+      [
+        -48,
+        15
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        51,
+        15
+      ],
+      [
+        46,
+        20
+      ],
+      [
+        41,
+        24
+      ],
+      [
+        37,
+        28
+      ],
+      [
+        39,
+        36
+      ],
+      [
+        30,
+        34
+      ]
+    ],
+    "final_drive_teeth": [
+      37,
+      10
+    ],
+    "clutch": {
+      "bite_point": 0.65,
+      "full_engage_point": 0.15,
+      "effective_radius_m": 0.098,
+      "num_surfaces": 4,
+      "mu_static": 0.42,
+      "mu_kinetic": 0.34,
+      "thermal_capacity_j_per_k": 1850,
+      "input_shaft_inertia_kgm2": 0.007
+    },
+    "synchro": {
+      "mu_sync": 0.12,
+      "shift_fork_force_n": 380,
+      "cone_radius_m": 0.04,
+      "cone_angle_deg": 7.0,
+      "num_cones": 3,
+      "engage_tol_rads": 42.0
+    }
   },
   "aero": {
     "drag_area_m2": 0.64,

@@ -351,6 +351,58 @@ RS_TEST(fixed_step) {
     test::check_range("history: never extrapolates past the newest", out.position.x, 5, 5, "m");
     h.sample(0.0, out);
     test::check_range("history: clamps to the oldest kept (tick 2)", out.position.x, 2, 2, "m");
+
+    // Per-wheel pose interpolation via rs::rt::blend(const StepRecord&, const StepRecord&, double alpha)
+    rs::rt::StepRecord ra, rb;
+    ra.tick = 20; rb.tick = 21;
+    ra.dt = 0.001; rb.dt = 0.001;
+    ra.chassis.position = {10.0, 0.0, 0.47};
+    rb.chassis.position = {10.04, 0.0, 0.47};
+    for (int w = 0; w < 4; ++w) {
+        ra.out.wheels[w].contact = true;
+        rb.out.wheels[w].contact = true;
+        ra.out.wheels[w].centre_world = {10.0 + (w < 2 ? 1.3 : -1.3), (w % 2 == 0 ? 0.8 : -0.8), 0.33};
+        rb.out.wheels[w].centre_world = {10.04 + (w < 2 ? 1.3 : -1.3), (w % 2 == 0 ? 0.8 : -0.8), 0.35};
+        ra.out.wheels[w].steer_angle = 0.10;
+        rb.out.wheels[w].steer_angle = 0.18;
+        ra.out.wheels[w].camber = -0.020;
+        rb.out.wheels[w].camber = -0.028;
+        ra.out.wheels[w].toe_angle = 0.002;
+        rb.out.wheels[w].toe_angle = 0.006;
+        ra.out.wheels[w].compression = 0.030;
+        rb.out.wheels[w].compression = 0.050;
+        ra.out.wheels[w].angular_velocity = 80.0;
+        rb.out.wheels[w].angular_velocity = 84.0;
+        ra.out.wheels[w].load = 3600.0;
+        rb.out.wheels[w].load = 4000.0;
+        ra.out.wheels[w].slip_ratio = 0.04;
+        rb.out.wheels[w].slip_ratio = 0.08;
+        ra.out.wheels[w].slip_angle = -0.02;
+        rb.out.wheels[w].slip_angle = -0.06;
+        ra.spin[w] = 6.20;
+        rb.spin[w] = 0.10; // wraps across 2*pi (delta = +0.1831853 rad)
+    }
+    bool wheel_blend_ok = true;
+    const double spin_delta = (0.10 + 2.0 * rs::kPi) - 6.20;
+    for (double alpha : {0.25, 0.50, 0.75}) {
+        const rs::rt::StepRecord rm = rs::rt::blend(ra, rb, alpha);
+        const rs::WheelOutput& w0 = rm.out.wheels[0];
+        const double exp_x = 11.30 + 0.04 * alpha;
+        const double exp_z = 0.33 + 0.02 * alpha;
+        const double exp_steer = 0.10 + 0.08 * alpha;
+        const double exp_cam = -0.020 - 0.008 * alpha;
+        const double exp_toe = 0.002 + 0.004 * alpha;
+        const double exp_comp = 0.030 + 0.020 * alpha;
+        const double exp_spin = 6.20 + spin_delta * alpha;
+        if (std::abs(w0.centre_world.x - exp_x) > 1e-9 || std::abs(w0.centre_world.z - exp_z) > 1e-9 ||
+            std::abs(w0.steer_angle - exp_steer) > 1e-9 || std::abs(w0.camber - exp_cam) > 1e-9 ||
+            std::abs(w0.toe_angle - exp_toe) > 1e-9 || std::abs(w0.compression - exp_comp) > 1e-9 ||
+            std::abs(rm.spin[0] - exp_spin) > 1e-9) {
+            wheel_blend_ok = false;
+        }
+    }
+    test::check("rs::rt::blend interpolates wheel centre_world, steer, camber, toe & spin at alpha=0.25,0.5,0.75",
+                wheel_blend_ok);
 }
 
 RS_TEST(runtime_determinism) {
@@ -553,6 +605,10 @@ RS_TEST(ue5_async_bridge) {
                 latest.out.wheels[0].contact && std::isfinite(latest.out.engine_rpm) && latest.out.engine_rpm > 500.0);
     test::check("ue5 async bridge processed commands and zero dropped records",
                 bridge.stats().commands_applied.load() > 0 && bridge.stats().records_dropped.load() == 0);
+    const rs::rt::StepRecord interp_mid = bridge.interpolate_record(0.5);
+    test::check("ue5 async bridge interpolate_record(0.5) produces valid interpolated wheel poses",
+                interp_mid.out.wheels[0].contact && std::isfinite(interp_mid.out.wheels[0].centre_world.x) &&
+                std::isfinite(interp_mid.spin[0]));
     std::printf("  ue5 async bridge: %llu records drained, speed %.2f m/s, x %.2f m, rpm %.0f\n",
                 static_cast<unsigned long long>(got), latest.out.speed, latest.chassis.position.x, latest.out.engine_rpm);
 }

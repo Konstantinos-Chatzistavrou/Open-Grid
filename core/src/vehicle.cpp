@@ -55,6 +55,23 @@ double Vehicle::current_mass() const {
     return std::max(0.5 * cfg_.mass, cfg_.mass - burnt_l * 0.745);
 }
 
+Vec3 Vehicle::current_inertia() const {
+    const double m_cur = current_mass();
+    const double dm = std::max(0.0, cfg_.mass - m_cur);
+    // Parallel-axis theorem around the rear fuel tank offset {-1.1 m, 0.0 m, -0.15 m}
+    // plus proportional mass ratio, clamped safely to [0.5 * I_spec, I_spec].
+    constexpr double rx = -1.1, ry = 0.0, rz = -0.15;
+    const double mass_frac = cfg_.mass > 1e-3 ? (dm / cfg_.mass) : 0.0;
+    const double d_ixx = dm * (ry * ry + rz * rz) + 0.35 * mass_frac * cfg_.inertia_xx;
+    const double d_iyy = dm * (rx * rx + rz * rz) + 0.35 * mass_frac * cfg_.inertia_yy;
+    const double d_izz = dm * (rx * rx + ry * ry) + 0.35 * mass_frac * cfg_.inertia_zz;
+    return {
+        clamp(cfg_.inertia_xx - d_ixx, 0.5 * cfg_.inertia_xx, cfg_.inertia_xx),
+        clamp(cfg_.inertia_yy - d_iyy, 0.5 * cfg_.inertia_yy, cfg_.inertia_yy),
+        clamp(cfg_.inertia_zz - d_izz, 0.5 * cfg_.inertia_zz, cfg_.inertia_zz)
+    };
+}
+
 void Vehicle::service() {
     EngineSystemState& sys = drivetrain_.systems;
     sys.fuel_liters = sys.fuel_capacity_liters;
@@ -71,6 +88,8 @@ void Vehicle::service() {
     sys.sync_state = SyncState::Idle;
     sys.sync_target_gear = -1;
     sys.popout_stress_s = 0.0;
+    sys.turbo_surge = 0.0;
+    sys.surge_boost_bar = 0.0;
 }
 
 void Vehicle::reset_motion(double v, int gear) {
@@ -101,6 +120,8 @@ void Vehicle::reset_motion(double v, int gear) {
     sys.clash_timer_s = 0.0;
     sys.clutch_opened_during_sync = false;
     sys.popout_stress_s = 0.0;
+    sys.turbo_surge = 0.0;
+    sys.surge_boost_bar = 0.0;
     shift_timer_ = 0.0;
     shift_release_timer_ = 0.0;
     since_shift_timer_ = 10.0;
@@ -722,7 +743,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     // for any step size).
     const int n_sub = std::max(1, (int)std::ceil(dt / max_substep - 1e-9));
     const double h = dt / n_sub;
-    std::array<double, 4> fx_sum{}, fy_sum{}, mz_sum{};
+    std::array<double, 4> fx_sum{}, fy_sum{}, mz_sum{}, kerb_ratio_sum{};
     DrivetrainInput din{input_.throttle, input_.clutch, input_.brake, input_.handbrake, input_.gear,
                         damage_.engine_power};
     din.brake_power_scale = damage_.brakes;
@@ -835,6 +856,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             fx_sum[w] += f.fx;
             fy_sum[w] += f.fy;
             mz_sum[w] += f.mz;
+            kerb_ratio_sum[w] += f.kerb_load_ratio;
             double slip_power = std::abs(f.fx * v_sx) + std::abs(f.fy * k.vy);
             wheel_angle_[w] += drivetrain_.wheel_omega[w] * h;
             if (tire_zones_enabled) {
@@ -965,6 +987,24 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         wo.contact_point = k.point;
         wo.force_world = k.fwd * fx + k.lat * fy;
         wo.grip_limit = std::max(tp.mu_x, tp.mu_y) * k.mu * k.load;
+        double kerb_ratio = kerb_ratio_sum[w] / n_sub;
+        if (contacts[w].surface >= 0 && contacts[w].surface < static_cast<int>(cfg_.surface_grip.size())
+            && cfg_.surface_grip[contacts[w].surface].first == "kerb"
+            && !contacts[w].patch_profile.has_height_map) {
+            kerb_ratio = std::max(kerb_ratio, 1.0);
+        }
+        if (std::abs(contacts[w].enveloping_slope_tan) > 0.01) {
+            kerb_ratio = std::max(kerb_ratio, clamp(std::abs(contacts[w].enveloping_slope_tan) / 0.15, 0.0, 1.0));
+        }
+        wo.kerb_load_ratio = clamp(kerb_ratio, 0.0, 1.0);
+        const double v_roll = std::hypot(k.vx, k.vy);
+        const double vert_excite = clamp((std::abs(comp_rate[w]) + 0.6 * std::abs(wo.unsprung_vel_mps)) / 1.2, 0.0, 1.0);
+        const double kerb_excite = wo.kerb_load_ratio * (0.25 + 0.55 * clamp(v_roll / 25.0, 0.0, 1.0))
+                                 + clamp(std::abs(contacts[w].enveloping_slope_tan) * 2.5, 0.0, 0.6);
+        const double surf_rough = clamp(1.0 - cfg_.grip_for_surface(contacts[w].surface), 0.0, 0.5) * clamp(v_roll / 20.0, 0.0, 1.0)
+                                + clamp(contacts[w].water_depth_mm / 6.0, 0.0, 0.4) * clamp(v_roll / 20.0, 0.0, 1.0);
+        const double base_rumble = 0.05 * clamp(v_roll / 50.0, 0.0, 1.0);
+        wo.surface_excitation = clamp(vert_excite + kerb_excite + surf_rough + base_rumble, 0.0, 1.0);
         // Suspension force acts along the body's up axis (plus symmetric heave jacking force);
         // longitudinal tyre force at the contact patch; lateral tyre force at the dynamic
         // roll-centre height (handles the roll-moment geometric transfer without double-counting);
@@ -1033,10 +1073,28 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     out.force = force;
     out.torque = torque;
     out.mass_kg = current_mass();
+    out.effective_inertia = current_inertia();
     out.accel = s.orientation.inv_rotate(force) / out.mass_kg;
     out.engine_rpm = drivetrain_.engine_rpm();
     out.gear = drivetrain_.systems.engaged_gear >= 0 ? drivetrain_.systems.engaged_gear : input_.gear;
     out.engine_stalled = drivetrain_.stalled;
+    const int cyl = cfg_.engine.cylinders > 0 ? cfg_.engine.cylinders : 8;
+    out.exhaust_primary_hz = (!out.engine_stalled && out.engine_rpm > 0.0)
+                           ? (out.engine_rpm * static_cast<double>(cyl) / 120.0)
+                           : 0.0;
+    int active_drive_teeth = 0;
+    if (out.gear >= 0 && out.gear != 1) {
+        if (out.gear < static_cast<int>(cfg_.drivetrain.gear_teeth.size())) {
+            active_drive_teeth = std::abs(cfg_.drivetrain.gear_teeth[out.gear][1]);
+        } else if (out.gear < static_cast<int>(cfg_.drivetrain.gear_ratios.size())
+                   && std::abs(cfg_.drivetrain.gear_ratios[out.gear]) > 1e-6) {
+            active_drive_teeth = clamp(static_cast<int>(std::lround(65.0 / (1.0 + std::abs(cfg_.drivetrain.gear_ratios[out.gear])))), 12, 42);
+        }
+    }
+    out.gear_whine_hz = (active_drive_teeth > 0)
+                      ? (std::abs(drivetrain_.systems.input_shaft_omega) * static_cast<double>(active_drive_teeth) / (2.0 * kPi))
+                      : 0.0;
+    out.turbo_surge = clamp(drivetrain_.systems.turbo_surge, 0.0, 1.0);
     out.boost_bar = drivetrain_.systems.boost_bar;
     out.bov_venting = drivetrain_.systems.bov_venting;
     out.intake_air_temp_c = drivetrain_.systems.intake_air_temp_c;

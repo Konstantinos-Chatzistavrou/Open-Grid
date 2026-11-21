@@ -42,6 +42,7 @@ struct ContactPatchOutput {
     double patch_width_m = 0.0;                        // total contact patch width 2b (m)
     int loaded_cells = 0;                              // number of cells with Fz_ij > 0
     double adhesion_ratio = 1.0;                       // load-weighted mean adhesion fraction across patch (0..1)
+    double kerb_load_ratio = 0.0;                      // 0..1 share of vertical load on raised kerb cells
     bool used_full_grid = false;                       // true if full 16-cell integration ran (false if flat-road analytical path)
 };
 
@@ -54,6 +55,7 @@ struct TireForces {
     double thermal_stiffness_scale = 1; // Simcenter 2606 T&V cornering/slip stiffness modulus factor (stiffer cold, softer hot)
     double contact_patch_length_m = 0;  // instantaneous contact patch length 2a (m), sensitive to load & inflation pressure
     double adhesion_ratio = 1.0;        // fraction of contact patch load in brush adhesion zone (1 = grip, 0 = full slide)
+    double kerb_load_ratio = 0.0;       // 0..1 share of vertical load carried by raised kerb cells in the 4x4 patch
 };
 
 // Simcenter Tire 2606 Broadband Transient Tire-Road NVH & Cavity Resonance Acoustic Source (for UE5 MetaSounds).
