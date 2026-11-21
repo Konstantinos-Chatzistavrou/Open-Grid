@@ -19,6 +19,12 @@
 
 namespace rs {
 
+enum class AutoClutchQuality : int {
+    Perfect = 0,            // Full declutch held until synchro completes + smooth release; never misses a shift
+    Normal  = 1,            // Competent street driver: clean normal shifts, can slow-sync/grind if slamming shifts
+    Poor    = 2             // Sloppy / late / brief declutch: can miss shifts and damage the transmission
+};
+
 struct DriverInput {
     double steer = 0;       // -1 (full right) .. +1 (full left)
     double throttle = 0;    // 0..1
@@ -27,6 +33,7 @@ struct DriverInput {
     double handbrake = 0;   // 0..1
     int gear = 1;           // index into gear_ratios: 0 = reverse, 1 = neutral, 2 = 1st, ...
     bool auto_clutch = false;   // ASSIST: clutch handled automatically (launch, anti-stall, shifts)
+    AutoClutchQuality auto_clutch_quality = AutoClutchQuality::Perfect;
     bool nos = false;           // N2O nitrous solenoid trigger
     bool starter = false;       // manual starter motor cranking button
 };
@@ -149,6 +156,14 @@ struct VehicleOutput {
     bool gear_grind = false;
     bool shift_cut_active = false;
     double driveline_clunk_nm = 0.0;
+    // Physical clutch disc & synchromesh gearbox telemetry
+    double clutch_temp_c = 40.0;
+    double clutch_health = 1.0;
+    double gearbox_health = 1.0;
+    int missed_shifts = 0;
+    bool missed_shift_event = false;
+    double clutch_torque_nm = 0.0;
+    bool clutch_locked = false;
     double slipstream_drag_scale = 1.0;
     double dirty_air_downforce_scale = 1.0;
     double chassis_twist_deg = 0.0;          // frame twist angle between front and rear axles (deg)
@@ -228,6 +243,7 @@ public:
     // apply this to their rigid body when it changes (web: world.ts, Unreal: UOpenGridVehicleComponent).
     double current_mass() const;
     double engine_rpm() const { return drivetrain_.engine_rpm(); }
+    const Drivetrain& drivetrain() const { return drivetrain_; }
     VehicleOutput update(const ChassisState& s, const std::array<WheelContact, 4>& contacts, double dt);
 
     double max_substep = 1.0 / 1000.0;   // s; internal integration step upper bound
@@ -266,7 +282,10 @@ private:
     std::array<double, 4> unsprung_vz_{};   // 2-DOF unsprung wheel vertical velocity (wheel hop), m/s
     AeroWakeState aero_wake_{};
     int last_gear_ = 1;                     // auto-clutch: detects gear changes
-    double shift_timer_ = 0;  // last lateral force per axle (geometric load transfer)
+    double shift_timer_ = 0;                // auto-clutch: active declutch hold timer (s)
+    double shift_release_timer_ = 0;        // auto-clutch: smooth post-sync clutch release ramp (s)
+    double since_shift_timer_ = 10.0;       // auto-clutch: time since previous shift (detects rapid shift slamming)
+    double missed_recover_timer_ = 0.0;     // auto-clutch: brief neutral penalty before recovering a missed shift
 
     double steer_angle(int wheel) const;
     double roll_centre(int wheel) const;      // roll centre height of the wheel's axle, m (migrates with heave)

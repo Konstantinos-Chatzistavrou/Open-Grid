@@ -32,6 +32,7 @@ struct ControlSettings {
     double self_align_rate = 3.0;        // steering units per second (how fast the caster pulls the wheel round)
     bool auto_gearbox = false;
     bool auto_clutch = true;
+    AutoClutchQuality auto_clutch_quality = AutoClutchQuality::Perfect;
     // keyboard: digital keys become ramps (units per second)
     double kb_steer_rate = 2.2, kb_steer_return = 4.0;
     double kb_throttle_rise = 3.0, kb_throttle_fall = 6.0;

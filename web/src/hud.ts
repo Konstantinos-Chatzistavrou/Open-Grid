@@ -36,6 +36,7 @@ export class Hud {
   private needle = 0;            // smoothed needle position, km/h
   private rev = 0;
   private lapsSeen = 0;
+  private missedShiftsSeen = 0;
   private toastTimer = 0;
   private warnHtml = '';
   private assistHtml = '';
@@ -121,6 +122,15 @@ export class Hud {
     }
 
     if (lap) this.updateLapToast(lap, dt);   // the lap-finished card reacts every frame; its texts below at 10 Hz
+    const missed = Math.round(out[OUT.missedShifts] || 0);
+    if (missed < this.missedShiftsSeen) {
+      this.missedShiftsSeen = missed;        // repaired or respawned
+    } else if (missed > this.missedShiftsSeen) {
+      this.missedShiftsSeen = missed;
+      const gbh = Math.round((out[OUT.gearboxHealth] ?? 1) * 100);
+      this.toast('MISSED SHIFT', gbh < 99 ? `NEUTRAL · GEARBOX ${gbh}%` : 'NEUTRAL');
+    }
+    if (this.toastTimer > 0 && (this.toastTimer -= dt) <= 0) $('toast').classList.remove('show');
 
     if (now - this.last < 100) return;   // DOM text at 10 Hz
     this.last = now;
@@ -176,6 +186,12 @@ export class Hud {
       if (maxFlat > 0.35) chips.push(`<div class="chip">FLAT-SPOT ${maxFlat.toFixed(1)}mm</div>`);
       if (maxBlister > 0.35) chips.push(`<div class="chip red">TIRES BLISTERING</div>`);
       if ((out[OUT.splitterStalled] || 0) > 0.5) chips.push(`<div class="chip">SPLITTER STALL</div>`);
+      const ct = out[OUT.clutchTemp] || 0;
+      const ch = out[OUT.clutchHealth] ?? 1;
+      const gbh = out[OUT.gearboxHealth] ?? 1;
+      if (ct > 280) chips.push(`<div class="chip ${ct > 360 ? 'red' : ''}">CLUTCH ${ct > 340 ? 'FADING' : 'HOT'} ${Math.round(ct / 10) * 10}°C</div>`);
+      if (ch < 0.5) chips.push(`<div class="chip ${ch < 0.25 ? 'red' : ''}">CLUTCH WORN ${Math.round(ch * 100)}%</div>`);
+      if (gbh < 0.7) chips.push(`<div class="chip ${gbh < 0.35 ? 'red' : ''}">GEARBOX ${Math.round(gbh * 100)}%</div>`);
     }
     if (this.outWarn) chips.push(`<div class="chip">${this.outWarn}</div>`);
     if (this.holdWarn) chips.push(`<div class="chip">${this.holdWarn}</div>`);
@@ -262,7 +278,7 @@ export class Hud {
   }
 
   /** Every frame: a lap just finished -> fade the lap card in, then out. */
-  private updateLapToast(lap: LapInfo, dt: number) {
+  private updateLapToast(lap: LapInfo, _dt: number) {
     if (lap.laps > this.lapsSeen) {          // a lap just finished: fade a card in, then out
       this.lapsSeen = lap.laps;
       const best = lap.last > 0 && Math.abs(lap.last - lap.best) < 1e-6;
@@ -271,7 +287,6 @@ export class Hud {
       t.classList.add('show');
       this.toastTimer = 3;
     }
-    if (this.toastTimer > 0 && (this.toastTimer -= dt) <= 0) $('toast').classList.remove('show');
   }
 
   /** textContent only when it changed (a same-value write still replaces the text node). */
@@ -288,7 +303,7 @@ export class Hud {
     t.classList.add('show');
     this.toastTimer = 2.5;
   }
-  resetLaps() { this.lapsSeen = 0; this.toastTimer = 0; $('toast').classList.remove('show'); this.board(null); }
+  resetLaps() { this.lapsSeen = 0; this.missedShiftsSeen = 0; this.toastTimer = 0; $('toast').classList.remove('show'); this.board(null); }
 
   private boardHtml = '';
   /**

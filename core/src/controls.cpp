@@ -93,6 +93,7 @@ DriverInput Controls::update(const RawInput& raw, const VehicleOutput& last, dou
     in.clutch = raw.clutch;
     in.handbrake = raw.handbrake;
     in.auto_clutch = s.auto_clutch;
+    in.auto_clutch_quality = s.auto_clutch_quality;
 
     // ---- gears: manual shift events always work; the automatic gearbox only moves between
     // forward gears. Shift points from engine rpm; a downshift is refused if it would over-rev.

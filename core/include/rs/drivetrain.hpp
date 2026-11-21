@@ -45,9 +45,15 @@ struct AtmosphericEnvironment {
 };
 
 enum class TransmissionType : int {
-    HPatternSynchro = 0,     // Manual H-pattern synchromesh: requires clutch or rev-match window; grinds if forced raw
-    SequentialDogBox = 1,    // Motorsport sequential dog-box: flat-foot upshifts via 55 ms ignition-cut backfire
+    HPatternSynchro = 0,     // Manual H-pattern synchromesh: baulk-ring cone clutch; grinds & misses if forced without sync
+    SequentialDogBox = 1,    // Motorsport sequential dog-box: flat-foot upshifts via 55 ms ignition-cut or matched speed
     DualClutchDct = 2        // Dual-clutch (DCT): 15 ms seamless torque handoff with zero boost drop
+};
+
+enum class SyncState : int {
+    Idle = 0,                // In gear or neutral with no active shift
+    Synchronizing = 1,       // Sleeve in neutral gate while baulk-ring cone matches input_shaft_omega to target gear
+    Missed = 2               // Dog clash / missed gear: kicked into neutral until clutch/gear re-attempted
 };
 
 // Night Runners / UE5 forced induction, intercooler, fuel load, transmission archetype, torsional driveline & health state.
@@ -73,12 +79,29 @@ struct EngineSystemState {
     double fuel_capacity_liters = 55.0;
     double fuel_mass_kg() const { return fuel_liters * 0.745; } // 0.745 kg/L RON 98 petrol
 
-    // Transmission Archetype (H-Pattern Synchro Grind / Sequential Dog-Box Flat-Shift Cut / DCT)
+    // Physical Clutch Disc (bite point, Karnopp stick/slip friction, thermal fade, wear)
+    double clutch_temp_c = 40.0;           // friction disc temperature (C; fades > 260 C)
+    double clutch_health = 1.0;            // 0..1 lining health (worn lining lowers capacity and raises bite point)
+    double clutch_clamp_frac = 1.0;        // 0..1 normalized clamp force from pedal travel curve
+    double clutch_slip_rads = 0.0;         // engine_omega - input_shaft_omega (rad/s)
+    bool clutch_locked = false;            // Karnopp stick state (true = locked without chatter)
+
+    // Transmission Archetype (H-Pattern Synchro Cone Clutch / Sequential Dog-Box Flat-Shift Cut / DCT)
     TransmissionType transmission = TransmissionType::SequentialDogBox;
-    bool strict_h_pattern_synchro = false; // when true on HPatternSynchro, clutchless un-matched shifts grind & block
+    bool strict_h_pattern_synchro = false; // when true on HPatternSynchro, zero grace window on clutchless shifts
     bool dog_box_flat_shift_cut = false;   // when true on SequentialDogBox, flat-foot upshifts trigger a 55 ms ignition cut
-    int engaged_gear = -1;                 // internal engaged gear (-1 = uninitialized)
-    bool gear_grind = false;               // true while synchro teeth are grinding from a missed H-pattern shift
+    int engaged_gear = -1;                 // internal engaged gear (-1 = uninitialized, 0 = R, 1 = N, 2.. = fwd)
+    double input_shaft_omega = 0.0;        // gearbox input shaft angular speed (rad/s)
+    double gearbox_health = 1.0;           // 0..1 synchro & gear tooth health (worn = slower sync, torque cap, pop-out)
+    int missed_shifts = 0;                 // cumulative count of missed shifts / damaged-tooth pop-outs
+    bool missed_shift_event = false;       // true when a missed shift triggered during the last substep
+    SyncState sync_state = SyncState::Idle;
+    int sync_target_gear = -1;             // target gear currently synchronizing or just missed
+    double sync_timer_s = 0.0;             // elapsed sync duration (s)
+    double clash_timer_s = 0.0;            // elapsed clash duration while clutch engaged during shift attempt (s)
+    bool clutch_opened_during_sync = false;// true once clutch released load during active synchronization
+    double popout_stress_s = 0.0;          // accumulated peak-torque stress for heavily damaged tooth pop-out
+    bool gear_grind = false;               // true while synchro / dog teeth are grinding from a missed shift
     double grind_timer_s = 0.0;
     bool shift_cut_active = false;         // true during a Sequential Dog-Box 55 ms ignition cut (triggers exhaust flame/pop)
     double shift_cut_timer_s = 0.0;
@@ -110,8 +133,15 @@ public:
     double engine_rpm() const;
     double engine_torque_full(double rpm) const; // N m at full throttle
     double clutch_torque = 0;                   // last clutch torque (engine -> gearbox), N m
-    EngineSystemState systems{};                // turbo boost, BOV, N2O nitrous, oil temp & mechanical wear
+    EngineSystemState systems{};                // turbo boost, BOV, N2O nitrous, oil temp, clutch/gearbox & wear
     static double max_boost_for_stage(int stage);
+
+    // Physical clutch & synchromesh helpers (used by step() and exposed for telemetry / tests)
+    double clutch_clamp_force(double pedal) const;                       // N, F_clamp(pedal) from bite-point travel curve
+    double clutch_torque_capacity(double pedal, bool static_mu = true) const; // N m, T_cap = mu(T) * F_clamp * r_eff * n
+    double synchro_torque_capacity() const;                              // N m, cone-clutch sync torque scaled by health
+    bool is_synchronizing() const { return systems.sync_state == SyncState::Synchronizing; }
+    static double clutch_temp_mu_factor(double temp_c);                  // 0.35..1.0 lining friction vs disc temperature
 
     // Differential tree node: a wheel (leaf) or a differential with two children and a torque
     // split (fraction of input torque to child a). Built once from the layout (rwd/fwd/awd).
@@ -126,6 +156,7 @@ private:
     const CarConfig& cfg_;
     std::vector<Node> nodes_;
     int root_ = -1;
+    double peak_engine_torque_ = 500.0;
     double gear_ratio(int gear) const;
 };
 

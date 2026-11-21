@@ -161,15 +161,52 @@ struct EngineParams {
     double friction_linear = 0.03;    // N m / (rad/s)
 };
 
+// Physical dry friction clutch disc parameters.
+// Capacity: T_cap = mu(temp, slip) * F_clamp(pedal) * effective_radius_m * num_surfaces
+// (Gillespie, "Fundamentals of Vehicle Dynamics"; Milliken & Milliken, RCVD).
+struct ClutchParams {
+    double bite_point = 0.65;                 // pedal [0..1] (0=up/engaged, 1=down/disengaged) where disc first contacts flywheel
+    double full_engage_point = 0.15;          // pedal travel below which diaphragm spring reaches full clamp force (top free play)
+    double effective_radius_m = 0.105;        // m, mean annular friction radius: (2/3)*(R_o^3 - R_i^3)/(R_o^2 - R_i^2)
+    int num_surfaces = 2;                     // friction faces (2 = single dry plate, 4 = twin-plate)
+    double mu_static = 0.42;                  // static lining friction coefficient (Karnopp stick)
+    double mu_kinetic = 0.34;                 // kinetic sliding friction coefficient (Karnopp slip, mu_k < mu_s)
+    double max_clamp_force_n = 0.0;           // N; <= 0 derives F_max from clutch_max_torque / (mu_static * r_eff * num_surfaces)
+    double thermal_capacity_j_per_k = 1600.0; // J/K, effective thermal mass of friction disc + pressure plate face
+    double cooling_base_w_per_k = 8.0;        // W/K, natural bellhousing convection
+    double cooling_per_mps_w_per_k = 0.35;    // W/(K * m/s), airflow cooling with vehicle speed
+    double cooling_per_rads_w_per_k = 0.03;   // W/(K * rad/s), flywheel pumping / windage cooling
+    double wear_per_joule = 1.2e-8;           // 1/J, lining wear per Joule of slip energy at normal temp
+    double input_shaft_inertia_kgm2 = 0.008;  // kg m^2, free inertia of clutch disc + gearbox input shaft when clutched out
+};
+
+// Physical baulk-ring synchromesh cone clutch parameters.
+// Synchronizing torque: T_sync = num_cones * mu_sync * shift_fork_force_n * cone_radius_m / sin(cone_angle_deg)
+// (Naunheimer et al., "Automotive Transmissions", Ch. 7).
+struct SynchroParams {
+    double mu_sync = 0.12;                    // wet friction cone coefficient in gear oil
+    double shift_fork_force_n = 350.0;        // N, axial force on synchronizer sleeve
+    double cone_radius_m = 0.038;             // m, mean synchronizer cone radius
+    double cone_angle_deg = 7.0;              // deg, cone half-angle alpha (typical 6.5..7.5 deg)
+    int num_cones = 2;                        // 1 = single-cone, 2 = double-cone, 3 = triple-cone
+    double engage_tol_rads = 42.0;            // rad/s (~400 RPM) max speed mismatch for clean synchro dog lock
+    double dog_engage_tol_rads = 95.0;        // rad/s (~900 RPM) dog-box engagement window without shift cut
+};
+
 struct DrivetrainParams {
-    std::vector<double> gear_ratios;  // index 0 = reverse (negative), 1 = neutral (0), 2.. forward
+    std::vector<double> gear_ratios;          // index 0 = reverse (negative), 1 = neutral (0), 2.. forward
+    std::vector<std::array<int, 2>> gear_teeth; // optional [driven, drive] tooth pairs per gear (0=R, 1=N=[0,0], 2.. fwd)
+    std::array<int, 2> final_drive_teeth{0, 0}; // optional [ring, pinion] tooth pair for differential final drive
     double final_drive = 3.7;
-    double efficiency = 0.92;         // gearbox + diff, applied to drive torque
-    double clutch_max_torque = 900;   // N m capacity at fully released pedal
-    double driveline_inertia = 0.05;  // kg m^2 gearbox input side
-    std::string layout = "rwd";       // "rwd", "fwd", "awd"
-    double awd_front_split = 0.4;     // torque fraction to the front (centre diff)
+    double efficiency = 0.92;                 // gearbox + diff, applied to drive torque
+    double clutch_max_torque = 900;           // N m static capacity at fully released pedal (used if max_clamp_force_n <= 0)
+    double driveline_inertia = 0.05;          // kg m^2 gearbox + driveshaft inertia reflected to input shaft
+    std::string layout = "rwd";               // "rwd", "fwd", "awd"
+    std::string transmission;                 // optional: "" (default), "h_pattern", "dog_box", "dct"
+    double awd_front_split = 0.4;             // torque fraction to the front (centre diff)
     DiffParams front_diff, rear_diff, centre_diff;
+    ClutchParams clutch;
+    SynchroParams synchro;
 };
 
 struct AeroParams {
