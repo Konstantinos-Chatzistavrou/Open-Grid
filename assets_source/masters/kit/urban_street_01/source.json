@@ -1,0 +1,12 @@
+{
+  "name": "Urban Street 01",
+  "url": "https://polyhaven.com/a/urban_street_01",
+  "author": "Andreas Mischok",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "urban_street_01_4k.exr"
+  ],
+  "notes": "Poly Haven HDRI, 4K EXR (27.9 MB, MD5 cc728194ef994a4141844ce272d25f19 checked) through the official API. Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). The source goes up to 16K; larger files are over the 50 MB per-file budget."
+}

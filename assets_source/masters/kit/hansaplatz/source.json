@@ -1,0 +1,12 @@
+{
+  "name": "Hansaplatz",
+  "url": "https://polyhaven.com/a/hansaplatz",
+  "author": "Greg Zaal",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "hansaplatz_4k.exr"
+  ],
+  "notes": "Poly Haven HDRI, 4K EXR (25.4 MB, MD5 2372b08ad07bbd0f5c1f8b5e447a01d7 checked) through the official API. Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). The source goes up to 16K; larger files are over the 50 MB per-file budget."
+}
