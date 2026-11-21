@@ -62,8 +62,8 @@ Build: `assets_source/scripts/make_trees.py` -> `web/public/assets/trees/`.
 
 - **Hayate** (`web/public/assets/cars/v5/hayate_hero.glb`): modified from "Generic Coupe \"Azura\"" by mk2design,
   https://sketchfab.com/3d-models/generic-coupe-azura-2e1a3699de7e4f688d328dc005ef1aac, licensed CC BY 4.0. Changes: renamed;
-  licence-plate text removed from the texture; body re-shaped (longer, lower nose, cabin moved back, lower roof, wider rear
-  haunches, shorter tail); flat paint, glass, trim and lamp materials; re-scaled, wheels split for the game; textures
+  licence-plate text removed from the texture (the model's own shape is kept since 2026-11-21); flat paint, glass, trim
+  and lamp materials; re-scaled, wheels split for the game; textures
   downscaled to WebP; compressed. Build: `assets_source/scripts/sketchfab_build.py` with `assets_source/cars/hayate.json`.
 
 - **Basilisk V12** (`web/public/assets/cars/v5/basilisk_v12_hero.glb`): modified from "Fictional supercar - V12 Goblin" by ollitei,
