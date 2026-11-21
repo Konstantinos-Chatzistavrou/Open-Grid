@@ -238,6 +238,24 @@ CarConfig parse_car_config(const std::string& text) {
     c.engine.inertia = num(e, "inertia_kgm2", "engine");
     c.engine.friction_const = num(e, "friction_const_nm", "engine");
     c.engine.friction_linear = num(e, "friction_linear_nm_per_radps", "engine");
+    if (e.contains("cylinders") && e.at("cylinders").is_number_integer()) {
+        c.engine.cylinders = std::max(1, e.at("cylinders").get<int>());
+    } else {
+        const std::string meta = c.name + " " + j.value("notes", "");
+        if (meta.find("V12") != std::string::npos || meta.find("Strix") != std::string::npos ||
+            meta.find("Basilisk") != std::string::npos || meta.find("Taurus") != std::string::npos ||
+            meta.find("Corsa") != std::string::npos) {
+            c.engine.cylinders = 12;
+        } else if (meta.find("V10") != std::string::npos || meta.find("Fulmine") != std::string::npos) {
+            c.engine.cylinders = 10;
+        } else if (meta.find("Flat-6") != std::string::npos || meta.find("9R") != std::string::npos ||
+                   meta.find("I6") != std::string::npos || meta.find("Ryujin") != std::string::npos ||
+                   meta.find("Hayate") != std::string::npos) {
+            c.engine.cylinders = 6;
+        } else {
+            c.engine.cylinders = 8;
+        }
+    }
 
     const json& d = j.at("drivetrain");
     if (d.contains("gear_ratios")) {

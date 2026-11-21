@@ -792,6 +792,24 @@ TireForces evaluate_contact_patch_grid(const TireParams& p, double kappa, double
     const double fz_norm_fix = fz / fz_sum_check;
     for (int idx = 0; idx < kPatchPoints; ++idx) cell_fz[idx] *= fz_norm_fix;
 
+    if (has_profile && fz > 1e-6) {
+        double min_road_dz = 1e9;
+        for (int idx = 0; idx < kPatchPoints; ++idx) {
+            if (active[idx]) min_road_dz = std::min(min_road_dz, op.patch->road_dz_m[idx]);
+        }
+        if (min_road_dz < 1e8) {
+            double kerb_fz = 0.0;
+            for (int idx = 0; idx < kPatchPoints; ++idx) {
+                if (!active[idx]) continue;
+                const double dz = op.patch->road_dz_m[idx];
+                if (dz > min_road_dz + 0.002 || dz > 0.003 || op.patch->mu_cell[idx] < 0.98) {
+                    kerb_fz += cell_fz[idx];
+                }
+            }
+            out.kerb_load_ratio = clamp(kerb_fz / fz, 0.0, 1.0);
+        }
+    }
+
     // 2. Per-column tread surface temperature & WLF rib grip multiplier (mapped via wheel_side_sign)
     std::array<double, kPatchCols> col_surf_c{90.0, 90.0, 90.0, 90.0};
     std::array<double, kPatchCols> col_wlf_mu{1.0, 1.0, 1.0, 1.0};
@@ -1009,7 +1027,10 @@ TireForces evaluate_contact_patch_grid(const TireParams& p, double kappa, double
     out.fy = fy_total;
     out.effective_rib_mu = clamp(wlf_mu_weighted / fz, 0.78, 1.05);
     out.adhesion_ratio = clamp(adh_weighted / fz, 0.0, 1.0);
-    if (op.patch_out) op.patch_out->adhesion_ratio = out.adhesion_ratio;
+    if (op.patch_out) {
+        op.patch_out->adhesion_ratio = out.adhesion_ratio;
+        op.patch_out->kerb_load_ratio = out.kerb_load_ratio;
+    }
 
     const double mu_eff_mean = mu_mean_weighted / fz;
     double trail_mf = 0.0;

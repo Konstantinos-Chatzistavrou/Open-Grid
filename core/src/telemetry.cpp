@@ -140,6 +140,8 @@ TelemetrySample make_telemetry_sample(
         s.flat_spot_depth_mm[i] = w.condition.flat_spot_depth_mm;
         s.brake_temp_c[i] = w.brake_temp_c;
         s.wheel_load_n[i] = w.load;
+        s.wheel_kerb_load_ratio[i] = w.kerb_load_ratio;
+        s.wheel_surface_excitation[i] = w.surface_excitation;
     }
     s.roll_centre_front_m = out.roll_centre_front_m;
     s.roll_centre_rear_m = out.roll_centre_rear_m;
@@ -147,6 +149,11 @@ TelemetrySample make_telemetry_sample(
     s.intake_air_temp_c = out.intake_air_temp_c;
     s.oil_temp_c = out.oil_temp_c;
     s.fuel_liters = out.fuel_liters;
+    s.mass_kg = out.mass_kg;
+    s.effective_inertia = out.effective_inertia;
+    s.exhaust_primary_hz = out.exhaust_primary_hz;
+    s.gear_whine_hz = out.gear_whine_hz;
+    s.turbo_surge = out.turbo_surge;
     s.slipstream_drag_scale = out.slipstream_drag_scale;
     return s;
 }

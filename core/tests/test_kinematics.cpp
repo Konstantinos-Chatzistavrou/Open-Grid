@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
 #include "harness.hpp"
+#include "../third_party/nlohmann/json.hpp"
 #include "rs/kinematics.hpp"
 #include "rs/telemetry.hpp"
 
@@ -330,5 +332,80 @@ RS_TEST(kinematics) {
         test::check("Telemetry exposes front & rear roll centre heights",
                     std::abs(ts.roll_centre_front_m - vfrc0.height_m) < 0.01 &&
                     std::abs(ts.roll_centre_rear_m - vrrc0.height_m) < 0.01);
+    }
+
+    // ---------------------------------------------------------------- 8. All 18 cars explicit kinematics & gear_teeth verification
+    {
+        static const char* kAllCars[18] = {
+            "aether_borealis", "aether_solis", "basilisk_v12", "falcorn_9r",
+            "falcorn_hellhound", "harrier_gt", "hayate", "kaze_kurogane",
+            "kaze_ryujin", "kestrel_gt", "kronos_fulmine", "kronos_taurus",
+            "strix_gt7", "tornado_gt", "tornado_gt3", "valenza_corsa",
+            "valenza_fiamma", "vela_gt"
+        };
+        int explicit_kin_count = 0;
+        int explicit_teeth_count = 0;
+        double worst_link_err_m = 0.0;
+        double worst_gear_rel_err = 0.0;
+        double worst_fd_rel_err = 0.0;
+        bool all_poses_ok = true;
+
+        for (const char* id : kAllCars) {
+            const std::string path = test::data_path(std::string("cars/") + id + ".json");
+            std::ifstream jf(path);
+            const nlohmann::json raw = nlohmann::json::parse(jf);
+            const auto raw_ratios = raw.at("drivetrain").at("gear_ratios").get<std::vector<double>>();
+            const double raw_fd = raw.at("drivetrain").at("final_drive").get<double>();
+
+            const CarConfig c = load_car_config(path);
+            if (c.front.kinematics.explicit_in_config && c.rear.kinematics.explicit_in_config) {
+                ++explicit_kin_count;
+            }
+            if (c.drivetrain.gear_teeth.size() == raw_ratios.size() &&
+                c.drivetrain.final_drive_teeth[0] > 0 && c.drivetrain.final_drive_teeth[1] > 0) {
+                ++explicit_teeth_count;
+            }
+            for (std::size_t gi = 0; gi < raw_ratios.size() && gi < c.drivetrain.gear_teeth.size(); ++gi) {
+                if (gi == 1 || std::abs(raw_ratios[gi]) < 1e-6) continue;
+                const double tooth_ratio = (gi == 0 ? -1.0 : 1.0)
+                    * std::abs(static_cast<double>(c.drivetrain.gear_teeth[gi][0]))
+                    / std::abs(static_cast<double>(c.drivetrain.gear_teeth[gi][1]));
+                const double rel = std::abs(tooth_ratio - raw_ratios[gi]) / std::abs(raw_ratios[gi]);
+                worst_gear_rel_err = std::max(worst_gear_rel_err, rel);
+            }
+            const double fd_tooth_ratio = static_cast<double>(c.drivetrain.final_drive_teeth[0])
+                                        / static_cast<double>(c.drivetrain.final_drive_teeth[1]);
+            worst_fd_rel_err = std::max(worst_fd_rel_err, std::abs(fd_tooth_ratio - raw_fd) / raw_fd);
+
+            for (int a = 0; a < 2; ++a) {
+                const SuspensionHardpoints& hp = (a == 0) ? c.front.kinematics : c.rear.kinematics;
+                const KinematicSolver sol(hp);
+                for (double dz : {-0.06, -0.03, 0.0, 0.03, 0.06}) {
+                    for (double yr : (a == 0 ? std::vector<double>{-0.04, 0.0, 0.04} : std::vector<double>{0.0})) {
+                        const KinematicPose p = sol.solve_pose(dz, yr);
+                        all_poses_ok &= p.valid;
+                        if (!p.valid) continue;
+                        worst_link_err_m = std::max(worst_link_err_m, std::abs(length(p.lca_outer - hp.lca_front) - sol.lca_front_len()));
+                        worst_link_err_m = std::max(worst_link_err_m, std::abs(length(p.lca_outer - hp.lca_rear) - sol.lca_rear_len()));
+                        worst_link_err_m = std::max(worst_link_err_m, std::abs(length(p.tie_outer - p.tie_inner) - sol.tie_rod_len()));
+                        worst_link_err_m = std::max(worst_link_err_m, std::abs(length(p.tie_outer - p.lca_outer) - sol.lca_to_tie_len()));
+                        if (hp.type == SuspensionType::DoubleWishbone) {
+                            worst_link_err_m = std::max(worst_link_err_m, std::abs(length(p.uca_outer - hp.uca_front) - sol.uca_front_len()));
+                            worst_link_err_m = std::max(worst_link_err_m, std::abs(length(p.uca_outer - hp.uca_rear) - sol.uca_rear_len()));
+                            worst_link_err_m = std::max(worst_link_err_m, std::abs(length(p.uca_outer - p.lca_outer) - sol.knuckle_len()));
+                        }
+                    }
+                }
+            }
+        }
+        std::printf("         All 18 cars: explicit_kin=%d/18, explicit_teeth=%d/18, max_link_err=%.3e m, max_gear_err=%.3f%%, max_fd_err=%.3f%%\n",
+                    explicit_kin_count, explicit_teeth_count, worst_link_err_m,
+                    worst_gear_rel_err * 100.0, worst_fd_rel_err * 100.0);
+        test::check("All 18 cars have explicit front & rear 3D suspension hardpoints", explicit_kin_count == 18);
+        test::check("All 18 cars have explicit gear_teeth and final_drive_teeth", explicit_teeth_count == 18);
+        test::check("All 18 cars maintain constant link lengths (< 1e-6 m) across travel & steer",
+                    all_poses_ok && worst_link_err_m < 1e-6);
+        test::check("All 18 cars gear tooth ratios match gear_ratios within 0.5%",
+                    worst_gear_rel_err < 0.005 && worst_fd_rel_err < 0.005);
     }
 }

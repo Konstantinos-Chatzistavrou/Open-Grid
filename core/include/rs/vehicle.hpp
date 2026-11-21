@@ -108,6 +108,8 @@ struct WheelOutput {
     double kpi_angle = 0.0;          // rad, instantaneous dynamic kingpin inclination
     double scrub_radius_m = 0.0;     // m, instantaneous scrub radius
     double motion_ratio = 1.0;       // wheel-to-shock kinematic motion ratio
+    double kerb_load_ratio = 0.0;    // 0..1 share of vertical load on raised kerb cells from the 4x4 contact patch
+    double surface_excitation = 0.0; // 0..1 high-frequency road/kerb/rumble vertical velocity excitation
 };
 
 // Chassis torsional stiffness (frame twist between front & rear strut towers), Active Torque-Vectoring E-Diff (AYC),
@@ -155,6 +157,10 @@ struct VehicleOutput {
     bool engine_misfire = false;
     double fuel_liters = 55.0;
     double mass_kg = 0.0;            // current total mass: spec mass minus the fuel burnt (see Vehicle::current_mass)
+    Vec3 effective_inertia{};        // kg m^2 (roll Ixx, pitch Iyy, yaw Izz), scaled dynamically as fuel burns from rear tank
+    double exhaust_primary_hz = 0.0; // Hz, fundamental 4-stroke exhaust firing pulse frequency (engine_rpm * cylinders / 120)
+    double gear_whine_hz = 0.0;      // Hz, transmission gear-tooth meshing frequency (|input_shaft_omega| * active_drive_teeth / (2*pi))
+    double turbo_surge = 0.0;        // 0..1 compressor surge flutter index when throttle closes abruptly under high boost
     bool gear_grind = false;
     bool shift_cut_active = false;
     double driveline_clunk_nm = 0.0;
@@ -245,6 +251,7 @@ public:
     // Total mass now. The car spec's mass is with a FULL tank; burnt fuel (0.745 kg/L) comes off it. Engines must
     // apply this to their rigid body when it changes (web: world.ts, Unreal: UOpenGridVehicleComponent).
     double current_mass() const;
+    Vec3 current_inertia() const;
     double engine_rpm() const { return drivetrain_.engine_rpm(); }
     const Drivetrain& drivetrain() const { return drivetrain_; }
     VehicleOutput update(const ChassisState& s, const std::array<WheelContact, 4>& contacts, double dt);

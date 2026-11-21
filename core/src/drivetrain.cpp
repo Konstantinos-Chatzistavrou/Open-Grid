@@ -435,14 +435,31 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
             const double exhaust_flow = clamp((rpm_norm - 0.18) / 0.55, 0.0, 1.0) * eff_thr_for_boost;
             const double target_boost = eff_thr_for_boost > 0.15 ? exhaust_flow * max_boost : -0.35 * (1.0 - eff_thr_for_boost);
             const double tau_spool = (target_boost > systems.boost_bar) ? (0.14 + 0.05 * systems.turbo_stage) : 0.065;
-            if (eff_thr_for_boost < 0.12 && systems.boost_bar > 0.32) {
+            if (eff_thr_for_boost < 0.12 && systems.boost_bar > 0.25) {
+                systems.surge_boost_bar = systems.bov_venting
+                                        ? std::max(systems.surge_boost_bar, systems.boost_bar)
+                                        : systems.boost_bar;
                 systems.bov_venting = true;
                 systems.bov_timer_s = 0.22;
             }
             systems.boost_bar += (target_boost - systems.boost_bar) * std::min(1.0, h / tau_spool);
-            if (systems.bov_timer_s > 0.0) {
+            if (systems.bov_timer_s > 0.0 && eff_thr_for_boost < 0.35) {
                 systems.bov_timer_s = std::max(0.0, systems.bov_timer_s - h);
-                if (systems.bov_timer_s <= 0.0) systems.bov_venting = false;
+                if (systems.bov_timer_s <= 0.0) {
+                    systems.bov_venting = false;
+                    systems.turbo_surge = 0.0;
+                    systems.surge_boost_bar = 0.0;
+                } else {
+                    const double surge_env = clamp(systems.bov_timer_s / 0.22, 0.0, 1.0)
+                                           * clamp(systems.surge_boost_bar / std::max(0.5, max_boost), 0.2, 1.0);
+                    const double flutter = 0.65 + 0.35 * std::sin((0.22 - systems.bov_timer_s) * 28.0 * 2.0 * kPi);
+                    systems.turbo_surge = clamp(surge_env * flutter, 0.0, 1.0);
+                }
+            } else {
+                systems.bov_timer_s = 0.0;
+                systems.bov_venting = false;
+                systems.turbo_surge = 0.0;
+                systems.surge_boost_bar = 0.0;
             }
             // Adiabatic compressor heating + air-to-air intercooler heat soak (at altitude, compressor works at higher PR):
             const double t_amb_c = env.enabled ? env.ambient_air_c : 25.0;
@@ -462,9 +479,30 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
             }
             turbo_mult *= systems.iat_power_factor * alt_turbo_factor;
         } else {
+            if (thr < 0.12 && systems.boost_bar > 0.25) {
+                systems.surge_boost_bar = std::max(systems.surge_boost_bar, systems.boost_bar);
+                systems.bov_venting = true;
+                systems.bov_timer_s = 0.22;
+            }
             systems.boost_bar = 0.0;
-            systems.bov_venting = false;
-            systems.bov_timer_s = 0.0;
+            if (systems.bov_timer_s > 0.0 && thr < 0.35) {
+                systems.bov_timer_s = std::max(0.0, systems.bov_timer_s - h);
+                if (systems.bov_timer_s <= 0.0) {
+                    systems.bov_venting = false;
+                    systems.turbo_surge = 0.0;
+                    systems.surge_boost_bar = 0.0;
+                } else {
+                    const double surge_env = clamp(systems.bov_timer_s / 0.22, 0.0, 1.0)
+                                           * clamp(systems.surge_boost_bar / 0.70, 0.2, 1.0);
+                    const double flutter = 0.65 + 0.35 * std::sin((0.22 - systems.bov_timer_s) * 28.0 * 2.0 * kPi);
+                    systems.turbo_surge = clamp(surge_env * flutter, 0.0, 1.0);
+                }
+            } else {
+                systems.bov_venting = false;
+                systems.bov_timer_s = 0.0;
+                systems.turbo_surge = 0.0;
+                systems.surge_boost_bar = 0.0;
+            }
             systems.intake_air_temp_c = env.enabled ? (env.ambient_air_c + 3.0) : 28.0;
             systems.iat_power_factor = 1.0;
             turbo_mult *= env.na_engine_power_factor();

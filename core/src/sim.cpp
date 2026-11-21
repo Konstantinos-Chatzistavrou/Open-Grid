@@ -104,6 +104,7 @@ void Simulation::step(const DriverInput& in) {
     }
     last = vehicle.update(body.state, contacts, dt);
     body.mass = last.mass_kg;   // burnt fuel makes the car lighter
+    body.inertia = last.effective_inertia;
     Vec3 gravity{0, 0, -kGravity * body.mass};
     Vec3 f = last.force + gravity;
     Vec3 v0 = body.state.velocity;

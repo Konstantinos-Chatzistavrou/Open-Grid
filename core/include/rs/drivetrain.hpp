@@ -62,6 +62,8 @@ struct EngineSystemState {
     double boost_bar = 0.0;         // current manifold gauge pressure (bar; negative in vacuum, positive under boost)
     bool bov_venting = false;       // true when blow-off valve is venting compressed charge on throttle lift (UE5 MetaSounds trigger)
     double bov_timer_s = 0.0;       // remaining BOV vent duration (s)
+    double turbo_surge = 0.0;       // 0..1 compressor surge flutter index when throttle closes abruptly under high boost
+    double surge_boost_bar = 0.0;   // captured manifold boost at throttle lift for compressor surge envelope
     double intake_air_temp_c = 28.0;// post-intercooler Intake Air Temperature (IAT, C; above 52 C pulls timing/density)
     double intercooler_eff = 0.74;  // air-to-air intercooler effectiveness (0..1)
     double iat_power_factor = 1.0;  // density & ECU knock-retard power multiplier from IAT heat soak

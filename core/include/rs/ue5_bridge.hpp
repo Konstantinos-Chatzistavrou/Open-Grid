@@ -270,9 +270,40 @@ public:
 
     template <typename F>
     std::size_t drain_records(F&& f) {
-        return runtime_.drain(std::forward<F>(f));
+        return runtime_.drain([&](const rt::StepRecord& r) {
+            record_history_step(r);
+            f(r);
+        });
     }
-    bool latest_record(rt::StepRecord& out) { return runtime_.latest(out); }
+    bool latest_record(rt::StepRecord& out) {
+        bool got = false;
+        runtime_.drain([&](const rt::StepRecord& r) {
+            record_history_step(r);
+            out = r;
+            got = true;
+        });
+        return got;
+    }
+
+    /**
+     * Return an interpolated StepRecord (including all 4 WheelOutput poses and spin[4]) between the previous
+     * and latest drained physics step at render blend factor `alpha` in [0, 1] (zero 1-step wheel lag).
+     */
+    rt::StepRecord interpolate_record(double alpha) const {
+        if (!has_latest_) return rt::StepRecord{};
+        return rt::blend(prev_record_, latest_record_, alpha);
+    }
+
+    bool sample_interpolated(double alpha, rt::StepRecord& out) const {
+        if (!has_latest_) return false;
+        out = rt::blend(prev_record_, latest_record_, alpha);
+        return true;
+    }
+
+    /** Sample the render-side StepRecord snapshot ring at fractional tick time `tick_time`. */
+    bool sample_at_tick(double tick_time, rt::StepRecord& out, double* alpha_out = nullptr) const {
+        return history_.sample(tick_time, out, alpha_out);
+    }
 
     // ---- physics thread (fixed rate, lock-free, wait-free) ------------------------------------------------------
     const VehicleOutput& step(const ChassisState& chassis, double dt) {
@@ -342,6 +373,17 @@ private:
     rt::VehicleRuntime<> runtime_;
     TripleBuffer<RayFrame> rays_tb_;
     TripleBuffer<GroundFrame> ground_tb_;
+    // game-thread interpolation state (updated by drain_records / latest_record)
+    void record_history_step(const rt::StepRecord& r) {
+        prev_record_ = has_latest_ ? latest_record_ : r;
+        latest_record_ = r;
+        has_latest_ = true;
+        history_.push(r);
+    }
+    bool has_latest_ = false;
+    rt::StepRecord prev_record_{};
+    rt::StepRecord latest_record_{};
+    SnapshotHistory<rt::StepRecord, 16> history_{};
     // physics-thread only scratch (kept as members so resolve_contacts avoids recomputing rays)
     std::array<WheelContactPatchRays, 4> patch_rays_{};
     std::array<WheelFootprint16Rays, 4> footprint_rays_{};

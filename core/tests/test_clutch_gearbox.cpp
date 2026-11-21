@@ -3,6 +3,8 @@
 // and auto-clutch quality levels (Perfect / Normal / Poor).
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include "harness.hpp"
 #include "rs/controls.hpp"
 
@@ -151,9 +153,21 @@ RS_TEST(gearbox_missed_shift) {
     test::check_range("2nd gear ratio from 46/20 teeth", cfg.drivetrain.gear_ratios[3], 2.299, 2.301, "-");
     test::check_range("3rd gear ratio from 41/24 teeth", cfg.drivetrain.gear_ratios[4], 1.707, 1.709, "-");
 
-    // Verify fallback: a car without gear_teeth uses its explicit gear_ratios unchanged.
+    // Verify kestrel_gt tooth counts and fallback when gear_teeth is omitted in JSON.
     CarConfig kcfg = load_car_config(test::data_path("cars/kestrel_gt.json"));
-    test::check("kestrel_gt without gear_teeth keeps explicit gear_ratios", kcfg.drivetrain.gear_teeth.empty() && kcfg.drivetrain.gear_ratios[2] == 3.3);
+    test::check("kestrel_gt loads physical gear_teeth with 1st == 3.3",
+                kcfg.drivetrain.gear_teeth.size() == 8 && std::abs(kcfg.drivetrain.gear_ratios[2] - 3.3) < 1e-6);
+    {
+        std::ifstream kf(test::data_path("cars/kestrel_gt.json"));
+        std::stringstream kss;
+        kss << kf.rdbuf();
+        std::string ktxt = kss.str();
+        const auto pos = ktxt.find("\"gear_teeth\"");
+        if (pos != std::string::npos) ktxt.replace(pos, 12, "\"_no_teeth_\"");
+        CarConfig kfallback = parse_car_config(ktxt);
+        test::check("config without gear_teeth keeps explicit gear_ratios",
+                    kfallback.drivetrain.gear_teeth.empty() && kfallback.drivetrain.gear_ratios[2] == 3.3);
+    }
 
     // A) Fast clutchless upshift on H-pattern synchromesh -> misses gear (stays in Neutral), triggers event & damage.
     auto s = test::make_sim(cfg);
