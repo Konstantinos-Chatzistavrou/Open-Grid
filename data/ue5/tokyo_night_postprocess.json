@@ -1,0 +1,208 @@
+{
+  "schema": "opengrid_ue5_postprocess/1",
+  "name": "PPV_TokyoNight",
+  "sourceReference": "docs/art_direction.md#tokyo-night-color-grading--scene-quality",
+  "volume": {
+    "bUnbound": true,
+    "Priority": 10,
+    "BlendWeight": 1,
+    "bEnabled": true
+  },
+  "LutAssetPath": "/Game/OpenGrid/PostProcess/TokyoNight_UE5_256x16",
+  "ColorGradingIntensity": 1,
+  "film": {
+    "FilmSlope": 0.91,
+    "FilmToe": 0.62,
+    "FilmShoulder": 0.28,
+    "FilmBlackClip": 0,
+    "FilmWhiteClip": 0.04
+  },
+  "colorGrading": {
+    "global": {
+      "ColorSaturation": [
+        1.18,
+        1.18,
+        1.18,
+        1
+      ],
+      "ColorContrast": [
+        1.16,
+        1.16,
+        1.16,
+        1
+      ],
+      "ColorGamma": [
+        0.96,
+        0.96,
+        0.96,
+        1
+      ],
+      "ColorGain": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "ColorOffset": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "shadows": {
+      "ColorCorrectionShadowsMax": 0.24,
+      "ColorSaturationShadows": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "ColorContrastShadows": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "ColorGammaShadows": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "ColorGainShadows": [
+        0.94,
+        1.03,
+        1.12,
+        1
+      ],
+      "ColorOffsetShadows": [
+        -0.008,
+        0.004,
+        0.014,
+        0
+      ]
+    },
+    "midtones": {
+      "ColorSaturationMidtones": [
+        1.04,
+        1.04,
+        1.04,
+        1
+      ],
+      "ColorContrastMidtones": [
+        1.02,
+        1.02,
+        1.02,
+        1
+      ],
+      "ColorGammaMidtones": [
+        0.98,
+        0.99,
+        1.01,
+        1
+      ],
+      "ColorGainMidtones": [
+        0.98,
+        1,
+        1.03,
+        1
+      ],
+      "ColorOffsetMidtones": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "highlights": {
+      "ColorCorrectionHighlightsMin": 0.55,
+      "ColorSaturationHighlights": [
+        1.04,
+        1.04,
+        1.04,
+        1
+      ],
+      "ColorContrastHighlights": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "ColorGammaHighlights": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "ColorGainHighlights": [
+        1.06,
+        1.03,
+        1.01,
+        1
+      ],
+      "ColorOffsetHighlights": [
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "bloom": {
+    "BloomMethod": "BM_FFT",
+    "BloomIntensity": 0.68,
+    "BloomThreshold": 1.42,
+    "BloomSizeScale": 5.2,
+    "BloomConvolutionScatterDispersion": 1,
+    "BloomConvolutionPreFilterMin": 1.42,
+    "BloomConvolutionPreFilterMax": 120,
+    "BloomConvolutionPreFilterMult": 12
+  },
+  "reflections": {
+    "DynamicGlobalIlluminationMethod": "Lumen",
+    "ReflectionMethod": "Lumen",
+    "LumenReflectionQuality": 2,
+    "LumenSceneLightingQuality": 1.5,
+    "LumenRayLightingMode": "HitLightingForReflections",
+    "LumenMaxRoughnessToTraceReflections": 0.45,
+    "HardwareRayTracing": true
+  },
+  "exposure": {
+    "AutoExposureMethod": "AEM_Histogram",
+    "AutoExposureBias": 0.15,
+    "AutoExposureMinBrightness": 0.25,
+    "AutoExposureMaxBrightness": 1.5
+  },
+  "lens": {
+    "VignetteIntensity": 0.28,
+    "FilmGrainIntensity": 0.008,
+    "ChromaticAberrationIntensity": 0.12
+  },
+  "targetLuminancePercentiles": {
+    "p5": 0.031,
+    "p25": 0.064,
+    "p50": 0.142,
+    "p75": 0.371,
+    "p95": 0.867
+  },
+  "webReferenceGrade": {
+    "exposure": 1.54,
+    "contrast": 0.28,
+    "lift": 0.004,
+    "gamma": 0.96,
+    "sat": 1.18,
+    "split": 0.44,
+    "grain": 0.008,
+    "shadowTint": [
+      -0.024,
+      0.075,
+      0.195
+    ],
+    "highlightTint": [
+      0.18,
+      0.09,
+      0.04
+    ]
+  }
+}

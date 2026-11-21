@@ -159,6 +159,155 @@ def projected_patch(surf, name, material, outline_fn, nu, nv, direction, offset,
     return bm_obj(bm, name, material, parent=root)
 
 
+def bm_obj_multi(bm, name, mat_list, parent=None, location=(0, 0, 0), rot_deg=(0, 0, 0)):
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(ob)
+    ob.location = location
+    ob.rotation_euler = tuple(math.radians(a) for a in rot_deg)
+    for m in mat_list:
+        ob.data.materials.append(m)
+    for p in ob.data.polygons:
+        p.use_smooth = True
+    if parent is not None:
+        ob.parent = parent
+    return ob
+
+
+def _append_bmesh(dst, src, mat_idx=0):
+    for f in src.faces:
+        f.material_index = mat_idx
+    tmp = bpy.data.meshes.new("_tmp_app")
+    src.to_mesh(tmp)
+    src.free()
+    dst.from_mesh(tmp)
+    bpy.data.meshes.remove(tmp)
+
+
+def add_box_to_bm(bm, center, size, rot_deg=(0, 0, 0), bevel=0.0, mat_idx=0):
+    from mathutils import Euler
+    b2 = bmesh.new()
+    bmesh.ops.create_cube(b2, size=1.0)
+    for v in b2.verts:
+        v.co.x *= size[0]
+        v.co.y *= size[1]
+        v.co.z *= size[2]
+    if bevel > 0:
+        bmesh.ops.bevel(b2, geom=list(b2.edges), offset=bevel, segments=2, affect="EDGES", clamp_overlap=True)
+    rot_m = Euler(tuple(math.radians(a) for a in rot_deg), "XYZ").to_matrix()
+    c_vec = Vector(center)
+    for v in b2.verts:
+        v.co = rot_m @ v.co + c_vec
+    bmesh.ops.recalc_face_normals(b2, faces=b2.faces)
+    _append_bmesh(bm, b2, mat_idx=mat_idx)
+
+
+def add_cyl_to_bm(bm, center, radius, depth, rot_deg=(0, 0, 0), segs=24, mat_idx=0):
+    from mathutils import Euler
+    b2 = bmesh.new()
+    bmesh.ops.create_cone(
+        b2, cap_ends=True, cap_tris=False, segments=segs,
+        radius1=radius, radius2=radius, depth=depth,
+    )
+    rot_m = Euler(tuple(math.radians(a) for a in rot_deg), "XYZ").to_matrix()
+    c_vec = Vector(center)
+    for v in b2.verts:
+        v.co = rot_m @ v.co + c_vec
+    bmesh.ops.recalc_face_normals(b2, faces=b2.faces)
+    _append_bmesh(bm, b2, mat_idx=mat_idx)
+
+
+def add_tube_to_bm(bm, pts, radius, segs=16, closed=False, mat_idx=0, cap_ends=True):
+    """Sweep a smooth circular tube along a 3D polyline using parallel transport frames."""
+    pvecs = [Vector(p) for p in pts]
+    n = len(pvecs)
+    if n < 2:
+        return
+    tangents = []
+    for i in range(n):
+        if closed:
+            t = (pvecs[(i + 1) % n] - pvecs[(i - 1) % n]).normalized()
+        elif i == 0:
+            t = (pvecs[1] - pvecs[0]).normalized()
+        elif i == n - 1:
+            t = (pvecs[-1] - pvecs[-2]).normalized()
+        else:
+            t = (pvecs[i + 1] - pvecs[i - 1]).normalized()
+        tangents.append(t)
+
+    # Initial frame
+    t0 = tangents[0]
+    ref = Vector((0.0, 0.0, 1.0)) if abs(t0.z) < 0.9 else Vector((1.0, 0.0, 0.0))
+    u = t0.cross(ref).normalized()
+    v = t0.cross(u).normalized()
+
+    b2 = bmesh.new()
+    rings = []
+    for i in range(n):
+        ti = tangents[i]
+        if i > 0:
+            # Parallel transport previous frame onto current tangent
+            u = u - ti * u.dot(ti)
+            if u.length < 1e-6:
+                ref = Vector((0.0, 0.0, 1.0)) if abs(ti.z) < 0.9 else Vector((1.0, 0.0, 0.0))
+                u = ti.cross(ref)
+            u.normalize()
+            v = ti.cross(u).normalized()
+        r_i = radius(i / max(1, n - 1)) if callable(radius) else radius
+        ring = []
+        for s in range(segs):
+            ang = 2.0 * math.pi * s / segs
+            offset = (u * math.cos(ang) + v * math.sin(ang)) * r_i
+            ring.append(b2.verts.new(pvecs[i] + offset))
+        rings.append(ring)
+
+    n_seg = n if closed else n - 1
+    for i in range(n_seg):
+        ni = (i + 1) % n
+        for s in range(segs):
+            ns = (s + 1) % segs
+            b2.faces.new((rings[i][s], rings[i][ns], rings[ni][ns], rings[ni][s]))
+    if not closed and cap_ends:
+        b2.faces.new(list(reversed(rings[0])))
+        b2.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(b2, faces=b2.faces)
+    _append_bmesh(bm, b2, mat_idx=mat_idx)
+
+
+def generate_box_uvs(ob, uv_name="UVMap", tile_meters=2.0):
+    """Assign uniform world-scale triplanar box-projected UVs (`UVMap`) to a mesh object."""
+    me = ob.data
+    if not me.polygons:
+        if uv_name not in me.uv_layers:
+            me.uv_layers.new(name=uv_name)
+        return
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    uv_layer = bm.loops.layers.uv.get(uv_name) or bm.loops.layers.uv.new(uv_name)
+    mw = ob.matrix_world
+    nmat = mw.to_3x3().inverted_safe().transposed()
+    inv_tile = 1.0 / tile_meters
+    for f in bm.faces:
+        wn = nmat @ f.normal
+        ax, ay, az = abs(wn.x), abs(wn.y), abs(wn.z)
+        for loop in f.loops:
+            wp = mw @ loop.vert.co
+            if az >= ax and az >= ay:
+                u, v = wp.x * inv_tile, wp.y * inv_tile
+            elif ax >= ay and ax >= az:
+                u, v = wp.y * inv_tile, wp.z * inv_tile
+            else:
+                u, v = wp.x * inv_tile, wp.z * inv_tile
+            loop[uv_layer].uv = (u, v)
+    bm.to_mesh(me)
+    bm.free()
+    layer = me.uv_layers.get(uv_name)
+    if layer is not None:
+        me.uv_layers.active = layer
+
+
 # 10 radically distinct automotive design specs
 FLEET = [
     {
@@ -660,7 +809,7 @@ FLEET = [
 ]
 
 
-def build_wheel(name, side, loc, radius, width, spoke_style, mats, root):
+def build_wheel(name, side, loc, radius, width, spoke_style, mats, root, ue5_nanite=False):
     w_root = bpy.data.objects.new(name, None)
     bpy.context.scene.collection.objects.link(w_root)
     w_root.location = loc
@@ -678,7 +827,7 @@ def build_wheel(name, side, loc, radius, width, spoke_style, mats, root):
         (half_w * 0.94, radius - 0.012), (half_w * 0.98, rim_r + (radius - rim_r) * 0.42),
         (half_w * 0.84, rim_r),
     ]
-    n_ring = 36
+    n_ring = 64 if ue5_nanite else 36
     rings = []
     for i in range(n_ring):
         a = 2 * math.pi * i / n_ring
@@ -695,7 +844,7 @@ def build_wheel(name, side, loc, radius, width, spoke_style, mats, root):
 
     # Rim barrel + bespoke spoke pattern
     bm_r = bmesh.new()
-    n_b = 32
+    n_b = 48 if ue5_nanite else 32
     b_prof = [
         (half_w * 0.90 * side, rim_r + 0.008), (half_w * 0.90 * side, rim_r - 0.014),
         (-half_w * 0.82 * side, rim_r - 0.016), (-half_w * 0.82 * side, rim_r + 0.004),
@@ -726,7 +875,7 @@ def build_wheel(name, side, loc, radius, width, spoke_style, mats, root):
     n_spokes, branches, hw0 = patterns.get(spoke_style, (5, [(0.0, 0.0)], 0.016))
     if spoke_style == "turbofan":
         # Flat/conical rally Turbofan aero-disc face with 16 perimeter radial cooling vane slots
-        n_ring_tf = 32
+        n_ring_tf = 48 if ue5_nanite else 32
         r_in, r_mid, r_out = 0.052, rim_r * 0.80, rim_r - 0.008
         x_in, x_mid, x_out = 0.068 * side, 0.088 * side, 0.082 * side
         ring_in = [bm_r.verts.new((x_in, r_in * math.cos(2 * math.pi * i / n_ring_tf), r_in * math.sin(2 * math.pi * i / n_ring_tf))) for i in range(n_ring_tf)]
@@ -761,13 +910,156 @@ def build_wheel(name, side, loc, radius, width, spoke_style, mats, root):
     bmesh.ops.recalc_face_normals(bm_r, faces=bm_r.faces)
     bm_obj(bm_r, f"{name}_rim", mats["rim"], parent=w_root)
 
-    add_cyl(f"{name}_hub", mats["rim"], (0.055 * side, 0, 0), 0.058, 0.056, (0, 90, 0), 20, w_root)
-    add_cyl(f"{name}_disc", mats["disc"], (-0.012 * side, 0, 0), rim_r * 0.78, 0.026, (0, 90, 0), 28, w_root)
+    if not ue5_nanite:
+        add_cyl(f"{name}_hub", mats["rim"], (0.055 * side, 0, 0), 0.058, 0.056, (0, 90, 0), 20, w_root)
+        add_cyl(f"{name}_disc", mats["disc"], (-0.012 * side, 0, 0), rim_r * 0.78, 0.026, (0, 90, 0), 28, w_root)
 
-    cal_y = 0.135 if loc[1] < 0 else -0.135
-    add_box(f"caliper_{name.split('_')[1]}", mats["caliper"],
-            (loc[0] - 0.008 * side, loc[1] + cal_y, loc[2] + 0.028),
-            (0.064, 0.080, 0.160), (0, 0, 0), root, bevel=0.014)
+        cal_y = 0.135 if loc[1] < 0 else -0.135
+        add_box(f"caliper_{name.split('_')[1]}", mats["caliper"],
+                (loc[0] - 0.008 * side, loc[1] + cal_y, loc[2] + 0.028),
+                (0.064, 0.080, 0.160), (0, 0, 0), root, bevel=0.014)
+        return
+
+    # ---- UE 5.8 Nanite High-Detail Hub + Ventilated Brake Rotor + Multi-Piston Caliper ----
+    bm_hub = bmesh.new()
+    add_cyl_to_bm(bm_hub, (0.055 * side, 0, 0), 0.058, 0.056, (0, 90, 0), segs=32, mat_idx=0)
+    add_cyl_to_bm(bm_hub, (0.084 * side, 0, 0), 0.028, 0.010, (0, 90, 0), segs=24, mat_idx=1)
+    for k in range(5):
+        la = 2.0 * math.pi * k / 5.0
+        add_cyl_to_bm(bm_hub, (0.080 * side, 0.042 * math.cos(la), 0.042 * math.sin(la)),
+                      0.0075, 0.018, (0, 90, 0), segs=12, mat_idx=1)
+    bm_obj_multi(bm_hub, f"{name}_hub", [mats["rim"], mats["chrome"]], parent=w_root)
+
+    # Larger ventilated brake rotor disc (verts=48) with chamfered anodized hat + 24 radial cooling vanes
+    disc_r = rim_r * 0.84
+    hat_r = disc_r * 0.49
+    hub_r = 0.052
+    disc_x = -0.012 * side
+    n_disc = 48
+    bm_d = bmesh.new()
+    # Closed (x_offset_from_disc_x_along_side, radius, mat_idx_of_segment) revolution profile
+    d_prof = [
+        (-0.016, hub_r, 1),          # 0: inboard hat inner
+        (-0.016, hat_r, 0),          # 1: inboard rotor inner
+        (-0.016, disc_r - 0.003, 0), # 2: inboard friction cheek outer
+        (-0.013, disc_r, 0),         # 3: inboard chamfered lip
+        (-0.005, disc_r, 0),         # 4: vent slot inboard edge
+        (-0.005, disc_r - 0.015, 0), # 5: vent slot recessed floor inboard
+        (0.005,  disc_r - 0.015, 0), # 6: vent slot recessed floor outboard
+        (0.005,  disc_r, 0),         # 7: vent slot outboard edge
+        (0.013,  disc_r, 0),         # 8: outboard chamfered lip
+        (0.016,  disc_r - 0.003, 0), # 9: outboard friction cheek outer
+        (0.016,  hat_r + 0.014, 1),  # 10: hat outer collar base
+        (0.032,  hat_r + 0.004, 1),  # 11: hat barrel wall
+        (0.044,  hat_r - 0.010, 1),  # 12: 45-deg chamfered hat shoulder
+        (0.044,  hub_r, 1),          # 13: hat face inner
+    ]
+    drings = []
+    for i in range(n_disc):
+        a = 2.0 * math.pi * i / n_disc
+        ca, sa = math.cos(a), math.sin(a)
+        drings.append([bm_d.verts.new((disc_x + px * side, r * ca, r * sa)) for px, r, _ in d_prof])
+    mp = len(d_prof)
+    for i in range(n_disc):
+        ni = (i + 1) % n_disc
+        for j in range(mp):
+            nj = (j + 1) % mp
+            f = bm_d.faces.new((drings[i][j], drings[ni][j], drings[ni][nj], drings[i][nj]))
+            f.material_index = d_prof[j][2]
+    # 24 internal radial cooling vanes bridging the perimeter ventilation groove
+    for v_idx in range(24):
+        va = 2.0 * math.pi * v_idx / 24.0
+        r_mid = disc_r - 0.0075
+        add_box_to_bm(
+            bm_d,
+            (disc_x, r_mid * math.cos(va), r_mid * math.sin(va)),
+            (0.012, 0.015, 0.0045),
+            rot_deg=(math.degrees(va), 0, 0),
+            bevel=0.0,
+            mat_idx=0,
+        )
+    # 10 anodized rotor-to-hat floating bobbins around the chamfered hat perimeter
+    for b_idx in range(10):
+        ba = 2.0 * math.pi * b_idx / 10.0
+        rb = hat_r + 0.008
+        add_cyl_to_bm(
+            bm_d,
+            (disc_x + 0.020 * side, rb * math.cos(ba), rb * math.sin(ba)),
+            0.006, 0.010, (0, 90, 0), segs=10, mat_idx=2,
+        )
+    bmesh.ops.recalc_face_normals(bm_d, faces=bm_d.faces)
+    bm_obj_multi(bm_d, f"{name}_disc", [mats["disc"], mats["brake_hat"], mats["chrome"]], parent=w_root)
+
+    # Sculpted multi-piston monoblock caliper hugging the rotor + chrome caliper bridge bolts
+    cal_tag = name.split("_")[1]
+    bm_c = bmesh.new()
+    is_front = loc[1] < 0
+    # Center angle in (Y, Z) wheel plane: front wheels -> behind axle (+Y, slightly up); rear -> ahead (-Y, slightly up)
+    ang_center = math.radians(12.0) if is_front else math.radians(168.0)
+    ang_half = math.radians(28.0)
+    r_in = disc_r * 0.63
+    r_out = min(disc_r + 0.016, rim_r - 0.022)
+    x_in = -0.044 * side
+    x_out = 0.032 * side
+    # Sweep an 11-station sculpted cross-section along the caliper arc (tapered ends, muscular center)
+    n_arc = 10
+    cal_rings = []
+    for i in range(n_arc + 1):
+        t = i / n_arc
+        a = ang_center + lerp(-ang_half, ang_half, t)
+        ca, sa = math.cos(a), math.sin(a)
+        # Taper radial thickness & axial fullness slightly at top/bottom tips
+        bulge = 0.72 + 0.28 * math.sin(math.pi * t)
+        ri = r_in + (1.0 - bulge) * 0.012
+        ro = r_out - (1.0 - bulge) * 0.005
+        xi = disc_x + x_in * (0.86 + 0.14 * bulge)
+        xo = disc_x + x_out * (0.84 + 0.16 * bulge)
+        # 8-point chamfered caliper cross-section in (x, r)
+        c_prof = [
+            (xi + 0.006 * side, ri),
+            (xi, ri + 0.008),
+            (xi, ro - 0.010),
+            (xi + 0.010 * side, ro),
+            (xo - 0.010 * side, ro),
+            (xo, ro - 0.010),
+            (xo, ri + 0.008),
+            (xo - 0.006 * side, ri),
+        ]
+        cal_rings.append([bm_c.verts.new((px, r * ca, r * sa)) for px, r in c_prof])
+    nc = len(cal_rings[0])
+    for i in range(n_arc):
+        for j in range(nc):
+            nj = (j + 1) % nc
+            f = bm_c.faces.new((cal_rings[i][j], cal_rings[i + 1][j], cal_rings[i + 1][nj], cal_rings[i][nj]))
+            f.material_index = 0
+    bm_c.faces.new(list(reversed(cal_rings[0]))).material_index = 0
+    bm_c.faces.new(cal_rings[-1]).material_index = 0
+    # 6 sculpted piston domes (3 outboard + 3 inboard) along the caliper arc
+    for p_off in (-0.56, 0.0, 0.56):
+        pa = ang_center + ang_half * p_off
+        pr = lerp(r_in, r_out, 0.45)
+        add_cyl_to_bm(bm_c, (disc_x + (x_out + 0.005 * side), pr * math.cos(pa), pr * math.sin(pa)),
+                      0.018, 0.014, (0, 90, 0), segs=16, mat_idx=0)
+        add_cyl_to_bm(bm_c, (disc_x + (x_in - 0.004 * side), pr * math.cos(pa), pr * math.sin(pa)),
+                      0.017, 0.012, (0, 90, 0), segs=14, mat_idx=0)
+    # 4 stainless/chrome caliper bridge bolts spanning the outer caliper bridge
+    for b_off in (-0.72, -0.24, 0.24, 0.72):
+        ba = ang_center + ang_half * b_off
+        br = r_out - 0.012
+        add_cyl_to_bm(bm_c, (disc_x + 0.002 * side, br * math.cos(ba), br * math.sin(ba)),
+                      0.0055, abs(x_out - x_in) + 0.010, (0, 90, 0), segs=12, mat_idx=1)
+    # Recessed dark brake pad backing plate visible in caliper throat
+    r_pad = disc_r - 0.008
+    add_box_to_bm(
+        bm_c,
+        (disc_x, r_pad * math.cos(ang_center), r_pad * math.sin(ang_center)),
+        (0.036, 0.026, 0.078),
+        rot_deg=(math.degrees(ang_center), 0, 0),
+        bevel=0.002,
+        mat_idx=2,
+    )
+    bmesh.ops.recalc_face_normals(bm_c, faces=bm_c.faces)
+    bm_obj_multi(bm_c, f"caliper_{cal_tag}", [mats["caliper"], mats["chrome"], mats["trim"]], parent=root, location=loc)
 
 
 def build_wing(style, half_len, tail_z, tail_w, mats, root, spec=None):
@@ -886,7 +1178,245 @@ def build_exhausts(style, half_len, mats, root):
         add_cyl(f"bore_dark_{i}", mats["under"], (tx, y_out - 0.005, tz), tr * 0.78, 0.04, (90, 0, 0), 16, root)
 
 
-def sculpt_car(spec, out_path):
+def build_cockpit_nanite(spec, CAB_Y, CAB_ROOF, CAB_ROOF_W, SH_Z, ZB, WB, SH_IN, mats, root):
+    """Build detailed UE 5.8 Nanite cockpit interior: tub, dashboard cowl + binnacle,
+    3-spoke sport steering wheel (`steering_wheel`), center console + shift knob,
+    3 metallic pedals, twin bolstered racing bucket seats, and rear roll-bar hoop."""
+    y_dash = lerp(CAB_Y[0], CAB_Y[2], 0.48)
+    y_seat = lerp(CAB_Y[2], CAB_Y[4], 0.42)
+    y_roll = lerp(CAB_Y[3], CAB_Y[4], 0.72)
+    z_floor = max(ZB(y_seat), 0.12) + 0.10
+    z_belt = min(SH_Z(y_dash), SH_Z(y_seat)) - 0.05
+    z_roof_mid = min(CAB_ROOF[2], CAB_ROOF[3])
+    z_roof_rear = min(CAB_ROOF[3], CAB_ROOF[4])
+    z_dash_top = min(z_belt, CAB_ROOF[1] - 0.22)
+
+    cab_half_w = min(WB(y_seat) - SH_IN(y_seat) - 0.16, 0.64)
+    dash_half_w = min(WB(y_dash) - SH_IN(y_dash) - 0.15, cab_half_w)
+    drv_x = min(0.32, cab_half_w * 0.54)
+
+    # 1. Sculpted interior tub (floorpan, front firewall, side door cards, rear bulkhead)
+    bm_tub = bmesh.new()
+    y_front = y_dash - 0.28
+    y_back = y_roll + 0.26
+    tub_len = y_back - y_front
+    tub_ym = 0.5 * (y_front + y_back)
+    add_box_to_bm(bm_tub, (0.0, tub_ym, z_floor - 0.03), (cab_half_w * 2.02, tub_len, 0.06), bevel=0.01, mat_idx=0)
+    add_box_to_bm(bm_tub, (0.0, y_front, z_floor + 0.22), (dash_half_w * 1.96, 0.06, 0.46), (12, 0, 0), bevel=0.01, mat_idx=0)
+    add_box_to_bm(bm_tub, (0.0, y_back, z_floor + 0.30), (cab_half_w * 1.92, 0.08, 0.58), (-10, 0, 0), bevel=0.015, mat_idx=0)
+    for sgn in (1, -1):
+        add_box_to_bm(bm_tub, (sgn * (cab_half_w - 0.02), tub_ym, z_floor + 0.24),
+                      (0.06, tub_len * 0.94, 0.44), (0, 0, 0), bevel=0.012, mat_idx=0)
+        # Door-card armrest bolster
+        add_box_to_bm(bm_tub, (sgn * (cab_half_w - 0.06), lerp(y_dash, y_seat, 0.55), z_floor + 0.32),
+                      (0.07, 0.52, 0.06), (0, 0, 0), bevel=0.014, mat_idx=1)
+    bm_obj_multi(bm_tub, "interior_tub", [mats["interior"], mats["leather"]], parent=root)
+
+    # 2. Sculpted dashboard cowl + instrument binnacle
+    bm_dash = bmesh.new()
+    dash_w = dash_half_w * 1.92
+    # Main upper sculpted crash pad & lower knee bolster
+    add_box_to_bm(bm_dash, (0.0, y_dash, z_dash_top - 0.055), (dash_w, 0.34, 0.11), (8, 0, 0), bevel=0.024, mat_idx=0)
+    add_box_to_bm(bm_dash, (0.0, y_dash - 0.04, z_dash_top - 0.16), (dash_w * 0.96, 0.26, 0.13), (-6, 0, 0), bevel=0.016, mat_idx=0)
+    # Carbon horizontal dashboard fascia trim strip
+    add_box_to_bm(bm_dash, (0.0, y_dash + 0.145, z_dash_top - 0.095), (dash_w * 0.92, 0.045, 0.055), (6, 0, 0), bevel=0.008, mat_idx=1)
+    # Central cockpit infotainment display bezel + glowing screen
+    add_box_to_bm(bm_dash, (0.0, y_dash + 0.165, z_dash_top - 0.03), (0.20, 0.030, 0.115), (14, 0, 0), bevel=0.006, mat_idx=1)
+    add_box_to_bm(bm_dash, (0.0, y_dash + 0.178, z_dash_top - 0.03), (0.175, 0.010, 0.092), (14, 0, 0), bevel=0.002, mat_idx=2)
+    # Twin outboard circular HVAC air vents
+    for sgn in (1, -1):
+        add_cyl_to_bm(bm_dash, (sgn * (dash_half_w * 0.78), y_dash + 0.155, z_dash_top - 0.085),
+                      0.032, 0.028, (90, 0, 0), segs=18, mat_idx=3)
+    bm_obj_multi(bm_dash, "dashboard", [mats["interior"], mats["carbon"], mats["gauge"], mats["pedal_metal"]], parent=root)
+
+    # Hooded arched instrument binnacle in front of driver
+    bm_bin = bmesh.new()
+    bin_y = y_dash + 0.085
+    bin_z = z_dash_top + 0.038
+    add_box_to_bm(bm_bin, (drv_x, bin_y, bin_z), (0.31, 0.22, 0.115), (8, 0, 0), bevel=0.028, mat_idx=0)
+    # Recessed binnacle visor lip + glowing digital tach/speedo gauge panel
+    add_box_to_bm(bm_bin, (drv_x, bin_y + 0.085, bin_z - 0.010), (0.265, 0.045, 0.085), (14, 0, 0), bevel=0.008, mat_idx=1)
+    add_box_to_bm(bm_bin, (drv_x, bin_y + 0.095, bin_z - 0.010), (0.245, 0.012, 0.072), (14, 0, 0), bevel=0.002, mat_idx=2)
+    # Twin circular tach / speedo bezel rings inside binnacle
+    for gx in (-0.062, 0.062):
+        add_cyl_to_bm(bm_bin, (drv_x + gx, bin_y + 0.102, bin_z - 0.010), 0.030, 0.010, (104, 0, 0), segs=20, mat_idx=3)
+    bm_obj_multi(bm_bin, "instrument_binnacle", [mats["leather"], mats["carbon"], mats["gauge"], mats["pedal_metal"]], parent=root)
+
+    # 3. Steering column + 3-spoke sport steering wheel (`steering_wheel`)
+    y_steer = y_dash + 0.255
+    z_steer = z_dash_top - 0.035
+    add_cyl("steering_column", mats["interior"], (drv_x, y_dash + 0.155, z_steer - 0.032),
+            0.036, 0.22, (70, 0, 0), 18, root)
+
+    bm_sw = bmesh.new()
+    sw_r = 0.152
+    # Sport wheel rim (subtle flat-bottom D-shape) in local coords (XY plane -> tilted onto XZ facing +Y)
+    n_sw = 36
+    rim_pts = []
+    for i in range(n_sw):
+        ang = 2.0 * math.pi * i / n_sw
+        rx = sw_r * math.cos(ang)
+        rz = sw_r * math.sin(ang)
+        if rz < -sw_r * 0.84:
+            rz = -sw_r * 0.84
+        rim_pts.append((rx, 0.0, rz))
+    add_tube_to_bm(bm_sw, rim_pts, 0.0165, segs=12, closed=True, mat_idx=0)
+    # 12-o'clock top-center motorsport stripe marker
+    stripe_pts = [
+        (sw_r * math.cos(a), 0.0, sw_r * math.sin(a))
+        for a in (math.radians(84), math.radians(90), math.radians(96))
+    ]
+    add_tube_to_bm(bm_sw, stripe_pts, 0.0176, segs=12, closed=False, mat_idx=3, cap_ends=True)
+    # Sculpted central hub & airbag/horn boss
+    add_cyl_to_bm(bm_sw, (0.0, -0.012, 0.0), 0.052, 0.044, (90, 0, 0), segs=24, mat_idx=1)
+    add_cyl_to_bm(bm_sw, (0.0, 0.014, 0.0), 0.038, 0.012, (90, 0, 0), segs=24, mat_idx=2)
+    # 3 sculpted spokes: 9-o'clock, 3-o'clock, and 6-o'clock twin-bar lower spoke
+    add_box_to_bm(bm_sw, (-0.095, -0.008, -0.006), (0.105, 0.016, 0.030), (0, 6, 0), bevel=0.004, mat_idx=2)
+    add_box_to_bm(bm_sw, (0.095, -0.008, -0.006), (0.105, 0.016, 0.030), (0, -6, 0), bevel=0.004, mat_idx=2)
+    add_box_to_bm(bm_sw, (-0.016, -0.008, -0.082), (0.016, 0.016, 0.105), (0, 0, 0), bevel=0.003, mat_idx=2)
+    add_box_to_bm(bm_sw, (0.016, -0.008, -0.082), (0.016, 0.016, 0.105), (0, 0, 0), bevel=0.003, mat_idx=2)
+    # Twin brushed-aluminum shift paddles behind the horizontal spokes
+    for sgn in (1, -1):
+        add_box_to_bm(bm_sw, (sgn * 0.082, -0.032, 0.018), (0.032, 0.007, 0.078), (0, sgn * -8, 0), bevel=0.002, mat_idx=2)
+    bm_obj_multi(
+        bm_sw, "steering_wheel",
+        [mats["leather"], mats["carbon"], mats["pedal_metal"], mats["caliper"]],
+        parent=root, location=(drv_x, y_steer, z_steer), rot_deg=(20, 0, 0),
+    )
+
+    # 4. Center console tunnel + gated shift knob + handbrake
+    bm_con = bmesh.new()
+    con_y0 = y_dash - 0.08
+    con_y1 = y_roll + 0.14
+    con_len = con_y1 - con_y0
+    con_ym = 0.5 * (con_y0 + con_y1)
+    con_h = max(0.24, (z_dash_top - 0.24) - z_floor)
+    con_top_z = z_floor + con_h
+    add_box_to_bm(bm_con, (0.0, con_ym, z_floor + con_h * 0.5), (0.21, con_len, con_h), bevel=0.022, mat_idx=0)
+    # Carbon top console plate + leather side knee pads
+    add_box_to_bm(bm_con, (0.0, con_ym - 0.02, con_top_z + 0.005), (0.165, con_len * 0.88, 0.018), bevel=0.006, mat_idx=1)
+    for sgn in (1, -1):
+        add_box_to_bm(bm_con, (sgn * 0.108, y_dash + 0.18, con_top_z - 0.045), (0.022, 0.34, 0.075), bevel=0.008, mat_idx=2)
+    # Center stack waterfall bridging console up into dashboard
+    add_box_to_bm(bm_con, (0.0, y_dash + 0.12, lerp(con_top_z, z_dash_top - 0.10, 0.5)),
+                  (0.18, 0.14, max(0.12, (z_dash_top - 0.08) - con_top_z)), (-28, 0, 0), bevel=0.014, mat_idx=1)
+    bm_obj_multi(bm_con, "center_console", [mats["interior"], mats["carbon"], mats["leather"]], parent=root)
+
+    # Gated shifter bezel, stalk, spherical shift knob, and handbrake lever
+    y_shift = y_dash + 0.31
+    bm_sh = bmesh.new()
+    add_box_to_bm(bm_sh, (0.0, y_shift, con_top_z + 0.016), (0.095, 0.115, 0.016), bevel=0.004, mat_idx=0)
+    add_cyl_to_bm(bm_sh, (0.0, y_shift, con_top_z + 0.068), 0.0085, 0.105, (8, 0, 0), segs=14, mat_idx=0)
+    # Spherical/teardrop brushed-aluminum shift knob
+    b_knob = bmesh.new()
+    bmesh.ops.create_uvsphere(b_knob, u_segments=20, v_segments=14, radius=0.026)
+    for v in b_knob.verts:
+        v.co.z *= 1.15
+        v.co += Vector((0.0, y_shift - 0.008, con_top_z + 0.128))
+    bmesh.ops.recalc_face_normals(b_knob, faces=b_knob.faces)
+    _append_bmesh(bm_sh, b_knob, mat_idx=0)
+    # Motorsport handbrake lever beside console
+    add_cyl_to_bm(bm_sh, (0.052, y_shift + 0.17, con_top_z + 0.048), 0.012, 0.18, (68, 0, 0), segs=12, mat_idx=1)
+    bm_obj_multi(bm_sh, "shift_knob", [mats["pedal_metal"], mats["leather"]], parent=root)
+
+    # 5. Three metallic pedals (clutch, brake, accelerator) in driver footwell
+    bm_ped = bmesh.new()
+    y_ped = y_dash - 0.14
+    z_ped = z_floor + 0.145
+    pedal_specs = [
+        (drv_x + 0.090, 0.048, 0.068, 0.00, 0),   # Clutch
+        (drv_x + 0.005, 0.056, 0.068, 0.00, 0),   # Brake
+        (drv_x - 0.082, 0.042, 0.118, -0.022, 0), # Accelerator (tall)
+    ]
+    for px, pw, ph, dz, _ in pedal_specs:
+        # Steel pedal stalk
+        add_box_to_bm(bm_ped, (px, y_ped - 0.032, z_ped + dz + 0.055), (0.012, 0.014, 0.135), (-18, 0, 0), bevel=0.002, mat_idx=1)
+        # Beveled brushed-aluminum pedal pad
+        add_box_to_bm(bm_ped, (px, y_ped, z_ped + dz), (pw, 0.012, ph), (-22, 0, 0), bevel=0.003, mat_idx=0)
+    bm_obj_multi(bm_ped, "pedals", [mats["pedal_metal"], mats["trim"]], parent=root)
+
+    # 6. Twin bolstered racing bucket seats (clamped cleanly under roof)
+    z_seat_base = z_floor + 0.075
+    z_seat_max = min(z_floor + 0.80, z_roof_mid - 0.10)
+    back_h = max(0.46, z_seat_max - z_seat_base - 0.16)
+    for sgn, tag in ((1, "L"), (-1, "R")):
+        sx = sgn * drv_x
+        bm_s = bmesh.new()
+        # Lower seat pan cushion
+        add_box_to_bm(bm_s, (0.0, -0.06, 0.045), (0.34, 0.42, 0.085), (-7, 0, 0), bevel=0.024, mat_idx=0)
+        # Raised left/right thigh side bolsters
+        for bs in (1, -1):
+            add_box_to_bm(bm_s, (bs * 0.185, -0.05, 0.088), (0.085, 0.42, 0.125), (-7, bs * -14, 0), bevel=0.024, mat_idx=1)
+        # Contoured reclined backrest + carbon outer shell backing
+        recline = 16.0
+        ry = 0.145
+        rz = 0.08 + back_h * 0.50
+        add_box_to_bm(bm_s, (0.0, ry, rz), (0.33, 0.085, back_h), (recline, 0, 0), bevel=0.024, mat_idx=0)
+        add_box_to_bm(bm_s, (0.0, ry + 0.036, rz - 0.01), (0.37, 0.040, back_h * 0.96), (recline, 0, 0), bevel=0.018, mat_idx=2)
+        # Deep sculpted lateral rib bolsters & flared shoulder wings
+        for bs in (1, -1):
+            add_box_to_bm(bm_s, (bs * 0.185, ry - 0.035, rz - 0.04), (0.088, 0.165, back_h * 0.72),
+                          (recline, bs * -10, bs * 18), bevel=0.024, mat_idx=1)
+            add_box_to_bm(bm_s, (bs * 0.210, ry - 0.015, rz + back_h * 0.28), (0.095, 0.135, 0.165),
+                          (recline, bs * -8, bs * 14), bevel=0.024, mat_idx=1)
+        # Integrated tall racing headrest + twin harness pass-through bezels
+        hr_y = ry + math.sin(math.radians(recline)) * (back_h * 0.52 + 0.085)
+        hr_z = rz + math.cos(math.radians(recline)) * (back_h * 0.52 + 0.085)
+        hr_z = min(hr_z, z_seat_max - z_seat_base - 0.075)
+        add_box_to_bm(bm_s, (0.0, hr_y, hr_z), (0.23, 0.095, 0.175), (recline - 6, 0, 0), bevel=0.030, mat_idx=1)
+        for hx in (-0.068, 0.068):
+            add_box_to_bm(bm_s, (hx, hr_y - 0.010, hr_z - 0.105), (0.064, 0.050, 0.040), (recline, 0, 0), bevel=0.008, mat_idx=3)
+        bm_obj_multi(
+            bm_s, f"seat_{tag}",
+            [mats["interior"], mats["leather"], mats["carbon"], mats["pedal_metal"]],
+            parent=root, location=(sx, y_seat, z_seat_base),
+        )
+
+    # 7. Tubular rear roll-bar hoop + harness bar + diagonal cross-brace + rear down-stays
+    bm_rb = bmesh.new()
+    z_rb_top = z_roof_rear - 0.09
+    w_rb_base = min(cab_half_w - 0.07, 0.54)
+    w_rb_top = min(CAB_ROOF_W[3], CAB_ROOF_W[4]) - 0.09
+    w_rb_top = max(0.32, min(w_rb_top, w_rb_base - 0.04))
+    z_rb_knee = lerp(z_floor, z_rb_top, 0.68)
+    z_rb_shoulder = lerp(z_floor, z_rb_top, 0.88)
+    tube_r = 0.022
+
+    # Main U-hoop polyline following cabin cross-section
+    hoop_pts = [
+        (-w_rb_base, y_roll, z_floor),
+        (-w_rb_base, y_roll, z_rb_knee),
+        (-lerp(w_rb_base, w_rb_top, 0.65), y_roll, z_rb_shoulder),
+        (-w_rb_top, y_roll, z_rb_top),
+        (0.0, y_roll, z_rb_top + 0.010),
+        (w_rb_top, y_roll, z_rb_top),
+        (lerp(w_rb_base, w_rb_top, 0.65), y_roll, z_rb_shoulder),
+        (w_rb_base, y_roll, z_rb_knee),
+        (w_rb_base, y_roll, z_floor),
+    ]
+    add_tube_to_bm(bm_rb, hoop_pts, tube_r, segs=16, closed=False, mat_idx=0)
+    # Horizontal shoulder harness bar
+    z_harn = lerp(z_floor, z_rb_top, 0.54)
+    add_tube_to_bm(bm_rb, [(-w_rb_base + 0.01, y_roll, z_harn), (w_rb_base - 0.01, y_roll, z_harn)],
+                   tube_r * 0.86, segs=14, closed=False, mat_idx=0)
+    # Diagonal motorsport cross-brace across hoop
+    add_tube_to_bm(bm_rb, [(-w_rb_base + 0.02, y_roll, z_floor + 0.04), (w_rb_top - 0.02, y_roll, z_rb_top - 0.02)],
+                   tube_r * 0.82, segs=14, closed=False, mat_idx=0)
+    # Twin rear angled down-stays into rear bulkhead / strut area
+    y_stay_end = min(y_roll + 0.34, CAB_Y[5] - 0.06)
+    z_stay_end = z_floor + 0.14
+    for sgn in (1, -1):
+        add_tube_to_bm(
+            bm_rb,
+            [(sgn * (w_rb_top * 0.92), y_roll, z_rb_shoulder), (sgn * (w_rb_base * 0.78), y_stay_end, z_stay_end)],
+            tube_r * 0.82, segs=14, closed=False, mat_idx=0,
+        )
+        # Floor mounting base plate
+        add_box_to_bm(bm_rb, (sgn * w_rb_base, y_roll, z_floor + 0.008), (0.09, 0.11, 0.016), bevel=0.003, mat_idx=1)
+    bm_obj_multi(bm_rb, "roll_bar", [mats["rollbar"], mats["trim"]], parent=root)
+
+
+def sculpt_car(spec, out_path, ue5_nanite=False):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     cid = spec["id"]
     paint_rgb = hex_rgb(spec["paint"])
@@ -909,6 +1439,16 @@ def sculpt_car(spec, out_path):
         "chrome": make_mat("exhaust_chrome", (0.72, 0.74, 0.78), metal=0.98, rough=0.12),
         "interior": make_mat("interior_dark", (0.022, 0.024, 0.028), metal=0.0, rough=0.78),
     }
+    if ue5_nanite:
+        mats.update({
+            "reflector": make_mat("reflector_housing", (0.045, 0.050, 0.062), metal=0.94, rough=0.14),
+            "headlight_glass": make_mat("headlight_glass", (0.94, 0.97, 1.0), metal=0.02, rough=0.02, coat=1.0, alpha=0.16),
+            "leather": make_mat("interior_leather", (0.032, 0.034, 0.040), metal=0.0, rough=0.58),
+            "gauge": make_mat("gauge_cluster", (0.08, 0.45, 0.95), metal=0.0, rough=0.12, emit=(0.18, 0.65, 1.0), emit_str=2.2),
+            "pedal_metal": make_mat("pedal_aluminum", (0.68, 0.70, 0.74), metal=0.95, rough=0.22),
+            "rollbar": make_mat("rollbar_steel", (0.14, 0.15, 0.17), metal=0.82, rough=0.28, coat=0.4),
+            "brake_hat": make_mat("brake_hat", (0.07, 0.075, 0.085), metal=0.88, rough=0.28),
+        })
 
     root = bpy.data.objects.new(cid, None)
     bpy.context.scene.collection.objects.link(root)
@@ -1088,10 +1628,11 @@ def sculpt_car(spec, out_path):
     ]
 
     def cut_arches(body):
+        arch_verts = 64 if ue5_nanite else 48
         for wx, wy, wr, name in wheel_specs:
             sgn = 1 if wx > 0 else -1
             bpy.ops.mesh.primitive_cylinder_add(
-                vertices=48, radius=wr + 0.044, depth=0.95,
+                vertices=arch_verts, radius=wr + 0.044, depth=0.95,
                 location=(sgn * (abs(wx) + 0.14), wy, wr + 0.012),
                 rotation=(0, math.pi / 2, 0),
             )
@@ -1130,12 +1671,38 @@ def sculpt_car(spec, out_path):
             out[name] = bm_obj(sub, name, mats[PART_MAT.get(part, "paint")], parent=root)
         return out
 
-    body = subdivide(build_body_cage(), "body_src", 2)
+    subsurf_lvl = 3 if ue5_nanite else 2
+    body = subdivide(build_body_cage(), "body_src", subsurf_lvl)
     cut_arches(body)
-    cabin = subdivide(build_cabin_cage(), "cabin_src", 2)
+    cabin = subdivide(build_cabin_cage(), "cabin_src", subsurf_lvl)
     surf = Surface([body, cabin])
     body_parts = split_parts(body)
-    split_parts(cabin, rename={"body": "cabin_base", "glass": "glass", "roof": "roof", "trim_window": "window_trim", "pillar": "pillars"})
+    cabin_parts = split_parts(cabin, rename={"body": "cabin_base", "glass": "glass", "roof": "roof", "trim_window": "window_trim", "pillar": "pillars"})
+    if ue5_nanite:
+        # Subtle panel-edge thickness + bevel on exterior painted body panels so shutlines catch Hardware Lumen speculars
+        painted_panels = {
+            "body", "fender_L", "fender_R", "quarter_L", "quarter_R",
+            "rocker_L", "rocker_R", "cowl", "deck", "bumper_front",
+            "bumper_rear", "hood", "trunk", "door_L", "door_R",
+            "roof", "pillars",
+        }
+        for name, ob in list(body_parts.items()) + list(cabin_parts.items()):
+            if name not in painted_panels:
+                continue
+            sol = ob.modifiers.new("panel_solidify", "SOLIDIFY")
+            sol.thickness = 0.004
+            sol.offset = -1.0
+            sol.use_rim = True
+            sol.use_even_offset = True
+            bev = ob.modifiers.new("panel_bevel", "BEVEL")
+            bev.width = 0.002
+            bev.segments = 2
+            bev.limit_method = "ANGLE"
+            bev.angle_limit = math.radians(30.0)
+            bev.use_clamp_overlap = True
+            apply_mods(ob)
+            for p in ob.data.polygons:
+                p.use_smooth = True
     for name, ratio in (("underbody", 0.25),):
         if name in body_parts:
             dec = body_parts[name].modifiers.new("dec", "DECIMATE")
@@ -1158,42 +1725,101 @@ def sculpt_car(spec, out_path):
             def lamp_fn(u, v, s=sgn):
                 ang = u * 2 * math.pi
                 return (s * (0.62 + 0.12 * v * math.cos(ang)), -hl - 0.8, nose_z + 0.10 + 0.08 * v * math.sin(ang))
-            h1 = projected_patch(surf, f"drl_{tag}", mats["drl"], lamp_fn, 14, 3, (0, 0.90, -0.40), 0.008, root)
-            if h1 is None:
-                add_box(f"drl_{tag}", mats["drl"], (sgn * 0.62, -hl + 0.22, nose_z + 0.14), (0.20, 0.22, 0.06), (14, 0, sgn * -12), root, bevel=0.015)
-            add_box(f"beam_{tag}_0", mats["beam"], (sgn * 0.62, -hl + 0.20, nose_z + 0.13), (0.11, 0.12, 0.05), (14, 0, sgn * -12), root, bevel=0.012)
+            if ue5_nanite:
+                def housing_fn(u, v, s=sgn):
+                    ang = u * 2 * math.pi
+                    return (s * (0.62 + 0.135 * v * math.cos(ang)), -hl - 0.8, nose_z + 0.10 + 0.092 * v * math.sin(ang))
+                projected_patch(surf, f"headlight_housing_{tag}", mats["reflector"], housing_fn, 24, 4, (0, 0.90, -0.40), 0.001, root)
+                add_box(f"headlight_cup_{tag}", mats["reflector"], (sgn * 0.62, -hl + 0.215, nose_z + 0.125), (0.16, 0.18, 0.055), (14, 0, sgn * -12), root, bevel=0.014)
+                h1 = projected_patch(surf, f"drl_{tag}", mats["drl"], lamp_fn, 24, 4, (0, 0.90, -0.40), 0.007, root)
+                if h1 is None:
+                    add_box(f"drl_{tag}", mats["drl"], (sgn * 0.62, -hl + 0.22, nose_z + 0.14), (0.20, 0.22, 0.06), (14, 0, sgn * -12), root, bevel=0.015)
+                add_cyl(f"beam_{tag}_0", mats["beam"], (sgn * 0.60, -hl + 0.195, nose_z + 0.135), 0.042, 0.045, (76, 0, sgn * -12), 28, root)
+                add_cyl(f"beam_{tag}_1", mats["beam"], (sgn * 0.66, -hl + 0.225, nose_z + 0.148), 0.032, 0.040, (76, 0, sgn * -12), 24, root)
+                hl_glass = projected_patch(surf, f"headlight_glass_{tag}", mats["headlight_glass"], housing_fn, 24, 6, (0, 0.90, -0.40), 0.016, root, bulge=0.016)
+                if hl_glass is None:
+                    add_box(f"headlight_glass_{tag}", mats["headlight_glass"], (sgn * 0.62, -hl + 0.21, nose_z + 0.155), (0.24, 0.25, 0.045), (14, 0, sgn * -12), root, bevel=0.014)
+            else:
+                h1 = projected_patch(surf, f"drl_{tag}", mats["drl"], lamp_fn, 14, 3, (0, 0.90, -0.40), 0.008, root)
+                if h1 is None:
+                    add_box(f"drl_{tag}", mats["drl"], (sgn * 0.62, -hl + 0.22, nose_z + 0.14), (0.20, 0.22, 0.06), (14, 0, sgn * -12), root, bevel=0.015)
+                add_box(f"beam_{tag}_0", mats["beam"], (sgn * 0.62, -hl + 0.20, nose_z + 0.13), (0.11, 0.12, 0.05), (14, 0, sgn * -12), root, bevel=0.012)
         elif hs == "sleek_pod":
             # Recessed carbon endurance twin-projector pods + lower fog lamps (RX-7 FD RE-Amemiya style)
             ly = -hl + 0.34
             lz = TOP(ly) + 0.008
             lx = min(WB(ly) - 0.14, 0.62)
             add_box(f"lamp_pod_{tag}", mats["carbon"], (sgn * lx, ly, lz - 0.012), (0.26, 0.24, 0.046), (12, 0, sgn * -8), root, bevel=0.008)
-            for k, ox in enumerate((-0.055, 0.055)):
-                add_cyl(f"beam_{tag}_{k}", mats["beam"], (sgn * (lx + ox), ly - 0.02, lz + 0.004), 0.036, 0.04, (78, 0, 0), 16, root)
+            if ue5_nanite:
+                add_box(f"headlight_housing_{tag}", mats["reflector"], (sgn * lx, ly - 0.005, lz - 0.006), (0.22, 0.20, 0.036), (12, 0, sgn * -8), root, bevel=0.006)
+                for k, ox in enumerate((-0.055, 0.055)):
+                    add_cyl(f"headlight_bowl_{tag}_{k}", mats["reflector"], (sgn * (lx + ox), ly - 0.010, lz + 0.002), 0.046, 0.045, (78, 0, 0), 28, root)
+                    add_cyl(f"beam_{tag}_{k}", mats["beam"], (sgn * (lx + ox), ly - 0.022, lz + 0.004), 0.034, 0.040, (78, 0, 0), 28, root)
+                add_box(f"headlight_glass_{tag}", mats["headlight_glass"], (sgn * lx, ly - 0.004, lz + 0.018), (0.25, 0.23, 0.014), (12, 0, sgn * -8), root, bevel=0.005)
+            else:
+                for k, ox in enumerate((-0.055, 0.055)):
+                    add_cyl(f"beam_{tag}_{k}", mats["beam"], (sgn * (lx + ox), ly - 0.02, lz + 0.004), 0.036, 0.04, (78, 0, 0), 16, root)
             add_box(f"drl_{tag}", mats["drl"], (sgn * (lx + 0.02), -hl + 0.07, 0.23), (0.14, 0.05, 0.065), (0, 0, 0), root, bevel=0.008)
         elif hs == "quad_halo":
-            for k, ox in enumerate((0.50, 0.70)):
-                h = projected_patch(surf, f"beam_{tag}_{k}", mats["beam"],
-                                    lambda u, v, s=sgn, cx=ox: (s * (cx + (u - 0.5) * 0.12), -hl - 0.8, nose_z * 0.86 + (v - 0.5) * 0.09),
-                                    6, 4, fwd, 0.010, root)
-                if h is None:
-                    add_box(f"beam_{tag}_{k}", mats["beam"], (sgn * ox, -hl + 0.06, nose_z * 0.86), (0.12, 0.06, 0.09), (0, 0, 0), root, bevel=0.01)
-            add_box(f"drl_{tag}", mats["drl"], (sgn * 0.60, -hl + 0.05, nose_z * 0.86), (0.34, 0.05, 0.03), (0, 0, 0), root)
+            if ue5_nanite:
+                # Recessed dark metallic reflector housing behind dual round projectors + transparent glass cover
+                h_hs = projected_patch(
+                    surf, f"headlight_housing_{tag}", mats["reflector"],
+                    lambda u, v, s=sgn: (s * lerp(0.39, 0.81, u), -hl - 0.8, nose_z * 0.86 + (v - 0.5) * 0.135),
+                    16, 4, fwd, 0.001, root,
+                )
+                if h_hs is None:
+                    add_box(f"headlight_housing_{tag}", mats["reflector"], (sgn * 0.60, -hl + 0.075, nose_z * 0.86), (0.40, 0.07, 0.13), (0, 0, 0), root, bevel=0.010)
+                for k, ox in enumerate((0.50, 0.70)):
+                    add_cyl(f"headlight_bowl_{tag}_{k}", mats["reflector"], (sgn * ox, -hl + 0.068, nose_z * 0.86), 0.062, 0.045, (90, 0, 0), 32, root)
+                    add_cyl(f"beam_{tag}_{k}", mats["beam"], (sgn * ox, -hl + 0.048, nose_z * 0.86), 0.044, 0.030, (90, 0, 0), 28, root)
+                add_box(f"drl_{tag}", mats["drl"], (sgn * 0.60, -hl + 0.046, nose_z * 0.86), (0.35, 0.042, 0.024), (0, 0, 0), root, bevel=0.005)
+                hl_glass = projected_patch(
+                    surf, f"headlight_glass_{tag}", mats["headlight_glass"],
+                    lambda u, v, s=sgn: (s * lerp(0.38, 0.82, u), -hl - 0.8, nose_z * 0.86 + (v - 0.5) * 0.140),
+                    16, 6, fwd, 0.018, root, bulge=0.010,
+                )
+                if hl_glass is None:
+                    add_box(f"headlight_glass_{tag}", mats["headlight_glass"], (sgn * 0.60, -hl + 0.032, nose_z * 0.86), (0.42, 0.016, 0.14), (0, 0, 0), root, bevel=0.005)
+            else:
+                for k, ox in enumerate((0.50, 0.70)):
+                    h = projected_patch(surf, f"beam_{tag}_{k}", mats["beam"],
+                                        lambda u, v, s=sgn, cx=ox: (s * (cx + (u - 0.5) * 0.12), -hl - 0.8, nose_z * 0.86 + (v - 0.5) * 0.09),
+                                        6, 4, fwd, 0.010, root)
+                    if h is None:
+                        add_box(f"beam_{tag}_{k}", mats["beam"], (sgn * ox, -hl + 0.06, nose_z * 0.86), (0.12, 0.06, 0.09), (0, 0, 0), root, bevel=0.01)
+                add_box(f"drl_{tag}", mats["drl"], (sgn * 0.60, -hl + 0.05, nose_z * 0.86), (0.34, 0.05, 0.03), (0, 0, 0), root)
         else:
             # Project onto upper front nose + guaranteed flush sculpted LED cluster
             ly = -hl + 0.24
             lz = TOP(ly) + 0.012
             lx = min(WB(ly) - 0.12, 0.66)
+            if ue5_nanite:
+                h_hs = projected_patch(
+                    surf, f"headlight_housing_{tag}", mats["reflector"],
+                    lambda u, v, s=sgn: (s * lerp(0.39, lx + 0.11, u), -hl - 0.8, lz - 0.045 + u * 0.05 + (v - 0.5) * 0.072),
+                    18, 4, (0, 0.94, -0.32), 0.002, root,
+                )
+                if h_hs is None:
+                    add_box(f"headlight_housing_{tag}", mats["reflector"], (sgn * lx, ly + 0.005, lz - 0.006), (0.34, 0.21, 0.042), (12, 0, sgn * -18), root, bevel=0.008)
             h_drl = projected_patch(surf, f"drl_{tag}", mats["drl"],
                                     lambda u, v, s=sgn: (s * lerp(0.42, lx + 0.08, u), -hl - 0.8, lz - 0.04 + u * 0.05 + (v - 0.5) * 0.042),
-                                    10, 2, (0, 0.94, -0.32), 0.010, root)
+                                    16 if ue5_nanite else 10, 3 if ue5_nanite else 2, (0, 0.94, -0.32), 0.008 if ue5_nanite else 0.010, root)
             if h_drl is None:
                 add_box(f"drl_{tag}", mats["drl"], (sgn * lx, ly, lz), (0.30, 0.18, 0.036), (12, 0, sgn * -18), root, bevel=0.008)
             h_beam = projected_patch(surf, f"beam_{tag}_0", mats["beam"],
                                      lambda u, v, s=sgn: (s * lerp(0.48, lx + 0.04, u), -hl - 0.8, lz - 0.02 + u * 0.04 + (v - 0.5) * 0.028),
-                                     8, 2, (0, 0.94, -0.32), 0.012, root)
+                                     12 if ue5_nanite else 8, 2, (0, 0.94, -0.32), 0.011 if ue5_nanite else 0.012, root)
             if h_beam is None:
                 add_box(f"beam_{tag}_0", mats["beam"], (sgn * (lx - 0.02), ly - 0.02, lz + 0.006), (0.20, 0.12, 0.030), (12, 0, sgn * -18), root, bevel=0.006)
+            if ue5_nanite:
+                hl_glass = projected_patch(
+                    surf, f"headlight_glass_{tag}", mats["headlight_glass"],
+                    lambda u, v, s=sgn: (s * lerp(0.39, lx + 0.11, u), -hl - 0.8, lz - 0.045 + u * 0.05 + (v - 0.5) * 0.076),
+                    18, 5, (0, 0.94, -0.32), 0.017, root, bulge=0.012,
+                )
+                if hl_glass is None:
+                    add_box(f"headlight_glass_{tag}", mats["headlight_glass"], (sgn * lx, ly - 0.01, lz + 0.016), (0.34, 0.21, 0.016), (12, 0, sgn * -18), root, bevel=0.005)
 
     # ---- Taillights & Rear Diffuser ----
     back = (0, -1, 0)
@@ -1203,17 +1829,44 @@ def sculpt_car(spec, out_path):
     if ts == "quad_round":
         for sgn, tag in ((1, "L"), (-1, "R")):
             for k, ox in enumerate((0.46, 0.66)):
-                add_cyl(f"taillight_{tag}_{k}", mats["tail"], (sgn * ox, hl + 0.012, tail_z - 0.04), 0.068, 0.04, (90, 0, 0), 18, root)
+                if ue5_nanite:
+                    add_cyl(f"taillight_housing_{tag}_{k}", mats["reflector"], (sgn * ox, hl + 0.002, tail_z - 0.04), 0.078, 0.048, (90, 0, 0), 32, root)
+                    add_cyl(f"taillight_{tag}_{k}", mats["tail"], (sgn * ox, hl + 0.014, tail_z - 0.04), 0.064, 0.032, (90, 0, 0), 32, root)
+                    add_cyl(f"taillight_glass_{tag}_{k}", mats["headlight_glass"], (sgn * ox, hl + 0.032, tail_z - 0.04), 0.074, 0.012, (90, 0, 0), 32, root)
+                else:
+                    add_cyl(f"taillight_{tag}_{k}", mats["tail"], (sgn * ox, hl + 0.012, tail_z - 0.04), 0.068, 0.04, (90, 0, 0), 18, root)
     elif ts in ("lightbar", "bar_thin", "racetrack"):
         bar_h = 0.058 if ts == "racetrack" else 0.036
-        projected_patch(surf, "taillight_bar", mats["tail"],
-                        lambda u, v: ((u * 2 - 1) * tail_w * 0.86, hl + 0.8, tail_z - 0.04 + (v - 0.5) * bar_h),
-                        20, 2, back, 0.008, root)
+        if ue5_nanite:
+            projected_patch(surf, "taillight_housing", mats["reflector"],
+                            lambda u, v: ((u * 2 - 1) * tail_w * 0.89, hl + 0.8, tail_z - 0.04 + (v - 0.5) * (bar_h + 0.024)),
+                            32, 4, back, 0.002, root)
+            projected_patch(surf, "taillight_bar", mats["tail"],
+                            lambda u, v: ((u * 2 - 1) * tail_w * 0.86, hl + 0.8, tail_z - 0.04 + (v - 0.5) * bar_h),
+                            32, 3, back, 0.008, root)
+            projected_patch(surf, "taillight_glass", mats["headlight_glass"],
+                            lambda u, v: ((u * 2 - 1) * tail_w * 0.89, hl + 0.8, tail_z - 0.04 + (v - 0.5) * (bar_h + 0.024)),
+                            32, 4, back, 0.016, root, bulge=0.007)
+        else:
+            projected_patch(surf, "taillight_bar", mats["tail"],
+                            lambda u, v: ((u * 2 - 1) * tail_w * 0.86, hl + 0.8, tail_z - 0.04 + (v - 0.5) * bar_h),
+                            20, 2, back, 0.008, root)
     else:  # y_blade
         for sgn, tag in ((1, "L"), (-1, "R")):
-            projected_patch(surf, f"taillight_{tag}", mats["tail"],
-                            lambda u, v, s=sgn: (s * lerp(0.32, tail_w * 0.86, u), hl + 0.8, tail_z - 0.03 + (v - 0.5) * 0.042),
-                            10, 2, back, 0.008, root)
+            if ue5_nanite:
+                projected_patch(surf, f"taillight_housing_{tag}", mats["reflector"],
+                                lambda u, v, s=sgn: (s * lerp(0.30, tail_w * 0.89, u), hl + 0.8, tail_z - 0.03 + (v - 0.5) * 0.064),
+                                18, 4, back, 0.002, root)
+                projected_patch(surf, f"taillight_{tag}", mats["tail"],
+                                lambda u, v, s=sgn: (s * lerp(0.32, tail_w * 0.86, u), hl + 0.8, tail_z - 0.03 + (v - 0.5) * 0.042),
+                                18, 3, back, 0.008, root)
+                projected_patch(surf, f"taillight_glass_{tag}", mats["headlight_glass"],
+                                lambda u, v, s=sgn: (s * lerp(0.30, tail_w * 0.89, u), hl + 0.8, tail_z - 0.03 + (v - 0.5) * 0.064),
+                                18, 4, back, 0.016, root, bulge=0.007)
+            else:
+                projected_patch(surf, f"taillight_{tag}", mats["tail"],
+                                lambda u, v, s=sgn: (s * lerp(0.32, tail_w * 0.86, u), hl + 0.8, tail_z - 0.03 + (v - 0.5) * 0.042),
+                                10, 2, back, 0.008, root)
 
     # Sculpted rear diffuser + vertical strakes
     add_box("diffuser", mats["carbon"], (0, hl - 0.06, 0.19), (tail_w * 1.56, 0.24, 0.15), (-14, 0, 0), root, bevel=0.012)
@@ -1267,10 +1920,14 @@ def sculpt_car(spec, out_path):
         mz = SH_Z(my) + 0.08
         add_box(f"mirror_{tag}", mats["paint"], (sgn * mx, my, mz), (0.16, 0.10, 0.075), (0, 0, sgn * -12), root, bevel=0.018)
 
-    # Dark interior cockpit floor + dash + bucket seats (visible through tinted glass)
-    add_box("interior_tub", mats["interior"], (0, 0.10, 0.42), (1.28, 1.50, 0.42), (0, 0, 0), root)
-    for sx in (-0.34, 0.34):
-        add_box(f"seat_{sx:+.2f}", mats["interior"], (sx, 0.22, 0.72), (0.42, 0.44, 0.56), (14, 0, 0), root, bevel=0.04)
+    # Interior cockpit
+    if ue5_nanite:
+        build_cockpit_nanite(spec, CAB_Y, CAB_ROOF, CAB_ROOF_W, SH_Z, ZB, WB, SH_IN, mats, root)
+    else:
+        # Dark interior cockpit floor + dash + bucket seats (visible through tinted glass)
+        add_box("interior_tub", mats["interior"], (0, 0.10, 0.42), (1.28, 1.50, 0.42), (0, 0, 0), root)
+        for sx in (-0.34, 0.34):
+            add_box(f"seat_{sx:+.2f}", mats["interior"], (sx, 0.22, 0.72), (0.42, 0.44, 0.56), (14, 0, 0), root, bevel=0.04)
 
     # ---- Exhausts, Separated Stock Wing & Wheels ----
     build_exhausts(spec["exhaust"], hl, mats, root)
@@ -1278,25 +1935,39 @@ def sculpt_car(spec, out_path):
 
     for wx, wy, wr, tag in wheel_specs:
         w_tyre = 0.255 if wy < 0 else 0.315
-        build_wheel(f"wheel_{tag}", 1 if wx > 0 else -1, (wx, wy, wr), wr, w_tyre, spec["spokes"], mats, root)
+        build_wheel(f"wheel_{tag}", 1 if wx > 0 else -1, (wx, wy, wr), wr, w_tyre, spec["spokes"], mats, root, ue5_nanite=ue5_nanite)
+
+    if ue5_nanite:
+        # Clean uniform world-scale box UVs (`UVMap`) on every mesh for UE 5.8 decals, liveries, and Substrate flakes
+        bpy.context.view_layer.update()
+        for o in bpy.data.objects:
+            if o.type == "MESH":
+                generate_box_uvs(o, uv_name="UVMap", tile_meters=2.0)
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     bpy.ops.export_scene.gltf(filepath=out_path, export_format="GLB", export_apply=True, export_yup=True)
     tris = sum(sum(max(1, len(p.vertices) - 2) for p in o.data.polygons) for o in bpy.data.objects if o.type == "MESH")
-    print(f"[sculpt] {cid}: tris={tris} -> {out_path} ({os.path.getsize(out_path) // 1024} KB)")
+    mode_tag = "sculpt:ue5-nanite" if ue5_nanite else "sculpt"
+    print(f"[{mode_tag}] {cid}: tris={tris} -> {out_path} ({os.path.getsize(out_path) // 1024} KB)")
 
 
 def main():
     argv = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
     p = argparse.ArgumentParser()
     p.add_argument("--out-dir", required=True)
-    p.add_argument("--only", default="", help="Comma-separated car ids (default: all 10)")
+    p.add_argument("--only", default="", help="Comma-separated car ids (default: all)")
+    p.add_argument(
+        "--ue5-nanite",
+        action="store_true",
+        default=False,
+        help="Generate Nanite-grade high-poly UE 5.8 hero cars (Subsurf 3, panel bevels, recessed lights, detailed brakes, full cockpit, box UVs)",
+    )
     args = p.parse_args(argv)
     want = set(x.strip() for x in args.only.split(",") if x.strip())
     for spec in FLEET:
         if want and spec["id"] not in want:
             continue
-        sculpt_car(spec, os.path.join(args.out_dir, f"{spec['id']}_sculpt.glb"))
+        sculpt_car(spec, os.path.join(args.out_dir, f"{spec['id']}_sculpt.glb"), ue5_nanite=args.ue5_nanite)
 
 
 if __name__ == "__main__":

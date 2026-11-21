@@ -13,6 +13,9 @@ class UCameraComponent;
 class UEnhancedInputComponent;
 class UInputAction;
 class UInputMappingContext;
+class UOpenGridAudioComponent;
+class UOpenGridCustomizationComponent;
+class UOpenGridDamageComponent;
 class USkeletalMesh;
 class USkeletalMeshComponent;
 class USpringArmComponent;
@@ -51,6 +54,9 @@ public:
     TObjectPtr<UStaticMeshComponent> WidebodyMesh;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Mods")
+    TObjectPtr<UStaticMeshComponent> StockWingMesh;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Mods")
     TObjectPtr<UStaticMeshComponent> WingMesh;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Mods")
@@ -79,6 +85,15 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid")
     TObjectPtr<UOpenGridVehicleComponent> Vehicle;
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Customization")
+    TObjectPtr<UOpenGridCustomizationComponent> Customization;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Damage")
+    TObjectPtr<UOpenGridDamageComponent> Damage;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Audio")
+    TObjectPtr<UOpenGridAudioComponent> Audio;
+
     /**
      * The imported car body without its wheels, as exported by tools/ue5/export_cars_for_ue.mjs: origin on the ground
      * at the body's length centre, real size. It is placed from the car's .visual.json so it sits on the physics CG.
@@ -98,6 +113,9 @@ public:
     /** Optional modular aftermarket visual part meshes from ue5/Import/<car>/parts/*.glb. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Mods")
     TObjectPtr<UStaticMesh> WidebodyMeshAsset;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Mods")
+    TObjectPtr<UStaticMesh> StockWingMeshAsset;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Mods")
     TObjectPtr<UStaticMesh> WingMeshAsset;

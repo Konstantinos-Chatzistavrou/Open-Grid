@@ -1,0 +1,136 @@
+---,PartId,DisplayName,Category,Downforce,Drag,MassKg,SocketName
+duck-01,duck-01,Duck 01,wing,0.076,0.009,0.46,SOCKET_Wing
+duck-02,duck-02,Duck 02,wing,0.106,0.013,0.82,SOCKET_Wing
+duck-03,duck-03,Duck 03,wing,0.135,0.017,1.39,SOCKET_Wing
+lip-01,lip-01,Lip 01,wing,0.057,0.008,0.32,SOCKET_Wing
+lip-02,lip-02,Lip 02,wing,0.071,0.009,0.41,SOCKET_Wing
+lip-03,lip-03,Lip 03,wing,0.093,0.01,0.54,SOCKET_Wing
+gt-01,gt-01,GT 01,wing,0.107,0.075,5.33,SOCKET_Wing
+gt-02,gt-02,GT 02,wing,0.162,0.09,6,SOCKET_Wing
+gt-03,gt-03,GT 03,wing,0.193,0.09,6,SOCKET_Wing
+gt2-01,gt2-01,GT2 01,wing,0.22,0.09,6,SOCKET_Wing
+gt2-02,gt2-02,GT2 02,wing,0.22,0.09,6,SOCKET_Wing
+gt2-03,gt2-03,GT2 03,wing,0.22,0.09,6,SOCKET_Wing
+swan-01,swan-01,Swan 01,wing,0.107,0.055,3.93,SOCKET_Wing
+swan-02,swan-02,Swan 02,wing,0.134,0.072,5.98,SOCKET_Wing
+swan-03,swan-03,Swan 03,wing,0.168,0.086,6,SOCKET_Wing
+chassis-01,chassis-01,Chassis 01,wing,0.124,0.028,2.25,SOCKET_Wing
+chassis-02,chassis-02,Chassis 02,wing,0.145,0.037,3.3,SOCKET_Wing
+chassis-03,chassis-03,Chassis 03,wing,0.168,0.046,4.59,SOCKET_Wing
+dual-01,dual-01,Dual 01,wing,0.159,0.052,5.42,SOCKET_Wing
+dual-02,dual-02,Dual 02,wing,0.178,0.062,6,SOCKET_Wing
+dual-03,dual-03,Dual 03,wing,0.202,0.073,6,SOCKET_Wing
+wide-01,wide-01,Wide 01,wing,0.137,0.066,5.64,SOCKET_Wing
+wide-02,wide-02,Wide 02,wing,0.151,0.081,6,SOCKET_Wing
+wide-03,wide-03,Wide 03,wing,0.16,0.09,6,SOCKET_Wing
+pillar-01,pillar-01,Pillar 01,wing,0.099,0.052,3.39,SOCKET_Wing
+pillar-02,pillar-02,Pillar 02,wing,0.122,0.07,5.3,SOCKET_Wing
+pillar-03,pillar-03,Pillar 03,wing,0.143,0.088,6,SOCKET_Wing
+basket-01,basket-01,Basket 01,wing,0.089,0.053,3.18,SOCKET_Wing
+basket-02,basket-02,Basket 02,wing,0.103,0.071,4.62,SOCKET_Wing
+basket-03,basket-03,Basket 03,wing,0.126,0.09,6,SOCKET_Wing
+swan-rs,swan-rs,RS Swan DRS,wing,0.22,0.09,6,SOCKET_Wing
+bridge-037,bridge-037,Group-B Bridge,wing,0.216,0.078,6,SOCKET_Wing
+rally-roof,rally-roof,Integrale Roof Tilt,wing,0.108,0.04,3.37,SOCKET_Wing
+hoop-nsx,hoop-nsx,Tribute Floating Hoop,wing,0.128,0.057,4.65,SOCKET_Wing
+re-timeattack,re-timeattack,RE Time-Attack GT,wing,0.155,0.09,6,SOCKET_Wing
+splitter-lip-01,splitter-lip-01,Street Lip,splitter,0.049,0.004,0.49,SOCKET_Splitter
+splitter-deep-02,splitter-deep-02,Deep Splitter,splitter,0.09,0.024,5.27,SOCKET_Splitter
+splitter-split-03,splitter-split-03,Split Blade,splitter,0.071,0.004,0.71,SOCKET_Splitter
+splitter-canard-04,splitter-canard-04,Canard Wing,splitter,0.062,0.031,4.7,SOCKET_Splitter
+splitter-step-05,splitter-step-05,Step Lip,splitter,0.074,0.006,1.03,SOCKET_Splitter
+splitter-curved-06,splitter-curved-06,Curved Lip,splitter,0.057,0.016,2.35,SOCKET_Splitter
+splitter-plate-07,splitter-plate-07,Endplate Splitter,splitter,0.071,0.019,3.18,SOCKET_Splitter
+splitter-twin-08,splitter-twin-08,Twin Deck,splitter,0.066,0.026,4.16,SOCKET_Splitter
+splitter-side-09,splitter-side-09,Side Blades,splitter,0.079,0.008,1.58,SOCKET_Splitter
+splitter-aggr-10,splitter-aggr-10,Time Attack Front,splitter,0.094,0.039,6,SOCKET_Splitter
+splitter-rs-struts,splitter-rs-struts,RS Tie-Rod Splitter,splitter,0.098,0.036,5.4,SOCKET_Splitter
+splitter-re-canard,splitter-re-canard,RE Twin-Canard Lip,splitter,0.104,0.041,5.8,SOCKET_Splitter
+splitter-sp3-strake,splitter-sp3-strake,Icona Strake Splitter,splitter,0.088,0.029,4.9,SOCKET_Splitter
+diffuser-plate-11,diffuser-plate-11,Flat Diffuser,diffuser,0.082,0.009,1.92,SOCKET_Diffuser
+diffuser-fins4-12,diffuser-fins4-12,Quad Fin,diffuser,0.09,0.021,4.73,SOCKET_Diffuser
+diffuser-fins6-13,diffuser-fins6-13,Six Fin,diffuser,0.098,0.022,5.39,SOCKET_Diffuser
+diffuser-channel-14,diffuser-channel-14,Channel Rear,diffuser,0.086,0.025,5.45,SOCKET_Diffuser
+diffuser-twin-15,diffuser-twin-15,Twin Deck Rear,diffuser,0.09,0.024,5.51,SOCKET_Diffuser
+diffuser-strake-16,diffuser-strake-16,Strakes,diffuser,0.082,0.027,5.73,SOCKET_Diffuser
+diffuser-max-17,diffuser-max-17,Max Rear,diffuser,0.102,0.023,5.99,SOCKET_Diffuser
+diffuser-vane-18,diffuser-vane-18,Vane Rear,diffuser,0.086,0.024,5.37,SOCKET_Diffuser
+diffuser-step-19,diffuser-step-19,Stepped Rear,diffuser,0.09,0.019,4.35,SOCKET_Diffuser
+diffuser-endplate-20,diffuser-endplate-20,Endplate Rear,diffuser,0.091,0.032,6,SOCKET_Diffuser
+diffuser-rs-tunnel,diffuser-rs-tunnel,RS Venturi Tunnel,diffuser,0.108,0.031,5.8,SOCKET_Diffuser
+skirt-blade-21,skirt-blade-21,Blade Skirt,skirt,0.22,0.015,6,SOCKET_Skirt_L
+skirt-step-22,skirt-step-22,Step Skirt,skirt,0.22,0.021,6,SOCKET_Skirt_L
+skirt-deep-23,skirt-deep-23,Deep Skirt,skirt,0.22,0.028,6,SOCKET_Skirt_L
+skirt-split-24,skirt-split-24,Split Skirt,skirt,0.22,0.019,6,SOCKET_Skirt_L
+skirt-fin-25,skirt-fin-25,Fin Skirt,skirt,0.22,0.022,6,SOCKET_Skirt_L
+skirt-winglet-26,skirt-winglet-26,Winglet Skirt,skirt,0.22,0.02,6,SOCKET_Skirt_L
+skirt-twin-27,skirt-twin-27,Twin Rail,skirt,0.22,0.028,6,SOCKET_Skirt_L
+skirt-angled-28,skirt-angled-28,Angled Skirt,skirt,0.22,0.035,6,SOCKET_Skirt_L
+skirt-lip-29,skirt-lip-29,Lip Skirt,skirt,0.22,0.02,6,SOCKET_Skirt_L
+skirt-cap-30,skirt-cap-30,Cap Skirt,skirt,0.22,0.025,6,SOCKET_Skirt_L
+skirt-re-vented,skirt-re-vented,RE Swept Winglet Skirt,skirt,0.22,0.029,5.9,SOCKET_Skirt_L
+five-classic,five-classic,Five Classic,rim,0,0,3,SOCKET_Wheel_FL
+five-split,five-split,Five Split,rim,0,0,3,SOCKET_Wheel_FL
+five-flat,five-flat,Five Flat,rim,0,0,3,SOCKET_Wheel_FL
+six-classic,six-classic,Six Classic,rim,0,0,3,SOCKET_Wheel_FL
+six-tapered,six-tapered,Six Tapered,rim,0,0,3,SOCKET_Wheel_FL
+six-twin,six-twin,Six Twin,rim,0,0,3,SOCKET_Wheel_FL
+seven-thin,seven-thin,Seven Thin,rim,0,0,3,SOCKET_Wheel_FL
+seven-wide,seven-wide,Seven Wide,rim,0,0,3,SOCKET_Wheel_FL
+seven-race,seven-race,Seven Race,rim,0,0,3,SOCKET_Wheel_FL
+mesh-12,mesh-12,Mesh 12,rim,0,0,3,SOCKET_Wheel_FL
+mesh-16,mesh-16,Mesh 16,rim,0,0,3,SOCKET_Wheel_FL
+mesh-20,mesh-20,Mesh 20,rim,0,0,3,SOCKET_Wheel_FL
+split5-fine,split5-fine,Split Five Fine,rim,0,0,3,SOCKET_Wheel_FL
+split5-triple,split5-triple,Split Five Triple,rim,0,0,3,SOCKET_Wheel_FL
+split5-tilt,split5-tilt,Split Five Tilt,rim,0,0,3,SOCKET_Wheel_FL
+turbine-8,turbine-8,Turbine 8,rim,0,0,3,SOCKET_Wheel_FL
+turbine-12,turbine-12,Turbine 12,rim,0,0,3,SOCKET_Wheel_FL
+turbine-16,turbine-16,Turbine 16,rim,0,0,3,SOCKET_Wheel_FL
+dish-step,dish-step,Dish Step,rim,0,0,3,SOCKET_Wheel_FL
+dish-deep,dish-deep,Dish Deep,rim,0,0,3,SOCKET_Wheel_FL
+dish-ultra,dish-ultra,Dish Ultra,rim,0,0,3,SOCKET_Wheel_FL
+concave-soft,concave-soft,Concave Soft,rim,0,0,3,SOCKET_Wheel_FL
+concave-mid,concave-mid,Concave Mid,rim,0,0,3,SOCKET_Wheel_FL
+concave-hard,concave-hard,Concave Hard,rim,0,0,3,SOCKET_Wheel_FL
+lip-deep,lip-deep,Deep Lip,rim,0,0,3,SOCKET_Wheel_FL
+lip-wide,lip-wide,Wide Lip,rim,0,0,3,SOCKET_Wheel_FL
+lip-max,lip-max,Max Lip,rim,0,0,3,SOCKET_Wheel_FL
+rally-6,rally-6,Rally 6,rim,0,0,3,SOCKET_Wheel_FL
+rally-8,rally-8,Rally 8,rim,0,0,3,SOCKET_Wheel_FL
+rally-10,rally-10,Rally 10,rim,0,0,3,SOCKET_Wheel_FL
+turbofan-rally,turbofan-rally,Rally Turbofan Disc,rim,0,0,3,SOCKET_Wheel_FL
+bbs-rs-mesh,bbs-rs-mesh,RS Motorsport Mesh,rim,0,0,3,SOCKET_Wheel_FL
+re-five-dish,re-five-dish,RE Deep-Dish Five,rim,0,0,3,SOCKET_Wheel_FL
+evo37-tarmac,evo37-tarmac,Group-B Tarmac,rim,0,0,3,SOCKET_Wheel_FL
+sp3-directional,sp3-directional,Icona Directional Star,rim,0,0,3,SOCKET_Wheel_FL
+front-smooth,front-smooth,Front Smooth,front,0.071,0.038,6,SOCKET_Splitter
+front-gt,front-gt,Front GT,front,0.079,0.04,6,SOCKET_Splitter
+front-intake,front-intake,Front Intake,front,0.07,0.07,6,SOCKET_Splitter
+front-split,front-split,Front Split Lip,front,0.092,0.039,6,SOCKET_Splitter
+front-canard,front-canard,Front Canards,front,0.068,0.04,6,SOCKET_Splitter
+front-track,front-track,Front Track,front,0.077,0.069,6,SOCKET_Splitter
+front-rs-canard,front-rs-canard,Front RS Dive-Planes,front,0.096,0.058,5.6,SOCKET_Splitter
+front-sp3-louvre,front-sp3-louvre,Front Icona Strakes,front,0.089,0.044,5.8,SOCKET_Splitter
+rear-smooth,rear-smooth,Rear Smooth,rear,0.073,0.038,6,SOCKET_Diffuser
+rear-diffuser,rear-diffuser,Rear Diffuser Cut,rear,0.087,0.072,6,SOCKET_Diffuser
+rear-twin,rear-twin,Rear Twin Exit,rear,0.071,0.041,6,SOCKET_Diffuser
+rear-aggressive,rear-aggressive,Rear Aggressive,rear,0.079,0.072,6,SOCKET_Diffuser
+rear-gt,rear-gt,Rear GT,rear,0.087,0.039,6,SOCKET_Diffuser
+rear-track,rear-track,Rear Track,rear,0.072,0.044,6,SOCKET_Diffuser
+hood-smooth,hood-smooth,Hood Smooth,hood,0.045,0.005,6,Root
+hood-vented,hood-vented,Hood Vented,hood,0.045,0.007,6,Root
+hood-bulge,hood-bulge,Hood Bulge,hood,0.045,0.009,6,Root
+hood-power,hood-power,Hood Power Dome,hood,0.045,0.012,6,Root
+hood-carbon,hood-carbon,Hood Carbon Inlay,hood,0.045,0.005,6,Root
+hood-track,hood-track,Hood Track Louvres,hood,0.045,0.007,6,Root
+hood-rs-nostril,hood-rs-nostril,Hood RS Carbon Nostrils,hood,0.058,0.006,4.2,Root
+hood-evo-louvre,hood-evo-louvre,Hood Group-B Louvres,hood,0.052,0.009,5.4,Root
+fender-smooth,fender-smooth,Fender Smooth,fender,0,0,0,Root
+fender-plus,fender-plus,Fender Plus,fender,0,0,0,Root
+fender-wide,fender-wide,Fender Wide,fender,0,0,0,Root
+fender-bolt,fender-bolt,Fender Bolt-on,fender,0,0,0,Root
+fender-race,fender-race,Fender Race,fender,0,0,0,Root
+fender-extreme,fender-extreme,Fender Extreme,fender,0,0,0,Root
+fender-integrale-box,fender-integrale-box,Fender Integrale Box-Flare,fender,0,0,0,Root
+fender-rs-louvre,fender-rs-louvre,Fender RS Wide Track,fender,0,0,0,Root

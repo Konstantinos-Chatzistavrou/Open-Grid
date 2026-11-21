@@ -16,6 +16,9 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
+#include "OpenGridAudioComponent.h"
+#include "OpenGridCustomizationComponent.h"
+#include "OpenGridDamageComponent.h"
 #include "OpenGridVehicleComponent.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -64,6 +67,7 @@ AOpenGridCarPawn::AOpenGridCarPawn()
         return Part;
     };
     WidebodyMesh = MakeModPart(TEXT("WidebodyMesh"));
+    StockWingMesh = MakeModPart(TEXT("StockWingMesh"));
     WingMesh = MakeModPart(TEXT("WingMesh"));
     SplitterMesh = MakeModPart(TEXT("SplitterMesh"));
     DiffuserMesh = MakeModPart(TEXT("DiffuserMesh"));
@@ -106,6 +110,10 @@ AOpenGridCarPawn::AOpenGridCarPawn()
 
     Vehicle = CreateDefaultSubobject<UOpenGridVehicleComponent>(TEXT("Vehicle"));
     Vehicle->CarConfigRelativePath = TEXT("cars/kestrel_gt.json");
+
+    Customization = CreateDefaultSubobject<UOpenGridCustomizationComponent>(TEXT("Customization"));
+    Damage = CreateDefaultSubobject<UOpenGridDamageComponent>(TEXT("Damage"));
+    Audio = CreateDefaultSubobject<UOpenGridAudioComponent>(TEXT("Audio"));
 }
 
 void AOpenGridCarPawn::BeginPlay()
@@ -153,6 +161,48 @@ void AOpenGridCarPawn::BeginPlay()
             Calipers[i]->SetVisibility(true);
         }
     }
+
+    if (StockWingMesh && StockWingMeshAsset)
+    {
+        USceneComponent* ParentComp = (DeformableBodyMesh && DeformableBodyMesh->IsVisible())
+                                          ? static_cast<USceneComponent*>(DeformableBodyMesh.Get())
+                                          : static_cast<USceneComponent*>(BodyMesh.Get());
+        const FName WingSocket(TEXT("SOCKET_Wing"));
+        const FName AttachSocket = (ParentComp && ParentComp->DoesSocketExist(WingSocket)) ? WingSocket : NAME_None;
+        if (ParentComp)
+        {
+            StockWingMesh->AttachToComponent(ParentComp, FAttachmentTransformRules::SnapToTargetNotIncludingScale, AttachSocket);
+        }
+        StockWingMesh->SetStaticMesh(StockWingMeshAsset);
+        StockWingMesh->SetRelativeLocation(FVector::ZeroVector);
+        StockWingMesh->SetRelativeRotation(FRotator::ZeroRotator);
+        StockWingMesh->SetRelativeScale3D(FVector::OneVector);
+        StockWingMesh->SetVisibility(true);
+    }
+
+    if (Customization)
+    {
+        TArray<UStaticMeshComponent*> WheelPtrs;
+        for (const TObjectPtr<UStaticMeshComponent>& W : Wheels) WheelPtrs.Add(W.Get());
+        TArray<UStaticMeshComponent*> CaliperPtrs;
+        for (const TObjectPtr<UStaticMeshComponent>& C : Calipers) CaliperPtrs.Add(C.Get());
+        Customization->BindPawnMeshes(DeformableBodyMesh.Get(), BodyMesh.Get(), StockWingMesh.Get(), WheelPtrs, CaliperPtrs);
+    }
+
+    if (Damage)
+    {
+        Damage->BindPawnComponents(Vehicle.Get(), DeformableBodyMesh.Get());
+        if (StockWingMesh)
+        {
+            Damage->RegisterDetachableComponent(TEXT("stock_wing"), StockWingMesh.Get(), EOpenGridDamageZone::Rear, 0.35f);
+        }
+    }
+
+    if (Audio)
+    {
+        Audio->BindVehicle(Vehicle.Get());
+    }
+
     Super::BeginPlay();
 }
 
@@ -256,6 +306,7 @@ void AOpenGridCarPawn::OnRecover() { Recover(); }
 void AOpenGridCarPawn::Recover()
 {
     Vehicle->RepairAndService();   // as the web build's R: fix damage, refuel, restore the engine
+    if (Damage) Damage->RepairAllDamage();
     const FRotator Yaw(0.0f, GetActorRotation().Yaw, 0.0f);
     Chassis->SetWorldLocationAndRotation(GetActorLocation() + FVector(0.0f, 0.0f, 100.0f), Yaw, false, nullptr, ETeleportType::TeleportPhysics);
     Chassis->SetPhysicsLinearVelocity(FVector::ZeroVector);
@@ -281,7 +332,10 @@ void AOpenGridCarPawn::Tick(float DeltaSeconds)
     Vehicle->HandbrakeInput = FMath::Clamp(ActionValue(Handbrake), 0.0f, 1.0f);
 
     PlaceWheels();
-    UpdateCrushMorphTargets();
+    if (!Damage || !Damage->IsComponentTickEnabled())
+    {
+        UpdateCrushMorphTargets();
+    }
     if (bShowDebugHud) DrawHud();
 }
 
@@ -366,13 +420,18 @@ void AOpenGridCarPawn::PlaceWheels()
 {
     if (!Vehicle->bCarLoaded) return;
     const FQuat Body = Chassis->GetComponentQuat();
+    const FVector RightAxis = Body.GetRightVector();
+    const float WidebodyTrackCm = Customization ? Customization->GetWidebodyTrackOffsetCm() : 0.0f;
     for (int32 i = 0; i < 4; ++i)
     {
         // Core: steer + = left, spin + = rolling forward. Unreal: yaw + = right, pitch + = nose up.
         const float SteerDeg = -FMath::RadiansToDegrees(Vehicle->WheelSteerRad[i]);
         const float SpinDeg = -FMath::RadiansToDegrees(Vehicle->WheelSpinRad[i]);
         const FQuat Steered = Body * FQuat(FRotator(0.0f, SteerDeg, 0.0f));
-        Calipers[i]->SetWorldLocationAndRotation(Vehicle->WheelCentresWorld[i], Steered);
+        // FL=0, RL=2 push left (-Y); FR=1, RR=3 push right (+Y) to fill widened arches.
+        const float SideSign = (i == 0 || i == 2) ? -1.0f : 1.0f;
+        const FVector WheelCentre = Vehicle->WheelCentresWorld[i] + RightAxis * (SideSign * WidebodyTrackCm);
+        Calipers[i]->SetWorldLocationAndRotation(WheelCentre, Steered);
         FQuat Q = Steered * FQuat(FRotator(SpinDeg, 0.0f, 0.0f));
         const bool bRealWheel = i < WheelMeshes.Num() && WheelMeshes[i] != nullptr;
         if (!bRealWheel)
@@ -382,7 +441,7 @@ void AOpenGridCarPawn::PlaceWheels()
             const float D = 2.0f * Vehicle->WheelRadiusCm[i] / 100.0f;
             Wheels[i]->SetWorldScale3D(FVector(D, D, Vehicle->WheelWidthCm[i] / 100.0f));
         }
-        Wheels[i]->SetWorldLocationAndRotation(Vehicle->WheelCentresWorld[i], Q);
+        Wheels[i]->SetWorldLocationAndRotation(WheelCentre, Q);
     }
 }
 

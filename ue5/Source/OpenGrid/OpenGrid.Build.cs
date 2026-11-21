@@ -15,6 +15,10 @@ public class OpenGrid : ModuleRules
             "Engine",
             "InputCore",
             "EnhancedInput",
+            "HTTP",
+            "WebSockets",
+            "Json",
+            "JsonUtilities",
             "OpenGridPhysics"
         });
     }
