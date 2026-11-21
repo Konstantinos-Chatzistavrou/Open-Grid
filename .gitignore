@@ -61,3 +61,4 @@ __pycache__/
 # UE-ready car exports: regenerate with `node tools/ue5/export_cars_for_ue.mjs`
 /ue5/Import/
 /tools/ue5/node_modules/
+/tools/assets/node_modules/

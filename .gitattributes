@@ -9,3 +9,25 @@ ue5/SourceArt/** filter=lfs diff=lfs merge=lfs -text
 # Never try to merge or diff these as text, wherever they appear
 *.uasset binary
 *.umap binary
+
+# Kit v1 (docs/kit.md): masters and generated kit binaries live in Git LFS (source.json ledgers and manifests stay text)
+assets_source/masters/**/*.exr filter=lfs diff=lfs merge=lfs -text
+assets_source/masters/**/*.hdr filter=lfs diff=lfs merge=lfs -text
+assets_source/masters/**/*.png filter=lfs diff=lfs merge=lfs -text
+assets_source/masters/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+assets_source/masters/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
+assets_source/masters/**/*.tif filter=lfs diff=lfs merge=lfs -text
+assets_source/masters/**/*.tiff filter=lfs diff=lfs merge=lfs -text
+assets_source/masters/**/*.ktx2 filter=lfs diff=lfs merge=lfs -text
+assets_source/masters/**/*.glb filter=lfs diff=lfs merge=lfs -text
+assets_source/masters/**/*.bin filter=lfs diff=lfs merge=lfs -text
+assets_source/masters/**/*.fbx filter=lfs diff=lfs merge=lfs -text
+assets_source/masters/**/*.blend filter=lfs diff=lfs merge=lfs -text
+assets_source/masters/**/*.zip filter=lfs diff=lfs merge=lfs -text
+web/public/assets/kit/**/*.hdr filter=lfs diff=lfs merge=lfs -text
+web/public/assets/kit/**/*.exr filter=lfs diff=lfs merge=lfs -text
+web/public/assets/kit/**/*.ktx2 filter=lfs diff=lfs merge=lfs -text
+web/public/assets/kit/**/*.png filter=lfs diff=lfs merge=lfs -text
+web/public/assets/kit/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+web/public/assets/kit/**/*.glb filter=lfs diff=lfs merge=lfs -text
+web/public/assets/kit/**/*.bin filter=lfs diff=lfs merge=lfs -text
