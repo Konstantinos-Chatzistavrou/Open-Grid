@@ -8,6 +8,12 @@ What it does, in order (details and the licence trail are in make_car4.py's docs
   4. mirrors carved out; the signature parts (front splitter, grille mesh, diffuser, wing, lamp units) deleted;
   5. SHAPE(): smooth deformation + uniform scale to the game's 2.65 m wheelbase; recentre (length centre at 0, tyres on 0);
   6. our own splitter / grille / diffuser / wing / light bars; game node names; export + numbers for the visual config.
+
+`faithful: True` (since 2026-11-21, the GTA way: the car shows what inspired it): no deformation (uniform scale only) and
+the source's OWN splitter, grille, diffuser, wing and lamp units are kept, regrouped under the game's node names
+(bumper_front / bumper_rear / wing; `tail_emit` materials or the rear lamp units become taillight_bar). Only marks go:
+the `remove` list, the livery (paint / trim split as above) and `emblem_cut` (a maker's 3D emblem: faces inside a
+circle in the x-z plane, in front of y_max, in source coordinates).
 Game contract: web/src/scene/car.ts, damage.ts (wheel_XX / caliper_XX empties, bumper_*, mirror_*, drl_*, beam_*, taillight_bar).
 """
 import json
@@ -31,7 +37,8 @@ def build(cfg, src, out):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=src)
     M = standard_materials()
-    sh = {**DEFAULT_SHAPE, **cfg.get("shape", {})}
+    faithful = bool(cfg.get("faithful"))
+    sh = {k: 0.0 for k in DEFAULT_SHAPE} if faithful else {**DEFAULT_SHAPE, **cfg.get("shape", {})}
 
     for o in meshes():
         o["mkey"] = mat_key(o)   # the source material's name (suffix .007 etc. stripped): survives separate/copy, unlike the material itself
@@ -92,7 +99,38 @@ def build(cfg, src, out):
 
     bkey, batlas, bthr = cfg["body"]
     body = objs_of(bkey)[0]
-    classify(body, batlas, bthr)
+    # faithful `grille_box`: a grille moulded into the shell keeps its look: inside the box, faces whose texture is bright
+    # and grey (chrome bars) become chrome, dark ones black trim; coloured livery there stays paint
+    gb = cfg.get("grille_box") if faithful else None
+    grille_faces = {}
+    if gb:
+        im = bpy.data.images[batlas]
+        w, h = im.size
+        px = np.empty(w * h * 4, dtype=np.float32)
+        im.pixels.foreach_get(px)
+        px = px.reshape(h, w, 4)[:, :, :3]
+        sx, sy, ox, oy = atlas_mapping(body, batlas)
+        me, mw = body.data, body.matrix_world
+        uv = me.uv_layers.active.data
+        for p in me.polygons:
+            c = mw @ p.center
+            if not (abs(c.x) < gb["x"] and c.y < gb["y"] and gb["z0"] < c.z < gb["z1"]):
+                continue
+            u = ((sum(uv[i].uv.x for i in p.loop_indices) / p.loop_total) * sx + ox) % 1.0
+            v = ((sum(uv[i].uv.y for i in p.loop_indices) / p.loop_total) * sy + oy) % 1.0
+            rgb = px[min(h - 1, int(v * h)), min(w - 1, int(u * w))]
+            lum, sat = float(rgb.mean()), float(rgb.max() - rgb.min())
+            if sat < gb.get("max_sat", 0.12):
+                grille_faces[p.index] = "chrome" if lum >= gb.get("chrome_lum", 0.35) else "trim"
+    # faithful: the whole shell is paint (the livery's dark panels made blotchy black patches on a single-colour car)
+    classify(body, batlas, 0.0 if faithful else bthr)
+    if grille_faces:
+        M.setdefault("chrome", mat("chrome", (0.78, 0.79, 0.8), 1.0, 0.14))
+        body.data.materials.append(M["chrome"])
+        slot = {"trim": 1, "chrome": 2}
+        for i, kind in grille_faces.items():
+            body.data.polygons[i].material_index = slot[kind]
+        print("grille faces: chrome", sum(k == "chrome" for k in grille_faces.values()), "trim", sum(k == "trim" for k in grille_faces.values()))
     mkey, matlas, mthr = cfg["misc"]
     misc = objs_of(mkey)[0]
     classify(misc, matlas, mthr)
@@ -126,14 +164,29 @@ def build(cfg, src, out):
     rear_zone = lambda c: (c[:, 1] > z["rear_y"]) & (c[:, 2] < z["rear_z"])
     wing_zone = lambda c: (c[:, 1] > z["wing_y"]) & (c[:, 2] > z["wing_z"])
     grille_old = objs_of(*cfg.get("grille", []))
-    delete_faces(body, lambda c: (c[:, 1] > z["body_wing_y"]) & (c[:, 2] > z["body_wing_z"]))
-    bc = cfg.get("body_cut")   # a brand grille moulded into the body shell: cut out, our slatted grille fills the hole
-    if bc:
-        delete_faces(body, lambda c: (np.abs(c[:, 0]) < bc["x"]) & (c[:, 1] < bc["y"]) & (c[:, 2] > bc["z0"]) & (c[:, 2] < bc["z1"]))   # old wing end plates live in the body shell
+    body_wing = lambda c: (c[:, 1] > z["body_wing_y"]) & (c[:, 2] > z["body_wing_z"])   # old wing end plates live in the body shell
+    front_src, rear_src, wing_src = [], [], []
+    if faithful:
+        wing_src += [p for p in [split_faces(body, body_wing, "wing_endplates")] if p]
+        ec = cfg.get("emblem_cut")
+        if ec:
+            for o in [body, misc]:
+                delete_faces(o, lambda c: ((c[:, 0] - ec["cx"]) ** 2 + (c[:, 2] - ec["cz"]) ** 2 < ec["r"] ** 2) & (c[:, 1] < ec["y_max"]))
+    else:
+        delete_faces(body, body_wing)
+        bc = cfg.get("body_cut")   # a brand grille moulded into the body shell: cut out, our slatted grille fills the hole
+        if bc:
+            delete_faces(body, lambda c: (np.abs(c[:, 0]) < bc["x"]) & (c[:, 1] < bc["y"]) & (c[:, 2] > bc["z0"]) & (c[:, 2] < bc["z1"]))
     for o in [o for o in meshes() if o is misc or o.get("mkey") in cfg.get("underbody", [])]:
         if o in grille_old:
             continue
-        delete_faces(o, lambda c: front_zone(c) | rear_zone(c) | wing_zone(c))
+        if faithful:   # the source's own aero, regrouped (zones are disjoint: front low, rear low, wing high)
+            for lst, zone, nm in ((front_src, front_zone, "splitter_src"), (rear_src, rear_zone, "diffuser_src"), (wing_src, wing_zone, "wing_src")):
+                part = split_faces(o, zone, nm)
+                if part:
+                    lst.append(part)
+        else:
+            delete_faces(o, lambda c: front_zone(c) | rear_zone(c) | wing_zone(c))
     lamp_objs = objs_of(*cfg["lamps_glass"], *cfg["lamps_emit"])
     lamp_prefix = tuple(o.name for o in lamp_objs)   # separate_loose keeps these as the name prefix of the parts
     for o in lamp_objs:
@@ -151,7 +204,10 @@ def build(cfg, src, out):
         elif lo[1] > lz["rear_y"] and lo[2] > lz["rear_z0"] and hi[2] < lz["rear_z1"]:
             lights_rear.append(o)
 
-    print("lamps: front", len(lights_front), "rear", len(lights_rear), "(parts)")
+    tail_emit = objs_of(*cfg.get("tail_emit", [])) if faithful else []
+    for o in tail_emit:
+        o.data.materials.clear(); o.data.materials.append(M["tail"])
+    print("lamps: front", len(lights_front), "rear", len(lights_rear), "(parts), tail emitters", len(tail_emit))
 
     # ---- 5. deformation -----------------------------------------------------------------------------------------
     def SHAPE(p):
@@ -195,12 +251,87 @@ def build(cfg, src, out):
         gl, gh = bbox(grille_old)
     else:
         gl, gh = np.array([-0.8, fy, 0.14]), np.array([0.8, fy + 0.1, 0.5])
-    for o in grille_old:
-        remove(o)
+    if not faithful:
+        for o in grille_old:
+            remove(o)
     gh = np.maximum(gh, np.array([0, 0, cfg.get("grille_top", 0)]))
 
-    # ---- 6. our own parts ---------------------------------------------------------------------------------------
+    # ---- 6. our own parts (faithful: the source's own, regrouped) --------------------------------------------------
     P = cfg.get("parts", {})
+    if faithful:
+        bumper_front = empty("bumper_front"); adopt(bumper_front, front_src + grille_old)
+        bumper_rear = empty("bumper_rear"); adopt(bumper_rear, rear_src)
+        wing = empty("wing"); adopt(wing, wing_src)
+        tail = empty("taillight_bar")
+        if tail_emit:
+            adopt(tail, [join(tail_emit, "tail_lamps")])
+            if lights_rear:
+                join(lights_rear, "taillight_housing")
+        elif lights_rear:   # no separate emitters: the rear lamp units light up themselves
+            for o in lights_rear:
+                o.data.materials.clear(); o.data.materials.append(M["tail"])
+            adopt(tail, [join(lights_rear, "tail_lamps")])
+        sides = {"L": [], "R": []}
+        for o in lights_front:
+            lo_, hi_ = bbox([o])
+            sides["L" if (lo_[0] + hi_[0]) > 0 else "R"].append(o)
+        for side, sgn in (("L", 1), ("R", -1)):
+            if sides[side]:
+                a, b = bbox(sides[side])
+                cx, w = (a[0] + b[0]) / 2, (b[0] - a[0])
+                # inside the lamp unit, behind its glass (on the front face it stuck out where the lamp wraps round)
+                add_box(f"drl_{side}", M["light"], (cx, a[1] + 0.45 * (b[1] - a[1]), a[2] + 0.55 * (b[2] - a[2])), (w * 0.45, 0.01, 0.012), (0, 0, sgn * 8))
+                join(sides[side], f"beam_{side}")
+            else:
+                add_box(f"drl_{side}", M["light"], (sgn * 0.7, fy + 0.6, 0.55), (0.4, 0.012, 0.016), (0, 0, sgn * 8))
+        for b in cfg.get("badges", []):   # our own crest where the maker's badge sat (the game's floating fallback stays off)
+            _badge(M, body, b, S, T)
+    else:
+        _own_parts(cfg, M, P, fy, ry, ry_up, gl, gh, lights_front, lights_rear)
+
+    # ---- 7. names + wheels --------------------------------------------------------------------------------------
+    body.name = "body"
+    misc.name = "trim_misc"
+    for o in meshes():
+        if o.get("mkey") in cfg.get("underbody", []):
+            o.name = "underbody_" + o.name[-3:]
+        elif o.data.materials and o.data.materials[0] in (M["interior"],) or (o.data.materials and o.data.materials[0] is M["carbon"] and o.name.startswith("Object_")):
+            o.name = "interior_" + o.name
+        elif o.name.startswith("Object_") and o.get("mkey") == cfg["mirror_glass"]:
+            o.name = "mirror_glass"
+        elif o.name.startswith("Object_") and o.data.materials and o.data.materials[0] is M["glass"]:
+            o.name = "glass_" + o.name[-3:]
+    for k, lst in corner.items():   # one mesh per material per corner (a source wheel came in up to 130 loose pieces: 1,700 draws)
+        groups = {}
+        for o in lst:
+            groups.setdefault(o.data.materials[0].name, []).append(o)
+        corner[k] = lst = [join(g, f"wheel_{k}_{m}") if len(g) > 1 else g[0] for m, g in groups.items()]
+    for k, lst in corner.items():
+        e = empty(f"wheel_{k}", hub[k])
+        c = empty(f"caliper_{k}", hub[k])
+        bpy.context.view_layer.update()
+        adopt(e, [o for o in lst if o.data.materials[0] is not M["caliper"]])
+        adopt(c, [o for o in lst if o.data.materials[0] is M["caliper"]])
+        for o in lst:
+            o.name = f"wheel_{k}_{o.data.materials[0].name}"
+
+    tyre_o = max((o for o in corner["FL"] if o.data.materials[0] is M["tyre"]), key=lambda o: o.dimensions.z)
+    tl, th = bbox([tyre_o])
+    info = {
+        "hubs_blender": {k: [round(float(v), 4) for v in hub[k]] for k in hub},
+        "body_y": [round(float(fy), 3), round(float(ry), 3)], "body_x": [round(float(lo[0]), 3), round(float(hi[0]), 3)],
+        "body_z_max": round(float(hi[2]), 3), "scale": round(float(S), 4), "tyre_radius": round(float(th[2] - tl[2]) / 2, 3),
+        "length": round(float(hi[1] - lo[1]), 3),
+    }
+    json.dump(info, open(os.path.join(out, cfg["name"] + ".json"), "w"), indent=1)
+    print("INFO", json.dumps(info))
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out, cfg["name"] + "_preview.blend"))
+    bpy.ops.export_scene.gltf(filepath=os.path.join(out, cfg["name"] + "_raw.glb"), export_format="GLB", export_apply=True)
+    print("wrote", out)
+
+
+def _own_parts(cfg, M, P, fy, ry, ry_up, gl, gh, lights_front, lights_rear):
+    """Step 6 of the re-shaped (non-faithful) build: our own splitter, grille, diffuser, wing and light bars."""
     sp, bl = M["carbon"], M["trim"]
     hw = P.get("splitter_half_width", 1.01)
     front_parts = [
@@ -259,38 +390,53 @@ def build(cfg, src, out):
         if objs:
             join(objs, f"beam_{side}")
 
-    # ---- 7. names + wheels --------------------------------------------------------------------------------------
-    body.name = "body"
-    misc.name = "trim_misc"
-    for o in meshes():
-        if o.get("mkey") in cfg.get("underbody", []):
-            o.name = "underbody_" + o.name[-3:]
-        elif o.data.materials and o.data.materials[0] in (M["interior"],) or (o.data.materials and o.data.materials[0] is M["carbon"] and o.name.startswith("Object_")):
-            o.name = "interior_" + o.name
-        elif o.name.startswith("Object_") and o.get("mkey") == cfg["mirror_glass"]:
-            o.name = "mirror_glass"
-        elif o.name.startswith("Object_") and o.data.materials and o.data.materials[0] is M["glass"]:
-            o.name = "glass_" + o.name[-3:]
-    for k, lst in corner.items():
-        e = empty(f"wheel_{k}", hub[k])
-        c = empty(f"caliper_{k}", hub[k])
-        bpy.context.view_layer.update()
-        adopt(e, [o for o in lst if o.data.materials[0] is not M["caliper"]])
-        adopt(c, [o for o in lst if o.data.materials[0] is M["caliper"]])
-        for o in lst:
-            o.name = f"wheel_{k}_{o.data.materials[0].name}"
 
-    tyre_o = max((o for o in corner["FL"] if o.data.materials[0] is M["tyre"]), key=lambda o: o.dimensions.z)
-    tl, th = bbox([tyre_o])
-    info = {
-        "hubs_blender": {k: [round(float(v), 4) for v in hub[k]] for k in hub},
-        "body_y": [round(float(fy), 3), round(float(ry), 3)], "body_x": [round(float(lo[0]), 3), round(float(hi[0]), 3)],
-        "body_z_max": round(float(hi[2]), 3), "scale": round(float(S), 4), "tyre_radius": round(float(th[2] - tl[2]) / 2, 3),
-        "length": round(float(hi[1] - lo[1]), 3),
-    }
-    json.dump(info, open(os.path.join(out, cfg["name"] + ".json"), "w"), indent=1)
-    print("INFO", json.dumps(info))
-    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out, cfg["name"] + "_preview.blend"))
-    bpy.ops.export_scene.gltf(filepath=os.path.join(out, cfg["name"] + "_raw.glb"), export_format="GLB", export_apply=True)
-    print("wrote", out)
-
+def _badge(M, body, b, S, T):
+    """A crest (chrome ring on a dark enamel disc) named b["name"], facing front (-Y) or rear (+Y). Position in SOURCE
+    coordinates: x, z, and y if given, else the body surface found by a ray from outside along Y (+ b["proud"] m)."""
+    import bmesh
+    from mathutils import Matrix, Vector
+    x, z = S * b["x"] + T[0], S * b["z"] + T[2]
+    face = -1.0 if b["face"] == "front" else 1.0
+    nrm = Vector((0, face, 0))
+    if "y" in b:
+        y = S * b["y"] + T[1]
+    else:
+        inv = body.matrix_world.inverted()
+        o = inv @ Vector((x, face * 6.0, z)); d = (inv.to_3x3() @ Vector((0, -face, 0))).normalized()
+        hit, loc, _n, _i = body.ray_cast(o, d)
+        if not hit:
+            print("badge", b["name"], "missed the body"); return
+        nrm = (body.matrix_world.to_3x3() @ _n).normalized()
+        if nrm.y * face < 0:
+            nrm = -nrm
+        p = (body.matrix_world @ loc) + nrm * b.get("proud", 0.004)
+        x, y, z = p.x, p.y, p.z
+    r = b["r"]
+    if "chrome" not in M:
+        M["chrome"] = mat("chrome", (0.78, 0.79, 0.8), 1.0, 0.14)
+    if "enamel" not in M:
+        M["enamel"] = mat("badge_enamel", (0.02, 0.025, 0.035), 0.3, 0.2, coat=1.0)
+    me = bpy.data.meshes.new(b["name"]); bm = bmesh.new()
+    ring = bmesh.ops.create_circle(bm, cap_ends=False, radius=r, segments=40)["verts"]
+    inner = bmesh.ops.create_circle(bm, cap_ends=False, radius=r * 0.82, segments=40)["verts"]
+    for i in range(40):   # flat chrome annulus
+        bm.faces.new((ring[i], ring[(i + 1) % 40], inner[(i + 1) % 40], inner[i])).material_index = 0
+    disc = bmesh.ops.create_circle(bm, cap_ends=True, radius=r * 0.82, segments=40)
+    for f in bm.faces:
+        if len(f.verts) == 40:
+            f.material_index = 1
+    for v in disc["verts"]:
+        v.co.z -= 0.002   # the enamel sits just below the ring
+    # a chevron in chrome on the enamel: our mark
+    w, hgt = r * 0.5, r * 0.28
+    pts = [(-w, hgt * 0.3), (0, -hgt), (w, hgt * 0.3), (w * 0.62, hgt * 0.62), (0, -hgt * 0.25), (-w * 0.62, hgt * 0.62)]
+    vs = [bm.verts.new((px, py, 0.0005)) for px, py in pts]
+    bm.faces.new(vs).material_index = 0
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(me); bm.free()
+    me.materials.append(M["chrome"]); me.materials.append(M["enamel"])
+    o = bpy.data.objects.new(b["name"], me); bpy.context.scene.collection.objects.link(o)
+    # circle lies in XY with normal +Z: the normal goes along the panel's (flush on a sloped tail), the chevron's up stays up
+    o.matrix_world = Matrix.Translation((x, y, z)) @ nrm.to_track_quat("Z", "Y" if abs(nrm.z) < 0.9 else "X").to_matrix().to_4x4()
+    print("badge", b["name"], "at", round(x, 3), round(y, 3), round(z, 3))

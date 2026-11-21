@@ -1,4 +1,4 @@
-"""Car generation 4 ("Kestrel GT"): a de-branded, re-shaped derivative of "2019 Aston Martin Vantage DTM".
+"""Car generation 4 ("Kestrel GT"): a de-branded derivative of "2019 Aston Martin Vantage DTM".
 
 Run:  tools/blender/blender -b --factory-startup --python assets_source/scripts/make_car4.py -- \
           <2019_aston_martin_vantage_dtm.glb> <out_dir>
@@ -15,7 +15,9 @@ everything that carries one is removed:
     atlas' blurred luminance only, so no decal survives;
   - tyre sidewall (Hankook), rim atlas, plate (Bosch / Aston wings), dash switch labels, cockpit atlas:
     replaced by flat PBR materials; race number and plate meshes deleted.
-WHAT MAKES IT OURS (so it is no longer a recognisable copy of the real car):
+SINCE 2026-11-21 (`faithful`, the GTA way): the body, grille, lamps, splitter, diffuser and wing are the model's own, so
+the car shows what inspired it; only the marks above are gone, and the name is ours. Until then (kept for reference,
+the non-faithful path of dtm_build.py):
   - SHAPE(): a smooth deformation (longer, lower nose; cabin pushed back; lower roof; wider rear haunches;
     shorter tail), wheelbase untouched, then a uniform scale to the game's 2.65 m wheelbase;
   - the source's front splitter fins, grille mesh, rear diffuser, wing and taillight units are deleted and
@@ -35,7 +37,11 @@ from dtm_build import build  # noqa: E402
 
 CFG = dict(
     name="kestrel_gt",
-    remove=["EXT_NUMBER", "INT_PLATE", "DAMAGE_GLASS", "AM_BRAKELIGHTS", "AM_RAINLIGHT"],
+    faithful=True,
+    remove=["EXT_NUMBER", "INT_PLATE", "DAMAGE_GLASS"],
+    tail_emit=["AM_BRAKELIGHTS", "AM_RAINLIGHT"],
+    badges=[dict(name="badge_nose", face="front", x=0.0, z=0.52, r=0.034, proud=0.004),
+            dict(name="badge_rear", face="rear", x=0.0, z=0.8, r=0.032, proud=0.004)],
     flat={"EXT_WINDOWS": "glass", "EXT_TIRE": "tyre", "EXT_RIMS": "rim", "EXT_DISC": "disc", "EXT_BRAKES": "caliper",
           "EXT_MESH": "trim", "BLACK": "trim", "INT_CARBON": "carbon", "INT_Steer_Carbon": "carbon"},
     interior_prefixes=("INT_", "ASTON_INTERIOR", "T5_"),
