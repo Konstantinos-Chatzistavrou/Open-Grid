@@ -72,13 +72,6 @@ export class WorldClock {
     return this.weather;
   }
 
-  /** Set weather explicitly ('dry' | 'rain') for testing or screenshots. */
-  setWeather(w: WeatherKind) {
-    this.weather = w;
-    this.targetWetness = w === 'rain' ? 1.0 : 0.18;
-    this.wetness = this.targetWetness;
-  }
-
   /** Set in-game hour directly (0..24) for testing or Car Meet atmosphere. */
   setHour(h: number) {
     this.gameSeconds = (((h % 24) + 24) % 24) * 3600;

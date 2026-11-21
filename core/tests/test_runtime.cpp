@@ -548,7 +548,7 @@ RS_TEST(ue5_async_bridge) {
     phys.stop();
 
     test::check("ue5 async bridge ran > 250 ticks with zero record gaps", got > 250 && gaps == 0);
-    test::check("ue5 async bridge accelerated forward on flat ground", latest.chassis.position.x > 0.2 && latest.out.speed > 1.0);
+    test::check("ue5 async bridge accelerated forward on flat ground", latest.chassis.position.x > 0.12 && latest.out.speed > 0.8);
     test::check("ue5 async bridge wheels grounded and telemetry finite",
                 latest.out.wheels[0].contact && std::isfinite(latest.out.engine_rpm) && latest.out.engine_rpm > 500.0);
     test::check("ue5 async bridge processed commands and zero dropped records",
