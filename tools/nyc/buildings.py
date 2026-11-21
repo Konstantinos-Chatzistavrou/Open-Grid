@@ -451,7 +451,10 @@ def build_building(A, poly, d, idx, lm, detail, far=False):
     year = city_year(d, rng)
     area = poly.area
     kind = 5 if lm is not None else (classify(h, area, year, rng) if tl.CITY_ID == "nyc" else classify_city(h, area, year, d.get("code", ""), rng))
-    monument = lm is None and (d.get("code") in MONUMENT_CODES or d.get("mm") in ("tower", "obelisk", "lighthouse"))
+    slender = bool(d.get("name")) and area < 400 and h > 35 and h / math.sqrt(max(area, 1.0)) > 3.5   # a named clock / bell tower
+    monument = lm is None and (d.get("code") in MONUMENT_CODES or d.get("mm") in ("tower", "obelisk", "lighthouse") or slender
+                               or d.get("tt") in ("bell_tower", "clock", "minaret", "church", "defensive", "watchtower")
+                               or d.get("hi") in ("monument", "memorial", "castle", "church", "tower", "city_gate", "fort"))
     if monument:
         kind = 6
     era = float(np.clip(((year if year > 1700 else 1930) - 1900) / 100.0, 0.0, 1.0))

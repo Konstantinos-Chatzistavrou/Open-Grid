@@ -102,7 +102,8 @@ class Handler(osmium.SimpleHandler):
         s3 = {k: v for k, v in (("rs", t.get("roof:shape")), ("rh", _num(t.get("roof:height"))), ("rl", _num(t.get("roof:levels"))),
                                 ("ro", t.get("roof:orientation")), ("rd", t.get("roof:direction")), ("bc", t.get("building:colour")),
                                 ("rc", t.get("roof:colour")), ("bm", t.get("building:material")), ("rm", t.get("roof:material")),
-                                ("mm", t.get("man_made")), ("wd", t.get("wikidata"))) if v}
+                                ("mm", t.get("man_made")), ("wd", t.get("wikidata")), ("hi", t.get("historic")),
+                                ("tt", t.get("tower:type"))) if v}
         try:
             for o in a.outer_rings():
                 oc = [(n.lon, n.lat) for n in o]

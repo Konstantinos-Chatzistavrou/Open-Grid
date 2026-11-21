@@ -33,15 +33,19 @@ class Frame:
         return np.array([q[0], q[1], z], float)
 
 
-def _emit(acc, P, rgb, code):
-    """Triangles (T,3,3) on the roof material, flat shaded, no winding change (beams face every way)."""
-    P = np.asarray(P, float)
+def _emit(acc, P, rgb, code, centre=None):
+    """Triangles (T,3,3) on the roof material, flat shaded, no winding change (beams face every way) unless `centre`
+    is given: then every triangle is turned to face away from it (closed shapes built ring by ring)."""
+    P = np.asarray(P, float).copy()
     if len(P) == 0:
         return
     n = np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0])
     ln = np.linalg.norm(n, axis=1)
     k = ln > 1e-9
     P, n = P[k], n[k] / ln[k][:, None]
+    if centre is not None:
+        inward = np.einsum("ti,ti->t", n, P.mean(axis=1) - np.asarray(centre, float)) < 0
+        P[inward] = P[inward][:, [0, 2, 1]]; n[inward] *= -1
     t = np.stack([-n[:, 1], n[:, 0], np.zeros(len(n))], 1)
     tl = np.linalg.norm(t, axis=1)
     flat = tl < 1e-3
@@ -57,10 +61,10 @@ def _emit(acc, P, rgb, code):
             np.stack([u, v], -1).reshape(-1, 2), col)
 
 
-def _quads(acc, A, B, C, D, rgb, code):
-    """quads A-B-C-D (each (N,3)), counter-clockwise seen from outside"""
+def _quads(acc, A, B, C, D, rgb, code, centre=None):
+    """quads A-B-C-D (each (N,3)), counter-clockwise seen from outside (or turned away from `centre`)"""
     P = np.concatenate([np.stack([A, B, C], 1), np.stack([A, C, D], 1)])
-    _emit(acc, P, rgb, code)
+    _emit(acc, P, rgb, code, centre)
 
 
 def beam(acc, p0, p1, w, rgb, code, w1=None):
@@ -285,9 +289,10 @@ def wheel(A, F, far, diameter=120.0, top=135.0, capsules=32, tint=(0.42, 0.5, 0.
             prof = [(0.2, -2.0), (1.6, -1.4), (2.0, 0.0), (1.6, 1.4), (0.2, 2.0)]
             rings = [[F.p(c[0] + rr * math.cos(a) * 0.0 + rr * math.cos(a), dy, zc + c[1] + rr * math.sin(a))
                       for a in np.linspace(0, 2 * np.pi, 8, endpoint=False)] for rr, dy in prof]
-            for R0, R1 in zip(rings[:-1], rings[1:]):
+            cc = F.p(c[0], 0.0, zc + c[1])
+            for R0, R1 in zip(rings[:-1], rings[1:]):   # glass capsules, lit from inside
                 _quads(R, np.asarray(R0), np.roll(np.asarray(R0), -1, 0), np.roll(np.asarray(R1), -1, 0), np.asarray(R1),
-                       np.array([0.3, 0.38, 0.5], np.float32), 4)
+                       np.array([0.34, 0.4, 0.5], np.float32), LIT, centre=cc)
     # A-frame: two legs from the ground on one side up to the hub
     for sx in (-1, 1):
         beam(R, F.p(sx * 18.0, 42.0, 0.0), hub1, 2.4, steel * 0.85, LIT, w1=1.6)
