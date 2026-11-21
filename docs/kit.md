@@ -117,3 +117,20 @@ file well under the 50 MB budget) and exported with
   `Normal` 16-bit DirectX Y-down, `ORM` 8-bit linear, `Height` 16-bit linear).
 - Test switch: `?kitmat=0` (procedural look before Phase C). Before/after screenshots:
   `node tools/assets/screens.mjs <dir> before=kitmat=0 after=`.
+
+## Own photos to materials (phase D)
+
+`python3 tools/assets/photo_to_material.py <photos_folder>` converts a folder of straight-on phone photos plus a
+`corners.json` (four quadrilateral corner points `[TL, TR, BR, BL]` in pixel coordinates per photo) into 4K EXR master
+sets under `assets_source/masters/kit/<id>/`:
+
+1. **Perspective correction**: 8-DOF homography warps the four marked corners to a `4096 x 4096` square.
+2. **Delighting (high-pass)**: divides out large-scale illumination gradients while keeping average colour and local
+   contrast.
+3. **Seamless tiling**: blends the delit image with its half-period toroidal shift `(W/2, H/2)` using a smooth
+   raised-cosine border mask (`sin^2(pi*x/W) * sin^2(pi*y/H)`).
+4. **Approximate PBR maps**: estimates `Displacement`, OpenGL normal (`nor_gl`), `Rough`, and `AO` from multi-scale
+   luminance relief and local variance, and writes `source.json` with `"licence": "CC-BY-NC-4.0"`,
+   `"author": "Konstantinos Chatzistavrou"`.
+   - **Important limitation**: normals, height, roughness, and AO estimated from a single phone photograph are
+     albedo-relief approximations and are weaker than real multi-angle photometric stereo or laser scans.

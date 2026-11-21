@@ -1,0 +1,10 @@
+{
+  "example_wall.jpg": {
+    "id": "custom_stone_wall",
+    "name": "Custom Stone Wall",
+    "corners": [[120, 95], [3880, 110], [3860, 3890], [105, 3910]],
+    "dimensions_m": [2.0, 2.0],
+    "base_roughness": 0.75,
+    "bump_strength": 2.4
+  }
+}
