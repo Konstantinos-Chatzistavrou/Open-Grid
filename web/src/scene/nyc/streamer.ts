@@ -21,6 +21,7 @@ import { generateProceduralNycTile, type ProceduralNycTileData } from './infinit
 import { filterPropsToPavement } from './pavementFilter';
 import { CityBatcher } from './batch';
 import { ensureMeshoptClusterizer } from '../../fx/meshletCuller';
+import { Terrain, type TerrainMeta } from './terrain';
 
 // ---- content discovery (see index.ts for the expected exports) -------------------------------------------------------------------------
 export interface NycPropsLike {
@@ -79,6 +80,8 @@ interface IndexJson {
   /** false: the city is real data to its walled edge, no procedural fill (tools/nyc/build_index.py) */
   fill?: boolean;
   city?: string; name?: string; grid_deg?: number; drive?: 'left' | 'right';
+  /** the city's real ground heights (tools/nyc/terrain.py): absent for a flat city */
+  terrain?: TerrainMeta;
 }
 type ColBox = { cx: number; cy: number; z0: number; z1: number; hx: number; hy: number; yaw: number };
 /** walls: invisible limits of the drivable area (sea wall, river banks, bridge sides, a city's edge): tools/nyc tilelib.edge_walls */
@@ -228,6 +231,10 @@ export class NycStreamer {
     ]);
     this.index = idx; this.mats = mats; this.props = props;
     this.ver = (idx as { version?: string }).version ? `?v=${(idx as { version?: string }).version}` : '';
+    // the ground's real heights: before any tile, so the first physics ground already follows the hills
+    if (idx.terrain) this.terrain = await Terrain.load(this.o.base, idx.terrain, this.ver);
+    if (this.terrain) console.info(`nyc: terrain ${idx.terrain!.nx} x ${idx.terrain!.ny} at ${idx.terrain!.step} m, ${idx.terrain!.min}..${idx.terrain!.max} m`);
+    if (this.terrain && props instanceof NycProps) { const tr = this.terrain; props.heightAt = (x, y) => tr.at(x, y); }
     if (props instanceof NycProps) props.treeDensity = this.o.treeDensity;
     this.indexRoadCenterlines(mapJson);
     this.o.onProgress?.(0.2);
@@ -278,7 +285,7 @@ export class NycStreamer {
     this.o.onProgress?.(1.0);
     // the spawn tile's ground height (col.json of the spawn tile is loaded by now)
     const st = this.tiles.get(this.tileKey(this.spawn.x, this.spawn.y));
-    this.spawn.z = (st && this.groundOf.get(st.key)) ?? 0;
+    this.spawn.z = this.terrain ? this.terrain.at(this.spawn.x, this.spawn.y) : (st && this.groundOf.get(st.key)) ?? 0;
     this.makeWarmMeshes();
     this.templates = {};   // the first tile's geometry may be unloaded later: do not keep its arrays alive
     this.updateVisibility(true);
@@ -288,6 +295,14 @@ export class NycStreamer {
 
   private groundOf = new Map<string, number>();
   private tileKey(x: number, y: number) { return `${Math.floor(x / TILE)}_${Math.floor(y / TILE)}`; }
+  /** the city's real ground (null: a flat city, every tile at its col.json `ground`) */
+  terrain: Terrain | null = null;
+  /** Ground height (m) under a three.js position (x, z): the terrain, else the loaded tile's flat ground, else 0. */
+  heightAt(x: number, z: number): number {
+    if (this.terrain) return this.terrain.atThree(x, z);
+    const t = this.tiles.get(this.tileKey(x, -z));
+    return (t && this.groundOf.get(t.key)) ?? 0;
+  }
 
   private async findSpawn(): Promise<NycSpawn> {
     const s = this.index!.spawn;
@@ -629,7 +644,9 @@ export class NycStreamer {
     };
     // one big ground cuboid (top at the ground height), then buildings in batches
     this.queue.push({ tile: t, kind: 'col', gen, cost: 0.1, run: () => {
-      make(RAPIER.ColliderDesc.cuboid(TILE / 2, 2, TILE / 2).setTranslation(t.ix * TILE + TILE / 2, ground - 2, -(t.iy * TILE + TILE / 2)), S.asphalt);
+      // the city's real ground as a height field over the tile (hills, slopes), else one flat box with its top at `ground`
+      make(this.terrain ? this.terrain.tileCollider(t.ix, t.iy, TILE)
+        : RAPIER.ColliderDesc.cuboid(TILE / 2, 2, TILE / 2).setTranslation(t.ix * TILE + TILE / 2, ground - 2, -(t.iy * TILE + TILE / 2)), S.asphalt);
     } });
     const BATCH = 60;
     const q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0);

@@ -63,7 +63,7 @@ export class PlanarRoadReflector {
     this.passNode.setResolutionScale(Math.max(0.15, this.resScale * renderScale));
   }
 
-  sync(mainCam: THREE.PerspectiveCamera, roadY: number) {
+  sync(mainCam: THREE.PerspectiveCamera, roadY: number, normal?: [number, number, number], point?: [number, number, number]) {
     if (!this.active) return;
     this.roadY = roadY;
     mainCam.updateMatrixWorld();
@@ -78,6 +78,8 @@ export class PlanarRoadReflector {
         aspect: mainCam.aspect,
         far: mainCam.far,
         roadY,
+        normal,
+        planePoint: point,
         depthZeroToOne: mainCam.coordinateSystem === THREE.WebGPUCoordinateSystem,
       },
       this.planarOut,
@@ -88,7 +90,7 @@ export class PlanarRoadReflector {
     this.camera.near = p.near;
     this.camera.far = p.far;
     this.camera.position.set(p.position[0], p.position[1], p.position[2]);
-    this.camera.up.set(0, 1, 0);
+    if (normal) this.camera.up.set(normal[0], normal[1], normal[2]); else this.camera.up.set(0, 1, 0);
     this.camera.lookAt(p.lookAt[0], p.lookAt[1], p.lookAt[2]);
     this.camera.updateProjectionMatrix();
     this.camera.updateMatrixWorld(true);

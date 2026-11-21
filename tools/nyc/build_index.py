@@ -119,6 +119,8 @@ def build_index():
         if best:
             spawn = {"x": round(best[1], 2), "y": round(best[2], 2), "heading": round(best[3], 4)}
 
+    import terrain
+    ter = terrain.export_bin(TILES_DIR)     # the city's ground heights (terrain.bin), or None for a flat city
     index = {
         "tile": 256,
         "city": tl.CITY_ID,
@@ -129,6 +131,7 @@ def build_index():
         # every tile of the city is real data: no procedural fill beyond it (the shore / the barriers are the limit)
         "fill": False,
         "spawn": spawn,
+        **({"terrain": ter} if ter else {}),
         "tiles": tiles,
         # content hash of every tile file: the game appends it to each tile URL (?v=), because /assets is served with a
         # long cache lifetime and a rebuilt tile under the same name would never reach a returning player
@@ -142,6 +145,7 @@ def build_index():
 
 
 def build_route(spawn):
+    import terrain
     """Build a closed Midtown Manhattan street-circuit route along real road graph edges."""
     # Collect all graph edges across the Midtown tiles
     adj = defaultdict(list)
@@ -156,7 +160,10 @@ def build_route(spawn):
         for e in g.get("edges", []):
             u = gids[e["a"]]
             v = gids[e["b"]]
-            pts = e.get("pts") or [nodes[e["a"]], nodes[e["b"]]]
+            # the graph stores an edge's INTERIOR points only (ground.py graph(): pts[1:-1]): the whole street is its two
+            # nodes around them. Reading the interior as the edge skipped every corner node, and where an interior point lay
+            # far from the corner the route cut straight across the block (AI rivals drove through buildings there).
+            pts = [nodes[e["a"]], *(e.get("pts") or []), nodes[e["b"]]]
             w = float(e.get("w", 14.0))
             length = float(e.get("len", math.hypot(pts[-1][0] - pts[0][0], pts[-1][1] - pts[0][1])))
             adj[u].append((v, pts, w, length))
@@ -169,9 +176,25 @@ def build_route(spawn):
             if e.get("hw") in ("trunk", "primary", "secondary") and gids:
                 major_nodes.add(gids[e["a"]]); major_nodes.add(gids[e["b"]])
 
+    # the main connected street network: a waypoint snapped onto a stray piece (a car park road, a piece cut off by a
+    # tunnel or the area's edge) had no path to the next one, and the loop closed with a straight line through the blocks
+    comp, best_comp = {}, set()
+    for start in node_xy:
+        if start in comp:
+            continue
+        members, stack = set(), [start]
+        while stack:
+            u = stack.pop()
+            if u in comp:
+                continue
+            comp[u] = start; members.add(u)
+            stack.extend(v for v, _, _, _ in adj[u] if v not in comp)
+        if len(members) > len(best_comp):
+            best_comp = members
+
     def nearest_node(tx, ty):
         # other cities: waypoints snap to main roads only (a waypoint on a side street's dead end makes a U-turn)
-        pool = major_nodes if (not IS_NYC and major_nodes) else node_xy.keys()
+        pool = [k for k in (major_nodes if (not IS_NYC and major_nodes) else node_xy.keys()) if k in best_comp] or list(best_comp)
         return min(pool, key=lambda k: math.hypot(node_xy[k][0] - tx, node_xy[k][1] - ty))
 
     used = set()
@@ -217,6 +240,8 @@ def build_route(spawn):
         u = wp_nodes[i]
         v = wp_nodes[(i + 1) % len(wp_nodes)]
         seg = dijkstra(u, v)
+        if not seg and u != v:
+            print(f"WARNING route leg {i}: no street path between waypoints {waypoints[i]} and {waypoints[(i + 1) % len(waypoints)]}")
         for a_, b_, _, _ in seg:
             used.add((min(a_, b_), max(a_, b_)))
         for _, _, pts, w in seg:
@@ -253,7 +278,7 @@ def build_route(spawn):
         samples.append({
             "x": round(x, 2),
             "y": round(y, 2),
-            "z": 0.0,
+            "z": round(float(terrain.H(x, y)), 2),     # the road's real height (0 in a flat city): checkpoints, lanes, cops
             "heading": 0.0,
             "curvature": 0.0,
             "width_left": round(max(3.0, raw_w[idx] / 2), 1) if not IS_NYC else 9.0,

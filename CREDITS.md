@@ -87,12 +87,21 @@ Build: `assets_source/scripts/make_trees.py` -> `web/public/assets/trees/`.
   (extract from download.bbbike.org). Building footprints, official roof heights, ground elevation and construction years: NYC Open Data "Building Footprints"
   (dataset 5zhs-2jue) and "Borough Boundaries" (gthc-hcne), City of New York, public domain. Processing: tools/nyc/.
 
-## London, Paris, Tokyo, Los Angeles, Chicago, Miami, Toronto, Berlin, Barcelona, Amsterdam, Singapore, Melbourne, Madrid and Seoul city data
+## London, Paris, Tokyo, Los Angeles, Chicago, Miami, Toronto, Berlin, Barcelona, Amsterdam, Singapore, Melbourne, Madrid, Seoul, San Francisco and Lisbon city data
 - Streets, building footprints and heights (height / building:levels tags; missing heights estimated from neighbouring
   buildings and the city's typical floors), parks, water, rails, trees, signals and street furniture: (c) OpenStreetMap
   contributors, Open Database Licence (ODbL), https://www.openstreetmap.org/copyright. City extracts from
   download.bbbike.org. Processing: tools/nyc/ with `CITY=<id>` (docs/cities.md). The generated tiles in
   `web/public/assets/cities/` are a Produced Work from the OpenStreetMap database.
+
+## Terrain (real ground heights of the cities)
+- AWS Terrain Tiles (Terrarium encoding, https://registry.opendata.aws/terrain-tiles/, tilezen/joerd), processed by
+  tools/nyc/terrain.py. Sources and attribution as required by the tile set: United States 3DEP (formerly NED) and global
+  GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey; Europe terrain data produced using Copernicus
+  data and information funded by the European Union - EU-DEM layers; Canada terrain data contains information licensed
+  under the Open Government Licence - Canada; Australia terrain data (c) Commonwealth of Australia (Geoscience Australia);
+  global ETOPO1 terrain data U.S. National Oceanic and Atmospheric Administration; United Kingdom terrain data
+  (c) Environment Agency copyright and/or database right. The derived height grids (`terrain.bin`) are a product of these.
 
 ## Software
 - three.js (MIT), Rapier (Apache-2.0), meshoptimizer (MIT), Basis Universal transcoder

@@ -9,6 +9,7 @@ DATA=$(python3 -c 'import tilelib; print(tilelib.DERIVED)')
 if [ "${FRESH:-0}" = 1 ] || [ ! -f "$DATA/roads.ndjson" ]; then
   echo "== $CITY: extract"; python3 extract.py
 fi
+echo "== $CITY: terrain"; python3 terrain.py
 echo "== $CITY: mask"; python3 mask.py
 echo "== $CITY: ground"; python3 ground.py --all --jobs "$JOBS" --meshopt
 echo "== $CITY: buildings"; python3 buildings.py --all --jobs "$JOBS"
