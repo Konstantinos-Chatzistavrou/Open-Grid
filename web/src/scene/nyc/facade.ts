@@ -8,9 +8,10 @@ import {
   Fn, If, dFdx, dFdy,
   attribute, uv, positionView, positionWorld, cameraPosition, normalWorld, frontFacing, uniform, time,
   float, vec2, vec3, select, mix, step, smoothstep, clamp, floor, fract, mod, abs, min, max,
-  sin, cos, dot, length, pow, fwidth, texture, bumpMap, reflect,
+  sin, cos, dot, length, pow, fwidth, texture, bumpMap, normalMap, normalize, reflect,
 } from 'three/tsl';
 import { getSignAtlasTexture } from './signAtlas';
+import { getActiveKitMaterials, type KitMaterialSet } from '../../fx/kitMaterials';
 
 export const facadeNight = uniform(1.0);
 const WINDOW_EM = uniform(1.35);
@@ -278,9 +279,43 @@ function facadeGraph() {
   const sRow = floor(v.mul(2.2));
   const sCols = fract(u.mul(0.9).add(mod(sRow, 2.0).mul(0.5)));
   const stoneJ = float(1).sub(smoothstep(0.0, 0.06, sCourses).mul(smoothstep(0.0, 0.05, sCols)));
-  const joint = mix(stoneJ, brickJ, isBrick).mul(mfade).mul(float(1).sub(styleDeco.z.mul(float(1).sub(isBrick)).mul(notMon)));
+  const plasterW = styleDeco.z.mul(float(1).sub(isBrick)).mul(notMon);
+  const joint = mix(stoneJ, brickJ, isBrick).mul(mfade).mul(float(1).sub(plasterW));
   const courseVar = hash11(mix(sRow, bRow, isBrick).add(seed.mul(37.0))).sub(0.5).mul(0.07).mul(mfade);
-  const wallLit = tint.mul(float(1).add(courseVar)).mul(float(1).sub(joint.mul(0.22)));
+  let wallLit: any = tint.mul(float(1).add(courseVar)).mul(float(1).sub(joint.mul(0.22)));
+  const kit = getActiveKitMaterials();
+  const hasWallKit = Boolean(kit.brick && kit.stone_wall && kit.smooth_plaster && kit.rough_plaster);
+  let kitWallRough: any = null;
+  let kitWallNor: any = null;
+  if (hasWallKit) {
+    // Keep total fragment sampled textures <= 10 user slots (+ Three.js IBL/shadows <= 16 WebGPU limit):
+    // brick (diff+arm+nor), stone_wall (diff+arm+nor), smooth_plaster (diff), rough_plaster (diff) = 8 wall textures.
+    const kUV = (s: KitMaterialSet, scale = 1) => vec2(u.div(s.tileM[0] * scale), v.div(s.tileM[1] * scale));
+    const bk = kit.brick!, st = kit.stone_wall!, sp = kit.smooth_plaster!, rp = kit.rough_plaster!;
+    const uvB = kUV(bk, 1.35), uvS = kUV(st, 1.4), uvSP = kUV(sp, 1.6), uvRP = kUV(rp, 1.6);
+    const bkDiff = texture(bk.diff, uvB).rgb, bkArm = texture(bk.arm, uvB), bkNor = texture(bk.nor, uvB).rgb;
+    const stDiff = texture(st.diff, uvS).rgb, stArm = texture(st.arm, uvS), stNor = texture(st.nor, uvS).rgb;
+    const spDiff = texture(sp.diff, uvSP).rgb;
+    const rpDiff = texture(rp.diff, uvRP).rgb;
+    const roughPlast = smoothstep(0.40, 0.72, era);
+    const plDiff = mix(spDiff, rpDiff, roughPlast);
+    const plAo = mix(float(0.92), stArm.r, roughPlast.mul(0.45));
+    const plRough = mix(float(0.76), float(0.92), roughPlast);
+    const plNor = mix(vec3(0.5, 0.5, 1.0), stNor, mix(0.2, 0.55, roughPlast));
+    const nonBrickDiff = mix(stDiff, plDiff, plasterW);
+    const nonBrickAo = mix(stArm.r, plAo, plasterW);
+    const nonBrickRough = mix(stArm.g, plRough, plasterW);
+    const nonBrickNor = mix(stNor, plNor, plasterW);
+    const scanDiff = mix(nonBrickDiff, bkDiff, isBrick);
+    const scanAo = mix(nonBrickAo, bkArm.r, isBrick);
+    const scanRough = mix(nonBrickRough, bkArm.g, isBrick);
+    const scanNor = mix(nonBrickNor, bkNor, isBrick);
+    // Keep per-building tint diversity while bringing scanned brick, stone and plaster detail + AO.
+    const tintedScan = mix(scanDiff, tint.mul(scanDiff.mul(2.1)), 0.55).mul(mix(0.68, 1.0, scanAo));
+    wallLit = mix(wallLit, tintedScan, mfade.mul(0.88).mul(float(1).sub(k3.mul(0.8))));
+    kitWallRough = scanRough;
+    kitWallNor = scanNor;
+  }
   const stoneCol = mix(wallLit, v3(0.56, 0.52, 0.44), 0.55);
   const mullCol = mix(wallLit.mul(0.25), v3(0.035, 0.04, 0.05), k3);
   const wallCol = mix(wallLit, mullCol, mull.mul(dfade));
@@ -342,7 +377,13 @@ function facadeGraph() {
   const cornice = cov(v.sub(gf.sub(0.28)), fw.y).mul(cov(gf.sub(v), fw.y));
   const pierCol = mix(wallLit.mul(0.76), stoneCol.mul(0.85), cornice);
   const gCol = mix(pierCol, v3(0.012, 0.015, 0.02), shopGlass);
-  const gCol2 = mix(gCol, v3(0.07, 0.075, 0.085).mul(ribs), shopGlass.mul(shut));
+  let shutterColMetal: any = v3(0.07, 0.075, 0.085).mul(ribs);
+  if (kit.painted_metal) {
+    const pm = kit.painted_metal;
+    const uvPm = vec2(u.div(pm.tileM[0]), v.div(pm.tileM[1]));
+    shutterColMetal = texture(pm.diff, uvPm).rgb.mul(0.42).mul(ribs);
+  }
+  const gCol2 = mix(gCol, shutterColMetal, shopGlass.mul(shut));
   const gAlb = mix(gCol2, v3(0.015, 0.018, 0.022), sign);
 
   const transom = float(1).sub(cov(abs(v.sub(2.62)).sub(0.035), fw.y)).mul(0.88);
@@ -437,13 +478,17 @@ function facadeGraph() {
   const extEmissive = emissiveSplit.mul(night).mul(float(1).sub(balcony.mul(0.75))).add(flood.mul(night))
     .add(glow.mul(night)).add(crownGlow.mul(night)).add(faaBeacon.mul(night)).add(refl.mul(night.mul(0.85).add(0.25)));
   const extColor = albedo.mul(ao.mul(aoG));
-  const extRough = mix(mix(0.88, 0.68, float(1).sub(isBrick)), mix(0.09, 0.035, k3), winMask);
+  const wallRoughBase = kitWallRough ? mix(mix(0.88, 0.68, float(1).sub(isBrick)), kitWallRough, mfade.mul(0.85)) : mix(0.88, 0.68, float(1).sub(isBrick));
+  const extRough = mix(wallRoughBase, mix(0.09, 0.035, k3), winMask);
   const extMetal = mix(float(0.0), mix(0.22, 0.45, k3), winMask);
 
   const hUpper = stoneMix.mul(0.35).sub(joint.mul(0.24)).sub(win.mul(0.45)).add(rail.add(munt).mul(0.22)).add(paneWarp.mul(win));
   const hGround = cornice.mul(0.38).sub(shopGlass.mul(0.42)).add(shut.mul(ribs).mul(0.25)).add(sign.mul(0.18));
   const heightField = mix(hUpper, hGround, gAA);
-  const normal = bumpMap(heightField, dfade.mul(0.52));
+  const procNormal: any = bumpMap(heightField, dfade.mul(0.52));
+  const scanNormal: any = kitWallNor ? normalMap(kitWallNor, vec2(mfade.mul(0.75), mfade.mul(0.75))) : null;
+  const wallBlend = float(1).sub(winMask).mul(mfade).mul(float(1).sub(k3.mul(0.8)));
+  const normal = scanNormal ? normalize(mix(procNormal, scanNormal, wallBlend) as any) : procNormal;
 
   return { color: extColor, emissive: extEmissive, rough: extRough, metal: extMetal, normal };
 }
@@ -591,6 +636,7 @@ function roofGraph() {
   const tar = col.rgb.mul(float(1).add(g1).add(g2));
   const seam = float(1).sub(cov(abs(fract(U.y.mul(0.9)).sub(0.5)).sub(0.03), fw.y.mul(0.9))).mul(0.18);
   const flatCol = mix(col.rgb.mul(float(1).sub(seam)), tar, up);
+  const kit = getActiveKitMaterials();
   // 1: clay tiles: courses every 0.34 m up the slope, rounded tiles every 0.21 m along it, half-offset per course
   const tv = U.y.div(0.34);
   const tu = U.x.div(0.21).add(floor(tv).mul(0.5));
@@ -598,7 +644,16 @@ function roofGraph() {
   const barrel = sin(fract(tu).mul(3.14159));
   const lap = smoothstep(0.0, 0.16, fract(tv));
   const tileVar = hash12(floor(vec2(tu, tv))).sub(0.5).mul(0.3).add(1.0);
-  const tiles = col.rgb.mul(mix(float(0.86), mix(float(0.5), float(1.1), barrel).mul(mix(float(0.55), float(1.0), lap)).mul(tileVar), near));
+  let tiles: any = col.rgb.mul(mix(float(0.86), mix(float(0.5), float(1.1), barrel).mul(mix(float(0.55), float(1.0), lap)).mul(tileVar), near));
+  let tileRough: any = float(0.72);
+  if (kit.roof_tiles) {
+    const rt = kit.roof_tiles;
+    const uvRt = vec2(U.x.div(rt.tileM[0] * 1.4), U.y.div(rt.tileM[1] * 1.4));
+    const rtDiff = texture(rt.diff, uvRt).rgb;
+    const rtArm = texture(rt.arm, uvRt);
+    tiles = mix(tiles, mix(rtDiff, col.rgb.mul(rtDiff.mul(2.1)), 0.35).mul(mix(0.68, 1.0, rtArm.r)), near.mul(0.9));
+    tileRough = mix(float(0.72), rtArm.g, near.mul(0.85));
+  }
   // 2: slate: 0.22 m courses, 0.3 m slates, staggered, dark joints
   const sv = U.y.div(0.22);
   const su = U.x.div(0.3).add(floor(sv).mul(0.5));
@@ -608,7 +663,14 @@ function roofGraph() {
   // 3 / 5: standing-seam metal: raised seams every 0.5 m running up the slope, a faint sheet-to-sheet variation
   const ms = lines(U.x, 0.5, 0.03, fw.x);
   const sheet = hash12(vec2(floor(U.x.div(0.5)), code)).sub(0.5).mul(0.08).add(1.0);
-  const metalCol = col.rgb.mul(sheet).mul(float(1).add(ms.mul(0.35)));
+  let metalCol: any = col.rgb.mul(sheet).mul(float(1).add(ms.mul(0.35)));
+  if (kit.painted_metal && kit.rusty_metal) {
+    const pm = kit.painted_metal, rm = kit.rusty_metal;
+    const pmCol = texture(pm.diff, vec2(U.x.div(pm.tileM[0] * 1.5), U.y.div(pm.tileM[1] * 1.5))).rgb;
+    const rmCol = texture(rm.diff, vec2(U.x.div(rm.tileM[0] * 1.5), U.y.div(rm.tileM[1] * 1.5))).rgb;
+    const scanMet = select(code.lessThan(4.5), pmCol, rmCol);
+    metalCol = mix(metalCol, mix(scanMet, col.rgb.mul(scanMet.mul(2.0)), 0.45).mul(float(1).add(ms.mul(0.25))), near.mul(0.75));
+  }
   // 4: glass roof: dark panes between mullions every 1.2 m by 2 m
   const mull = max(lines(U.x, 1.2, 0.06, fw.x), lines(U.y, 2.0, 0.06, fw.y));
   const glass = mix(col.rgb, v3(0.32, 0.33, 0.35), mull);
@@ -621,7 +683,7 @@ function roofGraph() {
   // floodlit iron / steel: lit from below, brighter towards the light (lower on the structure)
   const emissive = col.rgb.mul(lit).mul(mix(float(2.4), float(1.1), smoothstep(0.0, 250.0, positionWorld.y))).mul(facadeNight);
   const rough = select(code.lessThan(0.5), float(0.9),
-    select(code.lessThan(1.5), float(0.72),
+    select(code.lessThan(1.5), tileRough,
       select(code.lessThan(2.5), float(0.55),
         select(code.lessThan(3.5), float(0.38),
           select(code.lessThan(4.5), float(0.08), float(0.45))))));

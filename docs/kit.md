@@ -85,3 +85,35 @@ Four Poly Haven CC0 HDRIs at 4K, fetched with `python3 tools/assets/fetch_polyha
 - Unreal (`ue5/SourceArt/Kit/hdri/`, generated locally): the 4K master as half-float EXR for the sky light.
 - Test switches: `?hdri=0` (the look before the kit), `?garagehdri=x` (x times the measured garage strength),
   `?weather=dry|rain`. Screenshots: `node tools/assets/screens.mjs <dir>` (playwright-core, system Chrome, headless).
+
+## Materials (phase C)
+
+Twelve Poly Haven CC0 scanned full-PBR sets at 4K (albedo/Diffuse, OpenGL normal `nor_gl`, roughness, AO, displacement,
+plus metalness where present), fetched as 4K EXR with `python3 tools/assets/fetch_polyhaven.py textures <id> ...` (each
+file well under the 50 MB budget) and exported with
+`tools/blender/blender -b --factory-startup --python tools/assets/build_kit_materials.py`:
+
+| id | role | category | web KTX2 | used for |
+|---|---|---|---|---|
+| `clean_asphalt` | `dry_asphalt` | road | 2048 px | city road base asphalt |
+| `asphalt_02` | `worn_asphalt` | road | 2048 px | worn / cracked road zones |
+| `brushed_concrete` | `concrete_kerb` | road | 2048 px | concrete kerbs and slab sidewalks |
+| `painted_concrete_02` | `painted_kerb` | road | 2048 px | painted kerbs |
+| `concrete_pavers_02` | `paving_stones` | road | 2048 px | plazas and paver sidewalks |
+| `plastered_wall` | `smooth_plaster` | wall | 1024 px | smooth rendered facades |
+| `rough_plaster_03` | `rough_plaster` | wall | 1024 px | weathered rendered facades |
+| `rustic_stone_wall` | `stone_wall` | wall | 1024 px | stone facades and monuments |
+| `red_brick` | `brick` | wall | 1024 px | brick facades |
+| `clay_roof_tiles_02` | `roof_tiles` | wall | 1024 px | pitched clay-tile roofs |
+| `rusty_metal_04` | `rusty_metal` | wall | 1024 px | rails, weathered metal roofs / shutters |
+| `blue_metal_plate` | `painted_metal` | wall | 1024 px | painted metal roofs / shop shutters |
+
+- Web (`web/public/assets/kit/materials/<id>/`, committed): KTX2 with mipmaps (`diff.ktx2` sRGB ETC1S, `nor.ktx2` linear
+  UASTC RDO + zstd, `arm.ktx2` linear AO/Rough/Metal ETC1S, `disp.ktx2` half-res linear height ETC1S) plus `manifest.json`.
+  Loaded by `web/src/fx/kitMaterials.ts` and wired into `groundMaterials.ts` and `facade.ts`.
+- Wetness comes entirely from the shader (darker porous albedo, lower roughness, puddle mask pooled in scanned height
+  cavities and gutters driven by `worldClock.wetness`), never from separate wet textures.
+- Unreal (`ue5/SourceArt/Kit/materials/<id>/`, generated locally, gitignored): full 4096 px PNGs (`BaseColor` 8-bit sRGB,
+  `Normal` 16-bit DirectX Y-down, `ORM` 8-bit linear, `Height` 16-bit linear).
+- Test switch: `?kitmat=0` (procedural look before Phase C). Before/after screenshots:
+  `node tools/assets/screens.mjs <dir> before=kitmat=0 after=`.

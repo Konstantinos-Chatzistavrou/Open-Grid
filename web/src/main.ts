@@ -12,6 +12,7 @@ import { advancePaintWear, createPaintWearState, resetPaintWear } from './gpu/ma
 import { CarProbe } from './fx/carProbe';
 import { nightEnvTexture } from './fx/nightEnv';
 import { KitSky, kitHdriOn } from './fx/kitHdri';
+import { kitMaterialsOn, setKitMaterialsEnabled } from './fx/kitMaterials';
 import { Particles } from './scene/damage';
 import { Garage } from './scene/garage';
 import { SHOW_PRESETS, ShowroomPost } from './showroomPost';
@@ -455,6 +456,7 @@ async function main() {
   core.setTurboStage(turboStageOf());
   const pw = new PhysicsWorld();
   if (potato) setMobileFacadeMode(true);
+  setKitMaterialsEnabled(webgpu && !potato && kitMaterialsOn(params));
   let nyc = useNyc ? new NycStreamer(scene, renderer, pw, camera, {
     base: cityInfo.base,
     surfaces: core.info.surfaces,

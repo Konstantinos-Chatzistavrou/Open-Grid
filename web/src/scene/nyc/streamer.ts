@@ -21,6 +21,7 @@ import { generateProceduralNycTile, type ProceduralNycTileData } from './infinit
 import { filterPropsToPavement } from './pavementFilter';
 import { CityBatcher } from './batch';
 import { ensureMeshoptClusterizer } from '../../fx/meshletCuller';
+import { loadKitMaterials } from '../../fx/kitMaterials';
 import { Terrain, type TerrainMeta } from './terrain';
 
 // ---- content discovery (see index.ts for the expected exports) -------------------------------------------------------------------------
@@ -53,6 +54,7 @@ export interface NycMaterials {
 
 /** Shared material singletons (one per name). */
 export async function loadNycMaterials(): Promise<NycMaterials> {
+  await loadKitMaterials();
   const src: string[] = [];
   const tryMake = <T>(fn: () => T, fallback: () => T, label: string): T => {
     try { const r = fn(); src.push(label + ':real'); return r; } catch (e) { console.warn(`nyc: ${label} threw, using the placeholder`, e); }

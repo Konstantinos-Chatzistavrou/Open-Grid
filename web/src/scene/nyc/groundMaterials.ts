@@ -10,9 +10,10 @@
 import * as THREE from 'three/webgpu';
 import {
   uv, vec2, vec3, float, mix, smoothstep, step, fract, floor, abs, max, min, clamp, hash, vertexColor, positionView, time,
-  bumpMap, length, normalWorld, uniform, mod, sin,
+  bumpMap, normalMap, texture, length, normalWorld, uniform, mod, sin,
 } from 'three/tsl';
 import { noise01, worleyEdge } from '../../fx/noiseTex';
+import { getActiveKitMaterials, type KitMaterialSet } from '../../fx/kitMaterials';
 
 export const GROUND_MATERIAL_NAMES = ['road', 'sidewalk', 'curb', 'marking', 'crosswalk', 'plaza', 'grass', 'water', 'rail'] as const;
 export type GroundMaterialName = typeof GROUND_MATERIAL_NAMES[number];
@@ -69,7 +70,14 @@ function std(rough: number) {
   return m;
 }
 
+/** Metric tiling UV for a scanned kit material (metres -> texture repeat). */
+const kitUV = (coord: any, s: KitMaterialSet, scale = 1) =>
+  vec2(coord.x.div(s.tileM[0] * scale), coord.y.div(s.tileM[1] * scale));
+
 function road() {
+  const kit = getActiveKitMaterials();
+  const dryKit = kit.dry_asphalt;
+  const wornKit = kit.worn_asphalt;
   const m = std(0.32);
   const wearLo = n01(P.mul(0.035));                  // ~30 m blotches
   const wearMid = n01(P.mul(0.19).add(vec2(5.3, 1.7)));   // ~5 m
@@ -95,16 +103,64 @@ function road() {
   const manhole = float(1).sub(smoothstep(0.39, 0.43, mDist)).mul(mHas);
   const mCollar = smoothstep(0.37, 0.42, mDist).mul(float(1).sub(smoothstep(0.42, 0.54, mDist))).mul(mHas);
   const waffle = step(0.42, fract(R.x.mul(18.0))).mul(step(0.42, fract(R.y.mul(18.0)))).mul(near);
-  // cracks: thin lines where the two nearest cell distances of a worley field nearly meet, only in worn zones
-  const w = worleyEdge(R.mul(0.55).add(vec2(11.0, 7.0)));
-  const crack = float(1).sub(smoothstep(0.0, 0.028, w)).mul(smoothstep(0.58, 0.78, wearLo)).mul(near);
   // puddles: large-scale noise peaks plus the gutter (low baked alpha at the kerb) collecting water, scaled dynamically by worldClock wetness
   const gutter = float(1).sub(smoothstep(0.76, 0.98, ao));
+  const ironCol = vec3(0.065, 0.058, 0.054).mul(float(0.82).add(waffle.mul(0.35)));
+
+  if (dryKit && wornKit) {
+    // Kit v1 scanned 2K asphalt PBR (dry_asphalt + worn_asphalt blended by macro wear; wetness from shader only).
+    const uvDry = kitUV(P, dryKit, 1.35);
+    const uvWorn = kitUV(P, wornKit, 1.35);
+    const wornMix = smoothstep(0.34, 0.74, wearLo).mul(float(1).sub(patch.mul(0.85)));
+    const dryDiff = texture(dryKit.diff, uvDry).rgb;
+    const wornDiff = texture(wornKit.diff, uvWorn).rgb;
+    const dryArm = texture(dryKit.arm, uvDry);
+    const wornArm = texture(wornKit.arm, uvWorn);
+    const dryDisp = texture(dryKit.disp, uvDry).r;
+    const wornDisp = texture(wornKit.disp, uvWorn).r;
+    const dryNor = texture(dryKit.nor, uvDry).rgb;
+    const wornNor = texture(wornKit.nor, uvWorn).rgb;
+
+    const scanAlb = mix(dryDiff, wornDiff, wornMix);
+    const scanAo = mix(dryArm.r, wornArm.r, wornMix);
+    const scanRough = mix(dryArm.g, wornArm.g, wornMix);
+    const scanDisp = mix(dryDisp, wornDisp, wornMix);
+    const scanNor = mix(dryNor, wornNor, wornMix);
+
+    // Puddles pool in low displacement cavities + macro basins + kerb gutters; wetness comes purely from shader.
+    const cavity = float(1).sub(smoothstep(0.32, 0.62, scanDisp));
+    const pudMacro = max(
+      smoothstep(0.54, 0.72, n01(P.mul(0.068).add(vec2(3.1, 9.4))).add(cavity.mul(0.14))),
+      gutter.mul(smoothstep(0.42, 0.70, wearMid.add(cavity.mul(0.15)))),
+    ).mul(float(1).sub(manhole));
+    const wetFilm = smoothstep(0.14, 0.85, roadWetnessU);
+    const pud = clamp(pudMacro.mul(mix(0.08, 1.35, wetFilm)), 0.0, 1.0);
+
+    // Scanned dry asphalt darkened by porosity when wet, plus tire-track polish, repair patches and kerb AO.
+    let albedo: any = scanAlb.mul(0.82).mul(mix(0.86, 1.14, wearMid)).mul(mix(0.68, 1.0, scanAo));
+    albedo = albedo.mul(mix(1.0, 0.66, patch)).mul(mix(1.0, 0.86, tireTrack)).mul(mix(1.0, 0.45, mCollar));
+    albedo = albedo.mul(mix(1.0, 0.48, wetFilm));
+    albedo = mix(albedo, ironCol, manhole).mul(mix(1.0, 0.50, pud)).mul(mix(0.52, 1.0, ao));
+    m.colorNode = albedo;
+
+    let rough: any = scanRough.mul(mix(0.96, 0.42, wetFilm)).sub(tireTrack.mul(0.08)).add(patch.mul(0.04));
+    rough = mix(rough, float(0.36).sub(waffle.mul(0.12)), manhole);
+    rough = mix(rough, float(0.022), pud);
+    m.roughnessNode = clamp(rough, 0.02, 1.0);
+    m.metalnessNode = manhole.mul(0.65);
+
+    const nScale = near.mul(0.95).mul(float(1).sub(pud.mul(0.92))).mul(float(1).sub(manhole.mul(0.75)));
+    m.normalNode = normalMap(scanNor, vec2(nScale, nScale));
+    return m;
+  }
+
+  // Procedural fallback (?kitmat=0 or potato)
+  const w = worleyEdge(R.mul(0.55).add(vec2(11.0, 7.0)));
+  const crack = float(1).sub(smoothstep(0.0, 0.028, w)).mul(smoothstep(0.58, 0.78, wearLo)).mul(near);
   const pudBase = max(smoothstep(0.58, 0.74, n01(P.mul(0.068).add(vec2(3.1, 9.4)))), gutter.mul(smoothstep(0.45, 0.72, wearMid))).mul(float(1).sub(manhole));
   const pud = clamp(pudBase.mul(mix(0.42, 1.35, roadWetnessU)), 0.0, 1.0);
   let albedo: any = vec3(0.028, 0.030, 0.036).mul(mix(0.72, 1.38, wearLo)).mul(mix(0.88, 1.12, wearMid)).mul(float(0.88).add(grain.mul(0.24)));
   albedo = albedo.mul(mix(1.0, 0.65, patch)).mul(mix(1.0, 0.52, crack)).mul(mix(1.0, 0.86, tireTrack)).mul(mix(1.0, 0.45, mCollar));
-  const ironCol = vec3(0.065, 0.058, 0.054).mul(float(0.82).add(waffle.mul(0.35)));
   albedo = mix(albedo, ironCol, manhole).mul(mix(1.0, 0.48, pud)).mul(mix(0.52, 1.0, ao));
   m.colorNode = albedo;
   let rough: any = float(0.29).add(grain.mul(0.15).mul(near)).add(float(1).sub(wearLo).mul(0.06)).sub(tireTrack.mul(0.07)).add(patch.mul(0.05)).add(crack.mul(0.38));
@@ -121,6 +177,7 @@ function road() {
 }
 
 function sidewalk() {
+  const kit = getActiveKitMaterials();
   const m = std(0.65);
   const sw = SW, small = sw.a < 0.35;
   // the city's units: a x b m, rows offset by half a unit in a running bond
@@ -151,9 +208,30 @@ function sidewalk() {
     const fl = length(fract(q.mul(2.0)).sub(0.5));
     base = base.mul(mix(float(1), mix(float(0.82), float(1.08), smoothstep(0.22, 0.3, fl)), nearSmall));
   }
+  const grateCol = mix(vec3(0.008, 0.009, 0.011), vec3(0.095, 0.092, 0.088), grateBars);
+  const swKit = sw.kind === 'asphalt' ? kit.dry_asphalt
+    : (sw.kind === 'paver' || sw.kind === 'brick' || sw.kind === 'tile') ? (kit.paving_stones ?? kit.concrete_kerb)
+    : kit.concrete_kerb;
+  if (swKit) {
+    const uvS = kitUV(R, swKit, sw.kind === 'slab' ? 1.2 : 1.0);
+    const kDiff = texture(swKit.diff, uvS).rgb;
+    const kArm = texture(swKit.arm, uvS);
+    const kNor = texture(swKit.nor, uvS).rgb;
+    const wetFilm = smoothstep(0.14, 0.85, roadWetnessU);
+    const dampClamped = clamp(damp, 0, 1);
+    // Blend scanned surface micro-variation with the city's characteristic pavement colour and joints.
+    let albedo: any = mix(kDiff.mul(0.85), base.mul(kDiff.mul(2.1)), 0.55).mul(tint).mul(mix(0.82, 1.12, wearLo)).mul(mix(0.7, 1.0, kArm.r));
+    albedo = albedo.mul(mix(1.0, 0.42, jointV)).mul(mix(1.0, 0.56, dampClamped)).mul(mix(1.0, 0.72, wetFilm)).mul(mix(0.48, 1.0, ao));
+    m.colorNode = mix(albedo, grateCol, isGrate);
+    const rough = mix(kArm.g.mul(mix(1.0, 0.55, wetFilm)), float(0.18), dampClamped);
+    m.roughnessNode = clamp(mix(mix(rough, float(0.9), jointV), mix(float(0.95), float(0.32), grateBars), isGrate), 0.05, 1.0);
+    m.metalnessNode = isGrate.mul(grateBars).mul(0.72);
+    const nScale = near.mul(0.85).mul(float(1).sub(isGrate));
+    m.normalNode = normalMap(kNor, vec2(nScale, nScale));
+    return m;
+  }
   let albedo: any = base.mul(tint).mul(mix(0.78, 1.12, wearLo)).mul(float(0.92).add(speck.mul(0.16).mul(near)));
   albedo = albedo.mul(mix(1.0, 0.42, jointV)).mul(mix(1.0, 0.62, clamp(damp, 0, 1))).mul(mix(0.48, 1.0, ao));
-  const grateCol = mix(vec3(0.008, 0.009, 0.011), vec3(0.095, 0.092, 0.088), grateBars);
   m.colorNode = mix(albedo, grateCol, isGrate);
   const rough = mix(float(0.72).sub(speck.mul(0.15)), float(0.22), clamp(damp, 0, 1));
   m.roughnessNode = mix(mix(rough, float(0.9), jointV), mix(float(0.95), float(0.32), grateBars), isGrate);
@@ -163,6 +241,7 @@ function sidewalk() {
 }
 
 function curb() {
+  const kit = getActiveKitMaterials();
   const m = std(0.62);
   const top = step(0.5, normalWorld.y);
   const s = n01(P.mul(6.0));
@@ -171,6 +250,40 @@ function curb() {
   const steelLip = smoothstep(0.11, 0.145, abs(P.y)).mul(float(1).sub(top));
   const grime = mix(0.42, 1.0, smoothstep(0.0, 0.14, abs(P.y)));    // faces: UV v = height above the road (m)
   const gradient = mix(grime, float(1.0), top);
+  if (kit.concrete_kerb) {
+    const ck = kit.concrete_kerb;
+    const pk = kit.painted_kerb;
+    const uvC = kitUV(P, ck, 0.85);
+    const cDiff = texture(ck.diff, uvC).rgb;
+    const cArm = texture(ck.arm, uvC);
+    const cNor = texture(ck.nor, uvC).rgb;
+    // Detect painted kerbs from vertex colour saturation (or periodic yellow/red no-parking kerb runs)
+    const sat = max(vc.r, max(vc.g, vc.b)).sub(min(vc.r, min(vc.g, vc.b)));
+    const isPainted = smoothstep(0.08, 0.22, sat);
+    let baseCol: any = cDiff.mul(vc.rgb).mul(1.15);
+    let baseRough: any = cArm.g;
+    let baseAo: any = cArm.r;
+    let baseNor: any = cNor;
+    if (pk) {
+      const uvP = kitUV(P, pk, 0.85);
+      const pDiff = texture(pk.diff, uvP).rgb;
+      const pArm = texture(pk.arm, uvP);
+      const pNor = texture(pk.nor, uvP).rgb;
+      baseCol = mix(baseCol, pDiff.mul(vc.rgb).mul(1.25), isPainted);
+      baseRough = mix(baseRough, pArm.g, isPainted);
+      baseAo = mix(baseAo, pArm.r, isPainted);
+      baseNor = mix(baseNor, pNor, isPainted);
+    }
+    const wetFilm = smoothstep(0.14, 0.85, roadWetnessU);
+    let col: any = baseCol.mul(mix(0.72, 1.0, baseAo)).mul(gradient).mul(mix(1.0, 0.55, stoneJoint.mul(near)));
+    col = mix(col, vec3(0.42, 0.43, 0.45), steelLip.mul(0.7)).mul(mix(1.0, 0.62, wetFilm));
+    m.colorNode = col;
+    m.roughnessNode = clamp(mix(baseRough.mul(mix(1.0, 0.48, wetFilm)), float(0.24), steelLip), 0.08, 1.0);
+    m.metalnessNode = steelLip.mul(0.78);
+    const nScale = near.mul(0.8).mul(float(1).sub(steelLip.mul(0.8)));
+    m.normalNode = normalMap(baseNor, vec2(nScale, nScale));
+    return m;
+  }
   let col: any = vec3(0.34, 0.335, 0.32).mul(vc.rgb).mul(mix(0.8, 1.15, s)).mul(gradient).mul(mix(1.0, 0.55, stoneJoint.mul(near)));
   col = mix(col, vec3(0.42, 0.43, 0.45), steelLip.mul(0.7)).mul(mix(1.0, 0.72, roadWetnessU));
   m.colorNode = col;
@@ -208,7 +321,25 @@ function paint(base: 'marking' | 'crosswalk') {
 }
 
 function plaza() {
+  const kit = getActiveKitMaterials();
   const m = std(0.5);
+  if (kit.paving_stones) {
+    const pv = kit.paving_stones;
+    const uvP = kitUV(R, pv, 1.1);
+    const pDiff = texture(pv.diff, uvP).rgb;
+    const pArm = texture(pv.arm, uvP);
+    const pNor = texture(pv.nor, uvP).rgb;
+    const pDisp = texture(pv.disp, uvP).r;
+    const wearLo = n01(P.mul(0.06).add(vec2(9.0, 3.0)));
+    const wetFilm = smoothstep(0.14, 0.85, roadWetnessU);
+    const cavity = float(1).sub(smoothstep(0.3, 0.65, pDisp));
+    const damp = clamp(smoothstep(0.50, 0.76, n01(P.mul(0.2).add(vec2(1.0, 4.0))).add(cavity.mul(0.18))).mul(mix(0.25, 1.3, wetFilm)), 0, 1);
+    m.colorNode = pDiff.mul(vc.rgb).mul(mix(0.78, 1.12, wearLo)).mul(mix(0.7, 1.0, pArm.r)).mul(mix(1.0, 0.58, damp)).mul(mix(1.0, 0.72, wetFilm)).mul(mix(0.55, 1.0, ao));
+    m.roughnessNode = clamp(mix(pArm.g.mul(mix(1.0, 0.55, wetFilm)), float(0.14), damp), 0.05, 1.0);
+    const nScale = near.mul(0.95).mul(float(1).sub(damp.mul(0.65)));
+    m.normalNode = normalMap(pNor, vec2(nScale, nScale));
+    return m;
+  }
   // running-bond pavers 0.9 x 0.45 m
   const row = floor(R.y.div(0.45));
   const off = fract(row.mul(0.5)).mul(0.9);
@@ -258,7 +389,21 @@ function water() {
 }
 
 function rail() {
+  const kit = getActiveKitMaterials();
   const m = std(0.85);
+  if (kit.rusty_metal) {
+    const rm = kit.rusty_metal;
+    const uvR = kitUV(P, rm, 1.0);
+    const rDiff = texture(rm.diff, uvR).rgb;
+    const rArm = texture(rm.arm, uvR);
+    const rNor = texture(rm.nor, uvR).rgb;
+    const wetFilm = smoothstep(0.14, 0.85, roadWetnessU);
+    m.colorNode = rDiff.mul(mix(0.65, 1.0, rArm.r)).mul(mix(1.0, 0.72, wetFilm));
+    m.roughnessNode = clamp(rArm.g.mul(mix(1.0, 0.65, wetFilm)), 0.12, 1.0);
+    m.metalnessNode = rArm.b;
+    m.normalNode = normalMap(rNor, vec2(near.mul(0.9), near.mul(0.9)));
+    return m;
+  }
   const g = n01(P.mul(11.0));
   const rust = n01(P.mul(0.7));
   m.colorNode = mix(vec3(0.11, 0.1, 0.095), vec3(0.15, 0.09, 0.06), smoothstep(0.55, 0.8, rust)).mul(float(0.8).add(g.mul(0.4)));
