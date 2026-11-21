@@ -5,6 +5,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
+#include "OpenGridVehicleComponent.h"
 #include "OpenGridCarPawn.generated.h"
 
 class UBoxComponent;
@@ -12,7 +13,8 @@ class UCameraComponent;
 class UEnhancedInputComponent;
 class UInputAction;
 class UInputMappingContext;
-class UOpenGridVehicleComponent;
+class USkeletalMesh;
+class USkeletalMeshComponent;
 class USpringArmComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
@@ -36,6 +38,29 @@ public:
     /** Visible body. A scaled cube until the imported car is assigned (no collision: the box above collides). */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid")
     TObjectPtr<UStaticMeshComponent> BodyMesh;
+
+    /**
+     * Optional deformable skeletal body mesh with the 6 directional crash Morph Targets
+     * (crush_front, crush_rear, crush_left, crush_right, crush_top, crush_hood).
+     */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Damage")
+    TObjectPtr<USkeletalMeshComponent> DeformableBodyMesh;
+
+    /** Modular aftermarket visual parts (ue5/Import/<car>/parts/*.glb) attached to BodyMesh. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Mods")
+    TObjectPtr<UStaticMeshComponent> WidebodyMesh;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Mods")
+    TObjectPtr<UStaticMeshComponent> WingMesh;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Mods")
+    TObjectPtr<UStaticMeshComponent> SplitterMesh;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Mods")
+    TObjectPtr<UStaticMeshComponent> DiffuserMesh;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Mods")
+    TObjectPtr<UStaticMeshComponent> SkirtsMesh;
 
     /** FL, FR, RL, RR. Placed every frame from the physics (centre, steer, spin). */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid")
@@ -65,6 +90,41 @@ public:
     /** Extra rotation for the imported body if the importer brought it in facing the wrong way (nose must point +X). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid")
     FRotator BodyMeshRotation = FRotator(0.0f, 0.0f, 0.0f);
+
+    /** Optional deformable skeletal mesh asset with 6 directional crash morph targets (crush_front..crush_hood). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Damage")
+    TObjectPtr<USkeletalMesh> DeformableBodyMeshAsset;
+
+    /** Optional modular aftermarket visual part meshes from ue5/Import/<car>/parts/*.glb. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Mods")
+    TObjectPtr<UStaticMesh> WidebodyMeshAsset;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Mods")
+    TObjectPtr<UStaticMesh> WingMeshAsset;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Mods")
+    TObjectPtr<UStaticMesh> SplitterMeshAsset;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Mods")
+    TObjectPtr<UStaticMesh> DiffuserMeshAsset;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Mods")
+    TObjectPtr<UStaticMesh> SkirtsMeshAsset;
+
+    /** Snap all assigned modular aftermarket visual parts onto BodyMesh in one call. */
+    UFUNCTION(BlueprintCallable, Category="OpenGrid|Mods")
+    void ApplyVisualMods();
+
+    /**
+     * Compute the 6 normalized directional crash morph-target weights (crush_front, crush_rear, crush_left,
+     * crush_right, crush_top, crush_hood in 0..1) from Vehicle->GetZoneDamage() and 8-node perimeter crush state.
+     */
+    UFUNCTION(BlueprintPure, Category="OpenGrid|Damage")
+    FOpenGridCrushMorphWeights GetCrushMorphWeights() const;
+
+    /** Push the 6 directional crash morph target weights onto DeformableBodyMesh when active. */
+    UFUNCTION(BlueprintCallable, Category="OpenGrid|Damage")
+    void UpdateCrushMorphTargets();
 
     /**
      * Wheel meshes FL, FR, RL, RR (empty entries = placeholder cylinder). Expected centred on the hub with the axle
