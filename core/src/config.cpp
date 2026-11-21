@@ -204,15 +204,82 @@ CarConfig parse_car_config(const std::string& text) {
     c.engine.friction_linear = num(e, "friction_linear_nm_per_radps", "engine");
 
     const json& d = j.at("drivetrain");
-    c.drivetrain.gear_ratios = d.at("gear_ratios").get<std::vector<double>>();
+    if (d.contains("gear_ratios")) {
+        c.drivetrain.gear_ratios = d.at("gear_ratios").get<std::vector<double>>();
+    }
+    // Optional physical gear tooth pairs: [[driven, drive], ...] for [R, N, 1st, 2nd, ...].
+    // When provided, tooth ratios (driven / drive, negative for reverse idler at index 0) become the
+    // authoritative gear_ratios; when absent, explicit gear_ratios remain the source of truth.
+    if (d.contains("gear_teeth")) {
+        const json& gt = d.at("gear_teeth");
+        if (!gt.is_array() || gt.size() < 3)
+            throw std::runtime_error("car config: gear_teeth must have >= 3 [driven, drive] pairs");
+        c.drivetrain.gear_teeth.clear();
+        c.drivetrain.gear_ratios.clear();
+        for (size_t i = 0; i < gt.size(); ++i) {
+            int driven = gt[i].at(0).get<int>();
+            int drive = gt[i].at(1).get<int>();
+            c.drivetrain.gear_teeth.push_back({driven, drive});
+            if (i == 1 || drive == 0 || driven == 0) {
+                c.drivetrain.gear_ratios.push_back(0.0);
+            } else {
+                double ratio = std::abs(static_cast<double>(driven)) / std::abs(static_cast<double>(drive));
+                c.drivetrain.gear_ratios.push_back(i == 0 ? -ratio : ratio);
+            }
+        }
+    }
     if (c.drivetrain.gear_ratios.size() < 3 || c.drivetrain.gear_ratios[1] != 0.0)
         throw std::runtime_error("car config: gear_ratios = [reverse, 0 (neutral), 1st, ...]");
-    c.drivetrain.final_drive = num(d, "final_drive", "drivetrain");
+    if (d.contains("final_drive_teeth")) {
+        const json& ft = d.at("final_drive_teeth");
+        int ring = ft.at(0).get<int>(), pinion = ft.at(1).get<int>();
+        if (ring <= 0 || pinion <= 0)
+            throw std::runtime_error("car config: final_drive_teeth must be positive [ring, pinion]");
+        c.drivetrain.final_drive_teeth = {ring, pinion};
+    }
+    if (d.contains("final_drive")) {
+        // Keep explicit final_drive authoritative when present so garage gearing tunes (setup.cpp) take effect.
+        c.drivetrain.final_drive = num(d, "final_drive", "drivetrain");
+    } else if (c.drivetrain.final_drive_teeth[1] > 0) {
+        c.drivetrain.final_drive = static_cast<double>(c.drivetrain.final_drive_teeth[0])
+                                 / static_cast<double>(c.drivetrain.final_drive_teeth[1]);
+    } else {
+        throw std::runtime_error("car config: missing 'drivetrain.final_drive'");
+    }
     c.drivetrain.efficiency = num(d, "efficiency", "drivetrain");
     c.drivetrain.clutch_max_torque = num(d, "clutch_max_torque_nm", "drivetrain");
     c.drivetrain.driveline_inertia = num(d, "driveline_inertia_kgm2", "drivetrain");
     c.drivetrain.layout = d.at("layout").get<std::string>();
+    c.drivetrain.transmission = d.value("transmission", std::string(""));
     c.drivetrain.awd_front_split = num_or(d, "awd_front_split", 0.4);
+    if (d.contains("clutch")) {
+        const json& cl = d.at("clutch");
+        ClutchParams& cp = c.drivetrain.clutch;
+        cp.bite_point = num_or(cl, "bite_point", cp.bite_point);
+        cp.full_engage_point = num_or(cl, "full_engage_point", cp.full_engage_point);
+        cp.effective_radius_m = num_or(cl, "effective_radius_m", cp.effective_radius_m);
+        cp.num_surfaces = cl.value("num_surfaces", cp.num_surfaces);
+        cp.mu_static = num_or(cl, "mu_static", cp.mu_static);
+        cp.mu_kinetic = num_or(cl, "mu_kinetic", cp.mu_kinetic);
+        cp.max_clamp_force_n = num_or(cl, "max_clamp_force_n", cp.max_clamp_force_n);
+        cp.thermal_capacity_j_per_k = num_or(cl, "thermal_capacity_j_per_k", cp.thermal_capacity_j_per_k);
+        cp.cooling_base_w_per_k = num_or(cl, "cooling_base_w_per_k", cp.cooling_base_w_per_k);
+        cp.cooling_per_mps_w_per_k = num_or(cl, "cooling_per_mps_w_per_k", cp.cooling_per_mps_w_per_k);
+        cp.cooling_per_rads_w_per_k = num_or(cl, "cooling_per_rads_w_per_k", cp.cooling_per_rads_w_per_k);
+        cp.wear_per_joule = num_or(cl, "wear_per_joule", cp.wear_per_joule);
+        cp.input_shaft_inertia_kgm2 = num_or(cl, "input_shaft_inertia_kgm2", cp.input_shaft_inertia_kgm2);
+    }
+    if (d.contains("synchro")) {
+        const json& sy = d.at("synchro");
+        SynchroParams& sp = c.drivetrain.synchro;
+        sp.mu_sync = num_or(sy, "mu_sync", sp.mu_sync);
+        sp.shift_fork_force_n = num_or(sy, "shift_fork_force_n", sp.shift_fork_force_n);
+        sp.cone_radius_m = num_or(sy, "cone_radius_m", sp.cone_radius_m);
+        sp.cone_angle_deg = num_or(sy, "cone_angle_deg", sp.cone_angle_deg);
+        sp.num_cones = sy.value("num_cones", sp.num_cones);
+        sp.engage_tol_rads = num_or(sy, "engage_tol_rads", sp.engage_tol_rads);
+        sp.dog_engage_tol_rads = num_or(sy, "dog_engage_tol_rads", sp.dog_engage_tol_rads);
+    }
     if (d.contains("front_diff")) c.drivetrain.front_diff = parse_diff(d.at("front_diff"));
     if (d.contains("rear_diff")) c.drivetrain.rear_diff = parse_diff(d.at("rear_diff"));
     if (d.contains("centre_diff")) c.drivetrain.centre_diff = parse_diff(d.at("centre_diff"));

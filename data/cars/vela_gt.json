@@ -344,10 +344,40 @@
       1.08,
       0.88
     ],
+    "gear_teeth_note": "Parallel-shaft 6-speed helical gearset [driven, drive] (tooth sums 65-66 across shared shaft center distance; R uses reverse idler): R -48/15=-3.200, N 0/0, 1st 51/15=3.400, 2nd 46/20=2.300, 3rd 41/24=1.708, 4th 37/28=1.321, 5th 34/31=1.097, 6th 31/35=0.886; hypoid ring/pinion 36/10=3.600",
+    "gear_teeth": [
+      [-48, 15],
+      [0, 0],
+      [51, 15],
+      [46, 20],
+      [41, 24],
+      [37, 28],
+      [34, 31],
+      [31, 35]
+    ],
+    "final_drive_teeth": [36, 10],
     "final_drive": 3.6,
     "efficiency": 0.92,
     "clutch_max_torque_nm": 900,
     "driveline_inertia_kgm2": 0.06,
+    "clutch": {
+      "bite_point": 0.65,
+      "full_engage_point": 0.15,
+      "effective_radius_m": 0.105,
+      "num_surfaces": 2,
+      "mu_static": 0.42,
+      "mu_kinetic": 0.34,
+      "thermal_capacity_j_per_k": 1600,
+      "input_shaft_inertia_kgm2": 0.008
+    },
+    "synchro": {
+      "mu_sync": 0.12,
+      "shift_fork_force_n": 350,
+      "cone_radius_m": 0.038,
+      "cone_angle_deg": 7.0,
+      "num_cones": 2,
+      "engage_tol_rads": 42.0
+    },
     "rear_diff": {
       "type": "lsd",
       "preload_nm": 60,

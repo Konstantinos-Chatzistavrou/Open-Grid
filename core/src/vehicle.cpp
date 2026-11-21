@@ -45,6 +45,16 @@ void Vehicle::service() {
     sys.engine_health = 1.0;
     sys.misfiring = false;
     sys.misfire_phase = 0.0;
+    sys.clutch_temp_c = 40.0;
+    sys.clutch_health = 1.0;
+    sys.gearbox_health = 1.0;
+    sys.missed_shifts = 0;
+    sys.missed_shift_event = false;
+    sys.gear_grind = false;
+    sys.grind_timer_s = 0.0;
+    sys.sync_state = SyncState::Idle;
+    sys.sync_target_gear = -1;
+    sys.popout_stress_s = 0.0;
 }
 
 void Vehicle::reset_motion(double v, int gear) {
@@ -60,12 +70,36 @@ void Vehicle::reset_motion(double v, int gear) {
         pad_wear_[w] = 0.0;
     }
     disc_init_ = true;
+    EngineSystemState& sys = drivetrain_.systems;
+    sys.clutch_temp_c = 40.0;
+    sys.clutch_health = 1.0;
+    sys.clutch_locked = false;
+    sys.gearbox_health = 1.0;
+    sys.missed_shifts = 0;
+    sys.missed_shift_event = false;
+    sys.gear_grind = false;
+    sys.grind_timer_s = 0.0;
+    sys.sync_state = SyncState::Idle;
+    sys.sync_target_gear = -1;
+    sys.sync_timer_s = 0.0;
+    sys.clash_timer_s = 0.0;
+    sys.clutch_opened_during_sync = false;
+    sys.popout_stress_s = 0.0;
+    shift_timer_ = 0.0;
+    shift_release_timer_ = 0.0;
+    since_shift_timer_ = 10.0;
+    missed_recover_timer_ = 0.0;
     const auto& g = cfg_.drivetrain.gear_ratios;
     if (gear >= 0 && gear < (int)g.size() && g[gear] != 0.0) {
         double idle_w = cfg_.engine.idle_rpm * 2.0 * kPi / 60.0;
-        drivetrain_.engine_omega = std::max(idle_w, v / cfg_.tire(RL).radius * g[gear] * cfg_.drivetrain.final_drive);
+        double shaft_w = v / cfg_.tire(RL).radius * g[gear] * cfg_.drivetrain.final_drive;
+        drivetrain_.engine_omega = std::max(idle_w, shaft_w);
         drivetrain_.stalled = false;
-        drivetrain_.systems.engaged_gear = gear;
+        sys.engaged_gear = gear;
+        sys.input_shaft_omega = shaft_w;
+    } else if (gear == 1) {
+        sys.engaged_gear = 1;
+        sys.input_shaft_omega = drivetrain_.engine_omega;
     }
     prev_axle_fy_ = {0, 0};
 }
@@ -568,27 +602,75 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     din.ambient_air_c = atmosphere_.ambient_air_c;
     din.altitude_m = atmosphere_.altitude_m;
     din.humidity_0_to_1 = atmosphere_.humidity_0_to_1;
-    // ---- ASSIST: auto-clutch (sits on top of the model; the drivetrain only sees a pedal value)
-    // Behaves like a centrifugal clutch: engagement rises with engine rpm above idle, so the car
-    // launches when you add throttle and declutches before stalling when you slow down. Gear
-    // changes get a short declutch + throttle lift.
+    // ---- ASSIST: auto-clutch (sits on top of the physical clutch disc; drivetrain only sees a pedal value)
+    // Modulates around the physical bite point for smooth launches & anti-stall, and declutches on shifts
+    // according to AutoClutchQuality:
+    //   Perfect: full declutch held until synchromesh completes + smooth release (zero missed shifts)
+    //   Normal:  clean normal shifts; slamming rapid shifts shortens hold and can slow-sync / grind
+    //   Poor:    brief / sloppy declutch while keeping partial throttle -> can miss shifts & damage gearbox
+    since_shift_timer_ += dt;
     if (input_.auto_clutch) {
-        if (input_.gear != last_gear_) shift_timer_ = 0.12;
-        if (shift_timer_ > 0) {
-            shift_timer_ -= dt;
-            din.clutch = 1.0;
-            din.throttle = 0.0;
+        const AutoClutchQuality q = input_.auto_clutch_quality;
+        if (input_.gear != last_gear_) {
+            if (input_.gear != 1) {
+                if (q == AutoClutchQuality::Perfect) {
+                    shift_timer_ = 0.12;
+                    shift_release_timer_ = 0.035;
+                } else if (q == AutoClutchQuality::Normal) {
+                    // Rapid shift-slamming (< 0.35 s between shifts) rushes the clutch release.
+                    shift_timer_ = (since_shift_timer_ < 0.35) ? 0.032 : 0.11;
+                    shift_release_timer_ = 0.025;
+                } else {
+                    // Poor auto-clutch: too brief for synchromesh under load.
+                    shift_timer_ = 0.022;
+                    shift_release_timer_ = 0.0;
+                }
+            } else {
+                shift_timer_ = 0.0;
+                shift_release_timer_ = 0.0;
+            }
+            since_shift_timer_ = 0.0;
         }
+
+        // Recover after a missed shift penalty window so auto-clutch drivers aren't soft-locked in Neutral.
+        if (drivetrain_.systems.sync_state == SyncState::Missed) {
+            missed_recover_timer_ += dt;
+            if (missed_recover_timer_ >= 0.45) {
+                din.clutch = 1.0;
+                din.throttle = 0.0;
+            }
+        } else {
+            missed_recover_timer_ = 0.0;
+        }
+
+        const bool sync_hold = (q == AutoClutchQuality::Perfect) && drivetrain_.is_synchronizing();
+        if (shift_timer_ > 0.0 || sync_hold) {
+            shift_timer_ = std::max(0.0, shift_timer_ - dt);
+            if (q == AutoClutchQuality::Poor) {
+                din.clutch = std::max(din.clutch, 0.72);
+                din.throttle *= 0.65;
+            } else {
+                din.clutch = 1.0;
+                din.throttle = 0.0;
+            }
+        } else if (shift_release_timer_ > 0.0) {
+            shift_release_timer_ = std::max(0.0, shift_release_timer_ - dt);
+            const double frac = clamp(shift_release_timer_ / 0.035, 0.0, 1.0);
+            din.clutch = std::max(din.clutch, frac * cfg_.drivetrain.clutch.bite_point);
+        }
+
         const auto& ratios = cfg_.drivetrain.gear_ratios;
         if (input_.gear >= 0 && input_.gear < (int)ratios.size() && ratios[input_.gear] != 0.0) {
-            double engage = clamp((drivetrain_.engine_rpm() - (cfg_.engine.idle_rpm + 300.0)) / 1500.0, 0.0, 1.0);
-            din.clutch = std::max(din.clutch, 1.0 - engage);
+            double engage = clamp((drivetrain_.engine_rpm() - (cfg_.engine.idle_rpm + 250.0)) / 1500.0, 0.0, 1.0);
+            double launch_clutch = lerp(std::min(0.95, cfg_.drivetrain.clutch.bite_point + 0.08), 0.0, engage);
+            din.clutch = std::max(din.clutch, launch_clutch);
         }
     }
     last_gear_ = input_.gear;
     const double throttle_after_shift = din.throttle;
     if (!disc_init_) { disc_temp_.fill(cfg_.brake_thermal.start_temp_c); disc_init_ = true; }
     for (int w = 0; w < 4; ++w) din.pad_mu[w] = brake_pad_mu(disc_temp_[w]);
+    bool missed_this_tick = false;
     for (int step = 0; step < n_sub; ++step) {
         std::array<double, 4> tyre_t{}, roll_t{};
         for (int w = 0; w < 4; ++w) {
@@ -660,6 +742,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         tc_cut_ += (cut_target - tc_cut_) * std::min(1.0, h / 0.03);
         din.throttle = throttle_after_shift * (1.0 - tc_cut_) * (1.0 - esc_throttle_cut);
         drivetrain_.step(din, tyre_t, roll_t, h);
+        missed_this_tick |= drivetrain_.systems.missed_shift_event;
         // ---- brake discs: heated by the friction power the pads absorb (T_brake |w|; a locked wheel heats the tyre,
         // not the disc), cooled by airflow (vented disc: h = base + k v) and radiation (eps sigma A (T^4 - Ta^4)).
         const BrakeThermal& bt = cfg_.brake_thermal;
@@ -824,6 +907,13 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     out.gear_grind = drivetrain_.systems.gear_grind;
     out.shift_cut_active = drivetrain_.systems.shift_cut_active;
     out.driveline_clunk_nm = drivetrain_.systems.driveline_clunk_nm;
+    out.clutch_temp_c = drivetrain_.systems.clutch_temp_c;
+    out.clutch_health = drivetrain_.systems.clutch_health;
+    out.gearbox_health = drivetrain_.systems.gearbox_health;
+    out.missed_shifts = drivetrain_.systems.missed_shifts;
+    out.missed_shift_event = missed_this_tick;
+    out.clutch_torque_nm = drivetrain_.clutch_torque;
+    out.clutch_locked = drivetrain_.systems.clutch_locked;
     out.slipstream_drag_scale = eff_drag_scale;
     out.dirty_air_downforce_scale = eff_front_down_scale;
     return out;
