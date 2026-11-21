@@ -1,0 +1,57 @@
+{
+  "generated_by": "tools/assets/build_kit_hdri.py",
+  "hdris": [
+    {
+      "id": "cobblestone_street_night",
+      "name": "Cobblestone Street Night",
+      "file": "cobblestone_street_night/cobblestone_street_night_1k.hdr",
+      "role": "night",
+      "strength": 0.01565,
+      "sky_mean_luminance": 0.9008,
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        2048
+      ]
+    },
+    {
+      "id": "hansaplatz",
+      "name": "Hansaplatz",
+      "file": "hansaplatz/hansaplatz_1k.hdr",
+      "role": "night",
+      "strength": 0.01272,
+      "sky_mean_luminance": 1.1085,
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        2048
+      ]
+    },
+    {
+      "id": "shanghai_bund",
+      "name": "Shanghai Bund",
+      "file": "shanghai_bund/shanghai_bund_1k.hdr",
+      "role": "night",
+      "strength": 0.01513,
+      "sky_mean_luminance": 0.9321,
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        2048
+      ]
+    },
+    {
+      "id": "urban_street_01",
+      "name": "Urban Street 01",
+      "file": "urban_street_01/urban_street_01_1k.hdr",
+      "role": "overcast",
+      "strength": 0.01232,
+      "sky_mean_luminance": 1.1442,
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        2048
+      ]
+    }
+  ]
+}
