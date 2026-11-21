@@ -200,6 +200,7 @@ export const OUT = {
   graining: (i: number) => 269 + i,     // cold-tire surface graining 0..1
   treadPitchHz: 273,                    // tread block impact pitch frequency, Hz
   massKg: 274,                          // current total mass: spec (full tank) minus burnt fuel, kg
+  tireInnerAir: (i: number) => 275 + i, // cavity inner-air temperature (Node 3), C
 } as const;
 
 export interface LapInfo { laps: number; current: number; last: number; best: number; distance: number; position: number; finished: boolean; routeLength: number }

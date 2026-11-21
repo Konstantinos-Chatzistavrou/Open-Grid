@@ -256,6 +256,7 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
         if (i < 2) { cav_lo_sum += ac.cavity_mode_low_hz; cav_hi_sum += ac.cavity_mode_high_hz; pitch_sum += ac.tread_block_pitch_hz; }
         b[265 + i] = w.condition.blistering;
         b[269 + i] = w.condition.graining;
+        b[275 + i] = w.condition.inner_air_c;
     }
     b[250] = cav_lo_sum * 0.5;
     b[251] = cav_hi_sum * 0.5;
