@@ -44,6 +44,9 @@ endif()
 add_executable(rs_bench bench/bench_race.cpp)
 target_link_libraries(rs_bench PRIVATE rs_core)
 
+add_executable(rs_bench_runtime bench/bench_runtime.cpp)
+target_link_libraries(rs_bench_runtime PRIVATE rs_core)
+
 option(RS_BUILD_TESTS "Build headless physics tests" ON)
 if(RS_BUILD_TESTS)
   enable_testing()
