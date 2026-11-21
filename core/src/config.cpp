@@ -19,6 +19,41 @@ double num_or(const json& j, const char* key, double fallback) {
     return j.contains(key) ? j.at(key).get<double>() : fallback;
 }
 
+Vec3 vec3_req(const json& j, const char* key, const std::string& ctx) {
+    if (!j.contains(key)) throw std::runtime_error("car config: missing '" + ctx + "." + key + "'");
+    const json& v = j.at(key);
+    if (!v.is_array() || v.size() != 3 || !v[0].is_number() || !v[1].is_number() || !v[2].is_number())
+        throw std::runtime_error("car config: '" + ctx + "." + key + "' must be [x, y, z]");
+    return {v[0].get<double>(), v[1].get<double>(), v[2].get<double>()};
+}
+
+SuspensionHardpoints parse_kinematics(const json& j, const std::string& ctx) {
+    SuspensionHardpoints hp;
+    const std::string t = j.value("type", "");
+    if (t == "double_wishbone") hp.type = SuspensionType::DoubleWishbone;
+    else if (t == "macpherson") hp.type = SuspensionType::MacPherson;
+    else throw std::runtime_error("car config: '" + ctx + ".type' must be double_wishbone|macpherson, got '" + t + "'");
+    hp.lca_front = vec3_req(j, "lca_front", ctx);
+    hp.lca_rear = vec3_req(j, "lca_rear", ctx);
+    hp.lca_outer = vec3_req(j, "lca_outer", ctx);
+    hp.tie_inner = vec3_req(j, "tie_inner", ctx);
+    hp.tie_outer = vec3_req(j, "tie_outer", ctx);
+    if (hp.type == SuspensionType::DoubleWishbone) {
+        hp.uca_front = vec3_req(j, "uca_front", ctx);
+        hp.uca_rear = vec3_req(j, "uca_rear", ctx);
+        hp.uca_outer = vec3_req(j, "uca_outer", ctx);
+        if (j.contains("shock_upper") && j.contains("shock_lower")) {
+            hp.has_shock_mounts = true;
+            hp.shock_upper = vec3_req(j, "shock_upper", ctx);
+            hp.shock_lower = vec3_req(j, "shock_lower", ctx);
+        }
+    } else {
+        hp.strut_top = vec3_req(j, "strut_top", ctx);
+    }
+    hp.explicit_in_config = true;
+    return hp;
+}
+
 AxleParams parse_axle(const json& j, const std::string& ctx) {
     AxleParams a;
     a.track = num(j, "track_m", ctx);
@@ -46,6 +81,7 @@ AxleParams parse_axle(const json& j, const std::string& ctx) {
     a.anti_lift_rear_braking = num_or(j, "anti_lift_braking", a.anti_lift_rear_braking);
     a.damper_knee_mps = num_or(j, "damper_knee_mps", a.damper_knee_mps);
     a.damper_high_speed_ratio = num_or(j, "damper_high_speed_ratio", a.damper_high_speed_ratio);
+    if (j.contains("kinematics")) a.kinematics = parse_kinematics(j.at("kinematics"), ctx + ".kinematics");
     return a;
 }
 
@@ -267,6 +303,22 @@ void CarConfig::finalize() {
         double wheel_centre_z = t.radius - cg_height;
         wheels[w].mount_z = wheel_centre_z + (ax.spring_rest_length - static_compression);
         wheels[w].static_compression = static_compression;
+    }
+    // Precompute 3D suspension kinematic lookup tables (2D for steered axles, 1D for non-steered).
+    for (int a = 0; a < 2; ++a) {
+        AxleParams& ax = (a == 0) ? front : rear;
+        const TireParams& t = (a == 0) ? tire_front : tire_rear;
+        if (ax.kinematics.explicit_in_config) {
+            ax.kinematics.wheel_center = {0.0, 0.5 * ax.track, t.radius};
+            ax.kinematics.tire_radius = t.radius;
+            ax.kinematics.static_camber_rad = ax.static_camber_deg * kPi / 180.0;
+            ax.kinematics.static_toe_rad = ax.static_toe_deg * kPi / 180.0;
+        } else {
+            ax.kinematics = synthesize_fitted_hardpoints(ax, t, wheelbase);
+        }
+        const double dz_min = -std::max(0.12, wheels[a * 2].static_compression + 0.02);
+        const double dz_max = std::max(0.12, ax.max_compression + 0.04);
+        axle_kinematics[a] = AxleKinematicsTable::build(ax.kinematics, ax.max_steer_deg, dz_min, dz_max);
     }
 }
 

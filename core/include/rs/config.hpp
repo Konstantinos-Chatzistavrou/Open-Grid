@@ -2,8 +2,10 @@
 // (schema "car/1", see data/schema/car.schema.json). Adding a car needs no code changes.
 #pragma once
 #include <array>
+#include <memory>
 #include <string>
 #include <vector>
+#include "rs/kinematics.hpp"
 
 namespace rs {
 
@@ -140,6 +142,8 @@ struct AxleParams {
     // ---- dampers: digressive valving (firm at low shaft speed for body control, softer past the knee for bumps)
     double damper_knee_mps = 0.13;
     double damper_high_speed_ratio = 0.45;  // coefficient above the knee / below it
+    // ---- optional explicit 3D suspension hardpoints (synthesized from parameters above if omitted in JSON)
+    SuspensionHardpoints kinematics{};
 };
 
 struct DiffParams {
@@ -199,6 +203,7 @@ struct CarConfig {
     // derived (set by finalize())
     std::array<WheelGeom, 4> wheels{};        // 0 FL, 1 FR, 2 RL, 3 RR
     double dist_cg_front = 0, dist_cg_rear = 0;
+    std::array<std::shared_ptr<const AxleKinematicsTable>, 2> axle_kinematics{}; // 0 front, 1 rear
 
     const AxleParams& axle(int wheel) const { return wheel < 2 ? front : rear; }
     const TireParams& tire(int wheel) const { return wheel < 2 ? tire_front : tire_rear; }

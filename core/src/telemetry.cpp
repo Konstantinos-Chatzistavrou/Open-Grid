@@ -124,6 +124,8 @@ TelemetrySample make_telemetry_sample(
         const auto& ax = cfg.axle(static_cast<int>(i));
         const double max_travel = ax.max_compression > 1e-4 ? ax.max_compression : 0.12;
         s.susp_norm[i] = std::clamp(w.compression / max_travel, 0.0, 1.0);
+        s.wheel_camber_rad[i] = w.camber;
+        s.wheel_toe_rad[i] = w.toe_angle;
         s.wheel_omega_rads[i] = w.angular_velocity;
         s.tire_slip_ratio[i] = w.slip_ratio;
         s.tire_slip_angle[i] = w.slip_angle;
@@ -135,6 +137,8 @@ TelemetrySample make_telemetry_sample(
         s.brake_temp_c[i] = w.brake_temp_c;
         s.wheel_load_n[i] = w.load;
     }
+    s.roll_centre_front_m = out.roll_centre_front_m;
+    s.roll_centre_rear_m = out.roll_centre_rear_m;
     s.boost_bar = out.boost_bar;
     s.intake_air_temp_c = out.intake_air_temp_c;
     s.oil_temp_c = out.oil_temp_c;

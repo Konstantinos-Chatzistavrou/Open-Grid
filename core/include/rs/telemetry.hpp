@@ -55,6 +55,10 @@ struct TelemetrySample {
     // Per-wheel arrays: FL, FR, RL, RR
     std::array<double, 4> susp_travel_m{};       // m
     std::array<double, 4> susp_norm{};           // 0..1
+    std::array<double, 4> wheel_camber_rad{};    // rad, dynamic tyre inclination / camber
+    std::array<double, 4> wheel_toe_rad{};       // rad, dynamic suspension alignment toe-in (+ = toe-in)
+    double roll_centre_front_m = 0.0;            // m, dynamic front axle roll-centre height
+    double roll_centre_rear_m = 0.0;             // m, dynamic rear axle roll-centre height
     std::array<double, 4> wheel_omega_rads{};    // rad/s
     std::array<double, 4> tire_slip_ratio{};     // kappa
     std::array<double, 4> tire_slip_angle{};     // rad
