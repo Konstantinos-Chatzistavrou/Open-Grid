@@ -1,0 +1,10 @@
+{
+  "name": "opengrid-asset-tools",
+  "private": true,
+  "description": "Kit v1 asset tools (docs/kit.md): licence check, screenshots. playwright-core drives the system Chrome (no browser download).",
+  "type": "module",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "playwright-core": "1.49.1"
+  }
+}

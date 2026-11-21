@@ -12,7 +12,8 @@
 //   - a kit master listed in `files` is missing, is not tracked by Git LFS, or is over the size budget
 //     (data/asset_budgets.json `maxFileMB` if that file exists, else 50 MB; LFS pointer files are measured by their size line);
 //   - a file in a kit folder is not listed in its ledger (masters are added on purpose, with their licence);
-//   - a generated kit file (web/public/assets/kit/, ue5/SourceArt/Kit/) is not under a folder named after a kit id;
+//   - a generated kit file (web/public/assets/kit/, ue5/SourceArt/Kit/) is not under a folder named after a kit id
+//     (generated manifest.json indexes are allowed; every id they name must have a ledger);
 //   - a car model or texture under web/public/assets/cars/ is in no car ledger, or a `shipped` file does not exist;
 //   - the "Kit assets" section of CREDITS.md is not what the ledgers generate.
 //
@@ -128,6 +129,14 @@ const kitIds = new Set(kit.map((L) => L.id));
 for (const g of GENERATED) {
   for (const p of walk(path.join(ROOT, g))) {
     const parts = rel(p).split('/');
+    if (path.basename(p) === 'manifest.json') {   // a generated index: every asset it names must have a ledger
+      let m;
+      try { m = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) { bad(rel(p), `not valid JSON (${e.message})`); continue; }
+      const ids = [];
+      JSON.stringify(m, (k, v) => { if (k === 'id' && typeof v === 'string') ids.push(v); return v; });
+      for (const id of ids) if (!kitIds.has(id)) bad(rel(p), `names "${id}", which has no kit ledger`);
+      continue;
+    }
     if (!parts.some((s) => kitIds.has(s))) bad(rel(p), 'generated kit file outside a folder named after a kit id (no licence ledger)');
   }
 }
