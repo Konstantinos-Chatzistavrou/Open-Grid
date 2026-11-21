@@ -441,3 +441,83 @@ Tried, no measurable change (kept only where the picture is identical): the faca
 Next levers, each structural: per-instance GPU culling of the low-poly trees (every instance is processed today, also
 behind the camera; must serve the mirror and probe passes too); a cheaper facade path for the pixels where its
 interior / reflection detail has faded (dfade); then the CPU-side ones above (merged wheels, instanced AI cars).
+
+## 1 kHz physics runtime, 16-car budgets and Web Worker prototype (2026-11-21)
+
+Measured on the i3-1315U laptop (Release C++17 `core/build/rs_bench_runtime` and Node.js WASM `web/tools/bench_runtime.mjs`),
+16 cars with the full web/UE5 feature set enabled (unsprung dynamics, 3-zone tyre thermal, yaw aero, chassis flex, AYC,
+active aero, brake boil, torsional compliance, dog-box shift cut, ISA atmosphere, wear, fuel, turbo stage 1, 3-ray patch):
+
+| runtime (16 cars, 3-ray patch) | rate | us / step / car | ms / sim-s / car | 16 cars ms / sim-s | % of 1 core | ms @60 fps | ms @30 fps |
+|---|---|---|---|---|---|---|---|
+| Native C++17 (`rs_bench_runtime`) | 1000 Hz | 3.88 | 3.88 | **62.0** | 6.2 % | 1.03 | 2.07 |
+| Native C++17 (`rs_bench_runtime`) | 360 Hz | 8.65 | 3.11 | **49.8** | 5.0 % | 0.83 | 1.66 |
+| Native C++17 (`rs_bench_runtime`) | 240 Hz | 12.40 | 2.98 | **47.6** | 4.8 % | 0.79 | 1.59 |
+| WASM `rs_core` (Node.js V8) | 1000 Hz | 7.29 | 7.29 | **116.6** | 11.7 % | 1.94 | 3.89 |
+| WASM `rs_core` (Node.js V8) | 360 Hz | 11.25 | 4.05 | **64.8** | 6.5 % | 1.08 | 2.16 |
+| WASM `rs_core` (Node.js V8) | 240 Hz | 17.80 | 4.27 | **68.3** | 6.8 % | 1.14 | 2.28 |
+
+`rs::Vehicle` already substeps its stiff tyre/drivetrain dynamics at `>= 1 kHz` internally, so raising the outer tick
+from 360 Hz to 1000 Hz adds only ~25 % in native C++ (and in `runtime_determinism`, 360 Hz already matches 1000 Hz speed
+to 0.993 ratio). The bottleneck in the browser is **not** `rs_core` — it is Rapier raycasts and rigid-body stepping.
+
+Separating `rs_core` WASM from Rapier (`web/tools/bench_runtime.mjs`, 250 static boxes + road, 12 patch rays/car):
+
+| cars | rate | `rs_core` ms/sim-s | Rapier rays (12/car) | Rapier `step()` | total ms/sim-s | ms @60 fps | ms @30 fps |
+|---|---|---|---|---|---|---|---|
+| 1 | 240 Hz | 3.9 | 7.9 | 12.6 | **24.4** | 0.41 | 0.81 |
+| 1 | 360 Hz | 3.9 | 9.0 | 17.6 | **30.6** | 0.51 | 1.02 |
+| 1 | 1000 Hz | 5.2 | 23.1 | 30.8 | **59.1** | 0.98 | 1.97 |
+| 6 | 240 Hz | 20.9 | 24.9 | 11.1 | **56.9** | 0.95 | 1.90 |
+| 6 | 360 Hz | 28.4 | 53.7 | 22.7 | **104.8** | 1.75 | 3.49 |
+| 6 | 1000 Hz | 29.9 | 108.2 | 45.0 | **183.1** | 3.05 | 6.10 |
+| 16 | 240 Hz | 54.2 | 63.6 | 12.9 | **130.7** | 2.18 | 4.36 |
+| 16 | 360 Hz | 55.8 | 96.0 | 18.8 | **170.6** | 2.84 | 5.69 |
+| 16 | 1000 Hz | 69.8 | **252.0** | 37.0 | **358.8** | 5.98 | 11.96 |
+
+At 16 cars x 1000 Hz, Rapier raycasts (192,000 rays/s) are 70 % of total physics CPU (`252 ms/sim-s`), whereas `rs_core`
+is only 20 % (`70 ms/sim-s`). In the real NYC city (~700-800 trimesh colliders, 8-9 bodies), one main-thread Rapier
+`world.step()` measures `0.25-0.32 ms` (`window.__game.physics().stepMs`).
+
+### Browser Web Worker prototype (`?physworker=1`, default OFF) and COOP/COEP
+
+`web/src/physics/sabRing.ts`, `physWorker.ts` and `workerClient.ts` prototype offloading `rs_core` WASM + 6-DOF
+rigid-body integration to a dedicated Web Worker using lock-free `SharedArrayBuffer` + `Atomics` SPSC rings
+(2-thread Node stress test `web/tools/test_sab_ring.mjs`: 500k items in 93.9 ms = 5.32 M/s, 0 out-of-order, 0 torn).
+The main thread traces the 12 wheel ground planes against Rapier once per rendered frame and publishes them to the
+worker; each worker tick intersects fresh wheel rays with those planes (same method as `rs::ue5::AsyncVehicleBridge`),
+steps `rs_core`, integrates the chassis, and pushes snapshots back.
+
+- **Cross-origin isolation**: `web/vite.config.ts` and `vercel.json` send `Cross-Origin-Opener-Policy: same-origin` and
+  `Cross-Origin-Embedder-Policy: credentialless` (opt-out in Vite via `DISABLE_COOP_COEP=1`). All fonts, WASM, and city
+  assets are same-origin; PeerJS signaling/WebRTC and bearer-token Cloud API fetches are unaffected; `credentialless`
+  preserves Car Meet Spotify/YouTube embeds (which `require-corp` would block). Browsers without `crossOriginIsolated`
+  (e.g. Safari, which ignores `credentialless`) fall back cleanly to main-thread physics.
+- **Limitations of this prototype**: the Rapier city world (`NycStreamer` trimeshes, poles, wall breaches, AI collision
+  impulses) remains on the main thread, so building/rival rigid-body collision response is only full on the default
+  main-thread path. Moving full collision into the worker requires mirroring streamed tile colliders into a worker-owned
+  Rapier world.
+
+Measured in headless Chrome (`raceperf`, 6-car NYC race, `RP_JS` capturing `window.__prof` and `window.__game.physics()`):
+
+| mode | `avgMs.sim` (main thread) | `avgMs.total` | rAF p50 / p95 / p99 | >60 ms frames | worker step | dropped (cmd / snap) |
+|---|---|---|---|---|---|---|
+| Main thread 240 Hz (default) | **1.29 ms** | 16.42 ms | 16.7 / 50.0 / 83.3 ms | 14 | — | — |
+| `?physworker=1` (240 Hz) | **0.35 ms** (-73 %) | 10.94 ms | 16.7 / 33.3 / 33.3 ms | 2 | 66.8 us (6,830 ticks) | 0 / 0 |
+| `?physworker=1&physrate=1000` | **0.42 ms** (-67 %) | 20.55 ms | 33.3 / 50.0 / 66.7 ms | 12 | 44.2 us (28,257 ticks) | 0 / 1,227* |
+
+*\*With a 128-slot snapshot ring during a 583 ms startup hitch at 1 kHz (`snapCap` raised to 256 afterwards). Note also
+that 1 kHz worker wake-ups (~1 ms cadence) slightly reduced single-core turbo headroom for `three.js` render submission
+on this thermally limited 2P+4E laptop (`avgMs.post` 18.2 ms vs 13.6 ms baseline).*
+
+### Decided targets (rate x cars)
+
+- **Native / UE5 (`AsyncVehicleBridge` + Chaos)**: **16 cars at 1000 Hz** (~62 ms/sim-s = 6.2 % of 1 core; per-frame
+  `GroundStrip` traces keep scene-query cost independent of tick rate).
+- **Browser default (main thread, desktop & mobile)**: keep **1 full `CoreCar` + 5 kinematic AI rivals at 240 Hz**
+  (`1.29 ms/frame` main-thread sim; leaves the budget for `three.js` draw submission). **360 Hz** is affordable on
+  desktop (`~1.8 ms/frame`), not needed on mobile.
+- **Browser worker target (if full Rapier moves to worker later)**: **360 Hz for 1-6 full `CoreCar`s** (or up to **16
+  cars at 360 Hz** with per-frame cached ground planes/strips so Rapier raycasts stay O(fps) instead of O(rate)). Do
+  **not** ship 1000 Hz in the browser: internal substeps already run `>= 1 kHz`, 360 Hz matches 1000 Hz within 0.7 %,
+  and 1 kHz wakeups waste laptop/phone battery and turbo headroom.

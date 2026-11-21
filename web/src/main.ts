@@ -17,6 +17,7 @@ import { SHOW_PRESETS, ShowroomPost } from './showroomPost';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CoreCar, CoreRace, OUT, loadCore, type LapInfo, type RawInput } from './physics/core';
 import { CarBody, DT, PhysicsWorld, loadRapier, type CarShape } from './physics/world';
+import { PhysicsWorkerClient } from './physics/workerClient';
 import { CityLighting, loadCity } from './scene/city';
 import { NycStreamer, nycCityShim } from './scene/nyc';
 import { setGroundCity, setGroundGrid } from './scene/nyc/groundMaterials';
@@ -451,6 +452,12 @@ async function main() {
   let builtKey = carKey();
   let core = new CoreCar(coreJson());
   core.setTurboStage(turboStageOf());
+  // Optional SharedArrayBuffer + Atomics Web Worker physics prototype (?physworker=1, default OFF).
+  const physWorkerRate = Math.max(60, Math.min(1000, Math.round(num('physrate', 240))));
+  const physWorker = params.get('physworker') === '1'
+    ? await PhysicsWorkerClient.create(coreJson(), physWorkerRate)
+    : null;
+  let workerAirC = 18, workerTrackC = 22, workerHumidity = 0.48;
   const pw = new PhysicsWorld();
   if (potato) setMobileFacadeMode(true);
   let nyc = useNyc ? new NycStreamer(scene, renderer, pw, camera, {
@@ -820,6 +827,9 @@ async function main() {
     pos.copy(physPos);
     quat.copy(physQuat);
     visual.update(pos, quat, car.out, physPos, physQuat);
+    if (physWorker) {
+      physWorker.resetPose(physPos, physQuat, car.body.linvel(), car.body.angvel(), 0, 2, false, car.sampleGroundPlanes());
+    }
   };
   /** Fresh car on the start line, repaired, traffic back at its grid slots, lap counter at zero. */
   /** the road plane under the car for the wet-road mirror: the terrain's slope there (flat city: horizontal) */
@@ -836,7 +846,7 @@ async function main() {
   };
   const resetCar = () => {
     car.body.setEnabled(true);   // paused while spectating (the city streams around the watched car then)
-    spawn(); core.repair(); damage.repair(); input.hold = true; settledShowroom = 0;
+    spawn(); core.repair(); physWorker?.repair(); damage.repair(); input.hold = true; settledShowroom = 0;
     syncPose();
     ai.reset();
     race = new CoreRace(routeJson, raceLaps());
@@ -866,7 +876,7 @@ async function main() {
     car.place(p, Math.atan2(Math.cos(q.heading), -Math.sin(q.heading)));
     car.settle();
     ranked?.reset();
-    core.repair(); damage.repair(); input.hold = true;
+    core.repair(); physWorker?.repair(); damage.repair(); input.hold = true;
     syncPose();
     remote?.kick();
   };
@@ -1302,6 +1312,7 @@ async function main() {
     pipelines: () => ({ atStart: pipelinesAtStart, now: (renderer as unknown as { _pipelines: { caches: Map<string, unknown> } })._pipelines.caches.size }),
     // Rapier cost per step + what it simulates (static city colliders have no body: never integrated)
     physics: () => ({ stepMs, bodies: pw.world.bodies.len(), colliders: pw.world.colliders.len(),
+      worker: physWorker ? physWorker.stats() : { active: false, crossOriginIsolated: Boolean(globalThis.crossOriginIsolated) },
       list: pw.world.bodies.getAll().map((b) => `${b === car.body ? 'car' : b.isKinematic() ? 'ai' : 'debris'}:${b.isSleeping() ? 'asleep' : 'awake'}`).join(' ') }),
     info: () => ({ pos: car.body.translation(), speed: car.out[OUT.speed], rpm: car.out[OUT.rpm], gear: car.out[OUT.gear] }) };
 
@@ -1986,8 +1997,10 @@ async function main() {
   const rebuildPlayer = () => {
     builtKey = carKey();
     pw.world.removeRigidBody(car.body);
-    core = new CoreCar(coreJson());
+    const cj = coreJson();
+    core = new CoreCar(cj);
     core.setTurboStage(turboStageOf());
+    physWorker?.swapCar(cj);
     car = new CarBody(pw, core, shape, visual.cg);
     car.usePatchRays = !(isTouch || potato);
     rig.setTarget(car.body, core.info.redline);
@@ -2415,6 +2428,9 @@ async function main() {
     prevQuat.copy(physQuat);
     pos.copy(physPos);
     quat.copy(physQuat);
+    if (physWorker) {
+      physWorker.resetPose(physPos, physQuat, car.body.linvel(), car.body.angvel(), 0, 2, false, car.sampleGroundPlanes());
+    }
     visual.update(pos, quat, car.out);
     rig.snap();
     rig.update(1, pos, quat, new THREE.Vector3(), car.out);
@@ -2836,9 +2852,11 @@ async function main() {
     if (live) acc += simDt; else acc = 0;
     // The street under the car is not built yet (a slow phone or network was outrun by the car, or a reset landed on an
     // unloaded tile): hold the simulation until its colliders exist, instead of letting the car fall through the map.
+    let groundHeld = false;
     if (nyc && live && driving() && state !== 'spectate') {
       const cp = car.body.translation();
       const held = !nyc.groundReady(cp.x, cp.z);
+      groundHeld = held;
       if (held) acc = 0;
       const warn = held ? 'LOADING THE STREET…' : '';
       if (hud.holdWarn !== warn) hud.holdWarn = warn;
@@ -2846,13 +2864,55 @@ async function main() {
     let steps = 0;
     const tSim = performance.now();
     let p2RightX = 0, p2RightY = 0;
-    // Devices are read ONCE per frame, on the frame's first tick (Gamepad API + key state cost CPU and allocate, and a
-    // gamepad snapshot does not change between the ticks of one frame anyway). Later ticks of the frame reuse the same
-    // axes with the edge events (shifts, P2 camera / reset) cleared, so a press still acts exactly once. No tick this
-    // frame (a very fast display) -> no read, so no edge is consumed without a tick to apply it.
     let polled: RawInput | null = null;
     let p2p: Player2Poll | null = null;
-    while (acc >= DT && steps < 24) {
+    if (physWorker && !inShowroom && !splitActive) {
+      // Offloaded rs_core worker path (?physworker=1): main thread traces 12 ground planes once per rendered frame
+      // against Rapier, publishes input + ground planes via the SAB SPSC command ring, drains fixed-rate worker
+      // snapshots via the SAB SPSC snapshot ring, and syncs the kinematic player proxy in Rapier once per frame.
+      const workerLive = live && !groundHeld;
+      const script = (g.__game as { script?: ((tick: number) => RawInput) | null }).script;
+      let tin = script ? script(ticks) : state === 'race' ? input.poll() : IDLE;
+      if (state === 'countdown' && input.raw.throttle > 0.5) launchArmed = true;
+      if (state === 'race' && launchUntil > 0 && ticks * DT < launchUntil) {
+        const ph = Math.min(1, Math.max(0, (ticks * DT - (launchUntil - 1.1)) / 1.1));
+        Object.assign(launchIn, tin);
+        launchIn.directGear = tin.directGear ?? -99;
+        launchIn.throttle = Math.min(tin.throttle, 0.55 + 0.45 * ph);
+        tin = launchIn;
+      }
+      const groundPlanes = car.sampleGroundPlanes();
+      physWorker.sendFrame(workerLive, tin, input.assists, car.nosThrustN, groundPlanes, turboStageOf(), workerAirC, workerTrackC, 15, workerHumidity);
+      const drained = physWorker.drain(car.out);
+      if (drained > 0) {
+        prevPos.copy(physWorker.prevPos);
+        prevQuat.copy(physWorker.prevQuat);
+        physPos.copy(physWorker.currPos);
+        physQuat.copy(physWorker.currQuat);
+        const dtSpan = Math.max(1 / physWorker.rateHz, drained / physWorker.rateHz);
+        const v = physWorker.currVel;
+        const a = stepAcc.set(v.x - lastVel.x, v.y - lastVel.y, v.z - lastVel.z).divideScalar(dtSpan);
+        lastVel.set(v.x, v.y, v.z);
+        carAcc.lerp(a.clampLength(0, 60), 1 - Math.exp(-dtSpan / 0.025));
+        ticks += drained * (240 / physWorker.rateHz);
+        steps = drained;
+      }
+      if (workerLive) {
+        const aiDt = Math.min(0.05, simDt);
+        ai.tick(aiDt, physPos);
+        remote?.tick(now, aiDt);
+        const t0 = performance.now();
+        pw.world.timestep = aiDt;
+        pw.world.step();
+        pw.world.timestep = DT;
+        stepMs += (performance.now() - t0 - stepMs) * 0.05;
+        car.body.setTranslation(physPos, true);
+        car.body.setRotation(physQuat, true);
+        car.body.setLinvel(physWorker.currVel, true);
+        car.body.setAngvel(physWorker.currAngVel, true);
+      }
+      acc = 0;
+    } else while (acc >= DT && steps < 24) {
       prevPos.copy(physPos);
       prevQuat.copy(physQuat);
       if (splitActive && p2Car) {
@@ -2952,8 +3012,8 @@ async function main() {
       if (lt !== lastLaunchText) launchEl.textContent = lastLaunchText = lt;
     }
     prof.sim += performance.now() - tSim;
-    if (steps === 24) acc = 0;   // too slow to keep up: drop time rather than spiral
-    const alpha = Math.min(1, acc / DT);
+    if (!physWorker && steps === 24) acc = 0;   // too slow to keep up: drop time rather than spiral
+    const alpha = physWorker && !inShowroom && !splitActive ? physWorker.alpha(now) : Math.min(1, acc / DT);
     pos.lerpVectors(prevPos, physPos, alpha);
     quat.slerpQuaternions(prevQuat, physQuat, alpha);
     if (splitActive && p2Car) {
@@ -3126,6 +3186,7 @@ async function main() {
         const airC = baseAirC + rainDrop + nightDrop;
         const trackC = worldClock.weather === 'rain' ? airC - 2 : airC + (nightDrop > 0 ? 11 : -1);
         const humidity = worldClock.weather === 'rain' ? 0.92 : 0.48;
+        workerAirC = airC; workerTrackC = trackC; workerHumidity = humidity;
         core.setAtmosphere(airC, trackC, 15, humidity);
         setGroundWetness(worldClock.wetness);
       }
