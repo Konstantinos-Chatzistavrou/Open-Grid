@@ -47,7 +47,7 @@ struct Car {
     std::array<rs::WheelRay, 4> rays;
     std::array<rs::WheelContactPatchRays, 4> patch_rays;
     std::array<double, 4> spin{};
-    std::vector<double> buf = std::vector<double>(384, 0.0);
+    std::vector<double> buf = std::vector<double>(392, 0.0);
 };
 
 std::vector<std::unique_ptr<Car>> g_cars;
@@ -269,6 +269,7 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
         b[265 + i] = w.condition.blistering;
         b[269 + i] = w.condition.graining;
         b[376 + i] = w.toe_angle;
+        b[382 + i] = w.condition.inner_air_c;
     }
     b[250] = cav_lo_sum * 0.5;
     b[251] = cav_hi_sum * 0.5;

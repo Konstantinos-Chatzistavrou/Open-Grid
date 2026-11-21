@@ -79,7 +79,7 @@ export class CoreCar {
   get buf(): Float64Array {
     const m = mod!;
     if (!this._buf || this._buf.buffer !== m.HEAPF64.buffer) {
-      this._buf = new Float64Array(m.HEAPF64.buffer, this._ptr, 384);
+      this._buf = new Float64Array(m.HEAPF64.buffer, this._ptr, 392);
       this._raysBuf = this._buf.subarray(16, 40);
       this._raysPatchBuf = this._buf.subarray(280, 352);
     }
@@ -209,10 +209,11 @@ export const OUT = {
   gearboxHealth: 277,                   // gearbox synchro & tooth health, 0..1
   missedShifts: 278,                    // cumulative missed shifts / tooth pop-outs counter
   gearGrind: 279,                       // active synchro / dog-tooth grind flag (0/1)
-  // Dynamic kinematic suspension telemetry [376..381] (camber is at wheelExt(i) + 1)
+  // Dynamic kinematic suspension & 3-node tire telemetry [376..385] (camber is at wheelExt(i) + 1)
   wheelToe: (i: number) => 376 + i,     // dynamic alignment toe-in (+ = toe-in), rad
   rollCentreFront: 380,                 // dynamic front axle kinematic roll-centre height, m
   rollCentreRear: 381,                  // dynamic rear axle kinematic roll-centre height, m
+  tireInnerAir: (i: number) => 382 + i, // cavity inner-air temperature (Node 3), C
 } as const;
 
 export interface LapInfo { laps: number; current: number; last: number; best: number; distance: number; position: number; finished: boolean; routeLength: number }

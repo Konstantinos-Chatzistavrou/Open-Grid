@@ -214,6 +214,41 @@ WheelContact Vehicle::resolve_contact_patch(const WheelContactPatchRays& patch,
         }
     }
     best.normal = weight_sum > 0.0 ? normalized(normal_acc) : Vec3{0, 0, 1};
+
+    // Populate 4x4 contact patch longitudinal height profile from the 3 patch rays (0=center, 1=leading, 2=trailing).
+    // Measure each hit's signed elevation above the reference road plane so body pitch/roll on a flat or sloped road
+    // produces zero false elevation while real kerb lips and potholes show their true height.
+    const Vec3 p_ref = hits[0].hit ? hits[0].point : best.point;
+    const Vec3 n_ref = hits[0].hit ? hits[0].normal : best.normal;
+    double dz_lead = 0.0, dz_cent = 0.0, dz_trail = 0.0;
+    bool any_nonflat = false;
+    if (hits[1].hit) {
+        dz_lead = clamp(dot(hits[1].point - p_ref, n_ref), -0.08, 0.08);
+        if (std::abs(dz_lead) > 1e-3 || hits[1].surface != best.surface) any_nonflat = true;
+    } else any_nonflat = true;
+    if (hits[2].hit) {
+        dz_trail = clamp(dot(hits[2].point - p_ref, n_ref), -0.08, 0.08);
+        if (std::abs(dz_trail) > 1e-3 || hits[2].surface != best.surface) any_nonflat = true;
+    } else any_nonflat = true;
+    if (any_nonflat) {
+        best.patch_profile.has_height_map = true;
+        // Rows 0..3 = trailing (-0.75a) .. leading (+0.75a); interpolate smoothly from trailing -> center -> leading
+        const double row_dz[4] = {
+            0.75 * dz_trail + 0.25 * dz_cent,
+            0.25 * dz_trail + 0.75 * dz_cent,
+            0.75 * dz_cent + 0.25 * dz_lead,
+            0.25 * dz_cent + 0.75 * dz_lead
+        };
+        const bool row_hit[4] = {hits[2].hit || hits[0].hit, hits[0].hit || hits[2].hit,
+                                 hits[0].hit || hits[1].hit, hits[1].hit || hits[0].hit};
+        for (int i = 0; i < kPatchRows; ++i) {
+            for (int j = 0; j < kPatchCols; ++j) {
+                const int idx = i * kPatchCols + j;
+                best.patch_profile.road_dz_m[idx] = row_dz[i];
+                best.patch_profile.contact_mask[idx] = row_hit[i];
+            }
+        }
+    }
     return best;
 }
 
@@ -232,6 +267,7 @@ std::array<WheelFootprint16Rays, 4> Vehicle::wheel_footprint_16_rays(const Chass
         const Vec3 wheel_fwd = s.orientation.rotate({std::cos(st), std::sin(st), 0.0});
         // Wheel lateral direction pointing from Inner rib toward Outer rib (FL/RL: outer is +Y left; FR/RR: outer is -Y right)
         const double out_sign = (w % 2 == 0) ? 1.0 : -1.0;
+        out[w].outward_sign = out_sign;
         const Vec3 wheel_outward = s.orientation.rotate({-std::sin(st) * out_sign, std::cos(st) * out_sign, 0.0});
 
         int idx = 0;
@@ -335,6 +371,61 @@ WheelContact Vehicle::resolve_footprint_16(const WheelFootprint16Rays& footprint
         best.enveloping_slope_tan = clamp((trail_dist - lead_dist) / cam_base_m, -0.30, 0.30);
     }
     best.normal = weight_sum > 0.0 ? normalized(normal_acc) : Vec3{0, 0, 1};
+
+    // Map 5x3 cylindrical footprint ray heights onto the 4x4 multi-point contact patch grid (ISO +Y left / -Y right).
+    // Measure each ray hit's signed elevation above the reference road plane so body roll/pitch on a flat or banked
+    // road produces zero false elevation while lateral/longitudinal kerbs and ledges show their exact height.
+    const Vec3 p_ref = hits[7].hit ? hits[7].point : best.point;
+    const Vec3 n_ref = hits[7].hit ? hits[7].normal : best.normal;
+    bool any_nonflat = false;
+    double min_dz = 1e9, max_dz = -1e9;
+    std::array<double, kPatchPoints> grid_dz{};
+    std::array<bool, kPatchPoints> grid_mask{};
+    for (int i = 0; i < kPatchRows; ++i) {
+        const int ilon0 = i;
+        const int ilon1 = i + 1;
+        for (int j = 0; j < kPatchCols; ++j) {
+            const double eta_iso = -0.75 + 0.5 * j;
+            const double rib_pos = eta_iso * footprint.outward_sign;
+            double wr0 = 0.0, wr1 = 0.0, wr2 = 0.0;
+            if (rib_pos <= 0.0) {
+                wr0 = clamp(-rib_pos / 0.75, 0.0, 1.0);
+                wr1 = 1.0 - wr0;
+            } else {
+                wr2 = clamp(rib_pos / 0.75, 0.0, 1.0);
+                wr1 = 1.0 - wr2;
+            }
+            const double w_rib[3] = {wr0, wr1, wr2};
+            double dz_acc = 0.0, w_acc = 0.0;
+            for (int il : {ilon0, ilon1}) {
+                for (int ir = 0; ir < 3; ++ir) {
+                    if (w_rib[ir] <= 0.0) continue;
+                    const WheelContact& h = hits[il * 3 + ir];
+                    if (!h.hit) continue;
+                    const double dz_h = clamp(dot(h.point - p_ref, n_ref), -0.08, 0.08);
+                    dz_acc += w_rib[ir] * dz_h;
+                    w_acc += w_rib[ir];
+                }
+            }
+            const int idx = i * kPatchCols + j;
+            if (w_acc > 1e-6) {
+                const double dz = dz_acc / w_acc;
+                grid_dz[idx] = dz;
+                grid_mask[idx] = true;
+                min_dz = std::min(min_dz, dz);
+                max_dz = std::max(max_dz, dz);
+            } else {
+                grid_dz[idx] = 0.0;
+                grid_mask[idx] = false;
+                any_nonflat = true;
+            }
+        }
+    }
+    if (any_nonflat || (max_dz - min_dz) > 1e-3) {
+        best.patch_profile.has_height_map = true;
+        best.patch_profile.road_dz_m = grid_dz;
+        best.patch_profile.contact_mask = grid_mask;
+    }
     return best;
 }
 
@@ -732,11 +823,15 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             op.dpi = tire_condition_[w].dpi(tp);              // hot inflation pressure vs. nominal
             op.phi = -yaw_rate / std::max(std::abs(k.vx), 0.5);       // turn slip: patch spin / rolling speed
             op.enable_mf62_hybrid = tire_zones_enabled;
+            op.enable_contact_patch_grid = tire_patch_grid_enabled;
             op.wheel_side_sign = (w % 2 == 0) ? -1.0 : 1.0;
             op.gamma_rate_rads = k.gamma_rate;
             op.rolling_speed_mps = k.vx;
+            op.yaw_rate_rads = yaw_rate;
             op.condition = &tire_condition_[w];
+            op.patch = contacts[w].patch_profile.has_height_map ? &contacts[w].patch_profile : nullptr;
             TireForces f = magic_formula(tp, kappa_[w], tan_alpha_[w], k.load, k.mu, k.gamma, op);
+            tire_condition_[w].contact_patch_length_m = f.contact_patch_length_m;
             fx_sum[w] += f.fx;
             fy_sum[w] += f.fy;
             mz_sum[w] += f.mz;
@@ -751,7 +846,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
                 tire_condition_[w].update(slip_power, k.load, std::hypot(k.vx, k.vy), h, &tp);
             }
             tyre_t[w] = -f.fx * k.re;                                // road pushes back on the wheel
-            double c_rr = tp.rolling_resistance + tp.rolling_resistance_v2 * (k.vx / 30.0) * (k.vx / 30.0);
+            double c_rr = rolling_resistance_coeff(tp, k.vx, op.dpi);
             roll_t[w] = c_rr * k.load * k.re;
         }
         // ---- ASSIST: ABS. Per wheel, adjust brake pressure to hold the slip ratio at the target

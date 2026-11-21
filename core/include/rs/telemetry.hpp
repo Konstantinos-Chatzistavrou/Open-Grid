@@ -66,6 +66,10 @@ struct TelemetrySample {
     std::array<double, 4> tire_temp_inner_c{75, 75, 75, 75};
     std::array<double, 4> tire_temp_middle_c{75, 75, 75, 75};
     std::array<double, 4> tire_temp_outer_c{75, 75, 75, 75};
+    std::array<double, 4> tire_carcass_temp_c{80, 80, 80, 80};
+    std::array<double, 4> tire_inner_air_temp_c{53, 53, 53, 53};
+    std::array<double, 4> tire_pressure_kpa{220, 220, 220, 220};
+    std::array<double, 4> tire_patch_length_m{0.19, 0.19, 0.19, 0.19};
     std::array<double, 4> flat_spot_depth_mm{};
     std::array<double, 4> brake_temp_c{220, 220, 220, 220};
     std::array<double, 4> wheel_load_n{};

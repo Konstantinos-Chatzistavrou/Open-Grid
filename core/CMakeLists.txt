@@ -57,7 +57,7 @@ if(RS_BUILD_TESTS)
   target_link_libraries(rs_tests PRIVATE rs_core Threads::Threads)
   target_compile_definitions(rs_tests PRIVATE RS_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../data")
   # One CTest entry per test case so failures are reported individually.
-  foreach(t tire config kinematics static weight_transfer braking cornering acceleration timestep layouts auto_clutch abs tc esc controls auto_gearbox damage route ai_lap ai_traffic race race_uturn setup reference characters ue5_bridge telemetry cops authority ue5_upgrade gameplay pinnacle esports service ground_strip ground_strip_drive spsc_ring triple_buffer fixed_step runtime_determinism runtime_threaded ue5_async_bridge clutch_bite_point clutch_thermal_wear clutch_lockup_no_chatter gearbox_missed_shift gearbox_clutched_shift auto_clutch_quality)
+  foreach(t tire tire_patch config kinematics static weight_transfer braking cornering acceleration timestep layouts auto_clutch abs tc esc controls auto_gearbox damage route ai_lap ai_traffic race race_uturn setup reference characters ue5_bridge telemetry cops authority ue5_upgrade gameplay pinnacle esports service ground_strip ground_strip_drive spsc_ring triple_buffer fixed_step runtime_determinism runtime_threaded ue5_async_bridge clutch_bite_point clutch_thermal_wear clutch_lockup_no_chatter gearbox_missed_shift gearbox_clutched_shift auto_clutch_quality)
     add_test(NAME ${t} COMMAND rs_tests ${t})
   endforeach()
 endif()
