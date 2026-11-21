@@ -1,0 +1,293 @@
+{
+  "generated_by": "tools/assets/build_kit_materials.py",
+  "materials": [
+    {
+      "id": "clean_asphalt",
+      "role": "dry_asphalt",
+      "category": "road",
+      "name": "Clean Asphalt",
+      "tile_m": [
+        2.1,
+        2.1
+      ],
+      "web_size": 2048,
+      "disp_size": 1024,
+      "has_metal": false,
+      "files": {
+        "diff": "clean_asphalt/diff.ktx2",
+        "nor": "clean_asphalt/nor.ktx2",
+        "arm": "clean_asphalt/arm.ktx2",
+        "disp": "clean_asphalt/disp.ktx2"
+      },
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "id": "asphalt_02",
+      "role": "worn_asphalt",
+      "category": "road",
+      "name": "Asphalt 02",
+      "tile_m": [
+        3.0,
+        3.0
+      ],
+      "web_size": 2048,
+      "disp_size": 1024,
+      "has_metal": false,
+      "files": {
+        "diff": "asphalt_02/diff.ktx2",
+        "nor": "asphalt_02/nor.ktx2",
+        "arm": "asphalt_02/arm.ktx2",
+        "disp": "asphalt_02/disp.ktx2"
+      },
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "id": "brushed_concrete",
+      "role": "concrete_kerb",
+      "category": "road",
+      "name": "Brushed Concrete ",
+      "tile_m": [
+        2.5,
+        2.5
+      ],
+      "web_size": 2048,
+      "disp_size": 1024,
+      "has_metal": false,
+      "files": {
+        "diff": "brushed_concrete/diff.ktx2",
+        "nor": "brushed_concrete/nor.ktx2",
+        "arm": "brushed_concrete/arm.ktx2",
+        "disp": "brushed_concrete/disp.ktx2"
+      },
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "id": "painted_concrete_02",
+      "role": "painted_kerb",
+      "category": "road",
+      "name": "Painted Concrete 02",
+      "tile_m": [
+        4.0,
+        4.0
+      ],
+      "web_size": 2048,
+      "disp_size": 1024,
+      "has_metal": false,
+      "files": {
+        "diff": "painted_concrete_02/diff.ktx2",
+        "nor": "painted_concrete_02/nor.ktx2",
+        "arm": "painted_concrete_02/arm.ktx2",
+        "disp": "painted_concrete_02/disp.ktx2"
+      },
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "id": "concrete_pavers_02",
+      "role": "paving_stones",
+      "category": "road",
+      "name": "Concrete Pavers 02",
+      "tile_m": [
+        2.0,
+        2.0
+      ],
+      "web_size": 2048,
+      "disp_size": 1024,
+      "has_metal": false,
+      "files": {
+        "diff": "concrete_pavers_02/diff.ktx2",
+        "nor": "concrete_pavers_02/nor.ktx2",
+        "arm": "concrete_pavers_02/arm.ktx2",
+        "disp": "concrete_pavers_02/disp.ktx2"
+      },
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "id": "plastered_wall",
+      "role": "smooth_plaster",
+      "category": "wall",
+      "name": "Plastered Wall",
+      "tile_m": [
+        2.0,
+        2.0
+      ],
+      "web_size": 1024,
+      "disp_size": 512,
+      "has_metal": false,
+      "files": {
+        "diff": "plastered_wall/diff.ktx2",
+        "nor": "plastered_wall/nor.ktx2",
+        "arm": "plastered_wall/arm.ktx2",
+        "disp": "plastered_wall/disp.ktx2"
+      },
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "id": "rough_plaster_03",
+      "role": "rough_plaster",
+      "category": "wall",
+      "name": "Rough Plaster 03",
+      "tile_m": [
+        1.5,
+        1.5
+      ],
+      "web_size": 1024,
+      "disp_size": 512,
+      "has_metal": false,
+      "files": {
+        "diff": "rough_plaster_03/diff.ktx2",
+        "nor": "rough_plaster_03/nor.ktx2",
+        "arm": "rough_plaster_03/arm.ktx2",
+        "disp": "rough_plaster_03/disp.ktx2"
+      },
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "id": "rustic_stone_wall",
+      "role": "stone_wall",
+      "category": "wall",
+      "name": "Rustic Stone Wall",
+      "tile_m": [
+        1.52,
+        1.52
+      ],
+      "web_size": 1024,
+      "disp_size": 512,
+      "has_metal": false,
+      "files": {
+        "diff": "rustic_stone_wall/diff.ktx2",
+        "nor": "rustic_stone_wall/nor.ktx2",
+        "arm": "rustic_stone_wall/arm.ktx2",
+        "disp": "rustic_stone_wall/disp.ktx2"
+      },
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "id": "red_brick",
+      "role": "brick",
+      "category": "wall",
+      "name": "Red Brick",
+      "tile_m": [
+        1.4,
+        1.4
+      ],
+      "web_size": 1024,
+      "disp_size": 512,
+      "has_metal": false,
+      "files": {
+        "diff": "red_brick/diff.ktx2",
+        "nor": "red_brick/nor.ktx2",
+        "arm": "red_brick/arm.ktx2",
+        "disp": "red_brick/disp.ktx2"
+      },
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "id": "clay_roof_tiles_02",
+      "role": "roof_tiles",
+      "category": "wall",
+      "name": "Clay Roof Tiles 02",
+      "tile_m": [
+        2.5,
+        2.5
+      ],
+      "web_size": 1024,
+      "disp_size": 512,
+      "has_metal": false,
+      "files": {
+        "diff": "clay_roof_tiles_02/diff.ktx2",
+        "nor": "clay_roof_tiles_02/nor.ktx2",
+        "arm": "clay_roof_tiles_02/arm.ktx2",
+        "disp": "clay_roof_tiles_02/disp.ktx2"
+      },
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "id": "rusty_metal_04",
+      "role": "rusty_metal",
+      "category": "wall",
+      "name": "Rusty Metal 04",
+      "tile_m": [
+        2.0,
+        2.0
+      ],
+      "web_size": 1024,
+      "disp_size": 512,
+      "has_metal": true,
+      "files": {
+        "diff": "rusty_metal_04/diff.ktx2",
+        "nor": "rusty_metal_04/nor.ktx2",
+        "arm": "rusty_metal_04/arm.ktx2",
+        "disp": "rusty_metal_04/disp.ktx2"
+      },
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "id": "blue_metal_plate",
+      "role": "painted_metal",
+      "category": "wall",
+      "name": "Blue Metal Plate",
+      "tile_m": [
+        2.5,
+        2.5
+      ],
+      "web_size": 1024,
+      "disp_size": 512,
+      "has_metal": false,
+      "files": {
+        "diff": "blue_metal_plate/diff.ktx2",
+        "nor": "blue_metal_plate/nor.ktx2",
+        "arm": "blue_metal_plate/arm.ktx2",
+        "disp": "blue_metal_plate/disp.ktx2"
+      },
+      "licence": "CC0-1.0",
+      "source_size": [
+        4096,
+        4096
+      ]
+    }
+  ]
+}
