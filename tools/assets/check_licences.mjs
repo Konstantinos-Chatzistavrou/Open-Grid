@@ -115,6 +115,12 @@ function readLedgers(dir, kind) {
 const kit = readLedgers(KIT, 'kit');
 const cars = readLedgers(CARS, 'car');
 
+// ---- no Git LFS in the public repo (strangers cloning would consume the owner's monthly LFS bandwidth quota)
+const gitattributesPath = path.join(ROOT, '.gitattributes');
+if (fs.existsSync(gitattributesPath) && /\bfilter=lfs\b/.test(fs.readFileSync(gitattributesPath, 'utf8'))) {
+  bad('.gitattributes', 'uses filter=lfs: never use Git LFS in the public repo (put large masters on GitHub Releases instead)');
+}
+
 // ---- kit masters
 for (const L of kit) {
   const listed = new Set((L.d.files ?? []).map((f) => path.normalize(f)));
