@@ -35,7 +35,60 @@
     "camber_gain2_deg_per_m2": -230,
     "roll_centre_gain": -1.8,
     "damper_knee_mps": 0.13,
-    "damper_high_speed_ratio": 0.45
+    "damper_high_speed_ratio": 0.45,
+    "kinematics": {
+      "type": "double_wishbone",
+      "lca_front": [
+        0.165,
+        0.345,
+        0.187
+      ],
+      "lca_rear": [
+        -0.175,
+        0.345,
+        0.187
+      ],
+      "lca_outer": [
+        0.005,
+        0.776,
+        0.234
+      ],
+      "uca_front": [
+        0.102,
+        0.523,
+        0.438
+      ],
+      "uca_rear": [
+        -0.168,
+        0.523,
+        0.438
+      ],
+      "uca_outer": [
+        -0.028,
+        0.741,
+        0.513
+      ],
+      "tie_inner": [
+        -0.116,
+        0.4,
+        0.231
+      ],
+      "tie_outer": [
+        -0.116,
+        0.753,
+        0.285
+      ],
+      "shock_lower": [
+        0.005,
+        0.655,
+        0.221
+      ],
+      "shock_upper": [
+        0.005,
+        0.555,
+        0.641
+      ]
+    }
   },
   "rear_axle": {
     "track_m": 1.861,
@@ -57,7 +110,60 @@
     "camber_gain2_deg_per_m2": -230,
     "roll_centre_gain": -1.5,
     "damper_knee_mps": 0.13,
-    "damper_high_speed_ratio": 0.45
+    "damper_high_speed_ratio": 0.45,
+    "kinematics": {
+      "type": "double_wishbone",
+      "lca_front": [
+        0.165,
+        0.397,
+        0.203
+      ],
+      "lca_rear": [
+        -0.175,
+        0.397,
+        0.203
+      ],
+      "lca_outer": [
+        0.005,
+        0.886,
+        0.246
+      ],
+      "uca_front": [
+        0.135,
+        0.649,
+        0.461
+      ],
+      "uca_rear": [
+        -0.135,
+        0.649,
+        0.461
+      ],
+      "uca_outer": [
+        0.005,
+        0.886,
+        0.539
+      ],
+      "tie_inner": [
+        -0.11,
+        0.483,
+        0.247
+      ],
+      "tie_outer": [
+        -0.11,
+        0.886,
+        0.299
+      ],
+      "shock_lower": [
+        0.005,
+        0.749,
+        0.234
+      ],
+      "shock_upper": [
+        0.005,
+        0.649,
+        0.654
+      ]
+    }
   },
   "tire_front": {
     "size": "245/35 R19",
@@ -358,7 +464,63 @@
       "power_ramp": 0.35,
       "coast_ramp": 0.2
     },
-    "front_torque_share": 0.0
+    "front_torque_share": 0.0,
+    "gear_teeth": [
+      [
+        -48,
+        15
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        51,
+        15
+      ],
+      [
+        46,
+        20
+      ],
+      [
+        41,
+        24
+      ],
+      [
+        37,
+        28
+      ],
+      [
+        39,
+        36
+      ],
+      [
+        30,
+        34
+      ]
+    ],
+    "final_drive_teeth": [
+      37,
+      10
+    ],
+    "clutch": {
+      "bite_point": 0.65,
+      "full_engage_point": 0.15,
+      "effective_radius_m": 0.098,
+      "num_surfaces": 4,
+      "mu_static": 0.42,
+      "mu_kinetic": 0.34,
+      "thermal_capacity_j_per_k": 1850,
+      "input_shaft_inertia_kgm2": 0.007
+    },
+    "synchro": {
+      "mu_sync": 0.12,
+      "shift_fork_force_n": 380,
+      "cone_radius_m": 0.04,
+      "cone_angle_deg": 7.0,
+      "num_cones": 3,
+      "engage_tol_rads": 42.0
+    }
   },
   "aero": {
     "drag_area_m2": 0.7,
