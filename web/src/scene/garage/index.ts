@@ -8,6 +8,7 @@
 //  - `captureEnv()` renders the room into a cube and prefilters it: `env` (the persistent PMREM texture) is the
 //    scene's environment and is what the car's paint mirrors.
 import * as THREE from 'three/webgpu';
+import { equirectUV, normalize, positionWorld, texture, uniform, vec3 } from 'three/tsl';
 import { buildRoom, lightShaft, ROOM, type GarageRoom } from './room';
 import { LAMPS, loadProps } from './props';
 
@@ -90,6 +91,36 @@ export class Garage {
   /** Dressing arrives after the first frame: load, bake, add, and ask for a new environment capture. */
   async loadProps(): Promise<void> {
     await loadProps(this.room.group, this.room.bake, this.envRT.texture);
+    this.dirtyEnv = true;
+  }
+
+  /** what the HDRI adds to the room capture (0 = the room alone) */
+  readonly hdriStrength = uniform(0);
+  private hdriDome: THREE.Mesh | null = null;
+
+  /**
+   * Kit HDRI in the reflection capture (fx/kitHdri.ts): a dome around the capture point, seen only by the capture's
+   * six cameras (layer 30: never in the garage view), adds the HDRI over the room. The paint then mirrors the room's
+   * light lines and a real night city. Call before the first capture (it changes nothing else).
+   */
+  setHdri(tex: THREE.Texture, strength: number) {
+    const LAYER = 30;
+    this.hdriStrength.value = strength;
+    if (!this.hdriDome) {
+      const c = this.cubeCam.position;
+      const m = new THREE.MeshBasicNodeMaterial({ side: THREE.BackSide, depthTest: false, depthWrite: false, transparent: true,
+        blending: THREE.AdditiveBlending, fog: false });
+      m.colorNode = texture(tex, equirectUV(normalize(positionWorld.sub(vec3(c.x, c.y, c.z))))).mul(this.hdriStrength);
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(40, 48, 24), m);
+      dome.name = 'garage_hdri_capture_dome';
+      dome.position.copy(c);
+      dome.renderOrder = 1e6;
+      dome.frustumCulled = false;
+      dome.layers.set(LAYER);
+      for (const cam of this.cubeCam.children) cam.layers.enable(LAYER);
+      this.scene.add(dome);
+      this.hdriDome = dome;
+    }
     this.dirtyEnv = true;
   }
 

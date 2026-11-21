@@ -54,6 +54,14 @@ export class WorldClock {
     this.rollWeather(false);
   }
 
+  /** Set the weather outright (tests and screenshots: ?weather=dry|rain); a race start rolls it again. */
+  setWeather(w: WeatherKind): WeatherKind {
+    this.weather = w;
+    this.targetWetness = w === 'rain' ? 1.0 : (this.season.id === 'winter' ? 0.42 : 0.22);
+    this.wetness = this.targetWetness;
+    return w;
+  }
+
   /** Roll the 1-in-5 (20%) chance of rain for a new race or session. */
   rollWeather(isRace = true): WeatherKind {
     // 1-in-5 chance of rain per race (or slightly higher in Winter/Spring)
