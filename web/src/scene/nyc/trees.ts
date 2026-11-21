@@ -25,7 +25,40 @@ const HABIT: Record<TreeSpecies, Habit> = {
   pear: { bark: 'ridged', cell: 2, trunkH: 1.7, trunkR: 0.17, crown: { y0: 2.4, y1: 8.8, r: 2.4, shape: 'teardrop' }, limbs: 5, leader: false, droop: 0, cards: 640, cardSize: 1.0, clumps: 44 },
   oak: { bark: 'furrowed', cell: 3, trunkH: 2.0, trunkR: 0.21, crown: { y0: 2.2, y1: 10.0, r: 3.1, shape: 'pyramid' }, limbs: 9, leader: true, droop: 0.35, cards: 600, cardSize: 1.1, clumps: 50 },
   linden: { bark: 'ridged', cell: 4, trunkH: 2.2, trunkR: 0.19, crown: { y0: 2.9, y1: 9.0, r: 2.8, shape: 'oval' }, limbs: 6, leader: true, droop: 0.1, cards: 620, cardSize: 1.0, clumps: 44 },
+  // palm: built by buildPalm (trunk + fronds), the habit only names its bark and leaf cell
+  palm: { bark: 'ridged', cell: 1, trunkH: 9.5, trunkR: 0.2, crown: { y0: 8.0, y1: 10.5, r: 3.0, shape: 'dome' }, limbs: 0, leader: false, droop: 0, cards: 0, cardSize: 0.55, clumps: 0 },
 };
+
+/** A palm: a ringed, slightly curved 9.5 m trunk and 13 arching fronds, each a spine with leaflet cards down both sides. */
+function buildPalm(h: Habit) {
+  const R = rng(1013);
+  const B = new Builder(), L = new Builder();
+  const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  const trunk: THREE.Vector3[] = [];
+  for (let i = 0; i <= 8; i++) { const t = i / 8; trunk.push(V(0.55 * t * t, h.trunkH * t, 0.12 * t * t)); }
+  B.tube(trunk, h.trunkR * 1.25, h.trunkR * 0.8, 9);
+  const top = trunk[trunk.length - 1];
+  const crownC = top.clone().add(V(0, 0.4, 0));
+  for (let f = 0; f < 13; f++) {
+    const ang = (f / 13) * Math.PI * 2 + R() * 0.3, rise = f % 3 === 0 ? 1.3 : 0.5 + R() * 0.4, reach = 2.6 + R() * 0.9;
+    const dir = V(Math.cos(ang), 0, Math.sin(ang));
+    const spine: THREE.Vector3[] = [];
+    for (let i = 0; i <= 7; i++) {   // up and out, then arching over and down
+      const t = i / 7;
+      spine.push(top.clone().addScaledVector(dir, reach * t).add(V(0, rise * Math.sin(Math.PI * 0.55 * t) * 1.4 - 1.6 * t * t * t, 0)));
+    }
+    B.tube(spine, 0.045, 0.01, 4);
+    const side = V(-dir.z, 0, dir.x);
+    for (let i = 1; i < 7; i++) {
+      const p = spine[i], fall = (spine[i + 1].y - spine[i].y);
+      for (const sg of [1, -1]) {   // leaflets hang down and out from the spine
+        const n = side.clone().multiplyScalar(sg).add(V(0, 0.6 - fall, 0)).normalize();
+        L.card(p.clone().addScaledVector(side, sg * 0.28).add(V(0, -0.12, 0)), n, sg * 1.2 + (R() - 0.5) * 0.4, h.cardSize * (1.25 - i * 0.07), h.cell, crownC, 0.55 + 0.4 * (i / 7));
+      }
+    }
+  }
+  return { bark: B.geometry(), leaves: L.geometry(), bark_kind: h.bark };
+}
 
 /** Crown radius at height y for a habit (0 outside the crown). */
 function crownR(h: Habit, y: number) {
@@ -106,6 +139,7 @@ class Builder {
 
 /** Bark and leaf geometry of one species (deterministic). */
 export function buildTree(sp: TreeSpecies): { bark: THREE.BufferGeometry; leaves: THREE.BufferGeometry; bark_kind: Habit['bark'] } {
+  if (sp === 'palm') return buildPalm(HABIT.palm);
   const h = HABIT[sp], R = rng(7919 * (sp.length + 3) + sp.charCodeAt(0) * 131);
   const B = new Builder(), L = new Builder();
   const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);

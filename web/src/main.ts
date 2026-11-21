@@ -19,8 +19,9 @@ import { CoreCar, CoreRace, OUT, loadCore, type LapInfo, type RawInput } from '.
 import { CarBody, DT, PhysicsWorld, loadRapier, type CarShape } from './physics/world';
 import { CityLighting, loadCity } from './scene/city';
 import { NycStreamer, nycCityShim } from './scene/nyc';
-import { setGroundGrid } from './scene/nyc/groundMaterials';
+import { setGroundCity, setGroundGrid } from './scene/nyc/groundMaterials';
 import { setSignCity } from './scene/nyc/signAtlas';
+import { setTreeCity } from './scene/nyc/props';
 import { CITIES, currentCity, loadExtraCities, saveCity } from './cities';
 import { StreetObstacles, type PoleHit } from './scene/nyc/obstacles';
 import { setGroundWetness, setMobileFacadeMode } from './scene/nyc';
@@ -370,7 +371,9 @@ async function main() {
   // the real-scale city of this session (cities.ts: New York, London, Paris, Tokyo, Los Angeles); `useNyc` = streamed city tiles
   let cityInfo = currentCity(params);
   setGroundGrid(cityInfo.grid);
+  setGroundCity(cityInfo.id);
   setSignCity(cityInfo.id);
+  setTreeCity(cityInfo.id);
   const updateCreditsLine = () => {
     const cr = document.getElementById('credits');
     if (cr) cr.innerHTML = cr.innerHTML.replace(/OpenStreetMap contributors<\/a> \(ODbL\)( &amp; NYC Open Data)?/, `OpenStreetMap contributors</a> (ODbL)${cityInfo.id === 'nyc' ? ' &amp; NYC Open Data' : ''}`);
@@ -2066,7 +2069,9 @@ async function main() {
 
       cityInfo = nextCity;
       setGroundGrid(cityInfo.grid);
+      setGroundCity(cityInfo.id);
       setSignCity(cityInfo.id);
+      setTreeCity(cityInfo.id);
       updateCreditsLine();
       minimap.setLandmarks(cityInfo.landmarks);
 

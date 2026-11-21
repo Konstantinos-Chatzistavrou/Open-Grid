@@ -6,6 +6,9 @@ Inputs  (tools/nyc/fetch_footprints.py and the BBBike OSM extract, see docs/nyc_
   assets_source/downloads/nyc/footprints_manhattan.json    NYC Open Data building footprints (public domain): roof height (ft), year, code
 Outputs (NDJSON, one JSON object per line; coordinates in METRES in the game frame: origin Times Square, x east, y north, z up):
   buildings.ndjson  {id, h (roof height m, above ground), g (ground elevation m), year, code, rings: [[ [x,y],... ] outer first, then holes]}
+                    OSM cities also: min, name and the Simple 3D Buildings tags (rs roof:shape, rh roof:height, rl roof:levels,
+                    ro roof:orientation, rd roof:direction, bc/rc building/roof colour, bm/rm building/roof material, mm man_made)
+  parts.ndjson      OSM cities: building:part volumes {id, h, min, name, the same 3D tags, rings} (tools/nyc/s3d.py)
   roads.ndjson      {id, hw (highway type), name, lanes, oneway, bridge, tunnel, layer, width (m, from tags or by type), pts}
   areas.ndjson      {id, kind (park|water|plaza|pedestrian|cemetery|pitch|parking|grass|island), name, rings}
   rails.ndjson      {id, kind (subway|rail|tram), tunnel, bridge, pts}
@@ -82,7 +85,7 @@ class Handler(osmium.SimpleHandler):
         self.f = files
         self.osm_buildings = osm_buildings
         self.parts = []   # building:part (x, y, height) for outlines without a height of their own
-        self.n = {k: 0 for k in ("roads", "areas", "rails", "nodes", "buildings")}
+        self.n = {k: 0 for k in ("roads", "areas", "rails", "nodes", "buildings", "parts")}
 
     def building(self, a, t):
         """OSM buildings (cities without an official footprint set): height from height / building:levels / roof:levels,
@@ -95,6 +98,11 @@ class Handler(osmium.SimpleHandler):
         if not h and lv:
             h = lv * FLOOR_M + (_num(t.get("roof:levels")) or 0) * FLOOR_M * 0.6 + 1.0
         mh = _num(t.get("min_height")) or ((_num(t.get("building:min_level")) or 0) * FLOOR_M)
+        # Simple 3D Buildings tags (tools/nyc/s3d.py): roof shape / height / levels / orientation / direction, colours, materials
+        s3 = {k: v for k, v in (("rs", t.get("roof:shape")), ("rh", _num(t.get("roof:height"))), ("rl", _num(t.get("roof:levels"))),
+                                ("ro", t.get("roof:orientation")), ("rd", t.get("roof:direction")), ("bc", t.get("building:colour")),
+                                ("rc", t.get("roof:colour")), ("bm", t.get("building:material")), ("rm", t.get("roof:material")),
+                                ("mm", t.get("man_made")), ("wd", t.get("wikidata"))) if v}
         try:
             for o in a.outer_rings():
                 oc = [(n.lon, n.lat) for n in o]
@@ -105,12 +113,18 @@ class Handler(osmium.SimpleHandler):
                     if h:
                         cx = sum(p[0] for p in r[0]) / len(r[0]); cy = sum(p[1] for p in r[0]) / len(r[0])
                         self.parts.append((cx, cy, h))
+                    for i in a.inner_rings(o):
+                        ic = [(n.lon, n.lat) for n in i]
+                        r.append(xy([p[0] for p in ic], [p[1] for p in ic]))
+                    self.f["parts"].write(json.dumps({"id": f"p{a.orig_id()}_{self.n['parts']}", "h": round(h, 1) if h else 0, "min": round(mh, 1),
+                                                      "name": t.get("name", ""), **s3, "rings": r}) + "\n")
+                    self.n["parts"] += 1
                     continue
                 for i in a.inner_rings(o):
                     ic = [(n.lon, n.lat) for n in i]
                     r.append(xy([p[0] for p in ic], [p[1] for p in ic]))
                 self.f["buildings"].write(json.dumps({"id": f"o{a.orig_id()}_{self.n['buildings']}", "h": round(h, 1) if h else 0, "g": 0, "min": round(mh, 1),
-                                                      "year": _year(t), "code": bt, "name": t.get("name", ""), "rings": r}) + "\n")
+                                                      "year": _year(t), "code": bt, "name": t.get("name", ""), **s3, "rings": r}) + "\n")
                 self.n["buildings"] += 1
         except (osmium.InvalidLocationError, RuntimeError):
             return
@@ -276,7 +290,7 @@ def main():
     osm_b = CITY.get("buildings") != "nyc_footprints"
     nb = 0 if osm_b else footprints()
     print(f"buildings: {nb} ({time.time() - t0:.0f}s)", flush=True)
-    layers = ("roads", "areas", "rails", "nodes") + (("buildings",) if osm_b else ())
+    layers = ("roads", "areas", "rails", "nodes") + (("buildings", "parts") if osm_b else ())
     files = {k: open(os.path.join(OUT, f"{k}.ndjson"), "w") for k in layers}
     h = Handler(files, osm_buildings=osm_b)
     h.apply_file(os.path.join(D, CITY["pbf"]), locations=True, idx="flex_mem")

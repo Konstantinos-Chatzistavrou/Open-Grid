@@ -81,6 +81,41 @@ so every route skipped its corner nodes and, where an interior point lay far fro
 (AI rivals drove through buildings). Each edge is now its two nodes around its interior points, and waypoints snap to the
 main connected street network.
 
+## City identity (2026-11-21): each city its own, not New York with new outlines
+
+Until this date every city was built by New York's generator with only the outlines, heights and colour palette changed:
+the same six facade kinds, Times Square billboards around every spawn, New York sign texts, New York's street trees,
+American double-yellow centre lines and Manhattan sidewalks. Now:
+
+- **Real 3D shapes (Simple 3D Buildings, tools/nyc/s3d.py).** extract.py keeps `building:part` volumes (parts.ndjson)
+  and the roof / colour / material tags. A building whose parts cover >= 40 % of its outline is built from them, each
+  part from its min_height to its height with its own roof, colour and material (Barcelona: 53,740 parts, the Sagrada
+  Familia's 15 towers; London 8,850). Roof shapes: gabled, hipped, half-hipped, mansard, gambrel, pyramidal, cone,
+  dome, onion, skillion, round, saltbox. Untagged low and mid-rise blocks get their city's typical roof
+  (s3d.ROOF_STYLE: Paris zinc mansards, Lisbon / Madrid terracotta hips, Amsterdam steep gables, London slate ...).
+  building:colour / roof:colour / building:material / roof:material set the tint, the facade kind and the roof material.
+- **Roof materials** (facade.ts roofGraph): flat, clay tiles, slate, standing-seam zinc, glass, copper, floodlit metal.
+  The code rides on the roof UV (u + code * 16384, u measured from the roof's centre): no new vertex attribute.
+- **Landmarks a footprint cannot describe** (tools/nyc/landmarks3d.py), built from real dimensions on their OSM
+  footprint: Eiffel Tower (lattice legs, floors at 57.6 / 115.7 / 276 m, floodlit), CN Tower, Berliner Fernsehturm,
+  London Eye, Singapore Flyer, Columbus Monument, Transamerica Pyramid, Arc de Triomphe (piers, arches, cornices),
+  Brandenburg Gate (columns, attic, quadriga). Their colliders are what stands on the ground (you can drive between the
+  Eiffel Tower's legs and through the Arc). Churches, cathedrals, mosques, temples, castles and towers use facade kind 6
+  (stone, no window grid, no shopfronts, floodlit at night).
+- **Per-city architecture** (facade.ts setCityStyle): window bay / size / floor height, wrought-iron balconies (Paris:
+  continuous bands on the 2nd and 5th floors), wooden shutters, smooth render instead of stone joints.
+- **Per-city signs** (signAtlas.ts): every city has its own invented shop names and screen texts, in the local language.
+  Big screens only where the city has them (cities.json `billboards`: New York / Tokyo 1, Seoul / Toronto 0.8,
+  London 0.45 ... Paris 0).
+- **Centre lines** by country (ground.py CENTRE_LINE): double yellow in the US, Canada, Korea; white solid in Japan;
+  white dashes elsewhere. **Sidewalks** (groundMaterials.ts setGroundCity): Lisbon calcada with black waves, Barcelona
+  panot tiles, Amsterdam brick, Melbourne bluestone, Paris asphalt, London / Berlin flags, Tokyo / Seoul pavers.
+- **Street trees** (props.ts CITY_TREES): a palm species and each city's mix (Los Angeles / Miami palms, London planes,
+  Berlin lindens, Barcelona planes ...).
+
+What is not 1:1: individual facades (window positions, ornament). No open dataset records them; the photo-based 3D
+city models that do (Google's) do not allow this use. Massing, roofs, colours and landmarks follow the data.
+
 ## Notes
 
 - Heights: explicit `height` / `building:levels` first; a building without one takes the tallest `building:part` inside

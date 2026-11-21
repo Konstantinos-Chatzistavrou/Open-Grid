@@ -13,7 +13,7 @@ import type { PhysicsWorld } from '../../physics/world';
 import { gltfLoader } from '../loaders';
 import { createPlaceholderFacade, createPlaceholderGround, createPlaceholderRoof } from './placeholders';
 import { createGroundMaterials } from './groundMaterials';
-import { createFacadeMaterial, createFarFacadeMaterial, createRoofMaterial } from './facade';
+import { createFacadeMaterial, createFarFacadeMaterial, createRoofMaterial, setCityStyle } from './facade';
 import { Breaches } from './breach';
 import { NycProps, type BuildingColliderBox } from './props';
 import { applyNycAtmosphere, type NycAtmosphere } from './atmosphere';
@@ -232,6 +232,7 @@ export class NycStreamer {
     this.index = idx; this.mats = mats; this.props = props;
     this.ver = (idx as { version?: string }).version ? `?v=${(idx as { version?: string }).version}` : '';
     // the ground's real heights: before any tile, so the first physics ground already follows the hills
+    setCityStyle(/cities\/([a-z]+)\//.exec(this.o.base)?.[1] ?? 'nyc');   // the city's architecture on every facade
     if (idx.terrain) this.terrain = await Terrain.load(this.o.base, idx.terrain, this.ver);
     if (this.terrain) console.info(`nyc: terrain ${idx.terrain!.nx} x ${idx.terrain!.ny} at ${idx.terrain!.step} m, ${idx.terrain!.min}..${idx.terrain!.max} m`);
     if (this.terrain && props instanceof NycProps) { const tr = this.terrain; props.heightAt = (x, y) => tr.at(x, y); }

@@ -621,6 +621,10 @@ def gen_buildings(t, tile_box, mid_zone):
         # probability profile of big screens: dense around Times Square
         p_big = 0.98 if r < 360 else 0.58 if r < 540 else 0.14 if r < 950 else 0.0
         max_big = 12 if r < 360 else 3
+        # big screens are a Times Square / Shibuya / Dundas Square thing: cities.json `billboards` (0..1, New York 1)
+        bb = float(T.CITY.get("billboards", 1.0 if T.CITY_ID == "nyc" else 0.2))
+        p_big *= bb
+        max_big = max(1, int(round(max_big * bb))) if bb > 0 else 0
         p_shop = 0.18 if r < 1400 else 0.05 if r < 3500 else 0.0
         p_scaf = 0.035 if mid_zone else 0.01
         if p_big == 0 and p_shop == 0 and p_scaf == 0:
@@ -663,7 +667,7 @@ def gen_buildings(t, tile_box, mid_zone):
                         O["sign"].append([mx + ex * c_center + nx * 0.36, my + ey * c_center + ny * 0.36, z0 + hs / 2, yaw, ws, hs, int(hf(bid, s_seed, 66) * 8)])
                         did_big += 1
                         # Stacked upper LED megascreen in Times Square
-                        if r < 360 and zmax > z0 + hs + 9.0 and did_big < max_big:
+                        if r < 360 and bb >= 0.8 and zmax > z0 + hs + 9.0 and did_big < max_big:
                             hs2 = min(13.5, zmax - (z0 + hs + 2.0))
                             ws2 = min(col_w - 0.8, ws * (0.88 + 0.22 * hf(bid, s_seed, 73)))
                             z1 = z0 + hs + 1.4

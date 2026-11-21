@@ -25,7 +25,8 @@
     "style": "nyc",
     "landmarks": true,
     "terrain_open_m": 0,
-    "terrain": false
+    "terrain": false,
+    "billboards": 1.0
   },
   "london": {
     "name": "London",
@@ -100,7 +101,8 @@
       110,
       3
     ],
-    "terrain_open_m": 150
+    "terrain_open_m": 150,
+    "billboards": 0.45
   },
   "paris": {
     "name": "Paris",
@@ -172,7 +174,8 @@
         2.312
       ]
     ],
-    "terrain_open_m": 150
+    "terrain_open_m": 150,
+    "billboards": 0.0
   },
   "tokyo": {
     "name": "Tokyo",
@@ -244,7 +247,8 @@
       160,
       3
     ],
-    "terrain_open_m": 250
+    "terrain_open_m": 250,
+    "billboards": 1.0
   },
   "losangeles": {
     "name": "Los Angeles",
@@ -324,7 +328,8 @@
       200,
       2
     ],
-    "terrain_open_m": 0
+    "terrain_open_m": 0,
+    "billboards": 0.3
   },
   "chicago": {
     "name": "Chicago",
@@ -405,7 +410,8 @@
       2
     ],
     "terrain_open_m": 0,
-    "terrain": false
+    "terrain": false,
+    "billboards": 0.15
   },
   "miami": {
     "name": "Miami",
@@ -486,7 +492,8 @@
       2
     ],
     "terrain_open_m": 0,
-    "terrain": false
+    "terrain": false,
+    "billboards": 0.2
   },
   "toronto": {
     "name": "Toronto",
@@ -558,7 +565,8 @@
       180,
       2
     ],
-    "terrain_open_m": 250
+    "terrain_open_m": 250,
+    "billboards": 0.8
   },
   "berlin": {
     "name": "Berlin",
@@ -634,7 +642,8 @@
       120,
       2
     ],
-    "terrain": false
+    "terrain": false,
+    "billboards": 0.1
   },
   "barcelona": {
     "name": "Barcelona",
@@ -706,7 +715,8 @@
       100,
       3
     ],
-    "terrain_open_m": 150
+    "terrain_open_m": 150,
+    "billboards": 0.05
   },
   "amsterdam": {
     "name": "Amsterdam",
@@ -786,7 +796,8 @@
       80,
       3
     ],
-    "terrain": false
+    "terrain": false,
+    "billboards": 0.02
   },
   "singapore": {
     "name": "Singapore",
@@ -862,7 +873,8 @@
       150,
       2
     ],
-    "terrain": false
+    "terrain": false,
+    "billboards": 0.3
   },
   "melbourne": {
     "name": "Melbourne",
@@ -938,7 +950,8 @@
       150,
       2
     ],
-    "terrain_open_m": 250
+    "terrain_open_m": 250,
+    "billboards": 0.2
   },
   "madrid": {
     "name": "Madrid",
@@ -1018,7 +1031,8 @@
       100,
       3
     ],
-    "terrain_open_m": 150
+    "terrain_open_m": 150,
+    "billboards": 0.35
   },
   "seoul": {
     "name": "Seoul",
@@ -1094,7 +1108,8 @@
       150,
       3
     ],
-    "terrain_open_m": 250
+    "terrain_open_m": 250,
+    "billboards": 0.8
   },
   "sanfrancisco": {
     "name": "San Francisco",
@@ -1178,7 +1193,8 @@
     "small_floors": [
       150,
       2
-    ]
+    ],
+    "billboards": 0.2
   },
   "lisbon": {
     "name": "Lisbon",
@@ -1258,6 +1274,7 @@
     "small_floors": [
       100,
       3
-    ]
+    ],
+    "billboards": 0.05
   }
 }
