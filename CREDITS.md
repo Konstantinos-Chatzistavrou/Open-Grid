@@ -192,3 +192,15 @@ CC0 1.0 (no credit required; listed with thanks):
 - **Urban Street 01** by Andreas Mischok (https://polyhaven.com/a/urban_street_01). Kit id `urban_street_01`.
 
 <!-- kit-assets:end -->
+
+- **Kaze Kurogane RE-Spec** (`kaze_kurogane_re`, marque `kaze`): Original · OpenGrid Contributors (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Valenza 037 Evo** (`valenza_evo37`, marque `valenza`): Original · OpenGrid Contributors (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Kaze Senkou Tribute** (`kaze_senkou_tr`, marque `kaze`): Original · OpenGrid Contributors (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Valenza Icona SP3** (`valenza_sp3`, marque `valenza`): Original · OpenGrid Contributors (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Falcorn 9R RS Weissach** (`falcorn_9r_rs`, marque `falcorn`): Original · OpenGrid Contributors (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+
+- **Valenza Integrale Evo** (`valenza_integrale`, marque `valenza`): Original · OpenGrid Contributors (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.

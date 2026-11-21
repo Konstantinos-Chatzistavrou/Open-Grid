@@ -605,14 +605,45 @@ async function exportModularParts(outDir, fit) {
     const dt = new GeoBuilder();
     dt.addBox(0, 0.045, -0.02, span * 0.44, 0.016, 0.11, -0.48, 0);
     await save('wing_ducktail', dt, [0.06, 0.06, 0.065, 1.0], 0.28, 0.2);
+
+    // 7b. Towering RS Swan-Neck DRS Wing (`wing_swan_rs.glb`, Reel 5 GT3 RS style)
+    const rs = new GeoBuilder();
+    const hRs = 0.38, chRs = 0.28;
+    rs.addBox(0, hRs, -0.05, span * 0.52, 0.014, chRs * 0.5, -0.14, 0);
+    rs.addBox(0, hRs + 0.055, -0.15, span * 0.51, 0.009, chRs * 0.24, -0.26, 0);
+    rs.addBox(0, 0.035, 0.04, span * 0.44, 0.014, 0.08, -0.38, 0);
+    for (const s of [-1, 1]) {
+      rs.addBox(s * span * 0.52, hRs + 0.02, -0.08, 0.008, 0.135, chRs * 0.72);
+      rs.addBox(s * span * 0.18, hRs * 0.52, 0.02, 0.013, hRs * 0.56, 0.05, 0.16, 0);
+      rs.addBox(s * span * 0.18, hRs + 0.045, -0.02, 0.013, 0.05, 0.08, -0.28, 0);
+    }
+    await save('wing_swan_rs', rs, [0.04, 0.04, 0.045, 1.0], 0.26, 0.22);
+
+    // 7c. Group-B Fender-to-Fender Bridge Wing (`wing_bridge_037.glb`, Reel 2 Kimera EVO37 style)
+    const br = new GeoBuilder();
+    br.addBox(0, 0.22, -0.02, span * 0.49, 0.016, 0.13, -0.12, 0);
+    for (const s of [-1, 1]) {
+      br.addBox(s * span * 0.48, 0.11, 0.02, 0.018, 0.125, 0.20, 0.14, 0);
+    }
+    await save('wing_bridge_037', br, [0.76, 0.79, 0.82, 1.0], 0.22, 0.45);
+
+    // 7d. High-Angle Tilted Rally Roof Spoiler (`wing_rally_roof.glb`, Reel 6 Ice Blue Delta style)
+    const rr = new GeoBuilder();
+    const roofLift = Math.max(0.28, (fit.max[1] - wm.y) + 0.06);
+    rr.addBox(0, roofLift, 0.22, span * 0.39, 0.015, 0.12, -0.54, 0);
+    for (const s of [-1, 1]) {
+      rr.addBox(s * span * 0.38, roofLift - 0.03, 0.24, 0.013, 0.075, 0.14, -0.45, 0);
+    }
+    await save('wing_rally_roof', rr, [0.48, 0.64, 0.76, 1.0], 0.22, 0.42);
   }
 
-  // 8..10. Custom 3D Alloy Rims (`rim_5spoke.glb`, `rim_mesh.glb`, `rim_te37.glb`) centred on hub origin
+  // 8..11. Custom 3D Alloy Rims (`rim_5spoke.glb`, `rim_mesh.glb`, `rim_te37.glb`, `rim_turbofan.glb`) centred on hub origin
   const rRim = (fit.wheels[0]?.r ?? 0.34) * 0.72, wRim = 0.24;
-  for (const [name, spokes, split, col] of [
-    ['rim_5spoke', 5, false, [0.78, 0.80, 0.83, 1.0]],
-    ['rim_mesh', 10, true, [0.72, 0.58, 0.24, 1.0]],
-    ['rim_te37', 6, false, [0.18, 0.16, 0.14, 1.0]],
+  for (const [name, spokes, split, col, turbofan] of [
+    ['rim_5spoke', 5, false, [0.78, 0.80, 0.83, 1.0], false],
+    ['rim_mesh', 10, true, [0.72, 0.58, 0.24, 1.0], false],
+    ['rim_te37', 6, false, [0.18, 0.16, 0.14, 1.0], false],
+    ['rim_turbofan', 16, false, [0.94, 0.96, 0.98, 1.0], true],
   ]) {
     const b = new GeoBuilder();
     const segs = 28;
@@ -621,6 +652,13 @@ async function exportModularParts(outDir, fit) {
       const y0 = Math.sin(a0) * rRim, z0 = Math.cos(a0) * rRim;
       const y1 = Math.sin(a1) * rRim, z1 = Math.cos(a1) * rRim;
       b.addQuad([-wRim * 0.5, y0, z0], [wRim * 0.5, y0, z0], [wRim * 0.5, y1, z1], [-wRim * 0.5, y1, z1]);
+      if (turbofan) {
+        const y0i = Math.sin(a0) * rRim * 0.22, z0i = Math.cos(a0) * rRim * 0.22;
+        const y1i = Math.sin(a1) * rRim * 0.22, z1i = Math.cos(a1) * rRim * 0.22;
+        const y0o = Math.sin(a0) * rRim * 0.84, z0o = Math.cos(a0) * rRim * 0.84;
+        const y1o = Math.sin(a1) * rRim * 0.84, z1o = Math.cos(a1) * rRim * 0.84;
+        b.addQuad([wRim * 0.26, y0i, z0i], [wRim * 0.30, y0o, z0o], [wRim * 0.30, y1o, z1o], [wRim * 0.26, y1i, z1i]);
+      }
     }
     b.addBox(wRim * 0.18, 0, 0, 0.035, rRim * 0.24, rRim * 0.24);
     for (let i = 0; i < spokes; i++) {
@@ -632,10 +670,10 @@ async function exportModularParts(outDir, fit) {
         }
       } else {
         const ym = Math.sin(a) * rRim * 0.54, zm = Math.cos(a) * rRim * 0.54;
-        b.addBox(wRim * 0.22, ym, zm, 0.016, 0.024, rRim * 0.44, -a, 0);
+        b.addBox(wRim * 0.22, ym, zm, 0.016, turbofan ? 0.014 : 0.024, rRim * 0.44, -a, 0);
       }
     }
-    await save(name, b, col, 0.22, 0.88);
+    await save(name, b, col, turbofan ? 0.20 : 0.22, turbofan ? 0.35 : 0.88);
   }
   return written;
 }

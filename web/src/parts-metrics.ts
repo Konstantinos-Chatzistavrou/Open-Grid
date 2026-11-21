@@ -202,6 +202,21 @@ export const PART_METRICS: Record<string, PartMetric> = {
   "drag": 0.039,
   "kg": 6
  },
+ "splitter-rs-struts": {
+  "df": 0.098,
+  "drag": 0.036,
+  "kg": 5.4
+ },
+ "splitter-re-canard": {
+  "df": 0.104,
+  "drag": 0.041,
+  "kg": 5.8
+ },
+ "splitter-sp3-strake": {
+  "df": 0.088,
+  "drag": 0.029,
+  "kg": 4.9
+ },
  "diffuser-plate-11": {
   "df": 0.082,
   "drag": 0.009,
@@ -251,6 +266,11 @@ export const PART_METRICS: Record<string, PartMetric> = {
   "df": 0.091,
   "drag": 0.032,
   "kg": 6
+ },
+ "diffuser-rs-tunnel": {
+  "df": 0.108,
+  "drag": 0.031,
+  "kg": 5.8
  },
  "skirt-blade-21": {
   "df": 0.22,
@@ -302,6 +322,11 @@ export const PART_METRICS: Record<string, PartMetric> = {
   "drag": 0.025,
   "kg": 6
  },
+ "skirt-re-vented": {
+  "df": 0.22,
+  "drag": 0.029,
+  "kg": 5.9
+ },
  "front-smooth": {
   "df": 0.071,
   "drag": 0.038,
@@ -331,6 +356,16 @@ export const PART_METRICS: Record<string, PartMetric> = {
   "df": 0.077,
   "drag": 0.069,
   "kg": 6
+ },
+ "front-rs-canard": {
+  "df": 0.096,
+  "drag": 0.058,
+  "kg": 5.6
+ },
+ "front-sp3-louvre": {
+  "df": 0.089,
+  "drag": 0.044,
+  "kg": 5.8
  },
  "rear-smooth": {
   "df": 0.073,
@@ -391,6 +426,16 @@ export const PART_METRICS: Record<string, PartMetric> = {
   "df": 0.045,
   "drag": 0.007,
   "kg": 6
+ },
+ "hood-rs-nostril": {
+  "df": 0.058,
+  "drag": 0.006,
+  "kg": 4.2
+ },
+ "hood-evo-louvre": {
+  "df": 0.052,
+  "drag": 0.009,
+  "kg": 5.4
  },
  "five-classic": {
   "df": 0,
@@ -538,6 +583,56 @@ export const PART_METRICS: Record<string, PartMetric> = {
   "kg": 3
  },
  "rally-10": {
+  "df": 0,
+  "drag": 0,
+  "kg": 3
+ },
+ "swan-rs": {
+  "df": 0.22,
+  "drag": 0.09,
+  "kg": 6
+ },
+ "bridge-037": {
+  "df": 0.216,
+  "drag": 0.078,
+  "kg": 6
+ },
+ "rally-roof": {
+  "df": 0.108,
+  "drag": 0.04,
+  "kg": 3.37
+ },
+ "hoop-nsx": {
+  "df": 0.128,
+  "drag": 0.057,
+  "kg": 4.65
+ },
+ "re-timeattack": {
+  "df": 0.155,
+  "drag": 0.09,
+  "kg": 6
+ },
+ "turbofan-rally": {
+  "df": 0,
+  "drag": 0,
+  "kg": 3
+ },
+ "bbs-rs-mesh": {
+  "df": 0,
+  "drag": 0,
+  "kg": 3
+ },
+ "re-five-dish": {
+  "df": 0,
+  "drag": 0,
+  "kg": 3
+ },
+ "evo37-tarmac": {
+  "df": 0,
+  "drag": 0,
+  "kg": 3
+ },
+ "sp3-directional": {
   "df": 0,
   "drag": 0,
   "kg": 3

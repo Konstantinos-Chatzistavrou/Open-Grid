@@ -13,36 +13,38 @@ export const CURVES: CurveName[] = ['agx', 'aces', 'neutral', 'uchimura'];
 type Node3 = THREE.Node<'vec3'>;
 type F = THREE.Node<'float'>;
 
-/** Runtime knobs. */
+/** Runtime knobs (default: Tokyo Night — deep petrol-teal shadows, crisp liquid-metallic reflections, punchy neon highlights). */
 export const GRADE = {
-  exposure: uniform(1.45),
-  contrast: uniform(0.1),       // 0..1 blend toward a smoothstep S-curve in display space
-  lift: uniform(0.006),          // raises the black point a hair: no crushed void, hides banding
-  gamma: uniform(1.0),
-  sat: uniform(1.08),
-  shadowTint: uniform(new THREE.Vector3(0.0, 0.10, 0.16)),   // teal, added in shadows
-  highlightTint: uniform(new THREE.Vector3(0.16, 0.08, 0.0)), // warm orange, added in highlights
-  split: uniform(0.25),
+  exposure: uniform(1.54),
+  contrast: uniform(0.28),       // 0..1 blend toward a smoothstep S-curve in display space
+  lift: uniform(0.004),          // tight dark asphalt toe: no milky grey fog, preserves wet reflections
+  gamma: uniform(0.96),
+  sat: uniform(1.18),
+  shadowTint: uniform(new THREE.Vector3(-0.024, 0.075, 0.195)), // Tokyo petrol-teal in deep shadows
+  highlightTint: uniform(new THREE.Vector3(0.18, 0.09, 0.04)),  // crisp warm-neon / cyan specular split
+  split: uniform(0.44),
   dither: uniform(1.0),
-  grain: uniform(0.009),
+  grain: uniform(0.008),
 };
 
 const DEFAULT_GRADE = GRADE;
 
 /**
- * A named look is just a set of the uniforms above. Nothing here is applied by default.
+ * A named look is just a set of the uniforms above.
  *
- * `natural`  - exactly the numbers the game ships with today (documented so a look can be compared against it).
+ * `tokyo_night` - the default look, matched to the Tokyo Night GT3 RS reference (docs/art_direction.md):
+ *   tight dark asphalt toe, deep petrol-teal shadow split, liquid-metallic clearcoat contrast and clean neon halation.
+ * `natural`  - the earlier neutral baseline (documented so looks can be compared against it via ?look=natural).
  * `underground` - the Need for Speed Underground direction (docs/art_direction.md): more exposure in the lights,
  *   harder contrast, saturated colour, a magenta lift in the highlights against teal shadows, a touch more grain.
- *   The lead tunes it against screenshots: `?look=underground` turns it on, and the per-knob overrides
- *   (`?contrast= ?sat= ?split= ?lift= ?exposure= ?grain=`) win over it when both are given.
+ *   `?look=underground` turns it on, and per-knob overrides (`?contrast= ?sat= ?split= ?lift= ?exposure= ?grain=`) win.
  */
 export interface Look {
   exposure: number; contrast: number; lift: number; gamma: number; sat: number; split: number; grain: number;
   shadowTint: [number, number, number]; highlightTint: [number, number, number];
 }
 export const LOOKS: Record<string, Look> = {
+  tokyo_night: { exposure: 1.54, contrast: 0.28, lift: 0.004, gamma: 0.96, sat: 1.18, split: 0.44, grain: 0.008, shadowTint: [-0.024, 0.075, 0.195], highlightTint: [0.18, 0.09, 0.04] },
   natural: { exposure: 1.45, contrast: 0.1, lift: 0.006, gamma: 1.0, sat: 1.08, split: 0.25, grain: 0.009, shadowTint: [0.0, 0.10, 0.16], highlightTint: [0.16, 0.08, 0.0] },
   underground: { exposure: 1.62, contrast: 0.3, lift: 0.012, gamma: 1.04, sat: 1.34, split: 0.55, grain: 0.014, shadowTint: [-0.01, 0.10, 0.24], highlightTint: [0.26, 0.05, 0.20] },
   // Heat: a hot magenta/purple night with cyan-black shadows, stronger contrast and a lifted, coloured black point.

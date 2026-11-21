@@ -1,0 +1,142 @@
+{
+  "schema": "car_visual/1",
+  "name": "Kaze Senkou Tribute",
+  "physics": "cars/kaze_senkou_tr.json",
+  "model": "res://assets/cars/v5/kaze_senkou_tr_hero.glb",
+  "lod_model": "res://assets/cars/v3/vela_gt_traffic.glb",
+  "paint_material": "paint",
+  "default_paint": [
+    0.949,
+    0.957,
+    0.969
+  ],
+  "cg_in_model_m": [
+    0.0,
+    0.464,
+    -0.15
+  ],
+  "wheel_nodes": {
+    "fl": "wheel_FL",
+    "fr": "wheel_FR",
+    "rl": "wheel_RL",
+    "rr": "wheel_RR"
+  },
+  "wheel_visual_offset_m": 0,
+  "collision_box": {
+    "size_m": [
+      2.104,
+      0.826,
+      4.714
+    ],
+    "centre_in_model_m": [
+      0.0,
+      0.645,
+      0.0
+    ],
+    "end_lift_m": 0.12,
+    "end_lift_start_m": 1.791
+  },
+  "headlights": [
+    [
+      -0.715,
+      0.568,
+      2.177
+    ],
+    [
+      0.715,
+      0.568,
+      2.177
+    ]
+  ],
+  "engine_smoke_in_model_m": [
+    0.0,
+    0.8,
+    -0.99
+  ],
+  "lod_distance_m": 32,
+  "driver_seat_m": [
+    0.34,
+    0.31,
+    -0.22
+  ],
+  "driver_scale": 0.92,
+  "panels": {
+    "front": [
+      "bumper_front",
+      "hood",
+      "grille",
+      "drl_L",
+      "drl_R"
+    ],
+    "rear": [
+      "bumper_rear",
+      "taillight_bar",
+      "diffuser"
+    ],
+    "left": [
+      "door_L",
+      "fender_L",
+      "quarter_L",
+      "mirror_L"
+    ],
+    "right": [
+      "door_R",
+      "fender_R",
+      "quarter_R",
+      "mirror_R"
+    ]
+  },
+  "detachable": {
+    "bumper_front": [
+      "front",
+      0.7
+    ],
+    "bumper_rear": [
+      "rear",
+      0.7
+    ],
+    "mirror_L": [
+      "left",
+      0.45
+    ],
+    "mirror_R": [
+      "right",
+      0.45
+    ]
+  },
+  "front_lights": [
+    "beam_L_0",
+    "beam_R_0",
+    "drl_L",
+    "drl_R"
+  ],
+  "rear_lights": [
+    "taillight_bar"
+  ],
+  "exhaust_nozzles": [
+    {
+      "x": -0.118,
+      "y": 0.254,
+      "z": -2.278,
+      "r": 0.055
+    },
+    {
+      "x": -0.05,
+      "y": 0.256,
+      "z": -2.278,
+      "r": 0.055
+    },
+    {
+      "x": 0.118,
+      "y": 0.254,
+      "z": -2.278,
+      "r": 0.055
+    },
+    {
+      "x": 0.05,
+      "y": 0.256,
+      "z": -2.278,
+      "r": 0.055
+    }
+  ]
+}

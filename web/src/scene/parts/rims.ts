@@ -53,6 +53,8 @@ interface Opt {
   hub?: number;
   /** how thick the visible face plate is: spokes sit at this z */
   face?: number;
+  /** flat/conical rally turbofan aero-disc cover with perimeter radial cooling vanes */
+  turbofan?: boolean;
 }
 
 const TAU = Math.PI * 2;
@@ -96,6 +98,14 @@ function build(ctx: RimCtx, o: Opt): THREE.Object3D {
   const face = new THREE.Mesh(mergeGeoms(geoms), ctx.mat);
   face.position.z = faceZ;
   g.add(face);
+
+  // optional flat/conical rally turbofan aero-disc face plate (Reel 6 Ice Blue Delta style)
+  if (o.turbofan) {
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(lipR * 0.82, lipR * 0.84, 0.016 * k, 32), ctx.mat);
+    disc.rotation.x = flat;
+    disc.position.z = faceZ + 0.008 * k;
+    g.add(disc);
+  }
 
   // hub cap
   const hubH = Math.max(0.03, o.t * 1.35) * k;
@@ -180,4 +190,10 @@ export const RIM_SPECS: RimSpec[] = [
   spec({ id: 'rally-6', name: 'Rally 6', spokes: 6, w: 0.090, t: 0.046, dish: 0.008, lip: 0.008, hub: 0.090 }),
   spec({ id: 'rally-8', name: 'Rally 8', spokes: 8, w: 0.078, t: 0.044, dish: 0.008, lip: 0.008, hub: 0.088 }),
   spec({ id: 'rally-10', name: 'Rally 10', spokes: 10, w: 0.064, t: 0.042, dish: 0.008, lip: 0.008, hub: 0.086 }),
+  // 11. Track, Rally & Time-Attack modular wheels (Turbofan, RS Motorsport Mesh, Deep-Dish Five, Group-B Tarmac, Icona Directional)
+  spec({ id: 'turbofan-rally', name: 'Rally Turbofan Disc', spokes: 16, w: 0.018, t: 0.018, dish: 0.008, lip: 0.012, hub: 0.076, turbofan: true }),
+  spec({ id: 'bbs-rs-mesh', name: 'RS Motorsport Mesh', spokes: 10, w: 0.014, t: 0.016, split: 2, dish: 0.048, lip: 0.022, step: true, hub: 0.064 }),
+  spec({ id: 're-five-dish', name: 'RE Deep-Dish Five', spokes: 5, w: 0.056, t: 0.028, dish: 0.082, lip: 0.026, step: true, tilt: -0.06 }),
+  spec({ id: 'evo37-tarmac', name: 'Group-B Tarmac', spokes: 10, w: 0.024, t: 0.026, split: 2, dish: 0.026, lip: 0.016, hub: 0.074 }),
+  spec({ id: 'sp3-directional', name: 'Icona Directional Star', spokes: 5, w: 0.064, t: 0.024, twist: 0.34, dish: 0.024, lip: 0.014, tilt: -0.08 }),
 ];

@@ -155,7 +155,60 @@ function basket(c: WingCtx, spanFrac: number, chord: number, height: number) {
   return g;
 }
 
-// ---- the catalogue: 10 families x 3 variants ----------------------------------------------------------------
+/** RS Swan DRS: towering roof-height gooseneck DRS dual-plane wing with oversized endplates & lower ducktail (Reel 5). */
+function swanRs(c: WingCtx, spanFrac: number, chord: number, height: number) {
+  const g = new THREE.Group();
+  const w = spanOf(c, spanFrac, 2.02), x = cx(c), z = zc(c) - 0.04;
+  const y = c.wb.max.y + height;
+  g.add(part(airfoil(chord, w, 1.15), c, x, y, z, -0.14));
+  g.add(part(airfoil(chord * 0.42, w * 0.98, 1.0), c, x, y + 0.085, z - 0.16, -0.24));
+  g.add(part(airfoil(chord * 0.45, w * 0.86, 0.8), c, x, c.wb.min.y + 0.02, z + 0.06, -0.22));
+  for (const s of [-1, 1]) {
+    g.add(strut(c, height + 0.12, x + s * w * 0.18, (c.wb.max.y + y) / 2, z + 0.04, -0.52));
+    g.add(plate(c, 0.28, chord + 0.32, x + (s * w) / 2, y + 0.02, z - 0.06));
+  }
+  return g;
+}
+
+/** Group-B Bridge: fender-to-fender wide bridge wing with tall swept rear quarter end-fins (Reel 2). */
+function bridgeGroupB(c: WingCtx, spanFrac: number, chord: number, height: number) {
+  const g = new THREE.Group();
+  const w = spanOf(c, spanFrac, 1.98), x = cx(c), z = zc(c);
+  const y = c.wb.max.y + height;
+  g.add(part(airfoil(chord, w), c, x, y, z, -0.12));
+  for (const s of [-1, 1]) {
+    g.add(part(new THREE.BoxGeometry(0.036, height + 0.12, chord + 0.22), c, x + (s * w * 0.96) / 2, (c.wb.min.y + y) / 2 + 0.02, z + 0.04, 0.16));
+  }
+  return g;
+}
+
+/** Rally Roof Tilt: high-angle tilted rally hatch/roof spoiler blade (Reel 6). */
+function rallyRoof(c: WingCtx, spanFrac: number, chord: number, lift: number) {
+  const g = new THREE.Group();
+  const w = spanOf(c, spanFrac, 1.56), x = cx(c);
+  const y = c.box.max.y + lift;
+  const z = c.box.min.z + 0.42;
+  g.add(part(airfoil(chord, w, 0.8), c, x, y, z, -0.52));
+  for (const s of [-1, 1]) {
+    g.add(part(new THREE.BoxGeometry(0.024, 0.16, chord + 0.06), c, x + (s * w * 0.96) / 2, y - 0.03, z + 0.02, -0.45));
+  }
+  return g;
+}
+
+/** Tribute Floating Hoop: sleek low-drag floating hoop wing with integrated boot gurney (Reel 3). */
+function hoopTribute(c: WingCtx, spanFrac: number, chord: number, height: number) {
+  const g = new THREE.Group();
+  const w = spanOf(c, spanFrac, 1.92), x = cx(c), z = zc(c) - 0.02;
+  const y = c.wb.max.y + height;
+  g.add(part(airfoil(chord, w, 0.9), c, x, y, z, -0.08));
+  g.add(part(airfoil(chord * 0.4, w * 0.88, 0.6), c, x, c.wb.min.y + 0.02, z + 0.04, -0.18));
+  for (const s of [-1, 1]) {
+    g.add(part(new THREE.BoxGeometry(0.032, height + 0.06, chord + 0.08), c, x + (s * w * 0.94) / 2, (c.wb.min.y + y) / 2, z + 0.02, 0.14));
+  }
+  return g;
+}
+
+// ---- the catalogue: 10 families x 3 variants + 5 Track / Rally / Time-Attack modular aero wings ---------
 
 type Params = [number, number, number];
 type Build = (c: WingCtx, p: Params) => THREE.Object3D;
@@ -201,7 +254,13 @@ const DEFS: Def[] = [
   { id: 'basket-01', name: 'Basket 01', p: [0.88, 0.24, 0.24], b: (c, [w, ch, h]) => basket(c, w, ch, h) },
   { id: 'basket-02', name: 'Basket 02', p: [0.94, 0.26, 0.32], b: (c, [w, ch, h]) => basket(c, w, ch, h) },
   { id: 'basket-03', name: 'Basket 03', p: [1.0, 0.30, 0.40], b: (c, [w, ch, h]) => basket(c, w, ch, h) },
+
+  { id: 'swan-rs', name: 'RS Swan DRS', p: [1.02, 0.32, 0.40], b: (c, [w, ch, h]) => swanRs(c, w, ch, h) },
+  { id: 'bridge-037', name: 'Group-B Bridge', p: [0.98, 0.26, 0.22], b: (c, [w, ch, h]) => bridgeGroupB(c, w, ch, h) },
+  { id: 'rally-roof', name: 'Integrale Roof Tilt', p: [0.76, 0.24, 0.08], b: (c, [w, ch, l]) => rallyRoof(c, w, ch, l) },
+  { id: 'hoop-nsx', name: 'Tribute Floating Hoop', p: [0.94, 0.22, 0.14], b: (c, [w, ch, h]) => hoopTribute(c, w, ch, h) },
+  { id: 're-timeattack', name: 'RE Time-Attack GT', p: [1.04, 0.28, 0.30], b: (c, [w, ch, h]) => gtSingle(c, w, ch, h, 0.22) },
 ];
 
-/** Exactly 30 wings: Duck, Lip, GT, GT2, Swan, Chassis, Dual, Wide, Pillar, Basket - three variants each. */
+/** 35 wings: 10 standard families (3 variants each) + 5 modular reel wings (RS Swan DRS, Group-B Bridge, Integrale Roof Tilt, Tribute Hoop, RE Time-Attack). */
 export const WING_SPECS: WingSpec[] = DEFS.map((d) => ({ id: d.id, name: d.name, build: (ctx: WingCtx) => d.b(ctx, d.p) }));

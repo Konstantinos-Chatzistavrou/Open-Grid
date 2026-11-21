@@ -266,8 +266,29 @@ export const LOOK_PRESETS: LookPreset[] = [
   {
     id: 'sunset', label: 'Sunset run', blurb: 'Amber metallic with a gold underglow, two-tone roof',
     paint: '#ff7a00', finish: 'metallic',
-    parts: { livery: 4, liveryColor: '#15171c', wing: 'gt', aero: 'gloss', rimColor: '#c8a24a', rimFinish: 'satin',
+    parts: { livery: 4, liveryColor: '#15171c', wing: 'gt-02', aero: 'gloss', rimColor: '#c8a24a', rimFinish: 'satin',
       caliper: '#c0160f', headlights: 'yellow', smokedTails: true, underglow: '#ffb547', tint: 1, exhaust: 'titanium' },
+  },
+  {
+    id: 'tokyo_rs', label: 'Tokyo Night RS', blurb: 'Liquid silver metallic, carbon nostril hood, RS tie-rod splitter, BBS mesh & swan-neck DRS wing',
+    paint: '#bfc8d2', finish: 'metallic',
+    parts: { livery: 0, wing: 'swan-rs', splitter: 'splitter-rs-struts', diffuser: 'diffuser-rs-tunnel', skirt: 'skirt-re-vented',
+      frontB: 'front-rs-canard', hood: 'hood-rs-nostril', fenders: 'fender-rs-louvre', rims: 'bbs-rs-mesh',
+      aero: 'carbon', rimColor: '#9aa0aa', rimFinish: 'satin', caliper: '#e6c619', headlights: 'ice', smokedTails: false, underglow: '', tint: 1, exhaust: 'titanium' },
+  },
+  {
+    id: 'tokyo_re', label: 'Tokyo Touge RE', blurb: 'Deep forest emerald metallic, twin-canard lip, widebody fenders, deep-dish 5-spokes & RE time-attack GT wing',
+    paint: '#0f2419', finish: 'metallic',
+    parts: { livery: 0, wing: 're-timeattack', splitter: 'splitter-re-canard', diffuser: 'diffuser-rs-tunnel', skirt: 'skirt-re-vented',
+      frontB: 'front-canard', hood: 'hood-vented', fenders: 'fender-wide', rims: 're-five-dish',
+      aero: 'carbon', rimColor: '#f4f4f6', rimFinish: 'chrome', caliper: '#c8a24a', headlights: 'white', smokedTails: true, underglow: '', tint: 2, exhaust: 'titanium' },
+  },
+  {
+    id: 'integrale_ice', label: 'Ice Blue Integrale', blurb: 'Glacial ice blue metallic, boxed rally widebody flares, white turbofan discs & tilted rally roof wing',
+    paint: '#7fa8c4', finish: 'metallic',
+    parts: { livery: 0, wing: 'rally-roof', splitter: 'splitter-rs-struts', diffuser: 'diffuser-fins4-12', skirt: 'skirt-deep-23',
+      frontB: 'front-rs-canard', hood: 'hood-evo-louvre', fenders: 'fender-integrale-box', rims: 'turbofan-rally',
+      aero: 'matte', rimColor: '#f4f4f6', rimFinish: 'gloss', caliper: '#c0160f', headlights: 'white', smokedTails: false, underglow: '', tint: 1, exhaust: 'chrome' },
   },
 ];
 /** Apply a preset to the selected car. Returns false for an unknown id (the menu then just re-renders). */

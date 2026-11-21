@@ -28,8 +28,8 @@ export const SHOW_PRESETS: Record<PresetName, ShowPreset> = {
   potato: { ao: false, bloom: false, dof: false, aa: 'fxaa', grain: false, mirror: 0.3, scale: 0.7 },
 };
 
-/** The garage's own grade: an interior at night - a little contrast, cool shadows, warm practicals, restrained. */
-export const SHOW_GRADE = makeGrade({ exposure: 1.0, contrast: 0.24, lift: 0.004, gamma: 1.0, sat: 1.1, split: 0.3, grain: 0.008, shadowTint: [0.0, 0.04, 0.12], highlightTint: [0.1, 0.05, 0.0] });
+/** The garage's own grade: Tokyo Night showroom — crisp contrast, petrol-teal shadow split, liquid-metallic reflections. */
+export const SHOW_GRADE = makeGrade({ exposure: 1.06, contrast: 0.28, lift: 0.003, gamma: 0.97, sat: 1.16, split: 0.38, grain: 0.008, shadowTint: [-0.018, 0.060, 0.165], highlightTint: [0.14, 0.07, 0.03] });
 
 export class ShowroomPost {
   private scenePass: THREE.PassNode;

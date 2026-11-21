@@ -102,3 +102,8 @@ Node.js, and plugs straight into UE 5.8 with zero rework.
   delit, tileable 4K PBR master sets (`CC BY-NC 4.0`, stored on GitHub Releases, exported at 4K PNG for UE 5.8).
 - **Phase E (15 Street Props)**: Ingest your downloaded Sketchfab CC0/CC-BY props into `assets_source/masters/kit/` with
   ledgers, real-world metric scale verification, and UE 5.8 glTF exports (`ue5/SourceArt/Kit/props/`).
+- **24-Car Modular Fleet & 14 UE 5.8 Modular Aftermarket Parts per Car**:
+  - Expanded the fleet to 24 original de-branded cars (`kaze_kurogane_re`, `valenza_evo37`, `kaze_senkou_tr`, `valenza_sp3`, `falcorn_9r_rs`, `valenza_integrale` + the 18 existing cars), all with explicit 3D suspension hardpoints, exact gear tooth counts, licence ledgers (`assets_source/masters/cars/<id>/source.json`), and `tools/ue5/export_cars_for_ue.mjs` export support.
+  - Added 21 new modular aftermarket parts across wings (`swan-rs`, `bridge-037`, `rally-roof`, `hoop-nsx`, `re-timeattack`), rims (`turbofan-rally`, `bbs-rs-mesh`, `re-five-dish`, `evo37-tarmac`, `sp3-directional`), splitters/diffusers/skirts, bumpers, hoods, and widebody flares (`fender-integrale-box`, `fender-rs-louvre`), plus 4 new offline UE 5.8 modular `.glb` part exports (`wing_swan_rs.glb`, `wing_bridge_037.glb`, `wing_rally_roof.glb`, `rim_turbofan.glb` — 14 parts per car in `ue5/Import/<car>/parts/`).
+  - Applied the **Tokyo Night (`tokyo_night`)** color grade (`web/src/fx/grade.ts` + `docs/art_direction.md` UE 5.8 `APostProcessVolume` spec) across both street driving and showroom pipelines.
+

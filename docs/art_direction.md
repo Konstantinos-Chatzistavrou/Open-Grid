@@ -60,3 +60,22 @@ needs a decode step first (strip/convert textures before import). Geometry-only 
 Why not 30 authored options per part: 30 x ~10 parts is 300 bespoke meshes (7-14 months of modelling for one car),
 and kits like Rocket Bunny are trademarked designs. Parametric parts + materials + liveries give the variety without
 either problem; authored kits, if ever wanted, are a separate content track.
+
+## Tokyo Night Color Grading & Scene Quality (`tokyo_night`, default look)
+
+Calibrated directly against the Tokyo Night GT3 RS street photography reference (Akihabara / Tokyo night street triptych — deep petrol-teal shadows, dark reflective wet asphalt, liquid-metallic clearcoat highlights, and crisp electric cyan + warm red-orange neon signage):
+
+- **Target luminance distribution**: `p5 ≈ 0.031`, `p25 ≈ 0.064`, `p50 ≈ 0.142`, `p75 ≈ 0.371`, `p95 ≈ 0.867` (clean dark asphalt toe with zero grey fog, keeping emissive signs and metallic clearcoat reflections razor-sharp).
+- **WebGPU `GRADE` / `LOOKS.tokyo_night` (`web/src/fx/grade.ts`)**:
+  - `exposure: 1.54`, `contrast: 0.28`, `lift: 0.004`, `gamma: 0.96`, `sat: 1.18`, `split: 0.44`, `grain: 0.008`
+  - `shadowTint: [-0.024, 0.075, 0.195]` (deep Tokyo petrol-teal / cyan-slate shadows)
+  - `highlightTint: [0.18, 0.09, 0.04]` (warm neon halation + crisp metallic specular highlight split)
+  - Showroom (`SHOW_GRADE` in `web/src/showroomPost.ts`): `exposure: 1.06`, `contrast: 0.28`, `lift: 0.003`, `gamma: 0.97`, `sat: 1.16`, `split: 0.38`, `shadowTint: [-0.018, 0.060, 0.165]`, `highlightTint: [0.14, 0.07, 0.03]`.
+- **1:1 Unreal Engine 5.8 `APostProcessVolume` Settings**:
+  - **Film (ACES Filmic)**: Slope `0.91`, Toe `0.62`, Shoulder `0.28`, Black Clip `0.00`, White Clip `0.04`.
+  - **Color Grading -> Global**: Saturation `(1.18, 1.18, 1.18, 1.0)`, Contrast `(1.16, 1.16, 1.16, 1.0)`, Gamma `(0.96, 0.96, 0.96, 1.0)`.
+  - **Color Grading -> Shadows** (`ShadowsMax = 0.24`): Gain `(0.94, 1.03, 1.12, 1.0)`, Offset `(-0.008, 0.004, 0.014, 0.0)`.
+  - **Color Grading -> Highlights** (`HighlightsMin = 0.55`): Gain `(1.06, 1.03, 1.01, 1.0)`.
+  - **Bloom**: Method `Convolution` (or Standard `Intensity = 0.68`, `Threshold = 1.42`, `SizeScale = 5.2`) so neon signage and LED lightbars bloom cleanly without washing out clearcoat paint.
+  - **Reflections**: Hardware Ray-Traced Lumen Reflections (`Max Roughness = 0.45`) on wet asphalt and Dual-Layer Clearcoat car paint.
+

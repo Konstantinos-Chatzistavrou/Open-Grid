@@ -260,6 +260,7 @@ export class CarCustomizer {
     const FRONTS: Record<string, [number, number, number, number]> = {
       'front-smooth': [0.004, 0.0, 0.0, 0], 'front-gt': [0.02, 0.025, 0.012, 0], 'front-intake': [0.012, 0.01, 0.02, 0.03],
       'front-split': [0.008, 0.045, 0.014, 0], 'front-canard': [0.026, 0.02, 0.008, 0], 'front-track': [0.036, 0.05, 0.022, 0.02],
+      'front-rs-canard': [0.038, 0.052, 0.024, 0.016], 'front-sp3-louvre': [0.024, 0.038, 0.016, 0.036],
       'front-shell-wide': [0.045, 0.02, 0.0, 0], 'front-shell-track': [0.03, 0.04, 0.03, 0],
     };
     const REARS: Record<string, [number, number, number, number]> = {
@@ -283,6 +284,7 @@ export class CarCustomizer {
       const HOODS_FIT: Record<string, [number, number, number, boolean]> = {
         'hood-smooth': [0.0, 1, 0, false], 'hood-vented': [0.024, 0.7, 0.03, false], 'hood-bulge': [0.03, 0.75, 0, false],
         'hood-power': [0.05, 0.42, 0, false], 'hood-carbon': [0.0, 1, 0, true], 'hood-track': [0.034, 0.6, 0.02, true],
+        'hood-rs-nostril': [0.028, 0.66, 0.038, true], 'hood-evo-louvre': [0.036, 0.78, 0.026, false],
       };
       for (const [id, [h, ws, dip, cf]] of Object.entries(HOODS_FIT)) addBody(id, hood(h, ws, dip, cf ? this.aeroMat : paintMat));
     }

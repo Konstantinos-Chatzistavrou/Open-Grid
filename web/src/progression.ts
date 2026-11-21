@@ -31,6 +31,22 @@ export const CAR_REQ: Record<string, Req> = {
   strix_gt7: { spLevel: 25, mpLevel: 20, price: 260_000 },
   tornado_gt: { spLevel: 1, mpLevel: 12, price: 175_000 },
   tornado_gt3: { spLevel: 1, mpLevel: 22, price: 295_000 },
+  valenza_corsa: { spLevel: 9, mpLevel: 10, price: 245_000 },
+  valenza_fiamma: { spLevel: 8, mpLevel: 9, price: 215_000 },
+  kronos_taurus: { spLevel: 10, mpLevel: 11, price: 270_000 },
+  kronos_fulmine: { spLevel: 7, mpLevel: 8, price: 195_000 },
+  falcorn_9r: { spLevel: 6, mpLevel: 7, price: 180_000 },
+  aether_solis: { spLevel: 11, mpLevel: 12, price: 285_000 },
+  aether_borealis: { spLevel: 12, mpLevel: 13, price: 380_000 },
+  kaze_ryujin: { spLevel: 3, mpLevel: 4, price: 92_000 },
+  kaze_kurogane: { spLevel: 2, mpLevel: 3, price: 74_000 },
+  falcorn_hellhound: { spLevel: 4, mpLevel: 5, price: 105_000 },
+  kaze_kurogane_re: { spLevel: 5, mpLevel: 6, price: 118_000 },
+  valenza_evo37: { spLevel: 8, mpLevel: 9, price: 235_000 },
+  kaze_senkou_tr: { spLevel: 8, mpLevel: 9, price: 225_000 },
+  valenza_sp3: { spLevel: 11, mpLevel: 12, price: 340_000 },
+  falcorn_9r_rs: { spLevel: 9, mpLevel: 10, price: 265_000 },
+  valenza_integrale: { spLevel: 4, mpLevel: 5, price: 98_000 },
 };
 export const STARTER_CAR = 'vela_gt';
 /** Upgrade stages 1..3 per part. */
@@ -59,6 +75,11 @@ export const levelUpCredits = (newLevel: number) => 2_000 + newLevel * 500;
 export const CAR_VMAX_KMH: Record<string, number> = {
   vela_gt: 288, kestrel_gt: 269, harrier_gt: 300, hayate: 258,
   basilisk_v12: 332, strix_gt7: 345, tornado_gt: 318, tornado_gt3: 325,
+  valenza_corsa: 342, valenza_fiamma: 334, kronos_taurus: 352, kronos_fulmine: 326,
+  falcorn_9r: 318, aether_solis: 348, aether_borealis: 412, kaze_ryujin: 298,
+  kaze_kurogane: 292, falcorn_hellhound: 322,
+  kaze_kurogane_re: 308, valenza_evo37: 314, kaze_senkou_tr: 332,
+  valenza_sp3: 348, falcorn_9r_rs: 324, valenza_integrale: 276,
 };
 
 // ---- race rewards ----------------------------------------------------------------------------------------------------

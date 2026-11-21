@@ -334,14 +334,15 @@ RS_TEST(kinematics) {
                     std::abs(ts.roll_centre_rear_m - vrrc0.height_m) < 0.01);
     }
 
-    // ---------------------------------------------------------------- 8. All 18 cars explicit kinematics & gear_teeth verification
+    // ---------------------------------------------------------------- 8. All 24 cars explicit kinematics & gear_teeth verification
     {
-        static const char* kAllCars[18] = {
+        static const char* kAllCars[24] = {
             "aether_borealis", "aether_solis", "basilisk_v12", "falcorn_9r",
-            "falcorn_hellhound", "harrier_gt", "hayate", "kaze_kurogane",
-            "kaze_ryujin", "kestrel_gt", "kronos_fulmine", "kronos_taurus",
-            "strix_gt7", "tornado_gt", "tornado_gt3", "valenza_corsa",
-            "valenza_fiamma", "vela_gt"
+            "falcorn_9r_rs", "falcorn_hellhound", "harrier_gt", "hayate",
+            "kaze_kurogane", "kaze_kurogane_re", "kaze_ryujin", "kaze_senkou_tr",
+            "kestrel_gt", "kronos_fulmine", "kronos_taurus", "strix_gt7",
+            "tornado_gt", "tornado_gt3", "valenza_corsa", "valenza_evo37",
+            "valenza_fiamma", "valenza_integrale", "valenza_sp3", "vela_gt"
         };
         int explicit_kin_count = 0;
         int explicit_teeth_count = 0;
@@ -398,14 +399,14 @@ RS_TEST(kinematics) {
                 }
             }
         }
-        std::printf("         All 18 cars: explicit_kin=%d/18, explicit_teeth=%d/18, max_link_err=%.3e m, max_gear_err=%.3f%%, max_fd_err=%.3f%%\n",
+        std::printf("         All 24 cars: explicit_kin=%d/24, explicit_teeth=%d/24, max_link_err=%.3e m, max_gear_err=%.3f%%, max_fd_err=%.3f%%\n",
                     explicit_kin_count, explicit_teeth_count, worst_link_err_m,
                     worst_gear_rel_err * 100.0, worst_fd_rel_err * 100.0);
-        test::check("All 18 cars have explicit front & rear 3D suspension hardpoints", explicit_kin_count == 18);
-        test::check("All 18 cars have explicit gear_teeth and final_drive_teeth", explicit_teeth_count == 18);
-        test::check("All 18 cars maintain constant link lengths (< 1e-6 m) across travel & steer",
+        test::check("All 24 cars have explicit front & rear 3D suspension hardpoints", explicit_kin_count == 24);
+        test::check("All 24 cars have explicit gear_teeth and final_drive_teeth", explicit_teeth_count == 24);
+        test::check("All 24 cars maintain constant link lengths (< 1e-6 m) across travel & steer",
                     all_poses_ok && worst_link_err_m < 1e-6);
-        test::check("All 18 cars gear tooth ratios match gear_ratios within 0.5%",
+        test::check("All 24 cars gear tooth ratios match gear_ratios within 0.5%",
                     worst_gear_rel_err < 0.005 && worst_fd_rel_err < 0.005);
     }
 }

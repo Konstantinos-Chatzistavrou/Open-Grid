@@ -461,6 +461,202 @@ FLEET = [
         "side_scoop": False,
         "roof_scoop": False,
     },
+    # ---- 6 Modular Street, Group-B & Track Edition Cars ----
+    {
+        "id": "kaze_kurogane_re",
+        "name": "Kaze Kurogane RE-Spec",
+        "brand": "kaze",
+        "paint": "#0f2419",
+        "accent": "#0b0d10",
+        "rim_rgb": (0.86, 0.88, 0.92),
+        "caliper_rgb": (0.88, 0.70, 0.08),
+        "half_len": 2.18,
+        "y_fa": -1.22, "y_ra": 1.22,
+        "wr_f": 0.326, "wr_r": 0.332,
+        "track_f": 0.855, "track_r": 0.875,
+        "top_pts": [(-2.18, 0.38), (-1.96, 0.54), (-1.56, 0.65), (-1.22, 0.71), (-0.65, 0.76), (0.30, 0.80), (1.22, 0.84), (1.94, 0.83), (2.18, 0.71)],
+        "sh_pts":  [(-2.18, 0.38), (-1.90, 0.58), (-1.22, 0.75), (-0.25, 0.74), (0.60, 0.81), (1.22, 0.86), (1.98, 0.84), (2.18, 0.71)],
+        "zb_pts":  [(-2.18, 0.105), (-1.85, 0.100), (1.60, 0.110), (2.00, 0.18), (2.18, 0.25)],
+        "wb_pts":  [(-2.18, 0.64), (-1.94, 0.88), (-1.22, 0.97), (-0.20, 0.88), (0.62, 0.95), (1.22, 0.99), (1.96, 0.90), (2.18, 0.76)],
+        "sh_in":   [(-2.18, 0.07), (-1.22, 0.025), (0.0, 0.085), (1.22, 0.025), (2.18, 0.07)],
+        "cab_y":   [-0.78, -0.35, 0.12, 0.58, 1.04, 1.52, 1.92],
+        "cab_z":   [None, 1.01, 1.20, 1.21, 1.14, 0.96, None],
+        "cab_w":   [None, 0.58, 0.56, 0.54, 0.49, 0.42, None],
+        "crease":  0.38,
+        "head_style": "sleek_pod",
+        "tail_style": "lightbar",
+        "exhaust": "single_cannon",
+        "wing": "re_timeattack",
+        "spokes": "dish5",
+        "hood_vent": True,
+        "side_scoop": True,
+        "roof_scoop": False,
+        "canards": True,
+        "splitter_struts": False,
+    },
+    {
+        "id": "valenza_evo37",
+        "name": "Valenza 037 Evo",
+        "brand": "valenza",
+        "paint": "#c8d0d8",
+        "accent": "#101216",
+        "rim_rgb": (0.78, 0.80, 0.84),
+        "caliper_rgb": (0.85, 0.08, 0.08),
+        "half_len": 2.19,
+        "y_fa": -1.26, "y_ra": 1.24,
+        "wr_f": 0.334, "wr_r": 0.348,
+        "track_f": 0.865, "track_r": 0.895,
+        "top_pts": [(-2.19, 0.42), (-1.98, 0.56), (-1.58, 0.66), (-1.26, 0.72), (-0.70, 0.76), (0.25, 0.80), (1.24, 0.84), (1.96, 0.84), (2.19, 0.74)],
+        "sh_pts":  [(-2.19, 0.42), (-1.92, 0.58), (-1.26, 0.75), (-0.25, 0.75), (0.60, 0.82), (1.24, 0.87), (2.00, 0.85), (2.19, 0.74)],
+        "zb_pts":  [(-2.19, 0.115), (-1.88, 0.110), (1.65, 0.120), (2.04, 0.20), (2.19, 0.27)],
+        "wb_pts":  [(-2.19, 0.64), (-1.96, 0.89), (-1.26, 0.98), (-0.20, 0.90), (0.62, 0.98), (1.24, 1.02), (1.98, 0.95), (2.19, 0.84)],
+        "sh_in":   [(-2.19, 0.05), (-1.26, 0.02), (0.0, 0.07), (1.24, 0.02), (2.19, 0.05)],
+        "cab_y":   [-0.96, -0.52, -0.06, 0.36, 0.76, 1.22, 1.72],
+        "cab_z":   [None, 0.98, 1.19, 1.20, 1.12, 0.94, None],
+        "cab_w":   [None, 0.57, 0.56, 0.54, 0.50, 0.45, None],
+        "crease":  0.82,
+        "head_style": "quad_halo",
+        "tail_style": "quad_round",
+        "exhaust": "center_dual",
+        "wing": "bridge_037",
+        "spokes": "tarmac10",
+        "hood_vent": True,
+        "side_scoop": True,
+        "roof_scoop": False,
+        "fender_louvres": True,
+        "evo_hood_bays": True,
+    },
+    {
+        "id": "kaze_senkou_tr",
+        "name": "Kaze Senkou Tribute",
+        "brand": "kaze",
+        "paint": "#f2f4f7",
+        "accent": "#0c0e12",
+        "rim_rgb": (0.22, 0.24, 0.28),
+        "caliper_rgb": (0.88, 0.06, 0.06),
+        "half_len": 2.27,
+        "y_fa": -1.32, "y_ra": 1.32,
+        "wr_f": 0.336, "wr_r": 0.350,
+        "track_f": 0.855, "track_r": 0.885,
+        "top_pts": [(-2.27, 0.38), (-2.04, 0.52), (-1.62, 0.64), (-1.32, 0.71), (-0.70, 0.76), (0.30, 0.82), (1.32, 0.87), (2.06, 0.86), (2.27, 0.75)],
+        "sh_pts":  [(-2.27, 0.38), (-1.94, 0.56), (-1.32, 0.74), (-0.25, 0.75), (0.65, 0.83), (1.32, 0.89), (2.08, 0.87), (2.27, 0.75)],
+        "zb_pts":  [(-2.27, 0.12), (-1.92, 0.11), (1.70, 0.12), (2.10, 0.21), (2.27, 0.29)],
+        "wb_pts":  [(-2.27, 0.56), (-2.02, 0.84), (-1.32, 0.97), (-0.22, 0.90), (0.66, 0.97), (1.32, 1.01), (2.06, 0.91), (2.27, 0.78)],
+        "sh_in":   [(-2.27, 0.06), (-1.32, 0.02), (-0.10, 0.09), (1.32, 0.02), (2.27, 0.07)],
+        "cab_y":   [-1.18, -0.68, -0.18, 0.28, 0.74, 1.28, 1.86],
+        "cab_z":   [None, 0.94, 1.17, 1.18, 1.12, 0.96, None],
+        "cab_w":   [None, 0.56, 0.55, 0.54, 0.50, 0.44, None],
+        "crease":  0.76,
+        "head_style": "boomerang",
+        "tail_style": "bar_thin",
+        "exhaust": "center_hex",
+        "wing": "hoop_nsx",
+        "spokes": "twin5",
+        "hood_vent": True,
+        "side_scoop": True,
+        "roof_scoop": True,
+        "black_roof": True,
+        "front_fangs": True,
+    },
+    {
+        "id": "valenza_sp3",
+        "name": "Valenza Icona SP3",
+        "brand": "valenza",
+        "paint": "#e60012",
+        "accent": "#0e1014",
+        "rim_rgb": (0.74, 0.77, 0.82),
+        "caliper_rgb": (0.95, 0.80, 0.04),
+        "half_len": 2.34,
+        "y_fa": -1.34, "y_ra": 1.34,
+        "wr_f": 0.340, "wr_r": 0.358,
+        "track_f": 0.875, "track_r": 0.905,
+        "top_pts": [(-2.34, 0.35), (-2.08, 0.50), (-1.64, 0.63), (-1.34, 0.71), (-0.70, 0.75), (0.30, 0.81), (1.34, 0.88), (2.10, 0.87), (2.34, 0.75)],
+        "sh_pts":  [(-2.34, 0.35), (-1.96, 0.57), (-1.34, 0.77), (-0.25, 0.73), (0.68, 0.84), (1.34, 0.91), (2.12, 0.88), (2.34, 0.75)],
+        "zb_pts":  [(-2.34, 0.115), (-1.98, 0.105), (1.74, 0.115), (2.16, 0.21), (2.34, 0.30)],
+        "wb_pts":  [(-2.34, 0.54), (-2.08, 0.86), (-1.34, 1.02), (-0.20, 0.88), (0.70, 1.00), (1.34, 1.05), (2.10, 0.93), (2.34, 0.78)],
+        "sh_in":   [(-2.34, 0.06), (-1.34, 0.02), (-0.15, 0.13), (1.34, 0.02), (2.34, 0.07)],
+        "cab_y":   [-1.22, -0.72, -0.20, 0.24, 0.70, 1.26, 1.84],
+        "cab_z":   [None, 0.93, 1.15, 1.16, 1.10, 0.95, None],
+        "cab_w":   [None, 0.54, 0.53, 0.52, 0.48, 0.41, None],
+        "crease":  0.58,
+        "head_style": "slim",
+        "tail_style": "bar_thin",
+        "exhaust": "dual_high",
+        "wing": "none",
+        "spokes": "blade5",
+        "hood_vent": True,
+        "side_scoop": True,
+        "roof_scoop": False,
+        "black_roof": True,
+        "front_strakes": True,
+        "rear_strakes": True,
+    },
+    {
+        "id": "falcorn_9r_rs",
+        "name": "Falcorn 9R RS Weissach",
+        "brand": "falcorn",
+        "paint": "#bfc8d2",
+        "accent": "#0c0e12",
+        "rim_rgb": (0.18, 0.20, 0.23),
+        "caliper_rgb": (0.95, 0.78, 0.04),
+        "half_len": 2.29,
+        "y_fa": -1.25, "y_ra": 1.23,
+        "wr_f": 0.342, "wr_r": 0.358,
+        "track_f": 0.865, "track_r": 0.915,
+        "top_pts": [(-2.29, 0.40), (-2.06, 0.53), (-1.63, 0.64), (-1.25, 0.72), (-0.72, 0.79), (0.30, 0.84), (1.23, 0.89), (1.94, 0.86), (2.22, 0.79), (2.29, 0.69)],
+        "sh_pts":  [(-2.29, 0.40), (-1.94, 0.62), (-1.25, 0.79), (-0.30, 0.78), (0.60, 0.85), (1.23, 0.92), (1.98, 0.87), (2.29, 0.69)],
+        "zb_pts":  [(-2.29, 0.115), (-1.92, 0.105), (1.66, 0.115), (2.10, 0.20), (2.29, 0.28)],
+        "wb_pts":  [(-2.29, 0.62), (-2.04, 0.88), (-1.25, 0.99), (-0.20, 0.91), (0.65, 1.00), (1.23, 1.06), (1.98, 0.96), (2.29, 0.78)],
+        "sh_in":   [(-2.29, 0.08), (-1.25, 0.025), (0.0, 0.095), (1.23, 0.02), (2.29, 0.08)],
+        "cab_y":   [-0.95, -0.52, -0.05, 0.42, 0.92, 1.48, 1.98],
+        "cab_z":   [None, 1.03, 1.26, 1.27, 1.18, 0.98, None],
+        "cab_w":   [None, 0.58, 0.57, 0.55, 0.50, 0.42, None],
+        "crease":  0.42,
+        "head_style": "oval",
+        "tail_style": "lightbar",
+        "exhaust": "center_dual",
+        "wing": "swan_rs",
+        "spokes": "mesh10",
+        "hood_vent": True,
+        "side_scoop": True,
+        "roof_scoop": False,
+        "carbon_hood_inlay": True,
+        "fender_louvres": True,
+        "canards": True,
+        "splitter_struts": True,
+    },
+    {
+        "id": "valenza_integrale",
+        "name": "Valenza Integrale Evo",
+        "brand": "valenza",
+        "paint": "#7fa8c4",
+        "accent": "#0e1116",
+        "rim_rgb": (0.94, 0.96, 0.98),
+        "caliper_rgb": (0.86, 0.08, 0.08),
+        "half_len": 1.98,
+        "y_fa": -1.24, "y_ra": 1.22,
+        "wr_f": 0.324, "wr_r": 0.324,
+        "track_f": 0.840, "track_r": 0.845,
+        "top_pts": [(-1.98, 0.56), (-1.84, 0.69), (-1.50, 0.77), (-1.24, 0.81), (-0.75, 0.85), (0.35, 0.87), (1.22, 0.89), (1.78, 0.89), (1.98, 0.78)],
+        "sh_pts":  [(-1.98, 0.54), (-1.78, 0.68), (-1.24, 0.80), (-0.30, 0.83), (0.65, 0.86), (1.22, 0.89), (1.82, 0.88), (1.98, 0.78)],
+        "zb_pts":  [(-1.98, 0.125), (-1.72, 0.120), (1.52, 0.125), (1.84, 0.18), (1.98, 0.24)],
+        "wb_pts":  [(-1.98, 0.72), (-1.80, 0.90), (-1.24, 0.96), (-0.25, 0.87), (0.65, 0.90), (1.22, 0.96), (1.80, 0.91), (1.98, 0.82)],
+        "sh_in":   [(-1.98, 0.03), (-1.24, 0.02), (0.0, 0.04), (1.22, 0.02), (1.98, 0.035)],
+        "cab_y":   [-0.78, -0.38, 0.10, 0.64, 1.18, 1.54, 1.84],
+        "cab_z":   [None, 1.15, 1.38, 1.39, 1.38, 1.35, None],
+        "cab_w":   [None, 0.63, 0.62, 0.62, 0.61, 0.58, None],
+        "crease":  0.94,
+        "head_style": "quad_halo",
+        "tail_style": "racetrack",
+        "exhaust": "single_cannon",
+        "wing": "rally_roof",
+        "spokes": "turbofan",
+        "hood_vent": True,
+        "side_scoop": False,
+        "roof_scoop": False,
+        "canards": True,
+        "evo_hood_bays": True,
+    },
 ]
 
 
@@ -523,27 +719,45 @@ def build_wheel(name, side, loc, radius, width, spoke_style, mats, root):
         "ultra7": (7,  [(0.0, 0.0)], 0.013),
         "blade5": (5,  [(0.0, 0.16)], 0.026),
         "te6":    (6,  [(0.0, 0.0)], 0.022),
+        "dish5":  (5,  [(0.0, 0.0)], 0.024),
+        "tarmac10": (10, [(-0.04, -0.10), (0.04, 0.10)], 0.009),
+        "turbofan": (16, [(0.0, 0.0)], 0.012),
     }
     n_spokes, branches, hw0 = patterns.get(spoke_style, (5, [(0.0, 0.0)], 0.016))
-    for s_idx in range(n_spokes):
-        base_a = 2 * math.pi * s_idx / n_spokes
-        for a0_off, a1_off in branches:
-            rows = []
-            for k in range(5):
-                t = k / 4.0
-                r = 0.056 + (rim_r - 0.012 - 0.056) * t
-                th = base_a + lerp(a0_off, a1_off, t)
-                hw = hw0 * (1.0 - 0.28 * t)
-                x_face = (0.064 + 0.036 * (t ** 1.35)) * side
-                depth = 0.020 * side
-                c_, s_ = math.cos(th), math.sin(th)
-                tx, ty = -s_, c_
-                pts = [bm_r.verts.new((x_face - depth * dsg, r * c_ + tx * hw * wsg, r * s_ + ty * hw * wsg))
-                       for wsg, dsg in ((-1, 0), (1, 0), (1, 1), (-1, 1))]
-                rows.append(pts)
-            for k in range(4):
-                for j in range(4):
-                    bm_r.faces.new((rows[k][j], rows[k][(j + 1) % 4], rows[k + 1][(j + 1) % 4], rows[k + 1][j]))
+    if spoke_style == "turbofan":
+        # Flat/conical rally Turbofan aero-disc face with 16 perimeter radial cooling vane slots
+        n_ring_tf = 32
+        r_in, r_mid, r_out = 0.052, rim_r * 0.80, rim_r - 0.008
+        x_in, x_mid, x_out = 0.068 * side, 0.088 * side, 0.082 * side
+        ring_in = [bm_r.verts.new((x_in, r_in * math.cos(2 * math.pi * i / n_ring_tf), r_in * math.sin(2 * math.pi * i / n_ring_tf))) for i in range(n_ring_tf)]
+        ring_mid = [bm_r.verts.new((x_mid, r_mid * math.cos(2 * math.pi * i / n_ring_tf), r_mid * math.sin(2 * math.pi * i / n_ring_tf))) for i in range(n_ring_tf)]
+        ring_out = [bm_r.verts.new((x_out, r_out * math.cos(2 * math.pi * i / n_ring_tf), r_out * math.sin(2 * math.pi * i / n_ring_tf))) for i in range(n_ring_tf)]
+        for i in range(n_ring_tf):
+            ni = (i + 1) % n_ring_tf
+            bm_r.faces.new((ring_in[i], ring_in[ni], ring_mid[ni], ring_mid[i]))
+            if i % 2 == 0:  # alternating perimeter cooling vanes
+                bm_r.faces.new((ring_mid[i], ring_mid[ni], ring_out[ni], ring_out[i]))
+    else:
+        for s_idx in range(n_spokes):
+            base_a = 2 * math.pi * s_idx / n_spokes
+            for a0_off, a1_off in branches:
+                rows = []
+                for k in range(5):
+                    t = k / 4.0
+                    r = 0.056 + (rim_r - 0.012 - 0.056) * t
+                    th = base_a + lerp(a0_off, a1_off, t)
+                    hw = hw0 * (1.0 - 0.28 * t)
+                    dish_recess = 0.024 if spoke_style == "dish5" else 0.0
+                    x_face = (0.064 - dish_recess + 0.036 * (t ** 1.35)) * side
+                    depth = 0.020 * side
+                    c_, s_ = math.cos(th), math.sin(th)
+                    tx, ty = -s_, c_
+                    pts = [bm_r.verts.new((x_face - depth * dsg, r * c_ + tx * hw * wsg, r * s_ + ty * hw * wsg))
+                           for wsg, dsg in ((-1, 0), (1, 0), (1, 1), (-1, 1))]
+                    rows.append(pts)
+                for k in range(4):
+                    for j in range(4):
+                        bm_r.faces.new((rows[k][j], rows[k][(j + 1) % 4], rows[k + 1][(j + 1) % 4], rows[k + 1][j]))
     bmesh.ops.recalc_face_normals(bm_r, faces=bm_r.faces)
     bm_obj(bm_r, f"{name}_rim", mats["rim"], parent=w_root)
 
@@ -556,7 +770,7 @@ def build_wheel(name, side, loc, radius, width, spoke_style, mats, root):
             (0.064, 0.080, 0.160), (0, 0, 0), root, bevel=0.014)
 
 
-def build_wing(style, half_len, tail_z, tail_w, mats, root):
+def build_wing(style, half_len, tail_z, tail_w, mats, root, spec=None):
     if style == "none":
         return
     # Parent all stock wing parts cleanly under an object named `wing` so Garage spoilers swap it cleanly!
@@ -591,6 +805,42 @@ def build_wing(style, half_len, tail_z, tail_w, mats, root):
         add_bar(0, y_rear, tail_z + 0.15, w_span * 0.92, 0.20, 0.034, -4)
         for sx in (-w_span * 0.44, w_span * 0.44):
             add_bar(sx, y_rear, tail_z + 0.06, 0.045, 0.22, 0.18, 8)
+    elif style == "hoop_nsx":
+        # Floating NSX Tribute hoop wing + low deck gurney lip
+        add_bar(0, y_rear + 0.02, tail_z + 0.12, w_span * 0.94, 0.22, 0.028, -6)
+        add_bar(0, half_len - 0.06, tail_z + 0.03, w_span * 0.88, 0.09, 0.024, -14)
+        for sx in (-w_span * 0.45, w_span * 0.45):
+            add_bar(sx, y_rear + 0.01, tail_z + 0.05, 0.038, 0.26, 0.14, 12)
+    elif style == "bridge_037":
+        # Kimera EVO37 / Group B wide bridge wing spanning fender to fender with tall quarter fins
+        add_bar(0, y_rear + 0.02, tail_z + 0.22, w_span * 0.98, 0.24, 0.034, -8)
+        for sx in (-w_span * 0.48, w_span * 0.48):
+            add_bar(sx, y_rear - 0.04, tail_z + 0.11, 0.036, 0.42, 0.25, 10)
+    elif style == "re_timeattack":
+        # Tokyo backroads RX-7 FD wide low-drag time-attack carbon GT wing
+        add_bar(0, y_rear + 0.05, tail_z + 0.27, w_span * 1.06, 0.26, 0.030, -8)
+        for sx in (-0.48, 0.48):
+            add_bar(sx, y_rear, tail_z + 0.13, 0.024, 0.20, 0.28, 12)
+        for sx in (-w_span * 0.53, w_span * 0.53):
+            add_bar(sx, y_rear + 0.05, tail_z + 0.25, 0.016, 0.34, 0.20, 0)
+    elif style == "swan_rs":
+        # 992 GT3 RS towering roof-height swan-neck DRS dual-element wing + lower ducktail
+        h = 0.40
+        add_bar(0, y_rear + 0.06, tail_z + h, w_span * 1.04, 0.28, 0.032, -8)
+        add_bar(0, y_rear + 0.14, tail_z + h + 0.06, w_span * 1.02, 0.12, 0.022, -16)
+        add_bar(0, half_len - 0.08, tail_z + 0.04, w_span * 0.86, 0.11, 0.042, -22)
+        for sx in (-0.31, 0.31):
+            add_bar(sx, y_rear - 0.02, tail_z + h * 0.52, 0.026, 0.22, h * 1.08, 14)
+        for sx in (-w_span * 0.52, w_span * 0.52):
+            add_bar(sx, y_rear + 0.08, tail_z + h + 0.01, 0.018, 0.42, 0.26, 0)
+    elif style == "rally_roof":
+        # Lancia Delta Integrale high-angle tilted rally roof hatch spoiler
+        cab_y = spec["cab_y"][-2] if spec else half_len - 0.44
+        cab_z = (spec["cab_z"][-2] if (spec and spec["cab_z"][-2] is not None) else 1.35)
+        rw = (spec["cab_w"][-2] if (spec and spec["cab_w"][-2] is not None) else 0.58)
+        add_bar(0, cab_y + 0.06, cab_z + 0.10, rw * 2.04, 0.24, 0.030, -32)
+        for sx in (-rw * 0.98, rw * 0.98):
+            add_bar(sx, cab_y + 0.05, cab_z + 0.08, 0.026, 0.26, 0.14, -28)
     elif style == "jdm_high":
         add_bar(0, y_rear + 0.02, tail_z + 0.25, w_span * 0.98, 0.24, 0.032, -6)
         for sx in (-0.52, 0.52):
@@ -607,7 +857,7 @@ def build_wing(style, half_len, tail_z, tail_w, mats, root):
             add_bar(sx, y_rear + 0.05, tail_z + h - 0.02, 0.018, 0.34, 0.22, 0)
 
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    mat = mats["paint"] if style in ("hoop_street", "lip_muscle") else mats["carbon"]
+    mat = mats["paint"] if style in ("hoop_street", "lip_muscle", "bridge_037", "rally_roof") else mats["carbon"]
     bm_obj(bm, "wing", mat, parent=root)
 
 
@@ -854,7 +1104,11 @@ def sculpt_car(spec, out_path):
             apply_mods(body)
             bpy.data.objects.remove(cyl, do_unlink=True)
 
-    PART_MAT = {"underbody": "under", "skirt": "carbon", "glass": "glass", "trim_window": "trim", "roof": "paint"}
+    PART_MAT = {
+        "underbody": "under", "skirt": "carbon", "glass": "glass", "trim_window": "trim",
+        "roof": "accent" if spec.get("black_roof") else "paint",
+        "pillar": "accent" if spec.get("black_roof") else "paint",
+    }
 
     def split_parts(ob, rename=None):
         src = bmesh.new()
@@ -908,6 +1162,15 @@ def sculpt_car(spec, out_path):
             if h1 is None:
                 add_box(f"drl_{tag}", mats["drl"], (sgn * 0.62, -hl + 0.22, nose_z + 0.14), (0.20, 0.22, 0.06), (14, 0, sgn * -12), root, bevel=0.015)
             add_box(f"beam_{tag}_0", mats["beam"], (sgn * 0.62, -hl + 0.20, nose_z + 0.13), (0.11, 0.12, 0.05), (14, 0, sgn * -12), root, bevel=0.012)
+        elif hs == "sleek_pod":
+            # Recessed carbon endurance twin-projector pods + lower fog lamps (RX-7 FD RE-Amemiya style)
+            ly = -hl + 0.34
+            lz = TOP(ly) + 0.008
+            lx = min(WB(ly) - 0.14, 0.62)
+            add_box(f"lamp_pod_{tag}", mats["carbon"], (sgn * lx, ly, lz - 0.012), (0.26, 0.24, 0.046), (12, 0, sgn * -8), root, bevel=0.008)
+            for k, ox in enumerate((-0.055, 0.055)):
+                add_cyl(f"beam_{tag}_{k}", mats["beam"], (sgn * (lx + ox), ly - 0.02, lz + 0.004), 0.036, 0.04, (78, 0, 0), 16, root)
+            add_box(f"drl_{tag}", mats["drl"], (sgn * (lx + 0.02), -hl + 0.07, 0.23), (0.14, 0.05, 0.065), (0, 0, 0), root, bevel=0.008)
         elif hs == "quad_halo":
             for k, ox in enumerate((0.50, 0.70)):
                 h = projected_patch(surf, f"beam_{tag}_{k}", mats["beam"],
@@ -957,9 +1220,39 @@ def sculpt_car(spec, out_path):
     for fx in (-0.42, -0.18, 0.18, 0.42):
         add_box(f"diff_fin_{fx:+.2f}", mats["carbon"], (fx, hl - 0.02, 0.18), (0.020, 0.24, 0.15), (-14, 0, 0), root)
 
-    # ---- Hood Vent, Side Scoops, Roof Scoop, Wing Mirrors & Interior Tub ----
-    if spec["hood_vent"]:
+    # ---- Hood Vent, Side Scoops, Roof Scoop, Modded Aero Details, Wing Mirrors & Interior Tub ----
+    if spec.get("carbon_hood_inlay"):
+        add_box("hood_carbon_inlay", mats["carbon"], (0, spec["y_fa"] + 0.02, TOP(spec["y_fa"] + 0.02) + 0.008), (0.76, 0.88, 0.018), (9, 0, 0), root, bevel=0.006)
+        for sgn, tag in ((1, "L"), (-1, "R")):
+            add_box(f"hood_nostril_{tag}", mats["grille"], (sgn * 0.22, spec["y_fa"] - 0.10, TOP(spec["y_fa"] - 0.10) + 0.018), (0.18, 0.34, 0.026), (11, 0, 0), root, bevel=0.006)
+    elif spec.get("evo_hood_bays"):
+        for sgn, tag in ((1, "L"), (-1, "R")):
+            add_box(f"hood_bay_{tag}", mats["grille"], (sgn * 0.30, spec["y_fa"] + 0.06, TOP(spec["y_fa"] + 0.06) + 0.014), (0.30, 0.44, 0.024), (8, 0, 0), root, bevel=0.006)
+    elif spec["hood_vent"]:
         add_box("hood_vent", mats["grille"], (0, spec["y_fa"] + 0.08, TOP(spec["y_fa"] + 0.08) + 0.012), (0.48, 0.36, 0.024), (8, 0, 0), root, bevel=0.006)
+    if spec.get("canards"):
+        for sgn, tag in ((1, "L"), (-1, "R")):
+            cx = WB(-hl + 0.24) + 0.03
+            add_box(f"canard_{tag}_0", mats["carbon"], (sgn * cx, -hl + 0.20, 0.22), (0.11, 0.22, 0.014), (10, sgn * -16, sgn * -14), root, bevel=0.003)
+            add_box(f"canard_{tag}_1", mats["carbon"], (sgn * cx, -hl + 0.24, 0.31), (0.09, 0.18, 0.014), (12, sgn * -18, sgn * -16), root, bevel=0.003)
+    if spec.get("splitter_struts"):
+        for sgn, tag in ((1, "L"), (-1, "R")):
+            add_cyl(f"splitter_strut_{tag}", mats["chrome"], (sgn * 0.24, -hl + 0.02, 0.19), 0.008, 0.17, (12, 0, 0), 10, root)
+    if spec.get("fender_louvres"):
+        for sgn, tag in ((1, "L"), (-1, "R")):
+            fx = WB(spec["y_fa"]) - 0.14
+            fz = SH_Z(spec["y_fa"]) + 0.015
+            add_box(f"fender_louvre_F{tag}", mats["carbon"], (sgn * fx, spec["y_fa"] - 0.02, fz), (0.14, 0.36, 0.018), (4, sgn * 10, 0), root, bevel=0.004)
+    if spec.get("front_fangs"):
+        for sgn, tag in ((1, "L"), (-1, "R")):
+            add_box(f"front_fang_{tag}", mats["accent"], (sgn * (nose_w * 0.72), -hl + 0.10, 0.30), (0.14, 0.12, 0.26), (0, 0, sgn * -14), root, bevel=0.010)
+    if spec.get("front_strakes"):
+        for sgn, tag in ((1, "L"), (-1, "R")):
+            for k, sz in enumerate((0.20, 0.26, 0.32)):
+                add_box(f"front_strake_{tag}_{k}", mats["paint"], (sgn * (nose_w * 0.68), -hl + 0.08, sz), (0.28, 0.10, 0.018), (0, 0, sgn * -12), root, bevel=0.004)
+    if spec.get("rear_strakes"):
+        for k, sz in enumerate((0.40, 0.48, 0.56, 0.64)):
+            add_box(f"rear_strake_{k}", mats["accent"], (0, hl - 0.02, sz), (tail_w * 1.66, 0.08, 0.018), (0, 0, 0), root, bevel=0.004)
     if spec["side_scoop"]:
         for sgn, tag in ((1, "L"), (-1, "R")):
             sx = WB(0.42) - 0.03
@@ -981,7 +1274,7 @@ def sculpt_car(spec, out_path):
 
     # ---- Exhausts, Separated Stock Wing & Wheels ----
     build_exhausts(spec["exhaust"], hl, mats, root)
-    build_wing(spec["wing"], hl, TOP(hl - 0.14), tail_w, mats, root)
+    build_wing(spec["wing"], hl, TOP(hl - 0.14), tail_w, mats, root, spec=spec)
 
     for wx, wy, wr, tag in wheel_specs:
         w_tyre = 0.255 if wy < 0 else 0.315

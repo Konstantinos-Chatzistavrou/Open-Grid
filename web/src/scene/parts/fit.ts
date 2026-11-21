@@ -256,6 +256,7 @@ export interface SplitterP {
   /** only the outer thirds (a gap in the middle) */ split?: boolean;
   /** the middle third stands further out by this much */ step?: number;
   /** the tips turn up by this much */ curl?: number;
+  /** twin tie-rod support struts from the front lip to the bumper intake (GT3 RS style) */ struts?: boolean;
 }
 export function fittedSplitter(fit: BodyFit, mat: THREE.Material, p: SplitterP): THREE.Object3D {
   const g = new THREE.Group(), T = new Tris();
@@ -289,6 +290,10 @@ export function fittedSplitter(fit: BodyFit, mat: THREE.Material, p: SplitterP):
       st.push({ x: s * (fit.corner(z, s) - 0.012), z, ox: s, oz: 0, inw: 0.012, outw: 0.02 + 0.06 * Math.sin(Math.PI * Math.min(1, e * 1.15)) * (1 - 0.25 * k), y: fit.ground + 0.4 + k * 0.1 + e * 0.06 });
     }
     ribbon(st, 0.01, T);
+  }
+  if (p.struts) for (const s of [-1, 1]) {
+    const x = s * hw * 0.28, z = fit.nose(x).z;
+    plate(x, z + p.out * 0.55, x, z + 0.01, y, y + 0.19, y + 0.19, 0.011, T);
   }
   g.add(meshOf(T, mat, 'splitter'));
   return g;
@@ -393,6 +398,9 @@ export const SPLITTERS_FIT: Record<string, SplitterP> = {
   'splitter-twin-08': { out: 0.08, twin: true },
   'splitter-side-09': { out: 0.085, split: true, plates: 0.06 },
   'splitter-aggr-10': { out: 0.13, t: 0.02, plates: 0.11, canards: 2, twin: true },
+  'splitter-rs-struts': { out: 0.115, t: 0.02, plates: 0.08, canards: 2, struts: true },
+  'splitter-re-canard': { out: 0.125, t: 0.018, plates: 0.12, canards: 2, curl: 0.03 },
+  'splitter-sp3-strake': { out: 0.095, t: 0.016, step: 0.04, canards: 1, plates: 0.05 },
 };
 export const DIFFUSERS_FIT: Record<string, DiffuserP> = {
   'diffuser-plate-11': { out: 0.03 },
@@ -405,6 +413,7 @@ export const DIFFUSERS_FIT: Record<string, DiffuserP> = {
   'diffuser-vane-18': { out: 0.07, fins: 3, kick: 0.09 },
   'diffuser-step-19': { out: 0.08, twin: true },
   'diffuser-endplate-20': { out: 0.08, fins: 3, plates: 0.09 },
+  'diffuser-rs-tunnel': { out: 0.105, fins: 6, finH: 0.11, plates: 0.08, kick: 0.10, twin: true },
 };
 export const SKIRTS_FIT: Record<string, SkirtP> = {
   'skirt-blade-21': { out: 0.04 },
@@ -417,6 +426,7 @@ export const SKIRTS_FIT: Record<string, SkirtP> = {
   'skirt-angled-28': { out: 0.05, rake: 0.03 },
   'skirt-lip-29': { out: 0.045, lip: 0.03 },
   'skirt-cap-30': { out: 0.06, fins: 0.05, lip: 0.02 },
+  'skirt-re-vented': { out: 0.072, winglet: 0.09, fins: 0.08, lip: 0.024 },
 };
 /**
  * Where a replacement panel meets the rest of THIS car. A reshaped bumper or hood must not move where it touches a

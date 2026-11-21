@@ -36,6 +36,8 @@ export const WIDEBODY: Record<string, WidebodyP> = {
   'fender-bolt': { w: 0.07, reach: 0.52, bolts: true },
   'fender-race': { w: 0.086, reach: 0.58, sill: 0.38 },
   'fender-extreme': { w: 0.11, reach: 0.66, sill: 0.46, bolts: true },
+  'fender-integrale-box': { w: 0.092, reach: 0.60, sill: 0.44, bolts: true },
+  'fender-rs-louvre': { w: 0.082, reach: 0.56, sill: 0.34 },
 };
 
 /** wheel track spacer (m) that keeps the tyres filling the widened arches */
