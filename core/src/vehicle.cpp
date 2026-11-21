@@ -334,7 +334,7 @@ WheelContact Vehicle::resolve_footprint_16(const WheelFootprint16Rays& footprint
         const double dz_x = r - std::sqrt(std::max(0.0, r * r - dx * dx));
         const double dz_y = 0.0028 * (dy / 0.095) * (dy / 0.095);
         const double eff_dist = hits[i].distance + dz_x + dz_y;
-        const int rib = clamp(footprint.rib_index[i], 0, 2);
+        const int rib = std::clamp(footprint.rib_index[i], 0, 2);
         rib_min_dist[rib] = std::min(rib_min_dist[rib], eff_dist);
 
         if (eff_dist < best_eff_dist) {
@@ -1088,7 +1088,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             active_drive_teeth = std::abs(cfg_.drivetrain.gear_teeth[out.gear][1]);
         } else if (out.gear < static_cast<int>(cfg_.drivetrain.gear_ratios.size())
                    && std::abs(cfg_.drivetrain.gear_ratios[out.gear]) > 1e-6) {
-            active_drive_teeth = clamp(static_cast<int>(std::lround(65.0 / (1.0 + std::abs(cfg_.drivetrain.gear_ratios[out.gear])))), 12, 42);
+            active_drive_teeth = std::clamp(static_cast<int>(std::lround(65.0 / (1.0 + std::abs(cfg_.drivetrain.gear_ratios[out.gear])))), 12, 42);
         }
     }
     out.gear_whine_hz = (active_drive_teeth > 0)

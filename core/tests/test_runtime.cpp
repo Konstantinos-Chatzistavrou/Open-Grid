@@ -293,7 +293,7 @@ RS_TEST(fixed_step) {
                 c.advance_ns(f);
                 if (c.alpha() < 0.0 || c.alpha() >= 1.0) exact = false;
             }
-            const std::uint64_t want = static_cast<std::uint64_t>((static_cast<__int128>(total) * rate) / 1000000000);
+            const std::uint64_t want = (static_cast<std::uint64_t>(total) * static_cast<std::uint64_t>(rate)) / 1000000000ull;
             if (c.ticks() != want) exact = false;
         }
         char what[96];

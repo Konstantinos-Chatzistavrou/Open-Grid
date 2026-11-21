@@ -482,7 +482,7 @@ std::shared_ptr<const AxleKinematicsTable> AxleKinematicsTable::build(
     const int ns = tbl->n_s_;
     tbl->grid_.resize(static_cast<std::size_t>(nz * ns));
 
-    const int iz0 = clamp(static_cast<int>(std::lround((0.0 - dz_min) * tbl->inv_dz_step_)), 0, nz - 1);
+    const int iz0 = std::clamp(static_cast<int>(std::lround((0.0 - dz_min) * tbl->inv_dz_step_)), 0, nz - 1);
     const int is0 = tbl->steered_ ? (ns / 2) : 0;
 
     auto dz_at = [&](int iz) { return dz_min + (dz_max - dz_min) * (static_cast<double>(iz) / (nz - 1)); };
