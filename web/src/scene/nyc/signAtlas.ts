@@ -199,6 +199,9 @@ const CITY_TEXT: Record<string, Partial<SignTexts>> = {
     idx2: "PSI 100",
     shops: [["FARMÁCIA DO ROSSIO", "SERVIÇO PERMANENTE"], ["TASCA DO FADO", "PETISCOS · VINHO VERDE"], ["PASTELARIA BELÉM NOVA", "PASTÉIS DE NATA"], ["BANCO ATLÂNTICO", "MULTIBANCO 24H"], ["RELOJOARIA VARENNE", "RELÓGIOS SUÍÇOS"], ["GINJINHA DA BAIXA", "DESDE 1840"], ["CAFÉ AZULEJO", "BICA · TORRADAS"], ["ELETRÓNICA CHIADO", "TELEMÓVEIS"]],
   },
+  crete: {
+    shops: [["ΤΑΒΕΡΝΑ ΣΦΑΚΙΑ", "ΚΡΗΤΙΚΗ ΚΟΥΖΙΝΑ"], ["ΚΑΦΕΝΕΙΟ ΙΜΠΡΟΣ", "ΚΑΦΕΣ · ΤΣΙΚΟΥΔΙΑ"], ["ΦΟΥΡΝΟΣ ΛΕΥΚΑ ΟΡΗ", "ΠΑΞΙΜΑΔΙΑ · ΑΡΤΟΣ"], ["ΠΑΝΤΟΠΩΛΕΙΟ ΚΟΜΗΤΑΔΕΣ", "ΤΟΠΙΚΑ ΠΡΟΪΟΝΤΑ"], ["ΦΑΡΜΑΚΕΙΟ ΧΩΡΑΣ", "ΔΙΗΜΕΡΕΥΟΝ"], ["ΤΑΒΕΡΝΑ ΛΙΜΑΝΙ", "ΦΡΕΣΚΑ ΨΑΡΙΑ"], ["ΚΑΦΕ ΛΙΒΥΚΟ", "ΕΣΠΡΕΣΟ · ΠΑΓΩΤΑ"], ["ΕΡΓΑΣΤΗΡΙΟ ΚΕΡΑΜΙΚΗΣ", "ΧΕΙΡΟΠΟΙΗΤΑ"]],
+  },
   berlin: {
     perfTop: "KURFÜRSTENDAMM · PARIS · BERLIN",
     perfAddr: "MAISON VALENTIN · KURFÜRSTENDAMM",

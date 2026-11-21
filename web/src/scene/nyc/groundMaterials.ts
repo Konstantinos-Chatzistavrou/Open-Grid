@@ -9,12 +9,12 @@
 // Special UVs: `crosswalk` uses LOCAL metres (u across the road, v along it, 0..3.2) so the zebra bars are drawn by the shader at any road angle.
 import * as THREE from 'three/webgpu';
 import {
-  uv, vec2, vec3, float, mix, smoothstep, step, fract, floor, abs, max, min, clamp, hash, vertexColor, positionView, time,
+  uv, vec2, vec3, float, mix, smoothstep, step, fract, floor, abs, max, min, clamp, hash, vertexColor, positionView, positionWorld, time,
   bumpMap, length, normalWorld, uniform, mod, sin,
 } from 'three/tsl';
 import { noise01, worleyEdge } from '../../fx/noiseTex';
 
-export const GROUND_MATERIAL_NAMES = ['road', 'sidewalk', 'curb', 'marking', 'crosswalk', 'plaza', 'grass', 'water', 'rail'] as const;
+export const GROUND_MATERIAL_NAMES = ['road', 'sidewalk', 'curb', 'marking', 'crosswalk', 'plaza', 'grass', 'water', 'rail', 'terrain', 'shoulder', 'guardrail'] as const;
 export type GroundMaterialName = typeof GROUND_MATERIAL_NAMES[number];
 
 // Manhattan's street grid is rotated 29 degrees from true north: slabs and pavers are laid out along it, so they line up with the kerbs.
@@ -44,9 +44,14 @@ const SIDEWALKS: Record<string, Sidewalk> = {
   seoul: { kind: 'paver', a: 0.3, b: 0.15, col: [0.17, 0.15, 0.14], bond: true },
   singapore: { kind: 'paver', a: 0.2, b: 0.1, col: [0.15, 0.095, 0.075], bond: true },
   melbourne: { kind: 'slab', a: 0.6, b: 0.3, col: [0.06, 0.065, 0.075], bond: true },
+  crete: { kind: 'slab', a: 0.55, b: 0.4, col: [0.34, 0.31, 0.26], bond: true },
 };
 let SW: Sidewalk = { kind: 'slab', a: 1.52, b: 1.52, col: [0.165, 0.162, 0.158] };
-export function setGroundCity(id: string) { SW = SIDEWALKS[id] ?? { kind: 'slab', a: 1.5, b: 1.5, col: [0.165, 0.162, 0.158] }; }
+let isRuralGround = false;
+export function setGroundCity(id: string) {
+  SW = SIDEWALKS[id] ?? { kind: 'slab', a: 1.5, b: 1.5, col: [0.165, 0.162, 0.158] };
+  isRuralGround = id === 'crete';
+}
 
 /** Dynamic rain wetness uniform (0.15 dry night sheen .. 1.0 full rainstorm puddles): zero-cost uniform update. */
 const roadWetnessU = uniform(0.45);
@@ -86,10 +91,10 @@ function road() {
   const inX = step(x0, loc.x).mul(step(loc.x, x0.add(h2.mul(0.5).add(0.12))));
   const inY = step(y0, loc.y).mul(step(loc.y, y0.add(h2.mul(0.25).add(0.12))));
   const patch = step(h1, 0.14).mul(inX).mul(inY);
-  // NYC cast-iron manhole covers (r = 0.42 m with tar collar & waffle pattern)
+  // NYC cast-iron manhole covers (r = 0.42 m with tar collar & waffle pattern); omitted on rural mountain roads
   const mcs = vec2(12.0, 19.0);
   const mCell = floor(R.div(mcs));
-  const mHas = step(cellHash(mCell.add(vec2(19.0, 3.0))), 0.58).mul(step(0.84, ao));
+  const mHas = isRuralGround ? float(0) : step(cellHash(mCell.add(vec2(19.0, 3.0))), 0.58).mul(step(0.84, ao));
   const mCtr = vec2(0.32, 0.32).add(vec2(cellHash(mCell), cellHash(mCell.add(vec2(7.0, 13.0)))).mul(0.36));
   const mDist = length(fract(R.div(mcs)).sub(mCtr).mul(mcs));
   const manhole = float(1).sub(smoothstep(0.39, 0.43, mDist)).mul(mHas);
@@ -101,14 +106,15 @@ function road() {
   // puddles: large-scale noise peaks plus the gutter (low baked alpha at the kerb) collecting water, scaled dynamically by worldClock wetness
   const gutter = float(1).sub(smoothstep(0.76, 0.98, ao));
   const pudBase = max(smoothstep(0.58, 0.74, n01(P.mul(0.068).add(vec2(3.1, 9.4)))), gutter.mul(smoothstep(0.45, 0.72, wearMid))).mul(float(1).sub(manhole));
-  const pud = clamp(pudBase.mul(mix(0.42, 1.35, roadWetnessU)), 0.0, 1.0);
+  const pudScale = isRuralGround ? smoothstep(0.3, 0.85, roadWetnessU).mul(1.35) : mix(0.42, 1.35, roadWetnessU);
+  const pud = clamp(pudBase.mul(pudScale), 0.0, 1.0);
   let albedo: any = vec3(0.028, 0.030, 0.036).mul(mix(0.72, 1.38, wearLo)).mul(mix(0.88, 1.12, wearMid)).mul(float(0.88).add(grain.mul(0.24)));
   albedo = albedo.mul(mix(1.0, 0.65, patch)).mul(mix(1.0, 0.52, crack)).mul(mix(1.0, 0.86, tireTrack)).mul(mix(1.0, 0.45, mCollar));
   const ironCol = vec3(0.065, 0.058, 0.054).mul(float(0.82).add(waffle.mul(0.35)));
   albedo = mix(albedo, ironCol, manhole).mul(mix(1.0, 0.48, pud)).mul(mix(0.52, 1.0, ao));
   m.colorNode = albedo;
-  let rough: any = float(0.29).add(grain.mul(0.15).mul(near)).add(float(1).sub(wearLo).mul(0.06)).sub(tireTrack.mul(0.07)).add(patch.mul(0.05)).add(crack.mul(0.38));
-  rough = rough.mul(mix(1.18, 0.76, roadWetnessU));
+  let rough: any = float(isRuralGround ? 0.48 : 0.29).add(grain.mul(0.15).mul(near)).add(float(1).sub(wearLo).mul(0.06)).sub(tireTrack.mul(0.07)).add(patch.mul(0.05)).add(crack.mul(0.38));
+  rough = rough.mul(isRuralGround ? mix(1.35, 0.52, roadWetnessU) : mix(1.18, 0.76, roadWetnessU));
   rough = mix(rough, float(0.36).sub(waffle.mul(0.12)), manhole);
   rough = mix(rough, float(0.022), pud);
   m.roughnessNode = clamp(rough, 0.02, 1.0);
@@ -266,6 +272,63 @@ function rail() {
   return m;
 }
 
+function terrain() {
+  // Mediterranean mountain terrain (Crete Lefka Ori / Imbros Gorge): stratified pale limestone cliffs on steep slopes,
+  // dry rocky maquis scrub and olive earth on gentler ground, wet-rock darkening & subtle sheen when raining.
+  const m = std(0.86);
+  const macro = n01(P.mul(0.012).add(vec2(3.7, 8.1)));
+  const mid = n01(P.mul(0.085).add(vec2(11.2, 4.3)));
+  const fine = n01(P.mul(1.8));
+  const rockMask = smoothstep(0.87, 0.68, normalWorld.y).max(smoothstep(0.68, 0.84, macro));
+  // Horizontal limestone strata bands modulated by world height + noise
+  const strata = sin(positionWorld.y.mul(0.55).add(macro.mul(5.0)).add(mid.mul(1.6))).mul(0.5).add(0.5);
+  const limestone = mix(vec3(0.15, 0.14, 0.125), vec3(0.28, 0.255, 0.22), strata.mul(0.55).add(mid.mul(0.45)));
+  const earth = mix(vec3(0.11, 0.095, 0.07), vec3(0.17, 0.145, 0.105), mid);
+  const maquis = mix(vec3(0.042, 0.062, 0.028), vec3(0.072, 0.092, 0.038), mid.mul(0.6).add(macro.mul(0.4)));
+  const slopeGround = mix(maquis, earth, smoothstep(0.42, 0.72, macro));
+  let col: any = mix(slopeGround, limestone, rockMask).mul(float(0.84).add(fine.mul(0.32).mul(near)));
+  col = col.mul(mix(1.0, 0.72, roadWetnessU));
+  m.colorNode = col;
+  const rough = mix(float(0.92), float(0.76), rockMask).mul(mix(1.0, 0.62, roadWetnessU));
+  m.roughnessNode = clamp(rough, 0.32, 0.96);
+  m.normalNode = bumpMap(strata.mul(0.35).mul(rockMask).add(mid.mul(0.4)).add(fine.mul(0.45)), near.mul(0.55));
+  return m;
+}
+
+function shoulder() {
+  // Compacted pale limestone gravel roadside shoulder
+  const m = std(0.84);
+  const big = n01(P.mul(0.18).add(vec2(1.4, 7.2)));
+  const grain = n01(P.mul(7.5));
+  const pebble = n01(P.mul(22.0));
+  let col: any = mix(vec3(0.11, 0.105, 0.095), vec3(0.19, 0.18, 0.16), big).mul(float(0.86).add(grain.mul(0.28).mul(near)));
+  col = col.mul(mix(0.62, 1.0, ao)).mul(mix(1.0, 0.66, roadWetnessU));
+  m.colorNode = col;
+  m.roughnessNode = clamp(float(0.84).sub(big.mul(0.1)).mul(mix(1.0, 0.62, roadWetnessU)), 0.35, 0.95);
+  m.normalNode = bumpMap(grain.mul(0.5).add(pebble.mul(0.35)), near.mul(0.45));
+  return m;
+}
+
+function guardrail() {
+  // Galvanized corrugated W-beam highway guard rail with retroreflective cat's-eye delineators every 6 m
+  const m = std(0.38);
+  const rib = sin(P.y.mul(36.0)).mul(0.5).add(0.5);
+  const wear = n01(P.mul(1.8));
+  const col = vec3(0.42, 0.44, 0.46).mul(vc.rgb).mul(float(0.85).add(rib.mul(0.25))).mul(mix(0.82, 1.1, wear));
+  // Retroreflective amber/white marker strips along the rail face (every 6 m, mid-beam)
+  const side = float(1).sub(step(0.5, normalWorld.y));
+  const reflX = step(fract(P.x.div(6.0)), 0.032);
+  const reflY = step(0.60, P.y).mul(step(P.y, 0.74));
+  const refl = side.mul(reflX).mul(reflY);
+  const reflCol = vec3(1.0, 0.72, 0.22);
+  m.colorNode = mix(col, reflCol, refl);
+  m.emissiveNode = reflCol.mul(refl.mul(0.55));
+  m.metalnessNode = mix(float(0.65), float(0.1), refl);
+  m.roughnessNode = mix(float(0.34).add(wear.mul(0.18)), float(0.2), refl);
+  m.normalNode = bumpMap(rib.mul(0.45), near.mul(0.35));
+  return m;
+}
+
 let cached: Record<GroundMaterialName, THREE.Material> | null = null;
 
 /** Shared singletons keyed by the glb material names. Compile them once (renderer.compileAsync) before the first tile streams in. */
@@ -274,6 +337,7 @@ export function createGroundMaterials(): Record<string, THREE.Material> {
   cached = {
     road: road(), sidewalk: sidewalk(), curb: curb(), marking: paint('marking'), crosswalk: paint('crosswalk'),
     plaza: plaza(), grass: grass(), water: water(), rail: rail(),
+    terrain: terrain(), shoulder: shoulder(), guardrail: guardrail(),
   };
   for (const [k, m] of Object.entries(cached)) m.name = k;
   return cached;

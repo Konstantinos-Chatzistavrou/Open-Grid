@@ -66,7 +66,7 @@ export function limitsOf(phys: any): CarLimits {
   };
 }
 
-/** The route as a closed, smoothed driving line every 2 m: centre (ground height), right vector, room either side, curvature. */
+/** The route as a closed (or point-to-point when closed=false), smoothed driving line every 2 m: centre (ground height), right vector, room either side, curvature. */
 export class Lane {
   readonly pts: THREE.Vector3[];
   readonly right: THREE.Vector3[] = [];
@@ -75,19 +75,27 @@ export class Lane {
   readonly curv: number[] = [];
   readonly length: number;
   readonly n: number;
+  readonly closed: boolean;
 
-  constructor(samples: RouteSample[]) {
+  constructor(samples: RouteSample[], closed = true) {
+    this.closed = closed;
     const src = samples.map((p) => new THREE.Vector3(p.x, p.z, -p.y));   // core Z-up -> three (x, z, -y)
-    // resample to STEP m (closed loop)
+    // resample to STEP m
     const m = src.length, raw: THREE.Vector3[] = [], wl: number[] = [], wr: number[] = [];
-    for (let i = 0; i < m; i++) {
+    const lastEdge = closed ? m : m - 1;
+    for (let i = 0; i < lastEdge; i++) {
       const a = src[i], b = src[(i + 1) % m], d = a.distanceTo(b), k = Math.max(1, Math.round(d / STEP));
       for (let j = 0; j < k; j++) {
         raw.push(a.clone().lerp(b, j / k));
         wl.push(samples[i].width_left); wr.push(samples[i].width_right);
       }
     }
+    if (!closed && m > 0) {
+      raw.push(src[m - 1].clone());
+      wl.push(samples[m - 1].width_left); wr.push(samples[m - 1].width_right);
+    }
     const n = raw.length;
+    const clampIdx = (k: number) => (closed ? ((k % n) + n) % n : Math.max(0, Math.min(n - 1, k)));
     // round the corners: the route turns 90 degrees within one 7 m sample; a car takes them wide
     let cur = raw.map((p) => p.clone());
     const W = 5;
@@ -95,7 +103,7 @@ export class Lane {
       const next = cur.map((p) => p.clone());
       for (let i = 0; i < n; i++) {
         let x = 0, z = 0;
-        for (let k = -W; k <= W; k++) { const q = cur[(i + k + n) % n]; x += q.x; z += q.z; }
+        for (let k = -W; k <= W; k++) { const q = cur[clampIdx(i + k)]; x += q.x; z += q.z; }
         next[i].x = x / (2 * W + 1); next[i].z = z / (2 * W + 1);
       }
       cur = next;
@@ -103,41 +111,45 @@ export class Lane {
     let acc = 0;
     const s: number[] = [];
     for (let i = 0; i < n; i++) { if (i) acc += cur[i].distanceTo(cur[i - 1]); s.push(acc); }
-    const total = acc + cur[n - 1].distanceTo(cur[0]);
+    const total = closed ? acc + cur[n - 1].distanceTo(cur[0]) : acc;
     // equal spacing again (smoothing bunches points in corners), then tangents and curvature
-    const pts: THREE.Vector3[] = [], segs = Math.round(total / STEP);
+    const pts: THREE.Vector3[] = [], segs = Math.max(4, Math.round(total / STEP));
     for (let j = 0, i = 0; j < segs; j++) {
-      const target = (j * total) / segs;
+      const target = closed ? (j * total) / segs : (j * total) / Math.max(1, segs - 1);
       while (i < n - 1 && s[i + 1] <= target) i++;
+      const nxtI = closed ? (i + 1) % n : Math.min(n - 1, i + 1);
       const s1 = i + 1 < n ? s[i + 1] : total;
-      pts.push(cur[i].clone().lerp(cur[(i + 1) % n], (target - s[i]) / Math.max(1e-6, s1 - s[i])));
+      pts.push(cur[i].clone().lerp(cur[nxtI], (target - s[i]) / Math.max(1e-6, s1 - s[i])));
       this.wl.push(wl[i]); this.wr.push(wr[i]);
     }
     this.n = segs;
+    const idxAt = (k: number) => (closed ? ((k % segs) + segs) % segs : Math.max(0, Math.min(segs - 1, k)));
     const head: number[] = [];
     for (let i = 0; i < segs; i++) {
-      const a = pts[(i - 1 + segs) % segs], b = pts[(i + 1) % segs];
+      const a = pts[idxAt(i - 1)], b = pts[idxAt(i + 1)];
       head.push(Math.atan2(b.x - a.x, b.z - a.z));
       this.right.push(new THREE.Vector3(-(b.z - a.z), 0, b.x - a.x).normalize());   // forward x up
     }
     for (let i = 0; i < segs; i++) {
       // heading change over +-3 points (12 m) / 12 m
-      let d = head[(i + 3) % segs] - head[(i - 3 + segs) % segs];
+      let d = head[idxAt(i + 3)] - head[idxAt(i - 3)];
       while (d > Math.PI) d -= 2 * Math.PI;
       while (d < -Math.PI) d += 2 * Math.PI;
       this.curv.push(Math.abs(d) / (6 * STEP));
     }
     this.pts = pts;
-    this.length = segs * STEP;   // points are total/segs apart: within 0.1 % of STEP
+    this.length = closed ? segs * STEP : (segs - 1) * STEP;   // points are total/segs apart: within 0.1 % of STEP
   }
 
-  wrap(s: number) { return ((s % this.length) + this.length) % this.length; }
-  idx(s: number) { return Math.floor(this.wrap(s) / STEP) % this.n; }
+  wrap(s: number) { return this.closed ? ((s % this.length) + this.length) % this.length : Math.max(0, Math.min(this.length, s)); }
+  idx(s: number) { return Math.min(this.n - 1, Math.floor(this.wrap(s) / STEP)); }
 
   /** Point at arc length s, lat metres right of the line (ground height of the line; the car keeps its own). */
   at(s: number, lat: number, out: THREE.Vector3) {
     s = this.wrap(s);
-    const i = Math.floor(s / STEP) % this.n, j = (i + 1) % this.n, f = s / STEP - Math.floor(s / STEP);
+    const i = Math.min(this.n - 1, Math.floor(s / STEP));
+    const j = this.closed ? (i + 1) % this.n : Math.min(this.n - 1, i + 1);
+    const f = i === j ? 0 : s / STEP - Math.floor(s / STEP);
     out.lerpVectors(this.pts[i], this.pts[j], f);
     out.x += (this.right[i].x * (1 - f) + this.right[j].x * f) * lat;
     out.z += (this.right[i].z * (1 - f) + this.right[j].z * f) * lat;
@@ -167,8 +179,11 @@ export class Lane {
   /** Speed profile for one driver: corner limits, then braking zones (two backward passes round the loop). */
   profile(aLat: number, aBrake: number, vmax: number) {
     const v = this.curv.map((k) => Math.min(vmax, Math.sqrt(aLat / Math.max(1e-5, k))));
-    for (let pass = 0; pass < 2; pass++)
-      for (let i = this.n - 1; i >= 0; i--) v[i] = Math.min(v[i], Math.sqrt(v[(i + 1) % this.n] ** 2 + 2 * aBrake * STEP));
+    if (!this.closed && v.length) v[v.length - 1] = 0;
+    const passes = this.closed ? 2 : 1;
+    const start = this.closed ? this.n - 1 : this.n - 2;
+    for (let pass = 0; pass < passes; pass++)
+      for (let i = start; i >= 0; i--) v[i] = Math.min(v[i], Math.sqrt(v[(i + 1) % this.n] ** 2 + 2 * aBrake * STEP));
     return v;
   }
 }
@@ -228,13 +243,13 @@ export class AiTraffic {
   private tmpLin = { x: 0, y: 0, z: 0 };
   private tmpAng = { x: 0, y: 0, z: 0 };
 
-  private constructor(private pw: PhysicsWorld, samples: RouteSample[]) {
-    this.lane = new Lane(samples);
+  private constructor(private pw: PhysicsWorld, samples: RouteSample[], closed = true) {
+    this.lane = new Lane(samples, closed);
   }
 
   /** Must run after the city's colliders are queryable (after the first world.step()). */
-  static async create(scene: THREE.Scene, pw: PhysicsWorld, cfg: CarVisualConfig, samples: RouteSample[], count: number, black: boolean, phys: any) {
-    const ai = new AiTraffic(pw, samples);
+  static async create(scene: THREE.Scene, pw: PhysicsWorld, cfg: CarVisualConfig, samples: RouteSample[], count: number, black: boolean, phys: any, closed = true) {
+    const ai = new AiTraffic(pw, samples, closed);
     if (!count) return ai;
     const lim = limitsOf(phys);
     // The traffic version of the car (lod_model: same parts and materials, ~28k triangles, 1k
@@ -328,8 +343,8 @@ export class AiTraffic {
   }
 
   /** Rebind traffic & rivals to a new city's route during seamless city switching. */
-  setRoute(samples: RouteSample[]) {
-    this.lane = new Lane(samples);
+  setRoute(samples: RouteSample[], closed = true) {
+    this.lane = new Lane(samples, closed);
     this.grid = [];
     this.playerS = 0;
     this.dragCarIdx = -1;
@@ -490,7 +505,8 @@ export class AiTraffic {
   /** Heading along the lane, plus the angle of any sideways move. */
   private orient(c: AiCar, latRate: number) {
     // flat on the road: heading only (yaw), never pitch or roll. Own vectors: f, x and up must not share storage.
-    const f = this.lane.at(c.s + 2.5, c.lat, this.of).sub(this.lane.at(c.s - 2.5, c.lat, this.b)).setY(0).normalize();
+    const s0 = this.lane.closed ? c.s : Math.max(2.5, Math.min(this.lane.length - 2.5, c.s));
+    const f = this.lane.at(s0 + 2.5, c.lat, this.of).sub(this.lane.at(s0 - 2.5, c.lat, this.b)).setY(0).normalize();
     if (c.v > 0.5 && latRate) f.applyAxisAngle(UP, -Math.atan2(latRate, c.v));
     c.quat.setFromAxisAngle(UP, Math.atan2(f.x, f.z) - c.yawOff);
   }

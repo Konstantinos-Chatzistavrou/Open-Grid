@@ -21,6 +21,7 @@ export class Minimap {
   private named: { x: number; y: number; name: string }[] = [];
   private landmarks: Landmark[] = [];
   private route: { x: number; y: number }[] = [];
+  private routeClosed = true;
   private routeS: number[] = [];
   private routeLen = 0;
   private turns: Turn[] = [];
@@ -130,12 +131,14 @@ export class Minimap {
     this.landmarks = list;
   }
 
-  /** The race route (game frame samples; closed loop). */
-  setRoute(samples: { x: number; y: number }[]) {
+  /** The race route (game frame samples; closed loop by default, or point-to-point when closed=false). */
+  setRoute(samples: { x: number; y: number }[], closed = true) {
     this.route = samples.map((p) => ({ x: p.x, y: p.y }));
+    this.routeClosed = closed;
     this.routeS = []; let acc = 0;
     for (let i = 0; i < this.route.length; i++) {
       this.routeS.push(acc);
+      if (!closed && i === this.route.length - 1) break;
       const a = this.route[i], b = this.route[(i + 1) % this.route.length];
       acc += Math.hypot(b.x - a.x, b.y - a.y);
     }
@@ -169,10 +172,12 @@ export class Minimap {
 
   /** Route point at arc length s, written into `out` (reused: 75 calls per draw). */
   private routeAt(s: number, out: { x: number; y: number }) {
-    s = ((s % this.routeLen) + this.routeLen) % this.routeLen;
+    s = this.routeClosed ? ((s % this.routeLen) + this.routeLen) % this.routeLen : Math.max(0, Math.min(this.routeLen, s));
     let lo = 0, hi = this.routeS.length - 1;
     while (hi - lo > 1) { const m = (lo + hi) >> 1; if (this.routeS[m] <= s) lo = m; else hi = m; }
-    const a = this.route[lo], b = this.route[(lo + 1) % this.route.length], l = (this.routeS[lo + 1] ?? this.routeLen) - this.routeS[lo];
+    const a = this.route[lo];
+    const bIdx = this.routeClosed ? (lo + 1) % this.route.length : Math.min(this.route.length - 1, lo + 1);
+    const b = this.route[bIdx], l = (this.routeS[lo + 1] ?? this.routeLen) - this.routeS[lo];
     const t = l > 0 ? (s - this.routeS[lo]) / l : 0;
     out.x = a.x + (b.x - a.x) * t; out.y = a.y + (b.y - a.y) * t;
     return out;
@@ -261,7 +266,8 @@ export class Minimap {
       c.strokeStyle = 'rgba(255, 45, 85, 0.35)'; c.lineWidth = Math.max(4, 5 * this.zoom);
       c.beginPath();
       for (let i = 0; i < this.route.length; i++) { const p = this.route[i]; if (i) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); }
-      c.closePath(); c.stroke();
+      if (this.routeClosed) c.closePath();
+      c.stroke();
       if (routeS !== null) {
         c.beginPath();
         for (let d = 0; d <= 600; d += 8) { const p = this.routeAt(routeS + d, this.rp); if (d) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); }

@@ -292,6 +292,19 @@ export const CITIES: CityInfo[] = [
       { name: "Avenida da Liberdade", x: -461, y: 810 },
       { name: "Cais do Sodré", x: -513, y: -500 },
     ] },
+  { id: 'crete', name: "Crete — Imbros Pass", district: "Imbros Gorge to Chora Sfakion", country: 'GR', base: '/assets/cities/crete/tiles/', route: '/data/tracks/crete_route.json', grid: 0,
+    drive: 'right', map: `${OSM} & Copernicus WorldDEM-30 (EU/ESA)`, blurb: "15.6 km 1:1 Cretan mountain pass: 17 cliffside hairpins dropping 760 m from Imbros Gorge through Komitades to Chora Sfakion on the Libyan Sea.",
+    mandatoryCops: false, patrolNote: 'Optional Cop Mode in Race Events',
+    landmarks: [
+      { name: "Imbros Village", x: 974, y: 3351 },
+      { name: "Imbros Gorge Rim", x: 373, y: 1886 },
+      { name: "Gorge Rock Galleries", x: 73, y: 821 },
+      { name: "Upper Switchbacks", x: 191, y: -433 },
+      { name: "Sfakia Hairpins", x: -46, y: -1342 },
+      { name: "Komitades", x: 728, y: -1720 },
+      { name: "Libyan Sea Overlook", x: -683, y: -2530 },
+      { name: "Chora Sfakion", x: -2149, y: -2518 },
+    ] },
 ];
 
 const KEY = 'nr.city';
