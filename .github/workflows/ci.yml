@@ -61,6 +61,8 @@ jobs:
           node-version: 20
       - name: Validate Car Physics Assets (Anti-Cheat / Poly Bounds)
         run: node tools/validate_mod.mjs --dir data/cars
+      - name: Licence ledgers (kit and car assets) and the CREDITS.md "Kit assets" section
+        run: node tools/assets/check_licences.mjs
       - name: Typecheck & Build WebGPU Client
         working-directory: web
         run: |
