@@ -13,7 +13,9 @@
 #pragma once
 #include "rs/math.hpp"
 #include "rs/vehicle.hpp"
+#include "rs/vehicle_runtime.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -173,5 +175,132 @@ inline UeVec3 ue_rotate(const UeQuat& q, const UeVec3& v) {
     Vec3 r = vv + t * q.w + cross(u, t);
     return {r.x, r.y, r.z};
 }
+
+// ---- Lock-free async physics bridge (game thread <-> Chaos / physics thread) ------------------------------------
+// Replaces mutexes between UOpenGridVehicleComponent::TickComponent (game thread) and AsyncPhysicsTickComponent
+// (physics thread) with lock-free SPSC rings (commands, impacts, step records via rt::VehicleRuntime) and wait-free
+// triple buffers (rays physics -> game, traced ground planes + strips game -> physics). Zero UE dependencies so it
+// can be tested directly in core/tests/.
+constexpr int kMaxRaysPerWheel = 16;
+
+struct RayFrame {
+    int rays_per_wheel = 3;
+    bool valid = false;
+    std::array<std::array<WheelRay, kMaxRaysPerWheel>, 4> rays{};
+};
+
+struct GroundFrame {
+    int rays_per_wheel = 3;
+    bool has_strips = false;
+    bool use_strip = true;
+    std::array<std::array<GroundSample, kMaxRaysPerWheel>, 4> planes{};
+    std::array<GroundStrip, 4> strips{};
+};
+
+class AsyncVehicleBridge {
+public:
+    AsyncVehicleBridge(Vehicle& vehicle, Controls& controls)
+        : vehicle_(&vehicle), runtime_(vehicle, controls) {}
+    AsyncVehicleBridge(const AsyncVehicleBridge&) = delete;
+    AsyncVehicleBridge& operator=(const AsyncVehicleBridge&) = delete;
+
+    // ---- setup (before physics thread runs, or single-threaded) -------------------------------------------------
+    /** Build and publish the initial wheel rays so the first game-thread trace has valid ray origins. */
+    void seed_rays(const ChassisState& chassis, int rays_per_wheel) {
+        RayFrame& rf = rays_tb_.write_buffer();
+        build_rays_into(chassis, rays_per_wheel, rf);
+        rays_tb_.publish();
+    }
+
+    // ---- game / render thread -----------------------------------------------------------------------------------
+    bool submit_command(const rt::VehicleCommand& cmd) { return runtime_.submit(cmd); }
+    bool submit_impact(const rt::ImpactCommand& imp) { return runtime_.submit_impact(imp); }
+
+    /** Fetch the newest rays produced by the physics thread; returns true if rays_read() updated. */
+    bool fetch_rays() { return rays_tb_.fetch(); }
+    const RayFrame& current_rays() const { return rays_tb_.read_buffer(); }
+
+    /** Fill ground planes/strips in place (vectors keep capacity across cycles), then call publish_ground(). */
+    GroundFrame& ground_write_buffer() { return ground_tb_.write_buffer(); }
+    void publish_ground() { ground_tb_.publish(); }
+
+    template <typename F>
+    std::size_t drain_records(F&& f) {
+        return runtime_.drain(std::forward<F>(f));
+    }
+    bool latest_record(rt::StepRecord& out) { return runtime_.latest(out); }
+
+    // ---- physics thread (fixed rate, lock-free, wait-free) ------------------------------------------------------
+    const VehicleOutput& step(const ChassisState& chassis, double dt) {
+        ground_tb_.fetch();
+        const GroundFrame& g = ground_tb_.read_buffer();
+        const int per_wheel = (g.rays_per_wheel == 16 || g.rays_per_wheel == 3 || g.rays_per_wheel == 1)
+                                  ? g.rays_per_wheel
+                                  : 3;
+
+        RayFrame& rf = rays_tb_.write_buffer();
+        build_rays_into(chassis, per_wheel, rf);
+        const std::array<WheelContact, 4> contacts = resolve_contacts(rf, g, per_wheel);
+        rays_tb_.publish();
+
+        return runtime_.step(chassis, contacts, dt);
+    }
+
+    const rt::RuntimeStats& stats() const { return runtime_.stats; }
+    rt::VehicleRuntime<>& runtime() { return runtime_; }
+    const rt::VehicleRuntime<>& runtime() const { return runtime_; }
+
+private:
+    void build_rays_into(const ChassisState& chassis, int per_wheel, RayFrame& out) {
+        out.rays_per_wheel = per_wheel;
+        if (per_wheel == 16) {
+            footprint_rays_ = vehicle_->wheel_footprint_16_rays(chassis);
+            for (int w = 0; w < 4; ++w)
+                for (int j = 0; j < 16; ++j) out.rays[w][j] = footprint_rays_[w].rays[j];
+        } else if (per_wheel == 3) {
+            patch_rays_ = vehicle_->wheel_contact_patch_rays(chassis);
+            for (int w = 0; w < 4; ++w)
+                for (int j = 0; j < 3; ++j) out.rays[w][j] = patch_rays_[w].rays[j];
+        } else {
+            const std::array<WheelRay, 4> r = vehicle_->wheel_rays(chassis);
+            for (int w = 0; w < 4; ++w) out.rays[w][0] = r[w];
+        }
+        out.valid = true;
+    }
+
+    std::array<WheelContact, 4> resolve_contacts(const RayFrame& rf, const GroundFrame& g, int per_wheel) const {
+        std::array<WheelContact, 4> contacts{};
+        for (int w = 0; w < 4; ++w) {
+            const double radius = vehicle_->config().tire(w).radius;
+            auto hit = [&](int j) {
+                if (g.has_strips && g.use_strip) {
+                    WheelContact from_strip;
+                    if (g.strips[w].lookup(rf.rays[w][j], from_strip)) return from_strip;
+                }
+                const GroundSample& s = g.planes[w][j];
+                return intersect_ground_plane(rf.rays[w][j], s.hit, s.point, s.normal, s.surface);
+            };
+            if (per_wheel == 16) {
+                std::array<WheelContact, 16> sub{};
+                for (int j = 0; j < 16; ++j) sub[j] = hit(j);
+                contacts[w] = Vehicle::resolve_footprint_16(footprint_rays_[w], sub, radius);
+            } else if (per_wheel == 3) {
+                const std::array<WheelContact, 3> sub = {hit(0), hit(1), hit(2)};
+                contacts[w] = Vehicle::resolve_contact_patch(patch_rays_[w], sub, radius);
+            } else {
+                contacts[w] = hit(0);
+            }
+        }
+        return contacts;
+    }
+
+    Vehicle* vehicle_;
+    rt::VehicleRuntime<> runtime_;
+    TripleBuffer<RayFrame> rays_tb_;
+    TripleBuffer<GroundFrame> ground_tb_;
+    // physics-thread only scratch (kept as members so resolve_contacts avoids recomputing rays)
+    std::array<WheelContactPatchRays, 4> patch_rays_{};
+    std::array<WheelFootprint16Rays, 4> footprint_rays_{};
+};
 
 }  // namespace rs::ue5

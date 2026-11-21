@@ -4,6 +4,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "HAL/PlatformProcess.h"
 #include "Misc/EngineVersionComparison.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -38,7 +39,6 @@ DEFINE_LOG_CATEGORY_STATIC(LogOpenGrid, Log, All);
 
 namespace
 {
-constexpr double kTwoPi = 6.283185307179586;
 constexpr double kMaxFrameStep = 1.0 / 30.0;   // frame-tick fallback only
 constexpr double kTraceExtraUp = 0.30;         // m: start traces above the mount so a sunk car still finds the ground
 constexpr double kTraceExtraDown = 0.50;       // m: look below full droop so the cached plane is ready on landing
@@ -159,7 +159,7 @@ bool UOpenGridVehicleComponent::LoadCar()
     return true;
 }
 
-void UOpenGridVehicleComponent::ApplyFeatureFlagsLocked()
+void UOpenGridVehicleComponent::ApplyFeatureFlags()
 {
     // Exactly the web build's set (web/wasm/bridge.cpp rs_create): keep the two identical so they feel the same.
     Vehicle_->unsprung_dynamics_enabled = true;
@@ -176,16 +176,24 @@ void UOpenGridVehicleComponent::ApplyFeatureFlagsLocked()
     Vehicle_->engine_systems().fuel_consumption_enabled = true;   // empty tank cuts the throttle; RepairAndService refuels
 }
 
-void UOpenGridVehicleComponent::CreateVehicleLocked()
+void UOpenGridVehicleComponent::CreateVehicle()
 {
     Vehicle_ = MakeUnique<rs::Vehicle>(Config_);
-    ApplyFeatureFlagsLocked();
+    ApplyFeatureFlags();
     Controls_ = MakeUnique<rs::Controls>(Vehicle_->config());   // Controls keeps a reference: use the vehicle's copy
-    LastOut_ = rs::VehicleOutput{};
-    LastIn_ = rs::DriverInput{};
-    Spin_ = {};
-    bHaveOutput_ = false;
-    bHaveRays_ = false;
+    Controls_->settings.auto_clutch = true;
+    Bridge_ = MakeUnique<rs::ue5::AsyncVehicleBridge>(*Vehicle_, *Controls_);
+    LastRecord_ = rs::rt::StepRecord{};
+    bHaveRecord_ = false;
+}
+
+void UOpenGridVehicleComponent::QuiesceAsyncPhysics()
+{
+    bAsyncRun_.store(false, std::memory_order_seq_cst);
+    while (bInAsyncStep_.load(std::memory_order_acquire))
+    {
+        FPlatformProcess::YieldThread();
+    }
 }
 
 void UOpenGridVehicleComponent::ApplyMass(UPrimitiveComponent* Body, double MassKg)
@@ -224,18 +232,15 @@ void UOpenGridVehicleComponent::BeginPlay()
         return;
     }
 
+    try
     {
-        FScopeLock L(&Lock_);
-        try
-        {
-            CreateVehicleLocked();
-        }
-        catch (const std::exception& E)
-        {
-            LoadError = FString::Printf(TEXT("rs::Vehicle: %s"), UTF8_TO_TCHAR(E.what()));
-            UE_LOG(LogOpenGrid, Error, TEXT("%s"), *LoadError);
-            return;
-        }
+        CreateVehicle();
+    }
+    catch (const std::exception& E)
+    {
+        LoadError = FString::Printf(TEXT("rs::Vehicle: %s"), UTF8_TO_TCHAR(E.what()));
+        UE_LOG(LogOpenGrid, Error, TEXT("%s"), *LoadError);
+        return;
     }
 
     for (int32 w = 0; w < 4; ++w)
@@ -257,14 +262,11 @@ void UOpenGridVehicleComponent::BeginPlay()
 
     if (bEnableSimHubUdp) UdpSender_.open("127.0.0.1", 20777);
 
-    // Rays for the first frame's traces, from where the body starts.
-    {
-        FScopeLock L(&Lock_);
-        Pending_.RaysPerWheel = RaysPerWheel();
-        BuildRaysLocked(ChassisFromUe(Body->GetComponentLocation(), Body->GetComponentQuat(),
-                                      Body->GetPhysicsLinearVelocity(),
-                                      FMath::DegreesToRadians(Body->GetPhysicsAngularVelocityInDegrees())));
-    }
+    // Seed rays for the first frame's traces before the async physics thread starts.
+    Bridge_->seed_rays(ChassisFromUe(Body->GetComponentLocation(), Body->GetComponentQuat(),
+                                     Body->GetPhysicsLinearVelocity(),
+                                     FMath::DegreesToRadians(Body->GetPhysicsAngularVelocityInDegrees())),
+                       RaysPerWheel());
 
     const UPhysicsSettings* PS = UPhysicsSettings::Get();
     const bool bProjectAsync = PS && PS->bTickPhysicsAsync;
@@ -274,13 +276,13 @@ void UOpenGridVehicleComponent::BeginPlay()
         UE_LOG(LogOpenGrid, Warning, TEXT("Tick Physics Async is off in Project Settings > Physics: using the frame-tick fallback (handling will depend on frame rate)"));
     }
     bCarLoaded = true;
-    bAsyncRun_.store(bAsyncPhysicsActive);
+    bAsyncRun_.store(bAsyncPhysicsActive, std::memory_order_release);
     SetAsyncPhysicsTickEnabled(bAsyncPhysicsActive);
 }
 
 void UOpenGridVehicleComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    bAsyncRun_.store(false);
+    QuiesceAsyncPhysics();
     SetAsyncPhysicsTickEnabled(false);
     if (UPrimitiveComponent* Body = Body_.Get())
     {
@@ -327,31 +329,8 @@ rs::ChassisState UOpenGridVehicleComponent::ChassisFromUe(const FVector& PosCm, 
 
 // ---- Rays, ground, contacts ---------------------------------------------------------------------------------------
 
-void UOpenGridVehicleComponent::BuildRaysLocked(const rs::ChassisState& Chassis)
-{
-    const int32 PerWheel = Pending_.RaysPerWheel;
-    if (PerWheel == 16)
-    {
-        FootprintRays_ = Vehicle_->wheel_footprint_16_rays(Chassis);
-        for (int32 w = 0; w < 4; ++w)
-            for (int32 j = 0; j < 16; ++j) Rays_[w][j] = FootprintRays_[w].rays[j];
-    }
-    else if (PerWheel == 3)
-    {
-        PatchRays_ = Vehicle_->wheel_contact_patch_rays(Chassis);
-        for (int32 w = 0; w < 4; ++w)
-            for (int32 j = 0; j < 3; ++j) Rays_[w][j] = PatchRays_[w].rays[j];
-    }
-    else
-    {
-        const std::array<rs::WheelRay, 4> R = Vehicle_->wheel_rays(Chassis);
-        for (int32 w = 0; w < 4; ++w) Rays_[w][0] = R[w];
-    }
-    bHaveRays_ = true;
-}
-
 void UOpenGridVehicleComponent::TraceGround(const std::array<std::array<rs::WheelRay, MaxRaysPerWheel>, 4>& Rays, int32 PerWheel,
-                                            std::array<std::array<FGroundSample, MaxRaysPerWheel>, 4>& OutGround) const
+                                            std::array<std::array<rs::ue5::GroundSample, MaxRaysPerWheel>, 4>& OutGround) const
 {
     UWorld* World = GetWorld();
     if (!World) return;
@@ -365,15 +344,15 @@ void UOpenGridVehicleComponent::TraceGround(const std::array<std::array<rs::Whee
             const rs::Vec3 From = Ray.origin - Ray.direction * kTraceExtraUp;
             const rs::Vec3 To = Ray.origin + Ray.direction * (Ray.length + kTraceExtraDown);
             FHitResult Hit;
-            FGroundSample& G = OutGround[w][j];
-            G = FGroundSample{};
+            rs::ue5::GroundSample& G = OutGround[w][j];
+            G = rs::ue5::GroundSample{};
             if (World->LineTraceSingleByChannel(Hit, ToFVector(rs::ue5::pos_to_ue(From)), ToFVector(rs::ue5::pos_to_ue(To)),
                                                 WheelTraceChannel.GetValue(), Params))
             {
-                G.bHit = true;
-                G.Point = rs::ue5::pos_from_ue(ToUe(Hit.ImpactPoint));
-                G.Normal = rs::normalized(rs::ue5::dir_from_ue(ToUe(Hit.ImpactNormal)));
-                G.Surface = SurfaceFromPhysicalMaterial(Hit.PhysMaterial.Get());
+                G.hit = true;
+                G.point = rs::ue5::pos_from_ue(ToUe(Hit.ImpactPoint));
+                G.normal = rs::normalized(rs::ue5::dir_from_ue(ToUe(Hit.ImpactNormal)));
+                G.surface = SurfaceFromPhysicalMaterial(Hit.PhysMaterial.Get());
             }
         }
     }
@@ -449,86 +428,20 @@ int32 UOpenGridVehicleComponent::TraceGroundStrips(UPrimitiveComponent* Body, fl
     return Traces;
 }
 
-std::array<rs::WheelContact, 4> UOpenGridVehicleComponent::ResolveContactsLocked() const
-{
-    std::array<rs::WheelContact, 4> Contacts{};
-    const int32 PerWheel = Pending_.RaysPerWheel;
-    for (int32 w = 0; w < 4; ++w)
-    {
-        const double Radius = Vehicle_->config().tire(w).radius;
-        auto Hit = [&](int32 j) {
-            if (bHaveStrips_ && Pending_.bUseStrip)
-            {
-                rs::WheelContact FromStrip;
-                if (Strips_[w].lookup(Rays_[w][j], FromStrip)) return FromStrip;
-            }
-            const FGroundSample& G = Ground_[w][j];
-            return rs::ue5::intersect_ground_plane(Rays_[w][j], G.bHit, G.Point, G.Normal, G.Surface);
-        };
-        if (PerWheel == 16)
-        {
-            std::array<rs::WheelContact, 16> Sub{};
-            for (int32 j = 0; j < 16; ++j) Sub[j] = Hit(j);
-            Contacts[w] = rs::Vehicle::resolve_footprint_16(FootprintRays_[w], Sub, Radius);
-        }
-        else if (PerWheel == 3)
-        {
-            const std::array<rs::WheelContact, 3> Sub = {Hit(0), Hit(1), Hit(2)};
-            Contacts[w] = rs::Vehicle::resolve_contact_patch(PatchRays_[w], Sub, Radius);
-        }
-        else
-        {
-            Contacts[w] = Hit(0);
-        }
-    }
-    return Contacts;
-}
-
 // ---- Stepping -----------------------------------------------------------------------------------------------------
-
-const rs::VehicleOutput& UOpenGridVehicleComponent::StepLocked(const rs::ChassisState& Chassis, double Dt)
-{
-    LastChassis_ = Chassis;
-    BuildRaysLocked(Chassis);
-    const std::array<rs::WheelContact, 4> Contacts = ResolveContactsLocked();
-
-    for (const FPendingImpact& Impact : Impacts_)
-    {
-        const rs::Vec3 Body = Chassis.orientation.inv_rotate(rs::ue5::pos_from_ue(ToUe(Impact.PointUe)) - Chassis.position);
-        Vehicle_->add_contact(Impact.OtherId, Body, Impact.ImpulseNs);
-    }
-    Impacts_.Reset();
-
-    rs::DriverInput In;
-    if (Pending_.bCoreControls)
-    {
-        rs::RawInput Raw = Pending_.Raw;
-        Raw.shift_up = Pending_.bShiftUp;
-        Raw.shift_down = Pending_.bShiftDown;
-        Pending_.bShiftUp = Pending_.bShiftDown = false;
-        In = Controls_->update(Raw, LastOut_, Dt);
-        In.nos = Pending_.Direct.nos;           // rs::Controls has no nitrous / starter inputs: pass them through
-        In.starter = Pending_.Direct.starter;
-    }
-    else
-    {
-        In = Pending_.Direct;
-    }
-    Vehicle_->set_input(In);
-    LastIn_ = In;
-    LastOut_ = Vehicle_->update(Chassis, Contacts, Dt);
-    for (int32 w = 0; w < 4; ++w)
-    {
-        Spin_[w] = std::fmod(Spin_[w] + LastOut_.wheels[w].angular_velocity * Dt, kTwoPi);
-    }
-    bHaveOutput_ = true;
-    return LastOut_;
-}
 
 void UOpenGridVehicleComponent::AsyncPhysicsTickComponent(float DeltaTime, float SimTime)
 {
     Super::AsyncPhysicsTickComponent(DeltaTime, SimTime);
-    if (!bAsyncRun_.load() || !BodyRaw_ || DeltaTime <= 0.0f) return;
+    if (!BodyRaw_ || DeltaTime <= 0.0f) return;
+
+    // Lock-free lifecycle gate (pairs with QuiesceAsyncPhysics on EndPlay / ApplyBopEqualizer).
+    bInAsyncStep_.store(true, std::memory_order_seq_cst);
+    struct FStepGuard {
+        std::atomic<bool>& Flag;
+        ~FStepGuard() { Flag.store(false, std::memory_order_release); }
+    } Guard{bInAsyncStep_};
+    if (!bAsyncRun_.load(std::memory_order_seq_cst) || !Bridge_.IsValid()) return;
 
     FBodyInstanceAsyncPhysicsTickHandle Handle = BodyRaw_->GetBodyInstanceAsyncPhysicsTickHandle(NAME_None, true, -1);
     if (!Handle.IsValid()) return;
@@ -542,14 +455,9 @@ void UOpenGridVehicleComponent::AsyncPhysicsTickComponent(float DeltaTime, float
     const rs::ChassisState Chassis = ChassisFromUe(FVector(X.X, X.Y, X.Z), FQuat(R.X, R.Y, R.Z, R.W),
                                                    FVector(V.X, V.Y, V.Z), FVector(W.X, W.Y, W.Z));
 
-    rs::ue5::UeVec3 Force, Torque;
-    {
-        FScopeLock L(&Lock_);
-        if (!Vehicle_.IsValid()) return;
-        const rs::VehicleOutput& Out = StepLocked(Chassis, DeltaTime);
-        Force = rs::ue5::force_to_ue(Out.force);
-        Torque = rs::ue5::torque_to_ue(Out.torque);
-    }
+    const rs::VehicleOutput& Out = Bridge_->step(Chassis, DeltaTime);
+    const rs::ue5::UeVec3 Force = rs::ue5::force_to_ue(Out.force);
+    const rs::ue5::UeVec3 Torque = rs::ue5::torque_to_ue(Out.torque);
     RB->AddForce(Chaos::FVec3(Force.x, Force.y, Force.z));
     RB->AddTorque(Chaos::FVec3(Torque.x, Torque.y, Torque.z));
 }
@@ -558,120 +466,106 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
     UPrimitiveComponent* Body = Body_.Get();
-    if (!bCarLoaded || !Body || DeltaTime <= 0.0f) return;
+    if (!bCarLoaded || !Body || !Bridge_.IsValid() || DeltaTime <= 0.0f) return;
     if (!Body->RigidBodyIsAwake()) Body->WakeRigidBody();   // a driven car must never fall asleep
 
-    // 1. Hand this frame's input and settings to the simulation.
-    std::array<std::array<rs::WheelRay, MaxRaysPerWheel>, 4> Rays{};
-    int32 PerWheel = 1;
+    // 1. Hand this frame's input and settings to the physics thread through the lock-free command ring.
+    rs::rt::VehicleCommand Cmd;
+    Cmd.apply_tick = 0;
+    Cmd.core_controls = bUseCoreControls;
+    Cmd.raw.steer = SteerInput;
+    Cmd.raw.throttle = ThrottleInput;
+    Cmd.raw.brake = BrakeInput;
+    Cmd.raw.clutch = ClutchInput;
+    Cmd.raw.handbrake = HandbrakeInput;
+    Cmd.raw.shift_up = bShiftUpRequested_;
+    Cmd.raw.shift_down = bShiftDownRequested_;
+    Cmd.raw.device = static_cast<rs::InputDevice>(static_cast<int32>(InputDevice));
+    Cmd.direct.steer = SteerInput;
+    Cmd.direct.throttle = ThrottleInput;
+    Cmd.direct.brake = BrakeInput;
+    Cmd.direct.clutch = ClutchInput;
+    Cmd.direct.handbrake = HandbrakeInput;
+    Cmd.direct.gear = GearIndex;
+    Cmd.direct.auto_clutch = bAutoClutch;
+    Cmd.direct.nos = bNitrousActive;
+    Cmd.direct.starter = bStarterCrank;
+    Cmd.repair = bRepairRequested_;
+    Cmd.has_settings = true;
+    Cmd.settings.turbo_stage = FMath::Clamp(TurboStage, 0, 3);
+    Cmd.settings.altitude_m = AltitudeMeters;
+    Cmd.settings.ambient_air_c = AmbientAirCelsius;
+    Cmd.settings.track_surface_c = TrackSurfaceCelsius;
+    Cmd.settings.humidity = RelativeHumidity;
+    Cmd.settings.abs = bAbs;
+    Cmd.settings.tc = bTractionControl;
+    Cmd.settings.esc = bStabilityControl;
+    Cmd.settings.auto_gearbox = bAutoGearbox;
+    if (Bridge_->submit_command(Cmd))
     {
-        FScopeLock L(&Lock_);
-        if (!Vehicle_.IsValid()) return;
-        Pending_.bCoreControls = bUseCoreControls;
-        Pending_.RaysPerWheel = RaysPerWheel();
-        Pending_.bUseStrip = bUseGroundStrip;
-        rs::RawInput& Raw = Pending_.Raw;
-        Raw.steer = SteerInput;
-        Raw.throttle = ThrottleInput;
-        Raw.brake = BrakeInput;
-        Raw.clutch = ClutchInput;
-        Raw.handbrake = HandbrakeInput;
-        Raw.device = static_cast<rs::InputDevice>(static_cast<int32>(InputDevice));
-        Pending_.bShiftUp |= bShiftUpRequested_;
-        Pending_.bShiftDown |= bShiftDownRequested_;
-        rs::DriverInput& D = Pending_.Direct;
-        D.steer = SteerInput;
-        D.throttle = ThrottleInput;
-        D.brake = BrakeInput;
-        D.clutch = ClutchInput;
-        D.handbrake = HandbrakeInput;
-        D.gear = GearIndex;
-        D.auto_clutch = bAutoClutch;
-        D.nos = bNitrousActive;
-        D.starter = bStarterCrank;
-
-        Vehicle_->engine_systems().turbo_stage = FMath::Clamp(TurboStage, 0, 3);
-        rs::AtmosphericEnvironment& Atm = Vehicle_->atmosphere();
-        Atm.altitude_m = AltitudeMeters;
-        Atm.ambient_air_c = AmbientAirCelsius;
-        Atm.track_surface_c = TrackSurfaceCelsius;
-        Atm.humidity_0_to_1 = RelativeHumidity;
-        rs::AssistSettings& A = Vehicle_->assists();
-        A.abs = bAbs;
-        A.tc = bTractionControl;
-        A.esc = bStabilityControl;
-        Controls_->settings.auto_gearbox = bAutoGearbox;
-        Controls_->settings.auto_clutch = true;
-
-        Rays = Rays_;
-        PerWheel = Pending_.RaysPerWheel;
+        bShiftUpRequested_ = bShiftDownRequested_ = bRepairRequested_ = false;
     }
-    bShiftUpRequested_ = bShiftDownRequested_ = false;
 
-    // 2. Ground under the rays.
-    std::array<std::array<FGroundSample, MaxRaysPerWheel>, 4> Ground{};
+    // 2. Trace ground under the latest wheel rays and publish into the wait-free ground triple buffer.
+    const int32 PerWheel = RaysPerWheel();
     if (bAsyncPhysicsActive)
     {
-        // The physics thread steps on its own clock; give it fresh ground for its next steps: a plane per ray, plus
-        // (by default) a strip of samples along each wheel's path so kerbs resolve between frames.
-        TraceGround(Rays, PerWheel, Ground);
-        int32 Traces = 4 * PerWheel;
-        std::array<rs::ue5::GroundStrip, 4> NewStrips;
-        if (bUseGroundStrip) Traces += TraceGroundStrips(Body, DeltaTime, Rays, PerWheel, NewStrips);
+        Bridge_->fetch_rays();
+        const rs::ue5::RayFrame& RF = Bridge_->current_rays();
+        rs::ue5::GroundFrame& GF = Bridge_->ground_write_buffer();
+        GF.rays_per_wheel = PerWheel;
+        GF.use_strip = bUseGroundStrip;
+        int32 Traces = 0;
+        if (RF.valid)
+        {
+            const int32 TraceCount = FMath::Min(PerWheel, RF.rays_per_wheel);
+            TraceGround(RF.rays, TraceCount, GF.planes);
+            Traces = 4 * TraceCount;
+            if (bUseGroundStrip) Traces += TraceGroundStrips(Body, DeltaTime, RF.rays, TraceCount, GF.strips);
+            GF.has_strips = bUseGroundStrip;
+        }
+        else
+        {
+            GF.has_strips = false;
+        }
         GroundTracesLastFrame = Traces;
-        FScopeLock L(&Lock_);
-        Ground_ = Ground;
-        if (bUseGroundStrip) Strips_.swap(NewStrips);
-        bHaveStrips_ = bUseGroundStrip;
+        Bridge_->publish_ground();
     }
     else
     {
-        // Frame-tick fallback: rays from the body's state now, trace, step once.
+        // Frame-tick fallback: seed fresh rays from the body's state now, trace, publish, step once.
         const rs::ChassisState Chassis = ChassisFromUe(Body->GetComponentLocation(), Body->GetComponentQuat(),
                                                        Body->GetPhysicsLinearVelocity(),
                                                        FMath::DegreesToRadians(Body->GetPhysicsAngularVelocityInDegrees()));
-        {
-            FScopeLock L(&Lock_);
-            BuildRaysLocked(Chassis);
-            Rays = Rays_;
-        }
-        TraceGround(Rays, PerWheel, Ground);
+        Bridge_->seed_rays(Chassis, PerWheel);
+        Bridge_->fetch_rays();
+        rs::ue5::GroundFrame& GF = Bridge_->ground_write_buffer();
+        GF.rays_per_wheel = PerWheel;
+        GF.has_strips = false;   // fresh traces every step here: no strip needed
+        GF.use_strip = false;
+        TraceGround(Bridge_->current_rays().rays, PerWheel, GF.planes);
         GroundTracesLastFrame = 4 * PerWheel;
-        rs::ue5::UeVec3 Force, Torque;
-        {
-            FScopeLock L(&Lock_);
-            Ground_ = Ground;
-            bHaveStrips_ = false;   // fresh traces every step here: no strip needed
-            const rs::VehicleOutput& Out = StepLocked(Chassis, FMath::Min(static_cast<double>(DeltaTime), kMaxFrameStep));
-            Force = rs::ue5::force_to_ue(Out.force);
-            Torque = rs::ue5::torque_to_ue(Out.torque);
-        }
+        Bridge_->publish_ground();
+        const rs::VehicleOutput& Out = Bridge_->step(Chassis, FMath::Min(static_cast<double>(DeltaTime), kMaxFrameStep));
+        const rs::ue5::UeVec3 Force = rs::ue5::force_to_ue(Out.force);
+        const rs::ue5::UeVec3 Torque = rs::ue5::torque_to_ue(Out.torque);
         Body->AddForce(FVector(Force.x, Force.y, Force.z));
         Body->AddTorqueInRadians(FVector(Torque.x, Torque.y, Torque.z));
     }
 
-    // 3. Publish the latest step to Blueprint, audio, visuals and telemetry.
-    rs::VehicleOutput Out;
-    rs::DriverInput In;
-    rs::ChassisState Chassis;
-    std::array<double, 4> Spin{};
-    {
-        FScopeLock L(&Lock_);
-        if (!bHaveOutput_) return;
-        Out = LastOut_;
-        In = LastIn_;
-        Chassis = LastChassis_;
-        Spin = Spin_;
-    }
+    // 3. Drain the physics->game record ring and publish the latest step to Blueprint, audio, visuals and telemetry.
+    if (Bridge_->latest_record(LastRecord_)) bHaveRecord_ = true;
+    if (!bHaveRecord_) return;
+
     ElapsedTimeS_ += DeltaTime;
-    PublishOutputs(Out, Spin);
+    PublishOutputs(LastRecord_.out, LastRecord_.spin);
     // Burnt fuel makes the car lighter: refresh the body every 0.25 kg (game thread; rare, so cheap).
-    if (bApplyMassFromSpec && Out.mass_kg > 0.0 && FMath::Abs(Out.mass_kg - AppliedMassKg_) > 0.25)
+    if (bApplyMassFromSpec && LastRecord_.out.mass_kg > 0.0 && FMath::Abs(LastRecord_.out.mass_kg - AppliedMassKg_) > 0.25)
     {
-        ApplyMass(Body, Out.mass_kg);
+        ApplyMass(Body, LastRecord_.out.mass_kg);
     }
 
-    const rs::TelemetrySample Sample = rs::make_telemetry_sample(Out, Chassis, In, Config_, ElapsedTimeS_);
+    const rs::TelemetrySample Sample = rs::make_telemetry_sample(LastRecord_.out, LastRecord_.chassis, LastRecord_.input, Config_, ElapsedTimeS_);
     MotecLogger_.record(Sample);
     if (bEnableSimHubUdp && UdpSender_.is_open()) UdpSender_.send(Sample);
 }
@@ -733,22 +627,19 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
 void UOpenGridVehicleComponent::HandleBodyHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp,
                                               FVector NormalImpulse, const FHitResult& Hit)
 {
+    if (!Bridge_.IsValid()) return;
     const double ImpulseNs = NormalImpulse.Size() * rs::ue5::kCmToMeters;   // kg cm/s -> N s
     if (ImpulseNs < 1.0) return;
-    FPendingImpact Impact;
-    Impact.PointUe = Hit.ImpactPoint;
-    Impact.ImpulseNs = ImpulseNs;
-    Impact.OtherId = OtherActor ? static_cast<uint64>(OtherActor->GetUniqueID()) : 0;
-    FScopeLock L(&Lock_);
-    Impacts_.Add(Impact);
+    rs::rt::ImpactCommand Impact;
+    Impact.point_world = rs::ue5::pos_from_ue(ToUe(Hit.ImpactPoint));
+    Impact.impulse = ImpulseNs;
+    Impact.other = OtherActor ? static_cast<uint64>(OtherActor->GetUniqueID()) : 0;
+    Bridge_->submit_impact(Impact);
 }
 
 void UOpenGridVehicleComponent::RepairAndService()
 {
-    FScopeLock L(&Lock_);
-    if (!Vehicle_) return;
-    Vehicle_->damage_model().repair();
-    Vehicle_->service();
+    bRepairRequested_ = true;
 }
 
 void UOpenGridVehicleComponent::ShiftUp() { bShiftUpRequested_ = true; }
@@ -763,17 +654,22 @@ bool UOpenGridVehicleComponent::ExportMotecLog(const FString& OutputBasePath)
 void UOpenGridVehicleComponent::ApplyBopEqualizer(int32 TargetPi)
 {
     if (!bCarLoaded) return;
-    FScopeLock L(&Lock_);
+    const bool bWasAsync = bAsyncPhysicsActive;
+    if (bWasAsync) QuiesceAsyncPhysics();
+
     const rs::BopAdjustment Bop = rs::compute_bop_equalizer(Config_, TargetPi);
     Config_ = Bop.balanced_config;
     PerformanceIndex = Bop.balanced_report.pi;
     VirtualBenchmarkLapSeconds = static_cast<float>(Bop.balanced_report.virtual_benchmark_lap_s);
-    CreateVehicleLocked();
+    CreateVehicle();
     if (UPrimitiveComponent* Body = Body_.Get())
     {
-        BuildRaysLocked(ChassisFromUe(Body->GetComponentLocation(), Body->GetComponentQuat(),
-                                      Body->GetPhysicsLinearVelocity(),
-                                      FMath::DegreesToRadians(Body->GetPhysicsAngularVelocityInDegrees())));
+        Bridge_->seed_rays(ChassisFromUe(Body->GetComponentLocation(), Body->GetComponentQuat(),
+                                         Body->GetPhysicsLinearVelocity(),
+                                         FMath::DegreesToRadians(Body->GetPhysicsAngularVelocityInDegrees())),
+                           RaysPerWheel());
         if (bApplyMassFromSpec) ApplyMass(Body, Config_.mass);
     }
+
+    if (bWasAsync) bAsyncRun_.store(true, std::memory_order_release);
 }
