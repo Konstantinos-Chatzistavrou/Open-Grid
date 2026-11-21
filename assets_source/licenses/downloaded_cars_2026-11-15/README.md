@@ -12,5 +12,5 @@ is also embedded in each GLB's `asset.extras` (checked: CC-BY-4.0 in all three).
 | Strix GT7 | Tokii Abyss GT.7 V12 | Glas'kavin (@fiendishfarlander76, "Nyx421" in the file) | CC BY 4.0 | sketchfab.com/3d-models/tokii-abyss-gt7-v12-c399568541104e0e903cf138b1e24908 |
 
 All three are original designs by their authors, not real manufacturers' cars. The Azura resembles a 1990s Japanese
-coupe, so the Hayate was also re-shaped (assets_source/cars/hayate.json `shape`). Every emblem, plate and lettering
+coupe; the Hayate was re-shaped until 2026-11-21 and now keeps the model's own shape (only marks removed). Every emblem, plate and lettering
 the models carried was removed (CREDITS.md lists the changes per car).

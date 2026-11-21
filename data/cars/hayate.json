@@ -38,7 +38,7 @@
     "damper_high_speed_ratio": 0.45
   },
   "rear_axle": {
-    "track_m": 1.502,
+    "track_m": 1.465,
     "spring_rate_n_per_m": 75000,
     "spring_rest_length_m": 0.25,
     "max_compression_m": 0.07,
@@ -73,7 +73,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -0.000037604,
+      "pEx4": -3.7604e-05,
       "slip_stiffness_per_load": 24.129,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -187,7 +187,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -0.000037604,
+      "pEx4": -3.7604e-05,
       "slip_stiffness_per_load": 24.699,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
