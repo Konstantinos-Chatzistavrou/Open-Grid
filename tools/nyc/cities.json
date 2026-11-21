@@ -23,7 +23,9 @@
     "grid_deg": 29,
     "drive": "right",
     "style": "nyc",
-    "landmarks": true
+    "landmarks": true,
+    "terrain_open_m": 0,
+    "terrain": false
   },
   "london": {
     "name": "London",
@@ -97,7 +99,8 @@
     "small_floors": [
       110,
       3
-    ]
+    ],
+    "terrain_open_m": 150
   },
   "paris": {
     "name": "Paris",
@@ -168,7 +171,8 @@
         48.8638,
         2.312
       ]
-    ]
+    ],
+    "terrain_open_m": 150
   },
   "tokyo": {
     "name": "Tokyo",
@@ -239,7 +243,8 @@
     "small_floors": [
       160,
       3
-    ]
+    ],
+    "terrain_open_m": 250
   },
   "losangeles": {
     "name": "Los Angeles",
@@ -318,7 +323,8 @@
     "small_floors": [
       200,
       2
-    ]
+    ],
+    "terrain_open_m": 0
   },
   "chicago": {
     "name": "Chicago",
@@ -397,7 +403,9 @@
     "small_floors": [
       200,
       2
-    ]
+    ],
+    "terrain_open_m": 0,
+    "terrain": false
   },
   "miami": {
     "name": "Miami",
@@ -476,7 +484,9 @@
     "small_floors": [
       200,
       2
-    ]
+    ],
+    "terrain_open_m": 0,
+    "terrain": false
   },
   "toronto": {
     "name": "Toronto",
@@ -547,7 +557,8 @@
     "small_floors": [
       180,
       2
-    ]
+    ],
+    "terrain_open_m": 250
   },
   "berlin": {
     "name": "Berlin",
@@ -622,7 +633,8 @@
     "small_floors": [
       120,
       2
-    ]
+    ],
+    "terrain": false
   },
   "barcelona": {
     "name": "Barcelona",
@@ -693,7 +705,8 @@
     "small_floors": [
       100,
       3
-    ]
+    ],
+    "terrain_open_m": 150
   },
   "amsterdam": {
     "name": "Amsterdam",
@@ -772,7 +785,8 @@
     "small_floors": [
       80,
       3
-    ]
+    ],
+    "terrain": false
   },
   "singapore": {
     "name": "Singapore",
@@ -847,7 +861,8 @@
     "small_floors": [
       150,
       2
-    ]
+    ],
+    "terrain": false
   },
   "melbourne": {
     "name": "Melbourne",
@@ -922,7 +937,8 @@
     "small_floors": [
       150,
       2
-    ]
+    ],
+    "terrain_open_m": 250
   },
   "madrid": {
     "name": "Madrid",
@@ -1001,7 +1017,8 @@
     "small_floors": [
       100,
       3
-    ]
+    ],
+    "terrain_open_m": 150
   },
   "seoul": {
     "name": "Seoul",
@@ -1075,6 +1092,171 @@
     ],
     "small_floors": [
       150,
+      3
+    ],
+    "terrain_open_m": 250
+  },
+  "sanfrancisco": {
+    "name": "San Francisco",
+    "district": "Union Square, Nob Hill & Russian Hill",
+    "country": "US",
+    "origin": [
+      37.78795,
+      -122.40752
+    ],
+    "area": [
+      37.776,
+      -122.428,
+      37.808,
+      -122.392
+    ],
+    "data": "assets_source/downloads/cities/sanfrancisco",
+    "pbf": "SanFrancisco.osm.pbf",
+    "out": "web/public/assets/cities/sanfrancisco/tiles",
+    "route": "web/public/data/tracks/sanfrancisco_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 81,
+    "drive": "right",
+    "style": "sanfrancisco",
+    "skip_elevated": true,
+    "terrain_open_m": 0,
+    "floors": {
+      "default": 3,
+      "residential": 3,
+      "apartments": 5,
+      "house": 3,
+      "commercial": 5,
+      "office": 14,
+      "retail": 3,
+      "industrial": 3
+    },
+    "widths": {
+      "primary": 17.0,
+      "secondary": 13.0,
+      "tertiary": 11.0,
+      "residential": 9.0,
+      "unclassified": 9.0,
+      "living_street": 6.0,
+      "service": 4.5
+    },
+    "spawn": [
+      37.788399,
+      -122.40761,
+      "Union Square"
+    ],
+    "route_via": [
+      [
+        37.78795,
+        -122.40752
+      ],
+      [
+        37.792,
+        -122.4087
+      ],
+      [
+        37.7975,
+        -122.4098
+      ],
+      [
+        37.801,
+        -122.4178
+      ],
+      [
+        37.796,
+        -122.4195
+      ],
+      [
+        37.790868,
+        -122.418573
+      ],
+      [
+        37.787,
+        -122.411
+      ]
+    ],
+    "small_floors": [
+      150,
+      2
+    ]
+  },
+  "lisbon": {
+    "name": "Lisbon",
+    "district": "Baixa, Chiado & Bairro Alto",
+    "country": "PT",
+    "origin": [
+      38.7107,
+      -9.1387
+    ],
+    "area": [
+      38.703,
+      -9.156,
+      38.727,
+      -9.124
+    ],
+    "data": "assets_source/downloads/cities/lisbon",
+    "pbf": "Lisbon.osm.pbf",
+    "out": "web/public/assets/cities/lisbon/tiles",
+    "route": "web/public/data/tracks/lisbon_route.json",
+    "buildings": "osm",
+    "mask": "area",
+    "grid_deg": 57,
+    "drive": "right",
+    "style": "lisbon",
+    "skip_elevated": true,
+    "terrain_open_m": 200,
+    "floors": {
+      "default": 4,
+      "residential": 4,
+      "apartments": 5,
+      "house": 3,
+      "commercial": 5,
+      "office": 6,
+      "retail": 4,
+      "industrial": 3
+    },
+    "widths": {
+      "primary": 13.0,
+      "secondary": 10.0,
+      "tertiary": 8.0,
+      "residential": 6.5,
+      "unclassified": 6.5,
+      "living_street": 5.0,
+      "service": 4.0
+    },
+    "spawn": [
+      38.7107,
+      -9.1387,
+      "Praça do Comércio"
+    ],
+    "route_via": [
+      [
+        38.7107,
+        -9.1387
+      ],
+      [
+        38.713822,
+        -9.139706
+      ],
+      [
+        38.72,
+        -9.1447
+      ],
+      [
+        38.714,
+        -9.1456
+      ],
+      [
+        38.708,
+        -9.144
+      ],
+      [
+        38.7072,
+        -9.141
+      ]
+    ],
+    "small_floors": [
+      100,
       3
     ]
   }

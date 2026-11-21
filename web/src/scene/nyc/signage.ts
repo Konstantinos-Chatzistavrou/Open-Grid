@@ -213,10 +213,10 @@ export class NycSigns {
     this.set = new InstanceSet(new THREE.PlaneGeometry(1, 1), createSignMaterial(data), capacity, 4, 'nyc_signs', data);
     scene.add(this.set.mesh);
   }
-  setTile(key: string, rows: number[][] | undefined, groundZ = 0) {
+  setTile(key: string, rows: number[][] | undefined, groundZ = 0, heightAt: ((x: number, y: number) => number) | null = null) {
     this.set.add(key, rows, (r, m, mo, ex, eo) => {
       ex![eo] = r[6]; ex![eo + 1] = (Math.abs(r[0]) * 0.137 + Math.abs(r[1]) * 0.291) % 1; ex![eo + 2] = r[4]; ex![eo + 3] = r[5];
-      writeMatrix(m, mo, r[0], r[1], r[2] + groundZ, r[3] + Math.PI / 2, r[4], r[5], 1);   // quad faces local +Z; +90 deg maps it onto the wall normal
+      writeMatrix(m, mo, r[0], r[1], r[2] + (heightAt ? heightAt(r[0], r[1]) : groundZ), r[3] + Math.PI / 2, r[4], r[5], 1);   // quad faces local +Z; +90 deg maps it onto the wall normal
     });
   }
   removeTile(key: string) { this.set.remove(key); }

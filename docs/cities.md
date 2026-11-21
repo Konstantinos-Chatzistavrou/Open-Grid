@@ -1,6 +1,6 @@
 # Real-scale cities (1:1)
 
-Since 2026-11-15 the game streams one of five real cities, all built at 1:1 from open data by the same pipeline
+Since 2026-11-15 the game streams one of its real cities (17 since 2026-11-21), all built at 1:1 from open data by the same pipeline
 (`tools/nyc/`, which started as the New York build: docs/nyc_tiles.md, nyc_ground.md, nyc_buildings.md, nyc_props.md).
 
 | id | city | area built | buildings | heights from |
@@ -40,6 +40,46 @@ Before this, New York's real tiles covered 2 x 2.8 km of Midtown and everything 
    8 GB laptop). One city at a time: each stage loads the whole city.
 3. A line in `web/src/cities.ts` (base folder, route, grid, driving side, attribution) and the credits in CREDITS.md.
 4. Look at it: `?city=<id>` (the minimap's map.json shows the whole street net), drive the route, check the edge.
+
+## Terrain (real ground heights, 2026-11-21)
+
+Cities are no longer flat: `tools/nyc/terrain.py` (the stage after extract) builds each city's real ground and every other
+stage uses it. Source: AWS Terrain Tiles (Terrarium PNG, open elevation composite: USGS 3DEP in the US, Copernicus EU-DEM in
+Europe, SRTM / GMTED elsewhere; attribution in CREDITS.md), fetched once per city into `<data>/terrain/`.
+
+1. z15 tiles over the area + fringe + 600 m, sampled on a 4 m grid in the city's own transverse Mercator frame.
+2. Raw heights clamped at 1 m below sea level (no-data values and sea-floor bathymetry).
+3. Bare-earth filter: outside the US the data is a surface model, and a dense downtown reads as a hill over its towers.
+   A morphological opening of `terrain_open_m` metres (cities.json; default 120, 150 for dense mid-rise cities, 250 for
+   high-rise ones, 0 in the US where 3DEP is bare earth already) keeps the ground under them. Real hills are wider.
+4. Gaussian smoothing (12 m): realistic street gradients instead of 30 m data steps. Heights are relative to the city
+   origin (0 m at the spawn square).
+5. The EXPORT grid: 8 m, aligned to the 256 m tiles. The pipeline drapes and seats everything on it and the game loads it
+   (`<tiles>/terrain.bin`, int16 cm; `index.json` `terrain`), so visuals and physics share one surface.
+6. Bridges over dips (rivers, valleys) get a straight deck from bank to bank baked into the grid; overpasses over flat
+   ground follow the ground. Each water body gets one level (the low end of the ground inside it).
+
+How the stages use it:
+- ground.py: every tile's meshes are DRAPED (`terrain.drape`): an edge is split only where the ground bends away from it
+  by more than 2.5 cm (flat ground and constant slopes keep their big triangles; the decision belongs to the edge, so
+  neighbours split it alike: no cracks), z += H, up-facing normals become the terrain's; water stays flat at its level.
+- buildings.py: each building (LOD0, far LOD and collider box) stands on the LOWEST ground under its footprint, its ground
+  ring 0.5 m below that (planted on a slope, never floating; the facade UVs keep the shop floor where it was). Edge walls
+  span the ground along their length.
+- build_index.py: `terrain.bin` + metadata; the race route's samples carry the road height (`z`), which the checkpoints,
+  speed / drift gates, AI lanes and cop roadblocks already read.
+- The game (`web/src/scene/nyc/terrain.ts`): each tile's physics ground is a Rapier height field from the same grid
+  (one cell edge per grid line: neighbouring tiles share their edges), props sit at the ground under each of them,
+  the spawn and the recover (R) cast from the ground there, and the wet-road mirror tilts to the slope under the car.
+
+`terrain: false` keeps a city flat. Flat on purpose: Chicago, Miami, Amsterdam, Berlin and Singapore (a few metres of real
+relief; their surface-model data mostly measured the towers), and New York until Manhattan is rebuilt. Hilly by design:
+San Francisco (Nob Hill and Russian Hill, grades over 20 %) and Lisbon (Baixa between Chiado, the Bairro Alto and the castle).
+
+Route fix (same day): the tile road graphs store an edge's interior points only; build_index read them as the whole edge,
+so every route skipped its corner nodes and, where an interior point lay far from a corner, cut straight across a block
+(AI rivals drove through buildings). Each edge is now its two nodes around its interior points, and waypoints snap to the
+main connected street network.
 
 ## Notes
 

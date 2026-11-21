@@ -672,6 +672,8 @@ def write_tile(ctx, ix, iy, outdir):
     SNAP = 0.002
     if meshes is None:
         return None
+    import terrain
+    meshes = terrain.drape(meshes)      # onto the city's real ground (no-op for a flat city): docs/cities.md "Terrain"
     name = tile_name(ix, iy)
     size = 0
     tris = sum(len(m.idx) for m in meshes)

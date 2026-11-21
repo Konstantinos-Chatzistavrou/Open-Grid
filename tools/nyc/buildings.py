@@ -285,6 +285,16 @@ CITY_PALETTES = {
                1: [(0.66, 0.60, 0.48), (0.62, 0.56, 0.44), (0.68, 0.64, 0.56), (0.50, 0.26, 0.18), (0.56, 0.52, 0.46)],
                2: [(0.64, 0.60, 0.52), (0.52, 0.52, 0.50), (0.30, 0.32, 0.34)],
                4: [(0.48, 0.28, 0.20), (0.54, 0.50, 0.44)]},
+    # San Francisco: painted Victorians (cream, sage, slate blue, dusty rose), white stucco, granite and glass downtown
+    "sanfrancisco": {0: [(0.66, 0.62, 0.52), (0.50, 0.56, 0.48), (0.46, 0.52, 0.60), (0.64, 0.50, 0.50), (0.68, 0.66, 0.62)],
+                     1: [(0.66, 0.64, 0.60), (0.60, 0.56, 0.48), (0.54, 0.58, 0.60), (0.62, 0.52, 0.46)],
+                     2: [(0.58, 0.56, 0.52), (0.46, 0.46, 0.46), (0.24, 0.27, 0.30), (0.62, 0.58, 0.50)],
+                     4: [(0.46, 0.30, 0.22), (0.50, 0.48, 0.44)]},
+    # Lisbon: pastel render (ochre, rose, pale yellow, white), azulejo-tiled fronts, terracotta roofs read from above
+    "lisbon": {0: [(0.68, 0.58, 0.38), (0.66, 0.52, 0.48), (0.68, 0.64, 0.46), (0.66, 0.64, 0.60), (0.46, 0.54, 0.60)],
+               1: [(0.66, 0.60, 0.44), (0.64, 0.54, 0.50), (0.68, 0.66, 0.60), (0.50, 0.56, 0.60), (0.62, 0.48, 0.36)],
+               2: [(0.64, 0.62, 0.56), (0.52, 0.52, 0.50), (0.30, 0.32, 0.34)],
+               4: [(0.52, 0.40, 0.30), (0.56, 0.52, 0.46)]},
     # Seoul (Gangnam): grey and white concrete, beige tile, dark glass office towers on Teheran-ro
     "seoul": {0: [(0.58, 0.57, 0.54), (0.52, 0.50, 0.46), (0.60, 0.56, 0.48), (0.46, 0.45, 0.44)],
               1: [(0.60, 0.59, 0.56), (0.54, 0.52, 0.48), (0.58, 0.54, 0.46), (0.42, 0.42, 0.43)],
@@ -294,7 +304,7 @@ CITY_PALETTES = {
 # typical construction year by city (OSM rarely has start_date): spread around it per building
 CITY_YEAR = {"london": (1885, 45), "paris": (1868, 25), "tokyo": (1988, 18), "losangeles": (1955, 30),
              "chicago": (1925, 32), "miami": (1990, 18), "toronto": (1975, 30), "berlin": (1910, 40), "barcelona": (1895, 30),
-             "amsterdam": (1780, 70), "singapore": (1992, 16), "melbourne": (1930, 40), "madrid": (1910, 35), "seoul": (1997, 12)}
+             "amsterdam": (1780, 70), "singapore": (1992, 16), "melbourne": (1930, 40), "madrid": (1910, 35), "seoul": (1997, 12), "sanfrancisco": (1915, 35), "lisbon": (1790, 60)}
 OFFICE_CODES = {"office", "commercial", "hotel", "government", "bank"}
 HOUSE_CODES = {"house", "terrace", "detached", "semidetached_house", "townhouse", "residential", "apartments"}
 
@@ -690,10 +700,55 @@ def tile_walls(ix, iy):
     return tl.edge_walls(D, T)
 
 
+SINK = 0.5    # a building's ground ring goes this far below the lowest ground under it: planted on a slope, never floating
+
+
+def _base(polys):
+    """the lowest ground under a footprint (terrain.H at its outline): where the building stands"""
+    import terrain
+    if not terrain.active():
+        return 0.0
+    pts = np.concatenate([np.asarray(q.exterior.coords) for p in polys for q in parts(p)])
+    return float(np.min(terrain.H(pts[:, 0], pts[:, 1])))
+
+
+def _seat(A, marks, base):
+    """move what build_building just added (after `marks`) onto its base; the ground ring sinks SINK below it"""
+    if base == 0.0:
+        return
+    for acc, m0 in zip((A["facade"], A["roof"]), marks):
+        for j in range(m0, len(acc.p)):
+            P = acc.p[j].copy()
+            low = P[:, 2] < 0.01
+            P[:, 2] += base
+            P[low, 2] = base - SINK
+            acc.p[j] = P
+            if low.any() and j < len(acc.uv) and acc.uv[j].shape[0] == P.shape[0]:
+                U = acc.uv[j].copy(); U[low, 1] = -SINK; acc.uv[j] = U     # same metres up the wall: the shop floor stays put
+
+
+def _seat_box(d, base=None):
+    """a collider / wall box onto the ground: from below its lowest ground to its height above the highest"""
+    import terrain
+    if not terrain.active():
+        return d
+    if base is None:
+        c, s = math.cos(d["yaw"]), math.sin(d["yaw"])
+        xs = [d["cx"] + k * d["hx"] * c for k in (-1, 0, 1)]; ys = [d["cy"] + k * d["hx"] * s for k in (-1, 0, 1)]
+        hs = terrain.H(np.array(xs), np.array(ys))
+        lo, hi = float(hs.min()), float(hs.max())
+    else:
+        lo = hi = base
+    h = d["z1"] - d["z0"]
+    d["z0"] = round(lo - SINK - 1.0, 2); d["z1"] = round(hi + h, 2)
+    return d
+
+
 def build_tile(ix, iy, outdir, compress=True):
     t0 = time.time()
     bl = tile_buildings(ix, iy)
-    walls = tile_walls(ix, iy)
+    walls = [_seat_box(w) for w in tile_walls(ix, iy)]
+    bases = [_base([p]) for it, p, j in bl]
     if not bl:
         if not walls:
             return None
@@ -707,7 +762,9 @@ def build_tile(ix, iy, outdir, compress=True):
     for detail in (2, 1, 0):
         A = {"facade": Acc("facade"), "roof": Acc("roof")}
         for k, (it, p, j) in enumerate(bl):
+            marks = (len(A["facade"].p), len(A["roof"].p))
             build_building(A, p, it, k, lms.get(k), detail)
+            _seat(A, marks, bases[k])
         tris = A["facade"].tris + A["roof"].tris
         if tris <= TRI_BUDGET:
             break
@@ -716,7 +773,9 @@ def build_tile(ix, iy, outdir, compress=True):
     res["tris"], res["detail"] = int(tris), detail
     Fa = {"facade": Acc("facade"), "roof": Acc("roof")}
     for k, (it, p, j) in enumerate(bl):
+        marks = (len(Fa["facade"].p), len(Fa["roof"].p))
         build_building(Fa, p, it, k, lms.get(k), 0, far=True)
+        _seat(Fa, marks, bases[k])
     far_path = os.path.join(outdir, f"{name}.far.glb")
     res["far_tris"] = Fa["facade"].tris + Fa["roof"].tris
     res["far_bytes"] = tl.write_glb(far_path, [m for m in (Fa["facade"].mesh(True), Fa["roof"].mesh(False)) if m], (ix, iy), name + "_far")
@@ -724,9 +783,9 @@ def build_tile(ix, iy, outdir, compress=True):
     cols = []
     A = asphalt(ix, iy)
     small = [(p, float(it["h"])) for it, p, j in bl if p.area < 70]
-    for it, p, j in bl:
+    for k, (it, p, j) in enumerate(bl):
         if p.area >= 70:
-            cols += colliders(p, float(it["h"]), 0, A)
+            cols += [_seat_box(c, bases[k]) for c in colliders(p, float(it["h"]), 0, A)]
     used = [False] * len(small)
     for a in range(len(small)):
         if used[a]:
@@ -736,8 +795,9 @@ def build_tile(ix, iy, outdir, compress=True):
             if not used[b] and small[a][0].distance(small[b][0]) < 0.6 and abs(small[a][1] - small[b][1]) < 3:
                 grp.append(b); used[b] = True
         u = shapely.union_all([small[g][0].buffer(0.3) for g in grp]).buffer(-0.3)
+        gb = _base([small[g][0] for g in grp])
         for q in parts(u):
-            cols += colliders(q, max(small[g][1] for g in grp), 0, A)
+            cols += [_seat_box(c, gb) for c in colliders(q, max(small[g][1] for g in grp), 0, A)]
     with open(os.path.join(outdir, f"{name}.col.json"), "w") as f:
         json.dump({"buildings": cols, **({"walls": walls} if walls else {}), "ground": 0}, f, separators=(",", ":"))
     res.update(colliders=len(cols), walls=len(walls), n=len(bl), landmarks=[lm["name"] for lm in lms.values()])

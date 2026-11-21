@@ -565,6 +565,8 @@ export class NycProps {
   carBox: CarBox | null = null;
   /** A falling pole hit the car: where (three coords) and the energy it brought (J). */
   onLand: ((x: number, y: number, z: number, energy: number) => void) | null = null;
+  /** the city's real ground (streamer.terrain): game-frame (x, y) -> height; null for a flat city (tile height) */
+  heightAt: ((x: number, y: number) => number) | null = null;
   private tileBuildings = new Map<string, { z: number; boxes: BuildingColliderBox[] }>();
   private flyingPoles: FlyingPole[] = [];
   brokenPolesCount = 0;
@@ -806,15 +808,17 @@ export class NycProps {
   setTile(key: string, data: unknown) {
     const d = data as PropsData;
     const z = d.z ?? 0;
+    // real terrain (streamer.terrain): every prop at the ground under it; a flat city keeps the tile's one height
+    const hAt = this.heightAt, zAt = (x: number, y: number) => (hAt ? hAt(x, y) : z);
     const S = this.sets;
     const poles: BreakablePole[] = [];
 
     const registerBreakable = (kind: BreakableKind, rows: number[][] | undefined, radius: number, yawOf = 2) => {
-      const slots = S[kind].add(key, rows, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], z, r[yawOf] ?? 0, 1, 1, 1));
+      const slots = S[kind].add(key, rows, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], zAt(r[0], r[1]), r[yawOf] ?? 0, 1, 1, 1));
       if (rows) {
         for (let i = 0; i < slots.length; i++) {
           const r = rows[i];
-          poles.push({ kind, slot: slots[i], x: r[0], y: r[1], z, yaw: r[yawOf] ?? 0, radius, broken: false, tileKey: key, lightIdx: kind === 'lamp' ? i : undefined });
+          poles.push({ kind, slot: slots[i], x: r[0], y: r[1], z: zAt(r[0], r[1]), yaw: r[yawOf] ?? 0, radius, broken: false, tileKey: key, lightIdx: kind === 'lamp' ? i : undefined });
         }
       }
     };
@@ -852,37 +856,37 @@ export class NycProps {
     const trees: { set: string; slot: number; x: number; y: number; z: number; scale: number }[] = [];
     for (const sp of TREE_SPECIES) {
       const rows = treeRows.filter((r) => speciesOf(r[0], r[1]) === sp.id), set = `tree_${sp.id}`;
-      const slots = S[set].add(key, rows, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], z, r[2], r[3], r[3] * (0.9 + 0.2 * ((r[2] * 7) % 1)), r[3]));
-      slots.forEach((slot, i) => trees.push({ set, slot, x: rows[i][0], y: rows[i][1], z, scale: rows[i][3] ?? 1 }));
+      const slots = S[set].add(key, rows, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], zAt(r[0], r[1]), r[2], r[3], r[3] * (0.9 + 0.2 * ((r[2] * 7) % 1)), r[3]));
+      slots.forEach((slot, i) => trees.push({ set, slot, x: rows[i][0], y: rows[i][1], z: zAt(rows[i][0], rows[i][1]), scale: rows[i][3] ?? 1 }));
     }
     this.tileTrees.set(key, trees);
     for (const [set, side, kName] of [[S.signalR, 1, 'signalR'], [S.signalL, -1, 'signalL']] as [InstanceSet, number, BreakableKind][]) {
       const sigRows = d.signal?.filter((r) => r[3] === side);
       const slots = set.add(key, sigRows, (r, m, mo, ex, eo) => {
-        writeMatrix(m, mo, r[0], r[1], z, r[2]);
+        writeMatrix(m, mo, r[0], r[1], zAt(r[0], r[1]), r[2]);
         ex![eo] = r[4]; ex![eo + 1] = r[5];
       });
       if (sigRows) {
         for (let i = 0; i < slots.length; i++) {
           const r = sigRows[i];
-          poles.push({ kind: kName, slot: slots[i], x: r[0], y: r[1], z, yaw: r[2] ?? 0, radius: 0.55, broken: false, tileKey: key });
+          poles.push({ kind: kName, slot: slots[i], x: r[0], y: r[1], z: zAt(r[0], r[1]), yaw: r[2] ?? 0, radius: 0.55, broken: false, tileKey: key });
         }
       }
     }
     registerBreakable('hydrant', d.hydrant, 0.45);
-    S.bench.add(key, d.bench, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], z, r[2] ?? 0));
+    S.bench.add(key, d.bench, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], zAt(r[0], r[1]), r[2] ?? 0));
     registerBreakable('bus', d.bus_stop, 1.35);
-    S.subway.add(key, d.subway_entrance, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], z, r[2] ?? 0));
-    S.scaffold.add(key, d.scaffold, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], z, r[2] ?? 0));
+    S.subway.add(key, d.subway_entrance, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], zAt(r[0], r[1]), r[2] ?? 0));
+    S.scaffold.add(key, d.scaffold, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], zAt(r[0], r[1]), r[2] ?? 0));
     registerBreakable('kiosk', d.kiosk, 1.05);
-    S.steam.add(key, d.steam, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], z, 0));
-    S.cone.add(key, d.cone, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], z, 0));
+    S.steam.add(key, d.steam, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], zAt(r[0], r[1]), 0));
+    S.cone.add(key, d.cone, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], zAt(r[0], r[1]), 0));
     registerBreakable('waste', d.waste, 0.45, 99);
 
     const puffs: number[][] = [];
     for (const r of d.steam ?? []) for (let k = 0; k < PUFFS; k++) puffs.push([r[0], r[1], r[2] ?? 3.3, k / PUFFS + ((Math.abs(r[0]) * 0.31) % 0.14)]);
-    this.steamSet.add(key, puffs, (r, m, mo, ex, eo) => { ex![eo] = r[0]; ex![eo + 1] = z + r[2] + 0.1; ex![eo + 2] = -r[1]; ex![eo + 3] = r[3]; writeMatrix(m, mo, 0, 0, 0, 0); });
-    this.signs.setTile(key, d.sign, z);
+    this.steamSet.add(key, puffs, (r, m, mo, ex, eo) => { ex![eo] = r[0]; ex![eo + 1] = zAt(r[0], r[1]) + r[2] + 0.1; ex![eo + 2] = -r[1]; ex![eo + 3] = r[3]; writeMatrix(m, mo, 0, 0, 0, 0); });
+    this.signs.setTile(key, d.sign, z, hAt);
 
     this.tilePoles.set(key, poles);
     const [ix, iy] = key.split('_').map(Number);
@@ -1455,7 +1459,8 @@ export class NycProps {
   }
 
   private describe(cd: { kind: number; tl: TileLights; i: number }, s: Slot) {
-    const z = cd.tl.z;
+    const row = cd.kind === 0 ? cd.tl.lamps[cd.i] : cd.kind === 1 ? cd.tl.signals[cd.i] : cd.tl.signs[cd.i];
+    const z = this.heightAt ? this.heightAt(row[0], row[1]) : cd.tl.z;   // the ground under the lamp / signal / sign
     if (cd.kind === 0) {
       const r = cd.tl.lamps[cd.i];
       s.px = r[0] + Math.cos(r[2]) * 2.2; s.py = r[1] + Math.sin(r[2]) * 2.2; s.pz = z + 8.8;

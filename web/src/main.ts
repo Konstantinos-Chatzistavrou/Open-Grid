@@ -639,6 +639,8 @@ async function main() {
     const p = new THREE.Vector3(s0.x, s0.z + 3, -s0.y);
     p.x += Math.sin(startYaw) * grid.ds - Math.cos(startYaw) * grid.lat;
     p.z += Math.cos(startYaw) * grid.ds + Math.sin(startYaw) * grid.lat;
+    // on a hill a grid slot 30 m down the road can be metres above or below the start: cast from the ground there
+    if (nyc) p.y = Math.max(p.y, nyc.heightAt(p.x, p.z) + 3);
     const hit = pw.raycast(p, p.clone().add(new THREE.Vector3(0, -20, 0)));
     if (hit) p.y -= hit.toi;
     p.y += core.info.cgHeight + 0.02;
@@ -817,6 +819,18 @@ async function main() {
     visual.update(pos, quat, car.out, physPos, physQuat);
   };
   /** Fresh car on the start line, repaired, traffic back at its grid slots, lap counter at zero. */
+  /** the road plane under the car for the wet-road mirror: the terrain's slope there (flat city: horizontal) */
+  const roadN: [number, number, number] = [0, 1, 0], roadP: [number, number, number] = [0, 0, 0];
+  const roadPlane = (): [[number, number, number] | undefined, [number, number, number] | undefined] => {
+    const tr = nyc?.terrain;
+    if (!tr) return [undefined, undefined];
+    const x = pos.x, z = pos.z, e = 2;
+    const hx = (tr.atThree(x + e, z) - tr.atThree(x - e, z)) / (2 * e), hz = (tr.atThree(x, z + e) - tr.atThree(x, z - e)) / (2 * e);
+    const l = Math.hypot(hx, 1, hz);
+    roadN[0] = -hx / l; roadN[1] = 1 / l; roadN[2] = -hz / l;
+    roadP[0] = x; roadP[1] = pos.y - visual.cg.y; roadP[2] = z;
+    return [roadN, roadP];
+  };
   const resetCar = () => {
     car.body.setEnabled(true);   // paused while spectating (the city streams around the watched car then)
     spawn(); core.repair(); damage.repair(); input.hold = true; settledShowroom = 0;
@@ -842,6 +856,7 @@ async function main() {
     }
     const q = route.samples[best];
     const p = new THREE.Vector3(q.x, t.y + 3, -q.y);
+    if (nyc) p.y = Math.max(p.y, nyc.heightAt(p.x, p.z) + 3);   // the route point may be up the hill from where the car ended
     const hit = pw.raycast(p, p.clone().add(new THREE.Vector3(0, -30, 0)), car.body);
     if (hit) p.y -= hit.toi;
     p.y += core.info.cgHeight + 0.02;
@@ -3252,7 +3267,7 @@ async function main() {
       const tPost = performance.now();
       if (!inGarage) {
         updateMirror(now);
-        post.syncRoadReflection(camera, pos.y - visual.cg.y);
+        post.syncRoadReflection(camera, pos.y - visual.cg.y, ...roadPlane());
       }
       // One scene-graph walk per drawn frame: three walks the WHOLE scene in every render() call (main pass, planar road
       // reflection, mirror, headlight shadow maps, probe face, split-screen views). Everything has moved for this frame by

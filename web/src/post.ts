@@ -387,13 +387,13 @@ export class Post {
   }
 
   /** Sync real-time planar road reflection camera to the current main camera & road height. */
-  syncRoadReflection(camera: THREE.PerspectiveCamera, roadY: number) {
+  syncRoadReflection(camera: THREE.PerspectiveCamera, roadY: number, normal?: [number, number, number], point?: [number, number, number]) {
     if (!this.planarRoad) return;
     const pr = PRESETS[this.preset];
     const active = !!pr.ssr;
     this.planarRoad.setEnabled(active);
     this.planarRoad.every = this.preset === 'max' ? 1 : 2;
-    if (active) this.planarRoad.sync(camera, roadY);
+    if (active) this.planarRoad.sync(camera, roadY, normal, point);
   }
 
   /** called with the preset before every render */
