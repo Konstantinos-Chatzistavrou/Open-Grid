@@ -3,11 +3,11 @@
   "name": "Kestrel GT",
   "physics": "cars/kestrel_gt.json",
   "model": "res://assets/cars/v4/kestrel_gt_hero.glb",
-  "notes": "Generation 4 (docs/car_model_v4.md): de-branded, re-shaped derivative of '2019 Aston Martin Vantage DTM' by Dave Love SketchFab (CC BY 4.0, CREDITS.md). Model space +X left, +Y up, +Z forward, origin on the ground at the body length centre. Front axle z 1.200, rear -1.450 (wheelbase 2.650), hubs y 0.321, model track 1.709.",
+  "notes": "Faithful build (2026-11-21): the source's own body, grille, lamps and aero; marks removed, our crest added (CREDITS.md). Model space +X left, +Y up, +Z forward, origin on the ground at the body length centre. Front axle z 1.365, rear -1.285 (wheelbase 2.650), hubs y 0.321, model track 1.713.",
   "cg_in_model_m": [
-    0,
+    0.0,
     0.51,
-    -0.178
+    -0.04
   ],
   "wheel_nodes": {
     "fl": "wheel_FL",
@@ -15,21 +15,21 @@
     "rl": "wheel_RL",
     "rr": "wheel_RR"
   },
-  "wheel_visual_offset_m": 0.023,
+  "wheel_visual_offset_m": -0.051,
   "collision_box": {
     "size_m": [
-      1.96,
+      1.98,
       0.72,
-      4.44
+      4.37
     ],
     "centre_in_model_m": [
-      0,
+      0.0,
       0.72,
-      0
+      0.0
     ],
     "end_lift_m": 0.13,
-    "end_lift_start_m": 1.6,
-    "note": "body 2.01 x 1.11 x 4.49 m; flat underside between +-1.6 m, rising 0.13 m to each end; wheels are raycasts"
+    "end_lift_start_m": 1.61,
+    "note": "body 2.03 x 1.15 x 4.42 m; flat underside, rising to each end; wheels are raycasts"
   },
   "paint_material": "paint",
   "default_paint": [
@@ -41,12 +41,12 @@
     [
       -0.62,
       0.52,
-      1.95
+      1.91
     ],
     [
       0.62,
       0.52,
-      1.95
+      1.91
     ]
   ],
   "panels": {
@@ -99,16 +99,16 @@
     "taillight_bar"
   ],
   "engine_smoke_in_model_m": [
-    0,
+    0.0,
     0.78,
-    1.65
+    1.61
   ],
   "lod_model": "res://assets/cars/v3/vela_gt_traffic.glb",
   "lod_distance_m": 30,
   "driver_seat_m": [
-    0.37,
-    0.21,
-    -0.45
+    0.238,
+    0.222,
+    -0.383
   ],
   "driver_scale": 0.93
 }

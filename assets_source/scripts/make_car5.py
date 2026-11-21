@@ -1,4 +1,4 @@
-"""Car generation 4b ("Harrier GT"): a de-branded, re-shaped derivative of "2018 Mercedes C-Coupé DTM".
+"""Car generation 4b ("Harrier GT"): a de-branded derivative of "2018 Mercedes C-Coupé DTM".
 
 Run:  tools/blender/blender -b --factory-startup --python assets_source/scripts/make_car5.py -- \
           <2018_mercedes_c-coupe_dtm.glb> <out_dir>
@@ -7,7 +7,8 @@ SOURCE AND LICENCE: "2018 Mercedes C-Coupé DTM" by Dave Love SketchFab, CC BY 4
 (https://sketchfab.com/3d-models/2018-mercedes-c-coupe-dtm-5708f2acc5ef40839b6eb50970e1c173; evidence:
 assets_source/licenses/downloaded_cars_2026-10-18/). CC BY does not license the manufacturer's or sponsors'
 marks (Mercedes-AMG, Petronas Syntium, Remus, Hankook ...): the livery atlas, tyre sidewalls, plates and number are
-not used, the signature parts are replaced; see dtm_build.py and make_car4.py for the full list of what is changed.
+not used and the 3D star in the grille is cut out (`emblem_cut`). Since 2026-11-21 (`faithful`) the body, grille, lamps
+and aero are the model's own; see dtm_build.py and make_car4.py for the full list of what is changed.
 """
 import os
 import sys
@@ -17,6 +18,11 @@ from dtm_build import build  # noqa: E402
 
 CFG = dict(
     name="harrier_gt",
+    faithful=True,
+    emblem_cut=dict(cx=0.0, cz=0.455, r=0.09, y_max=-2.235),
+    grille_box=dict(x=0.55, y=-2.05, z0=0.38, z1=0.66),   # the grille moulded into the shell: chrome bars, black gaps
+    badges=[dict(name="badge_nose", face="front", x=0.0, z=0.455, y=-2.262, r=0.075),   # in the star's slot
+            dict(name="badge_rear", face="rear", x=0.0, z=0.78, r=0.035, proud=0.004)],   # the star: 1,415 body-shell faces standing 2-4 cm proud of the grille
     remove=["EXT_Number", "INT_Driver_Plate", "INT_Plate", "DAMAGE_GLASS", "EXT_Rim_Blur"],
     flat={"EXT_Windows": "glass", "EXT_Windows_Frame": "trim", "EXT_Tire": "tyre", "EXT_Tire_Tread": "tyre", "EXT_Tire_Inside": "tyre",
           "EXT_Rims": "rim", "EXT_Rim_Hub": "rim", "EXT_Disc": "disc", "EXT_Brakes": "caliper", "EXT_Mesh": "trim", "INT_Carbon": "carbon"},

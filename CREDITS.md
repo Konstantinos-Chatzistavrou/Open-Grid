@@ -50,15 +50,17 @@ Build: `assets_source/scripts/make_trees.py` -> `web/public/assets/trees/`.
 - **Kestrel GT** (`web/public/assets/cars/v4/kestrel_gt_hero.glb`): modified from "2019 Aston Martin Vantage DTM"
   by Dave Love SketchFab, https://sketchfab.com/3d-models/2019-aston-martin-vantage-dtm-266d89d6ca944f1baa7ff232a615cfbd,
   licensed CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: every manufacturer and sponsor mark, livery,
-  number and text removed; body re-shaped; splitter, grille, diffuser, wing, light units and wheels' materials replaced by
-  our own; flat materials; recoloured; compressed (`assets_source/scripts/make_car4.py`). Licence evidence:
+  number and text removed; our own crest on the nose and tail; flat materials, the body one recolourable paint; the
+  model's own shape, grille, lamps and aero kept (until 2026-11-21 the body was re-shaped and they were replaced);
+  re-scaled, wheels split and merged for the game; compressed (`assets_source/scripts/make_car4.py`). Licence evidence:
   `assets_source/licenses/downloaded_cars_2026-10-18/`. The CC BY licence does not cover the real car's or the sponsors'
   trademarks; none remain in this model.
 
 - **Harrier GT** (`web/public/assets/cars/v4/harrier_gt_hero.glb`): modified from "2018 Mercedes C-Coupé DTM" by Dave Love
   SketchFab, https://sketchfab.com/3d-models/2018-mercedes-c-coupe-dtm-5708f2acc5ef40839b6eb50970e1c173, licensed CC BY 4.0.
-  Changes as for the Kestrel GT (livery, sponsor and manufacturer marks, grille emblem, plates removed; re-shaped; splitter,
-  grille, diffuser, wing and light bars replaced; flat materials; `assets_source/scripts/make_car5.py`).
+  Changes as for the Kestrel GT (livery, sponsor and manufacturer marks, plates removed; the 3D star cut out of the grille
+  and our crest put in its slot; grille bars chrome; the model's own shape and aero kept since 2026-11-21; flat
+  materials; `assets_source/scripts/make_car5.py`).
 
 - **Hayate** (`web/public/assets/cars/v5/hayate_hero.glb`): modified from "Generic Coupe \"Azura\"" by mk2design,
   https://sketchfab.com/3d-models/generic-coupe-azura-2e1a3699de7e4f688d328dc005ef1aac, licensed CC BY 4.0. Changes: renamed;
