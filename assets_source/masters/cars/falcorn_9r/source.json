@@ -1,0 +1,13 @@
+{
+  "name": "Falcorn 9R GT",
+  "url": "tools/pipeline/sculpt_fleet.py",
+  "author": "OpenGrid contributors",
+  "licence": "CC-BY-NC-4.0",
+  "licence_url": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "downloaded": "2026-11-20",
+  "files": [],
+  "shipped": [
+    "web/public/assets/cars/v5/falcorn_9r_hero.glb"
+  ],
+  "notes": "Our own parametric sculpt (tools/pipeline/sculpt_fleet.py, ingested by tools/pipeline/ingest_car.py); no third-party mesh. 'downloaded' = the date the file first entered the repository (git)."
+}

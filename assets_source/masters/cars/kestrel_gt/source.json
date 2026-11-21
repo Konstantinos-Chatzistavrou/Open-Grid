@@ -1,0 +1,13 @@
+{
+  "name": "2019 Aston Martin Vantage DTM",
+  "url": "https://sketchfab.com/3d-models/266d89d6ca944f1baa7ff232a615cfbd",
+  "author": "Dave Love SketchFab (Tyler_Dave)",
+  "licence": "CC-BY-4.0",
+  "licence_url": "http://creativecommons.org/licenses/by/4.0/",
+  "downloaded": "2026-10-18",
+  "files": [],
+  "shipped": [
+    "web/public/assets/cars/v4/kestrel_gt_hero.glb"
+  ],
+  "notes": "Licence read 2026-11-21 from the official Sketchfab API (https://api.sketchfab.com/v3/models/266d89d6ca944f1baa7ff232a615cfbd: license 'CC Attribution'). Marks, badges, plates and liveries removed; renamed; see CREDITS.md. Provenance caution: the file's internal names (EXT_/INT_ materials) look like a racing-sim mod export; it could not be confirmed that the uploader made the model."
+}

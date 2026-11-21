@@ -1,0 +1,25 @@
+{
+  "name": "Vela GT (from \"Car Concept\")",
+  "url": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept",
+  "author": "Eric Chadwick, (c) 2024 Darmstadt Graphics Group GmbH",
+  "licence": "CC-BY-4.0",
+  "licence_url": "https://creativecommons.org/licenses/by/4.0/legalcode",
+  "downloaded": "2026-10-19",
+  "files": [],
+  "shipped": [
+    "web/public/assets/cars/v3/vela_gt_hero.glb",
+    "web/public/assets/cars/v3/vela_gt_traffic.glb",
+    "web/public/assets/cars/v3/vela_front_bumper_pro.glb",
+    "web/public/assets/cars/v3/vela_front_split_auth.glb",
+    "web/public/assets/cars/v3/vela_front_track.glb",
+    "web/public/assets/cars/v3/vela_front_wide.glb",
+    "web/public/assets/cars/v3/vela_hood_domed.glb",
+    "web/public/assets/cars/v3/vela_hood_dome.glb",
+    "web/public/assets/cars/v3/vela_hood_pro.glb",
+    "web/public/assets/cars/v3/vela_hood_track.glb",
+    "web/public/assets/cars/v3/vela_hood_vent_auth.glb",
+    "web/public/assets/cars/v3/vela_hood_vent.glb",
+    "web/public/assets/cars/v3/vela_rear_wide.glb"
+  ],
+  "notes": "Licence read 2026-11-21 from the model's LICENSE.md and metadata.json in the official Khronos glTF-Sample-Assets repository (model and textures CC-BY-4.0; the Khronos and 3D Commerce logos are trademarks, excluded and removed). Based on 'FREE Concept Car 004' by Unity Fan (CC0). Our changes (de-branding, re-proportioning, new parts; hero, traffic and part GLBs): CREDITS.md, docs/car_model_v3.md. 'downloaded' = the date the hero file first entered the repository (git); the source download was earlier."
+}

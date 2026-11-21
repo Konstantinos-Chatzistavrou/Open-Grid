@@ -1,0 +1,13 @@
+{
+  "name": "Tornado GT",
+  "url": "assets_source/scripts/make_tornado.py",
+  "author": "OpenGrid contributors",
+  "licence": "CC-BY-NC-4.0",
+  "licence_url": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "downloaded": "2026-11-20",
+  "files": [],
+  "shipped": [
+    "web/public/assets/cars/v5/tornado_gt_hero.glb"
+  ],
+  "notes": "Our own procedural model (Blender script in this repository); no third-party mesh or texture. 'downloaded' = the date the file first entered the repository (git)."
+}
