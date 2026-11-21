@@ -11,6 +11,7 @@ import type { AssistToggles } from './physics/core';
 
 export type AbsLevel = 'off' | 'weak' | 'default';
 export type CounterLevel = 'off' | 'weak' | 'strong';
+export type AutoClutchLevel = 'off' | 'poor' | 'normal' | 'perfect';
 export type LineMode = 'off' | 'braking' | 'full';
 export type Preset = 'beginner' | 'intermediate' | 'expert' | 'custom';
 export interface AssistSettings {
@@ -20,13 +21,14 @@ export interface AssistSettings {
   stability: boolean;
   countersteer: CounterLevel;
   gearbox: 'auto' | 'manual';
+  autoClutch: AutoClutchLevel;
   line: LineMode;
 }
 
 export const PRESETS: Record<Exclude<Preset, 'custom'>, Omit<AssistSettings, 'preset'>> = {
-  beginner: { abs: 'default', tc: 5, stability: true, countersteer: 'strong', gearbox: 'auto', line: 'full' },
-  intermediate: { abs: 'default', tc: 3, stability: true, countersteer: 'weak', gearbox: 'auto', line: 'braking' },
-  expert: { abs: 'weak', tc: 0, stability: false, countersteer: 'off', gearbox: 'manual', line: 'off' },
+  beginner: { abs: 'default', tc: 5, stability: true, countersteer: 'strong', gearbox: 'auto', autoClutch: 'perfect', line: 'full' },
+  intermediate: { abs: 'default', tc: 3, stability: true, countersteer: 'weak', gearbox: 'auto', autoClutch: 'perfect', line: 'braking' },
+  expert: { abs: 'weak', tc: 0, stability: false, countersteer: 'off', gearbox: 'manual', autoClutch: 'normal', line: 'off' },
 };
 export const PRESET_INFO: Record<Preset, string> = {
   beginner: 'Every aid on. The car helps you catch slides and shows where to brake.',
@@ -52,6 +54,7 @@ export function loadAssists(): AssistSettings {
       if (typeof s.stability === 'boolean') d.stability = s.stability;
       if (['off', 'weak', 'strong'].includes(s.countersteer)) d.countersteer = s.countersteer;
       if (s.gearbox === 'auto' || s.gearbox === 'manual') d.gearbox = s.gearbox;
+      if (['off', 'poor', 'normal', 'perfect'].includes(s.autoClutch)) d.autoClutch = s.autoClutch;
       if (['off', 'braking', 'full'].includes(s.line)) d.line = s.line;
     }
   } catch { /* storage blocked */ }
@@ -78,6 +81,7 @@ export function toToggles(a: AssistSettings, t: AssistToggles) {
   t.esc = a.stability;
   t.countersteer = COUNTER_GAIN[a.countersteer];
   t.autoGearbox = a.gearbox === 'auto';
+  t.autoClutch = a.autoClutch;
 }
 /** The quick keys while driving (1 ABS, 2 TC, 3 stability, 5 gearbox) change the saved settings too. */
 export function fromToggles(a: AssistSettings, t: AssistToggles) {

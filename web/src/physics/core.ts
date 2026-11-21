@@ -43,6 +43,8 @@ export interface AssistToggles {
   abs: boolean; tc: boolean; esc: boolean; autoGearbox: boolean;
   /** strengths (assists.ts levels): ABS / TC wheel-slip targets, countersteer gain; 0 / absent = core default / off */
   absSlip?: number; tcSlip?: number; countersteer?: number;
+  /** auto-clutch assist quality (default 'perfect'): 'off' = full manual clutch */
+  autoClutch?: 'off' | 'poor' | 'normal' | 'perfect';
 }
 
 export interface CarInfo {
@@ -139,6 +141,7 @@ export class CoreCar {
     b[88] = +assists.abs; b[89] = +assists.tc; b[90] = +assists.esc; b[91] = +assists.autoGearbox;
     b[93] = assists.absSlip ?? 0; b[94] = assists.tcSlip ?? 0; b[95] = assists.countersteer ?? 0;
     b[92] = raw.directGear ?? -99;
+    b[40] = assists.autoClutch === 'off' ? -1 : assists.autoClutch === 'poor' ? 2 : assists.autoClutch === 'normal' ? 1 : 0;
     mod!._rs_step(this.id, dt);
     return b;
   }
@@ -152,6 +155,7 @@ export class CoreCar {
     b[88] = +assists.abs; b[89] = +assists.tc; b[90] = +assists.esc; b[91] = +assists.autoGearbox;
     b[93] = assists.absSlip ?? 0; b[94] = assists.tcSlip ?? 0; b[95] = assists.countersteer ?? 0;
     b[92] = raw.directGear ?? -99;
+    b[40] = assists.autoClutch === 'off' ? -1 : assists.autoClutch === 'poor' ? 2 : assists.autoClutch === 'normal' ? 1 : 0;
     mod!._rs_step_patch(this.id, dt);
     return b;
   }
@@ -200,6 +204,11 @@ export const OUT = {
   graining: (i: number) => 269 + i,     // cold-tire surface graining 0..1
   treadPitchHz: 273,                    // tread block impact pitch frequency, Hz
   massKg: 274,                          // current total mass: spec (full tank) minus burnt fuel, kg
+  clutchTemp: 275,                      // physical clutch friction disc temperature, C
+  clutchHealth: 276,                    // clutch lining health, 0..1
+  gearboxHealth: 277,                   // gearbox synchro & tooth health, 0..1
+  missedShifts: 278,                    // cumulative missed shifts / tooth pop-outs counter
+  gearGrind: 279,                       // active synchro / dog-tooth grind flag (0/1)
 } as const;
 
 export interface LapInfo { laps: number; current: number; last: number; best: number; distance: number; position: number; finished: boolean; routeLength: number }

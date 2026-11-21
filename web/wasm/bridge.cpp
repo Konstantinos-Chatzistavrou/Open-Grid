@@ -72,6 +72,10 @@ EMSCRIPTEN_KEEPALIVE int rs_create(const char* json) {
         c->vehicle->chassis_dynamics().brake_fluid_boil_enabled = true;
         c->vehicle->engine_systems().torsional_compliance_enabled = true;
         c->vehicle->engine_systems().dog_box_flat_shift_cut = true;
+        // Street/GT cars without an explicit dog_box/dct spec run the physical H-pattern synchromesh cone clutch.
+        if (c->cfg.drivetrain.transmission.empty()) {
+            c->vehicle->engine_systems().transmission = rs::TransmissionType::HPatternSynchro;
+        }
         c->vehicle->atmosphere().enabled = true;
         // Engine wear (redline / overheating abuse -> misfires) and fuel use; R repairs and refuels (rs_repair).
         // Same set as the Unreal plugin (UOpenGridVehicleComponent::ApplyFeatureFlagsLocked): keep them identical.
@@ -198,6 +202,14 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     c.controls->settings.countersteer_assist = b[95] > 0;
     if (b[95] > 0) c.controls->settings.countersteer_gain = b[95];
     raw.direct_gear = int(std::lround(b[92]));
+    // buf[40]: auto-clutch assist mode: 0 (default) = Perfect, 1 = Normal, 2 = Poor, -1/3 = Off (manual clutch)
+    const int ac_mode = int(std::lround(b[40]));
+    if (ac_mode < 0 || ac_mode >= 3) {
+        c.controls->settings.auto_clutch = false;
+    } else {
+        c.controls->settings.auto_clutch = true;
+        c.controls->settings.auto_clutch_quality = rs::AutoClutchQuality(ac_mode);
+    }
 
     const rs::DriverInput di = c.controls->update(raw, c.out, dt);
     c.vehicle->set_input(di);
@@ -274,6 +286,12 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     b[264] = c.out.ayc_yaw_moment_nm;
     b[273] = pitch_sum * 0.5;
     b[274] = c.out.mass_kg;   // current mass (fuel burnt off the spec's full-tank mass): world.ts applies it to the body
+    // Physical clutch disc & synchromesh gearbox telemetry [275..279]
+    b[275] = c.out.clutch_temp_c;
+    b[276] = c.out.clutch_health;
+    b[277] = c.out.gearbox_health;
+    b[278] = c.out.missed_shifts;
+    b[279] = c.out.gear_grind ? 1.0 : 0.0;
 }
 }  // namespace
 

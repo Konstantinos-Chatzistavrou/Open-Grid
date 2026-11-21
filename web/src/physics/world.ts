@@ -254,9 +254,10 @@ export class CarBody {
     const v = this.body.linvel();
     const c = this.raycastWheels();
     this.feedCrash(v);
-    // Bug fix: ensure auto-gearbox immediately engages 1st from Neutral when throttle is pressed
+    // Bug fix: ensure auto-gearbox immediately engages 1st from Neutral when stopped and throttle is pressed
+    // (guarded by speed < 1 m/s so active synchromesh transitions through Neutral while rolling never spam shiftUp).
     let inRaw = raw;
-    if (assists.autoGearbox && Math.round(this.out[OUT.gear] ?? 1) === 1 && raw.throttle > 0.05 && raw.brake < 0.1 && !raw.shiftUp) {
+    if (assists.autoGearbox && Math.round(this.out[OUT.gear] ?? 1) === 1 && Math.abs(this.out[OUT.speed] ?? 0) < 1.0 && !(this.out[OUT.gearGrind] > 0.5) && raw.throttle > 0.05 && raw.brake < 0.1 && !raw.shiftUp) {
       const sr = this.shiftRaw;
       sr.steer = raw.steer; sr.throttle = raw.throttle; sr.brake = raw.brake;
       sr.clutch = raw.clutch; sr.handbrake = raw.handbrake;
