@@ -94,6 +94,11 @@ struct WheelOutput {
     double brake_fluid_temp_c = 45.0;// C, caliper DOT 4 brake fluid temperature (vapor lock / spongy pedal > 260 C)
     double brake_pad_wear = 0.0;     // 0..1 progressive brake pad friction lining wear
     double hydroplaning_lift = 0.0;  // 0..0.90 hydrodynamic water-wedge lift fraction on standing puddles
+    double toe_angle = 0.0;          // rad, dynamic suspension alignment toe-in (+ = toe-in: static + bump steer + damage)
+    double caster_angle = 0.0;       // rad, instantaneous dynamic steering-axis caster
+    double kpi_angle = 0.0;          // rad, instantaneous dynamic kingpin inclination
+    double scrub_radius_m = 0.0;     // m, instantaneous scrub radius
+    double motion_ratio = 1.0;       // wheel-to-shock kinematic motion ratio
 };
 
 // Chassis torsional stiffness (frame twist between front & rear strut towers), Active Torque-Vectoring E-Diff (AYC),
@@ -153,6 +158,8 @@ struct VehicleOutput {
     bool front_splitter_stalled = false;     // true when extreme front bottoming chokes ground-effect diffuser airflow
     double brake_vapor_lock_sponge = 0.0;    // 0..0.55 brake line pressure loss from boiling caliper fluid (> 260 C)
     double air_density_kg_m3 = 1.225;        // live ISA atmospheric air density (kg/m^3) from altitude, Celsius & humidity
+    double roll_centre_front_m = 0.0;        // m, dynamic front axle kinematic roll-centre height above road
+    double roll_centre_rear_m = 0.0;         // m, dynamic rear axle kinematic roll-centre height above road
 };
 
 // Physical effect multipliers (filled from DamageModel each tick when damage is enabled).
@@ -251,6 +258,7 @@ private:
     ChassisDynamicsConfig chassis_dyn_{};
     AtmosphericEnvironment atmosphere_{};
     std::array<double, 2> prev_axle_fy_{};
+    std::array<double, 4> prev_fy_{};       // last step's tyre Fy per wheel (kinematic heave jacking force)
     std::array<double, 4> prev_fx_{};       // last step's tyre Fx per wheel (anti-dive / anti-squat link forces)
     std::array<double, 4> dz_{};            // suspension compression from static per wheel, m (+ = bump; kinematics)
     std::array<double, 4> wheel_angle_{};   // accumulated wheel rotation angle, rad (for flat-spot phase & FFB thump)

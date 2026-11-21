@@ -27,7 +27,23 @@ std::array<Vec3, 4> wheel_points(const CarConfig& c) {
 }  // namespace
 
 Vehicle::Vehicle(const CarConfig& cfg)
-    : cfg_(cfg), damage_model_(cfg.mass, wheel_points(cfg)), drivetrain_(cfg_) {}
+    : cfg_(cfg), damage_model_(cfg.mass, wheel_points(cfg)), drivetrain_(cfg_) {
+    // Ensure precomputed kinematic tables exist even if a test constructed CarConfig without finalize().
+    for (int a = 0; a < 2; ++a) {
+        if (!cfg_.axle_kinematics[a]) {
+            AxleParams& ax = (a == 0) ? cfg_.front : cfg_.rear;
+            const TireParams& t = (a == 0) ? cfg_.tire_front : cfg_.tire_rear;
+            if (!ax.kinematics.explicit_in_config) ax.kinematics = synthesize_fitted_hardpoints(ax, t, cfg_.wheelbase);
+            else {
+                ax.kinematics.wheel_center = {0.0, 0.5 * ax.track, t.radius};
+                ax.kinematics.tire_radius = t.radius;
+                ax.kinematics.static_camber_rad = ax.static_camber_deg * kPi / 180.0;
+                ax.kinematics.static_toe_rad = ax.static_toe_deg * kPi / 180.0;
+            }
+            cfg_.axle_kinematics[a] = AxleKinematicsTable::build(ax.kinematics, ax.max_steer_deg);
+        }
+    }
+}
 
 void Vehicle::add_contact(std::uint64_t id, const Vec3& point_body, double impulse) {
     if (damage_enabled) damage_model_.add_contact(id, point_body, impulse, time_, last_dt_);
@@ -68,36 +84,28 @@ void Vehicle::reset_motion(double v, int gear) {
         drivetrain_.systems.engaged_gear = gear;
     }
     prev_axle_fy_ = {0, 0};
+    prev_fy_ = {0, 0, 0, 0};
 }
 
-// Steering: input * max lock, with optional Ackermann geometry. For a turn of radius R (rear
-// axle centre), ideal wheel angles are  tan(d_inner) = L / (R - t/2),  tan(d_outer) = L / (R + t/2),
-// so the inner wheel turns more. `ackermann` blends from parallel (0) to ideal (1).
+// Steering: evaluated from the precomputed 3D suspension kinematics table (incorporates
+// static toe, dynamic bump steer, and true geometric Ackermann from the steering linkage),
+// plus suspension damage and bushing/rack compliance steer.
 double Vehicle::steer_angle(int w) const {
     const AxleParams& ax = cfg_.axle(w);
-    // Toe: static setting + bump steer (toe change with travel). Toe-in turns a left wheel right (negative angle) and a
-    // right wheel left. Rear axles usually toe in under bump (stable in a loaded corner).
-    const double toe_in = (ax.static_toe_deg + ax.bump_steer_deg_per_m * dz_[w]) * kPi / 180.0;
-    const double toe = (w % 2 == 0 ? -1.0 : 1.0) * toe_in;
-    if (ax.max_steer_deg <= 0) return damage_.toe[w] + toe;
-    double d = input_.steer * ax.max_steer_deg * kPi / 180.0 + damage_.toe[w] + toe;
-    // Compliance steer: lateral force flexes bushings/rack and turns the wheels back toward
-    // straight:  d_actual = d_cmd - c * Fy_axle.  A major source of road-car understeer.
-    d -= ax.steer_compliance * prev_axle_fy_[w < 2 ? 0 : 1];
-    if (std::abs(d) < 1e-6 || ax.ackermann <= 0) return d;
-    double L = cfg_.wheelbase, t = ax.track;
-    double R = L / std::tan(std::abs(d));
-    bool left_wheel = (w % 2 == 0);
-    bool inner = (d > 0) == left_wheel;               // turning left: left wheel is inner
-    double ideal = std::atan(L / (inner ? R - 0.5 * t : R + 0.5 * t));
-    return sign(d) * lerp(std::abs(d), ideal, ax.ackermann);
+    const int a = w < 2 ? 0 : 1;
+    const bool left_wheel = (w % 2 == 0);
+    const double u_rack = ax.max_steer_deg > 0 ? clamp(input_.steer, -1.0, 1.0) : 0.0;
+    const WheelKinematicSample ks = cfg_.axle_kinematics[a]->sample_wheel(left_wheel, dz_[w], u_rack);
+    double d = ks.steer_rad + damage_.toe[w];
+    if (ax.max_steer_deg > 0) d -= ax.steer_compliance * prev_axle_fy_[a];
+    return d;
 }
 
 double Vehicle::roll_centre(int w) const {
-    const AxleParams& ax = cfg_.axle(w);
-    const int l = w < 2 ? FL : RL;
-    const double heave = 0.5 * (dz_[l] + dz_[l + 1]);
-    return clamp(ax.roll_centre_height + ax.roll_centre_gain * heave, -0.1, 0.4);
+    const int a = w < 2 ? 0 : 1;
+    const double u_rack = cfg_.axle(w).max_steer_deg > 0 ? clamp(input_.steer, -1.0, 1.0) : 0.0;
+    const AxleRollCentre rc = cfg_.axle_kinematics[a]->roll_centre(dz_[a * 2], dz_[a * 2 + 1], u_rack);
+    return clamp(rc.height_m, -0.25, 0.45);
 }
 
 std::array<WheelRay, 4> Vehicle::wheel_rays(const ChassisState& s) const {
@@ -437,15 +445,55 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         double vx = 0, vy = 0, load = 0, mu = 1, gamma = 0, gamma_rate = 0, re = 0.33, sigma_x = 0.12, sigma_y = 0.30;
         double ffb_hydro_scale = 1.0;
     };
+    // Precompute per-wheel kinematic lookup and dynamic axle roll centres ONCE for this tick.
+    std::array<WheelKinematicSample, 4> wheel_kin{};
+    std::array<AxleRollCentre, 2> axle_rc{};
+    std::array<double, 2> axle_rch{};
+    std::array<double, 2> axle_jack_heave{};
+    for (int a = 0; a < 2; ++a) {
+        const AxleParams& ax = (a == 0) ? cfg_.front : cfg_.rear;
+        const double u_rack = ax.max_steer_deg > 0 ? clamp(input_.steer, -1.0, 1.0) : 0.0;
+        const int wl = a * 2, wr = a * 2 + 1;
+        const WheelKinematicSample left_s = cfg_.axle_kinematics[a]->sample_left(dz_[wl], u_rack);
+        const WheelKinematicSample right_unmirrored = cfg_.axle_kinematics[a]->sample_left(dz_[wr], -u_rack);
+        wheel_kin[wl] = left_s;
+        wheel_kin[wr] = right_unmirrored;
+        wheel_kin[wr].steer_rad = -right_unmirrored.steer_rad;
+        wheel_kin[wr].wheel_offset.y = -right_unmirrored.wheel_offset.y;
+        wheel_kin[wr].cp_y = -right_unmirrored.cp_y;
+        wheel_kin[wr].fvic_y = -right_unmirrored.fvic_y;
+
+        axle_rc[a] = compute_axle_roll_centre(left_s, right_unmirrored);
+        axle_rch[a] = clamp(axle_rc[a].height_m, -0.25, 0.45);
+        // Symmetric heave jacking force from unequal left/right lateral tyre forces acting through the
+        // kinematic swing-arm angles (roll-moment part is already handled via p_lat = k.point + up * rch).
+        if (touching[wl] && touching[wr]) {
+            const double sl = clamp(axle_rc[a].left_swing_slope, -0.5, 0.5);
+            const double sr = clamp(axle_rc[a].right_swing_slope, -0.5, 0.5);
+            axle_jack_heave[a] = prev_fy_[wr] * sr - prev_fy_[wl] * sl;
+        }
+    }
+    out.roll_centre_front_m = axle_rch[0];
+    out.roll_centre_rear_m = axle_rch[1];
+
     std::array<Kin, 4> kin;
     for (int w = 0; w < 4; ++w) {
-        out.wheels[w].steer_angle = steer_angle(w);
+        const int a = w < 2 ? 0 : 1;
+        const bool left_wheel = (w % 2 == 0);
+        const AxleParams& ax = cfg_.axle(w);
+        const WheelKinematicSample& ks = wheel_kin[w];
+        double d = ks.steer_rad + damage_.toe[w];
+        if (ax.max_steer_deg > 0) d -= ax.steer_compliance * prev_axle_fy_[a];
+        out.wheels[w].steer_angle = d;
+        out.wheels[w].toe_angle = ks.toe_rad + (left_wheel ? -1.0 : 1.0) * damage_.toe[w];
+        out.wheels[w].caster_angle = ks.caster_rad + damage_.caster[w];
+        out.wheels[w].kpi_angle = ks.kpi_rad;
+        out.wheels[w].scrub_radius_m = ks.scrub_radius_m;
+        out.wheels[w].motion_ratio = ks.motion_ratio;
         if (!touching[w]) continue;
         const WheelContact& c = contacts[w];
-        const AxleParams& ax = cfg_.axle(w);
         const TireParams& tp = cfg_.tire(w);
         Kin& k = kin[w];
-        double d = out.wheels[w].steer_angle;
         Vec3 heading = s.orientation.rotate({std::cos(d), std::sin(d), 0});
         k.fwd = normalized(heading - c.normal * dot(heading, c.normal));   // in the contact plane
         k.lat = cross(c.normal, k.fwd);                                    // left
@@ -455,13 +503,11 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         k.vx = dot(v_c, k.fwd);
         k.vy = dot(v_c, k.lat);
         k.load = susp_force[w] * std::max(dot(up, c.normal), 0.0);       // normal component
-        // Geometric (roll-centre) load transfer: the part of lateral load transfer that goes
-        // through the suspension links instead of the springs:  dFz = Fy_axle * h_rc / track.
-        // A leftward force (left turn) loads the right (outer) wheel. Uses last step's Fy.
-        // Roll centre migrates with axle heave (double wishbone: drops ~1.8x as far as the body).
-        const double rch = roll_centre(w);
-        double geo = prev_axle_fy_[w < 2 ? 0 : 1] * rch / ax.track;
-        k.load = std::max(0.0, k.load + (w % 2 == 0 ? -geo : geo));
+        // Geometric (roll-centre) load transfer + kinematic heave jacking force through the suspension links:
+        //   dFz_geo = Fy_axle * h_rc / track (roll transfer) + 0.5 * F_jack_heave (symmetric heave component).
+        const double rch = axle_rch[a];
+        const double geo = prev_axle_fy_[a] * rch / ax.track;
+        k.load = std::max(0.0, k.load + (left_wheel ? -geo : geo) + 0.5 * axle_jack_heave[a]);
         // Per-wheel Hydroplaning (Aquaplaning Water-Wedge Lift): asymmetric standing puddles lift only the submerged wheels
         if (c.water_depth_mm > 0.05) {
             const double p_kpa = tire_condition_[w].pressure_kpa > 0.0 ? tire_condition_[w].pressure_kpa : tp.p_nominal_kpa;
@@ -479,16 +525,12 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
              * (tire_zones_enabled ? tire_condition_[w].zone_health_grip_factor() : 1.0) * damage_.grip[w];
         // Dynamic inclination / camber angle gamma in the tyre frame (+ = top tilted toward +left):
         //   1. Chassis roll relative to the road normal (dot(up, k.lat))
-        //   2. Static camber + suspension bump camber gain (negative = top tilted inward) + bent wishbone damage
-        //   3. Steering caster angle + kingpin inclination (caster leans outer steered wheel into turn)
-        double roll_gamma = std::asin(clamp(dot(up, k.lat), -0.5, 0.5));
-        const double dz = comp[w] - cfg_.wheels[w].static_compression;
-        double susp_camber = ax.static_camber_deg * kPi / 180.0 + ax.camber_gain_rad_per_m * dz
-                           + ax.camber_gain2_rad_per_m2 * dz * dz + damage_.camber[w];
-        double caster = ax.caster_deg * kPi / 180.0 + damage_.caster[w], kpi = ax.kpi_deg * kPi / 180.0;
-        double side = (w % 2 == 0) ? -1.0 : 1.0;   // FL/RL = -1 (left), FR/RR = +1 (right)
-        k.gamma = clamp(roll_gamma - side * susp_camber + caster * std::sin(d) - side * kpi * (1.0 - std::cos(d)), -0.35, 0.35);
-        k.gamma_rate = -side * (ax.camber_gain_rad_per_m + 2.0 * ax.camber_gain2_rad_per_m2 * dz) * comp_rate[w];
+        //   2. 3D kinematic camber ks.camber_rad (includes static camber, nonlinear bump/droop camber curve,
+        //      and steering-induced caster + KPI inclination) + bent wishbone/caster damage.
+        const double roll_gamma = std::asin(clamp(dot(up, k.lat), -0.5, 0.5));
+        const double side = left_wheel ? -1.0 : 1.0;   // FL/RL = -1 (left), FR/RR = +1 (right)
+        k.gamma = clamp(roll_gamma - side * (ks.camber_rad + damage_.camber[w]) + damage_.caster[w] * std::sin(d), -0.35, 0.35);
+        k.gamma_rate = -side * ks.dcamber_dz * comp_rate[w];
         const double w_dpi = tire_condition_[w].dpi(tp);
         k.re = tire_zones_enabled ? effective_rolling_radius_mf62(tp, k.load, k.gamma, w_dpi, drivetrain_.wheel_omega[w])
                                   : effective_rolling_radius(tp, k.load);
@@ -694,11 +736,14 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     // ------------------------------------------------------------------ forces on the chassis
     Vec3 force, torque;
     std::array<double, 2> axle_fy{};
+    std::array<double, 4> wheel_fy{};
     for (int w = 0; w < 4; ++w) {
         WheelOutput& wo = out.wheels[w];
         const TireParams& tp = cfg_.tire(w);
+        const int a = w < 2 ? 0 : 1;
         double droop = cfg_.axle(w).spring_rest_length - comp[w];
-        wo.centre_world = rays[w].origin + rays[w].direction * droop;
+        wo.centre_world = rays[w].origin + rays[w].direction * droop
+                        + s.orientation.rotate({wheel_kin[w].wheel_offset.x, wheel_kin[w].wheel_offset.y, 0.0});
         wo.angular_velocity = drivetrain_.wheel_omega[w];
         wo.slip_ratio = kappa_[w];
         wo.slip_angle = std::atan(tan_alpha_[w]);
@@ -713,8 +758,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         prev_fx_[w] = fx;
         if (w < 2 && cfg_.axle(w).max_steer_deg > 0) {
             // Rack torque about the steering axis: the tyre's aligning moment plus the lateral force acting on the
-            // caster trail (R tan caster) + speed-synchronous flat-spot FFB thump when a front tyre is flat-spotted.
-            const double trail = tp.radius * std::tan(cfg_.axle(w).caster_deg * kPi / 180.0 + damage_.caster[w]);
+            // kinematic caster trail + speed-synchronous flat-spot FFB thump when a front tyre is flat-spotted.
+            const double trail = wheel_kin[w].caster_trail_m + tp.radius * std::tan(damage_.caster[w]);
             const double flat_thump = tire_zones_enabled
                                     ? tire_condition_[w].flat_spot_ffb_torque_nm(wheel_angle_[w], k.load, std::hypot(k.vx, k.vy))
                                     : 0.0;
@@ -742,21 +787,22 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         wo.contact_point = k.point;
         wo.force_world = k.fwd * fx + k.lat * fy;
         wo.grip_limit = std::max(tp.mu_x, tp.mu_y) * k.mu * k.load;
-        // Suspension force acts along the body's up axis; longitudinal tyre force at the contact
-        // patch; lateral tyre force at the roll-centre height (models suspension geometry: a
-        // higher roll centre means less body roll for the same cornering force); residual
-        // self-aligning torque Mz (after kingpin caster trail & steering compliance) acts about
-        // the contact normal.
-        Vec3 f_susp = up * susp_force[w];
+        // Suspension force acts along the body's up axis (plus symmetric heave jacking force);
+        // longitudinal tyre force at the contact patch; lateral tyre force at the dynamic
+        // roll-centre height (handles the roll-moment geometric transfer without double-counting);
+        // residual self-aligning torque Mz acts about the contact normal.
+        Vec3 f_susp = up * (susp_force[w] + 0.5 * axle_jack_heave[a]);
         Vec3 f_long = k.fwd * fx;
         Vec3 f_lat = k.lat * fy;
-        Vec3 p_lat = k.point + up * roll_centre(w);
+        Vec3 p_lat = k.point + up * axle_rch[a];
         force += f_susp + f_long + f_lat;
-        axle_fy[w < 2 ? 0 : 1] += fy;
+        axle_fy[a] += fy;
+        wheel_fy[w] = fy;
         torque += cross(k.point - s.position, f_susp + f_long) + cross(p_lat - s.position, f_lat) + k.normal * (0.15 * mz);
     }
 
     prev_axle_fy_ = axle_fy;
+    prev_fy_ = wheel_fy;
 
     // ---- Active Torque-Vectoring E-Diff / Active Yaw Control (AYC)
     if (chassis_dyn_.active_yaw_control_enabled && out.speed > 4.0 && input_.throttle > 0.12 && (touching[RL] || touching[RR])) {

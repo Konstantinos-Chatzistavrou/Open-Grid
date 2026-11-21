@@ -35,7 +35,20 @@
     "camber_gain2_deg_per_m2": -230,
     "roll_centre_gain": -1.8,
     "damper_knee_mps": 0.13,
-    "damper_high_speed_ratio": 0.45
+    "damper_high_speed_ratio": 0.45,
+    "kinematics": {
+      "type": "double_wishbone",
+      "lca_front": [0.165, 0.360, 0.170],
+      "lca_rear": [-0.175, 0.360, 0.170],
+      "lca_outer": [0.005, 0.760, 0.205],
+      "uca_front": [0.105, 0.458, 0.377],
+      "uca_rear": [-0.165, 0.458, 0.377],
+      "uca_outer": [-0.025, 0.728, 0.458],
+      "tie_inner": [-0.115, 0.381, 0.205],
+      "tie_outer": [-0.115, 0.738, 0.250],
+      "shock_lower": [0.0, 0.640, 0.195],
+      "shock_upper": [0.0, 0.540, 0.610]
+    }
   },
   "rear_axle": {
     "track_m": 1.6,
@@ -57,7 +70,20 @@
     "camber_gain2_deg_per_m2": -230,
     "roll_centre_gain": -1.5,
     "damper_knee_mps": 0.13,
-    "damper_high_speed_ratio": 0.45
+    "damper_high_speed_ratio": 0.45,
+    "kinematics": {
+      "type": "double_wishbone",
+      "lca_front": [0.160, 0.355, 0.190],
+      "lca_rear": [-0.180, 0.355, 0.190],
+      "lca_outer": [0.0, 0.755, 0.205],
+      "uca_front": [0.130, 0.475, 0.394],
+      "uca_rear": [-0.140, 0.475, 0.394],
+      "uca_outer": [0.0, 0.745, 0.460],
+      "tie_inner": [-0.115, 0.387, 0.224],
+      "tie_outer": [-0.115, 0.752, 0.250],
+      "shock_lower": [0.0, 0.640, 0.200],
+      "shock_upper": [0.0, 0.550, 0.620]
+    }
   },
   "tire_front": {
     "size": "245/35 R19",

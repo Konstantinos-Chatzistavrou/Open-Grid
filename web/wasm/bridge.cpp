@@ -256,6 +256,7 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
         if (i < 2) { cav_lo_sum += ac.cavity_mode_low_hz; cav_hi_sum += ac.cavity_mode_high_hz; pitch_sum += ac.tread_block_pitch_hz; }
         b[265 + i] = w.condition.blistering;
         b[269 + i] = w.condition.graining;
+        b[376 + i] = w.toe_angle;
     }
     b[250] = cav_lo_sum * 0.5;
     b[251] = cav_hi_sum * 0.5;
@@ -274,6 +275,8 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     b[264] = c.out.ayc_yaw_moment_nm;
     b[273] = pitch_sum * 0.5;
     b[274] = c.out.mass_kg;   // current mass (fuel burnt off the spec's full-tank mass): world.ts applies it to the body
+    b[380] = c.out.roll_centre_front_m;
+    b[381] = c.out.roll_centre_rear_m;
 }
 }  // namespace
 
