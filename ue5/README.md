@@ -13,12 +13,15 @@ input; handling, damage, AI and race logic stay in the core so both builds feel 
 | `THIRD_PARTY_ASSETS.md` | list of assets that may not be committed (they live in `Content/ThirdParty/`) |
 
 First session, step by step: [`docs/ue5_first_session.md`](../docs/ue5_first_session.md).
+What to build now vs. what to stop in WebGPU: [`docs/ue5_roadmap.md`](../docs/ue5_roadmap.md).
 
 ## Rules
 
 - **The repo is public.** Nothing that may not be redistributed goes in it: Fab and Marketplace assets, paid content,
   private notes. Put them in `Content/ThirdParty/` (gitignored) and list them in `THIRD_PARTY_ASSETS.md`.
-- **Binary assets use Git LFS** (`.gitattributes`): run `git lfs install` before the first commit under `Content/`.
+- **No Git LFS in the public repo** (`.gitattributes`): strangers cloning would consume the owner's monthly LFS bandwidth
+  quota. Large 4K masters live on GitHub Releases (`node tools/assets/masters.mjs fetch`), and Unreal exports are
+  generated locally (`tools/assets/build_kit_*.py`, `node tools/ue5/export_cars_for_ue.mjs`).
 - **Car data is not copied.** The vehicle component reads `data/cars/*.json` from the repo (`../data`). Only a
   packaged game needs a copy in `Content/OpenGridData`.
 - **No physics in Blueprints or Unreal-side C++.** If handling needs a change, it goes in `core/` with a test, and
