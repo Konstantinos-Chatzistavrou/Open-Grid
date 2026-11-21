@@ -89,14 +89,15 @@ Build: `assets_source/scripts/make_trees.py` -> `web/public/assets/trees/`.
   (extract from download.bbbike.org). Building footprints, official roof heights, ground elevation and construction years: NYC Open Data "Building Footprints"
   (dataset 5zhs-2jue) and "Borough Boundaries" (gthc-hcne), City of New York, public domain. Processing: tools/nyc/.
 
-## London, Paris, Tokyo, Los Angeles, Chicago, Miami, Toronto, Berlin, Barcelona, Amsterdam, Singapore, Melbourne, Madrid, Seoul, San Francisco and Lisbon city data
+## London, Paris, Tokyo, Los Angeles, Chicago, Miami, Toronto, Berlin, Barcelona, Amsterdam, Singapore, Melbourne, Madrid, Seoul, San Francisco, Lisbon and Crete (Imbros Pass) map data
 - Streets, building footprints and heights (height / building:levels tags; missing heights estimated from neighbouring
   buildings and the city's typical floors), parks, water, rails, trees, signals and street furniture: (c) OpenStreetMap
   contributors, Open Database Licence (ODbL), https://www.openstreetmap.org/copyright. City extracts from
-  download.bbbike.org. Processing: tools/nyc/ with `CITY=<id>` (docs/cities.md). The generated tiles in
-  `web/public/assets/cities/` are a Produced Work from the OpenStreetMap database.
+  download.bbbike.org; Crete (Imbros Pass / Sfakia) extract cut from Geofabrik's Greece extract
+  (https://download.geofabrik.de/europe/greece.html). Processing: tools/nyc/ with `CITY=<id>` (docs/cities.md). The
+  generated tiles in `web/public/assets/cities/` are a Produced Work from the OpenStreetMap database.
 
-## Terrain (real ground heights of the cities)
+## Terrain (real ground heights of the cities and mountain passes)
 - AWS Terrain Tiles (Terrarium encoding, https://registry.opendata.aws/terrain-tiles/, tilezen/joerd), processed by
   tools/nyc/terrain.py. Sources and attribution as required by the tile set: United States 3DEP (formerly NED) and global
   GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey; Europe terrain data produced using Copernicus
@@ -104,6 +105,18 @@ Build: `assets_source/scripts/make_trees.py` -> `web/public/assets/trees/`.
   under the Open Government Licence - Canada; Australia terrain data (c) Commonwealth of Australia (Geoscience Australia);
   global ETOPO1 terrain data U.S. National Oceanic and Atmospheric Administration; United Kingdom terrain data
   (c) Environment Agency copyright and/or database right. The derived height grids (`terrain.bin`) are a product of these.
+- **Copernicus DEM GLO-30 Public** (Crete — Imbros Pass, `dem: "copernicus_glo30"` in `tools/nyc/cities.json`), fetched
+  from the AWS Registry of Open Data public bucket (`https://registry.opendata.aws/copernicus-dem/`,
+  `https://copernicus-dem-30m.s3.amazonaws.com/readme.html`). Licence: *Licence for Copernicus DEM instance
+  COP-DEM-GLO-30-F Global 30m Full, Free & Open — Licence for the use of the Copernicus WorldDEM-30*
+  (`https://spacedata.copernicus.eu/en/web/guest/collections/copernicus-digital-elevation-model/#Licencing`, issue date
+  21/02/2025; worldwide, free of charge, permitting reproduction, distribution, communication to the general public,
+  adaptation, modification and combination).
+  Required attribution (Article 6(b)): "produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence
+  and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved".
+  Required notice (Article 6(c)): "The organisations in charge of the Copernicus programme by law or by delegation do not
+  incur any liability for any use of the Copernicus WorldDEM-30".
+  Open Grid is not endorsed by the Provider, the Licensor, the European Union, or ESA.
 
 ## Software
 - three.js (MIT), Rapier (Apache-2.0), meshoptimizer (MIT), Basis Universal transcoder

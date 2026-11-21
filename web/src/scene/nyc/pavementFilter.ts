@@ -16,8 +16,8 @@ const FLAG_NEAR_2 = 8;   // within 2 m of road/curb/water (also clears narrow < 
 const FLAG_BLD = 16;
 const FLAG_GRASS = 32;   // park / lawn surface (allows slightly tighter 9 m natural grove spacing vs 12.5 m street trees)
 
-const ROAD_MATS = new Set(['road', 'marking', 'crosswalk', 'curb', 'water', 'rail']);
-const PAVE_MATS = new Set(['sidewalk', 'plaza', 'grass']);
+const ROAD_MATS = new Set(['road', 'marking', 'crosswalk', 'curb', 'water', 'rail', 'guardrail']);
+const PAVE_MATS = new Set(['sidewalk', 'plaza', 'grass', 'terrain', 'shoulder']);
 
 const STREET_TREE_MIN_DIST = 12.5;
 const PARK_TREE_MIN_DIST = 9.0;
@@ -144,7 +144,7 @@ export function filterPropsToPavement(
       rasterMesh(m, x0, y0, FLAG_ROAD);
       sawAnyGround = true;
     } else if (PAVE_MATS.has(matName)) {
-      rasterMesh(m, x0, y0, matName === 'grass' ? (FLAG_PAVE | FLAG_GRASS) : FLAG_PAVE);
+      rasterMesh(m, x0, y0, (matName === 'grass' || matName === 'terrain') ? (FLAG_PAVE | FLAG_GRASS) : FLAG_PAVE);
       sawAnyGround = true;
     }
   });

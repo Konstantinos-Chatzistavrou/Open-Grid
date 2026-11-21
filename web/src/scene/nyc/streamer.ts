@@ -235,7 +235,17 @@ export class NycStreamer {
     this.ver = (idx as { version?: string }).version ? `?v=${(idx as { version?: string }).version}` : '';
     // the ground's real heights: before any tile, so the first physics ground already follows the hills
     setCityStyle(/cities\/([a-z]+)\//.exec(this.o.base)?.[1] ?? 'nyc');   // the city's architecture on every facade
-    if (idx.terrain) this.terrain = await Terrain.load(this.o.base, idx.terrain, this.ver);
+    if (idx.terrain) {
+      this.terrain = await Terrain.load(this.o.base, idx.terrain, this.ver);
+      const relief = (idx.terrain.max ?? 0) - (idx.terrain.min ?? 0);
+      if (this.terrain && relief > 200) {
+        // Mountain pass: extend distant terrain LOD visibility and ease night fog so ridges & valleys read down the gorge
+        this.o.farLoad = Math.max(this.o.farLoad, 1600);
+        this.o.farKeep = Math.max(this.o.farKeep, 1800);
+        this.o.fogDensity = Math.min(this.o.fogDensity, 0.00075);
+        if (this.scene.fog instanceof THREE.FogExp2) this.scene.fog.density = this.o.fogDensity;
+      }
+    }
     if (this.terrain) console.info(`nyc: terrain ${idx.terrain!.nx} x ${idx.terrain!.ny} at ${idx.terrain!.step} m, ${idx.terrain!.min}..${idx.terrain!.max} m`);
     if (this.terrain && props instanceof NycProps) { const tr = this.terrain; props.heightAt = (x, y) => tr.at(x, y); }
     if (props instanceof NycProps) props.treeDensity = this.o.treeDensity;
@@ -251,6 +261,18 @@ export class NycStreamer {
       if (iy > maxIy) maxIy = iy;
       const f = t.files ?? [];
       const bb = t.bbox ?? [ix * TILE, iy * TILE, (ix + 1) * TILE, (iy + 1) * TILE, 150];
+      let yMin = bb.length >= 6 ? bb[5] - 10 : -5;
+      let yMax = Math.max(20, bb[4] + 10);
+      if (this.terrain) {
+        const cx = (ix + 0.5) * TILE, cy = (iy + 0.5) * TILE;
+        const hs = [
+          this.terrain.at(ix * TILE, iy * TILE), this.terrain.at((ix + 1) * TILE, iy * TILE),
+          this.terrain.at(ix * TILE, (iy + 1) * TILE), this.terrain.at((ix + 1) * TILE, (iy + 1) * TILE),
+          this.terrain.at(cx, cy),
+        ];
+        yMin = Math.min(yMin, ...hs) - 15;
+        yMax = Math.max(yMax, ...hs) + 30;
+      }
       const group = new THREE.Group();
       group.name = 'nyc_' + key;
       group.matrixAutoUpdate = false;
@@ -258,7 +280,7 @@ export class NycStreamer {
         key, ix, iy, d: Infinity, near: 0, far: 0, col: 0, nearGroup: null, farGroup: null, colliders: [], propsSet: false, forced: 0, gen: { near: 0, far: 0, col: 0 }, group,
         has: { ground: f.some((n) => n.endsWith('.ground.glb')), bld: f.some((n) => n.endsWith('.bld.glb')), far: f.some((n) => n.endsWith('.far.glb')),
           col: f.some((n) => n.endsWith('.col.json')), props: f.some((n) => n.endsWith('.props.json')) },
-        box: new THREE.Box3(new THREE.Vector3(bb[0], -5, -bb[3]), new THREE.Vector3(bb[2], Math.max(20, bb[4] + 10), -bb[1])),
+        box: new THREE.Box3(new THREE.Vector3(bb[0], yMin, -bb[3]), new THREE.Vector3(bb[2], yMax, -bb[1])),
         cx: (bb[0] + bb[2]) / 2, cz: -(bb[1] + bb[3]) / 2,
       });
     }

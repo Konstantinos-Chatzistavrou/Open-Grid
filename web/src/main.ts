@@ -628,7 +628,7 @@ async function main() {
   if (garage && kitSky) garage.setHdri(kitSky.garage ?? kitSky.night, num('garagehdri', 1) * kitSky.garageStrength);   // ?garagehdri=x: x times the measured strength
   const aiCount = Math.max(0, Math.min(5, num('ai', 5)));
   if (aiCount > 0) say('Loading rivals…');
-  const ai = await AiTraffic.create(scene, pw, defaultCfg, route.samples, aiCount, params.get('blackcar') === '1', physics.vela_gt ?? physics[catalog[0].id]);
+  const ai = await AiTraffic.create(scene, pw, defaultCfg, route.samples, aiCount, params.get('blackcar') === '1', physics.vela_gt ?? physics[catalog[0].id], route.closed !== false);
   ai.onWreck = (name) => { hud.toast('RIVAL OUT', `${name} WRECKED`); };
   if (garage) try {
     const parked: THREE.Object3D[] = [];
@@ -681,8 +681,11 @@ async function main() {
   let raceT0 = 0, lap: LapInfo | null = null;
   /** AI rivals in the race tracker: their tracker index, last progress, finish time (-1 racing) */
   let aiRace: { idx: number; lap: LapInfo | null; fin: number }[] = [];
-  /** Laps of the session's race (0: free roam / free party session). */
-  const raceLaps = () => sel.mode === 'race' ? sel.laps : sel.mode === 'online' && party?.mode === 'race' ? party.laps : 0;
+  /** Laps of the session's race (0: free roam / free party session; 1 stage for point-to-point routes). */
+  const raceLaps = () => {
+    const n = sel.mode === 'race' ? sel.laps : sel.mode === 'online' && party?.mode === 'race' ? party.laps : 0;
+    return n > 0 && route.closed === false ? 1 : n;
+  };
   /** Race rules: full realism (no resets; wrecked / rolled over / stuck = DNF, then spectate) or respawns. A party uses the leader's. */
   const realism = () => raceLaps() > 0 && (sel.mode === 'online' ? party?.realism !== false : sel.realism);
   /** Tactical Police AI runs ONLY in Race Events (never Free Roam); patrolled downtown cities (NYC, London) always enable cops. */
@@ -728,7 +731,7 @@ async function main() {
   let escapedCopsThisRace = false;
   const copNote = (t: string, ms = 3500) => { copMsg = t; copMsgUntil = performance.now() + ms; };
   const pitRight = new THREE.Vector3();
-  const cops = new Cops(new Lane(route.samples), {
+  const cops = new Cops(new Lane(route.samples, route.closed !== false), {
     bust: () => {
       // Heavy fine + Pink Slip impound risk at Heat 5 (starter car protected from soft-lock).
       const pen = copBustPenalty(heat.level, heat.level >= 5);
@@ -1317,7 +1320,7 @@ async function main() {
     if (!document.hidden) { frameTimes.length = 0; if (tuning) winStart = performance.now() + 1000; prev = performance.now(); }
   });
   let frameNo = 0;
-  g.__game = { city, nyc, ai, visual, audio, rig, damage, trace, input, renderer, camera, scene, post, THREE, grade: GRADE, heat, setHeat, cops, stats: () => frameStats(scene, renderer), texStats: () => sceneTextureStats(scene, 0),
+  g.__game = { city, nyc, ai, visual, audio, rig, damage, trace, input, renderer, camera, scene, post, THREE, grade: GRADE, heat, setHeat, cops, worldClock, setGroundWetness, stats: () => frameStats(scene, renderer), texStats: () => sceneTextureStats(scene, 0),
     get car() { return car; }, get core() { return core; }, get state() { return state; }, ticksNow: () => ticks, routeSamples: route.samples, menu: () => menu, sel,
     get party() { return party; }, get remote() { return remote; }, streetProps, obstacles, standings: () => standings(), get lap() { return lap; },
     setPreset: (name: PresetName) => { setPreset(PRESET_ORDER.indexOf(name)); setExtra(); },
@@ -1612,7 +1615,7 @@ async function main() {
   const drivingLine = new DrivingLine(scene, ai);
   // GPS minimap: the tiles' road graphs (loaded in the background), the race route, rivals / players & 1:1 city landmarks
   const minimap = new Minimap(document.getElementById('hud')!);
-  minimap.setRoute(route.samples);
+  minimap.setRoute(route.samples, route.closed !== false);
   minimap.setLandmarks(cityInfo.landmarks);
   input.onMap = () => minimap.show(!minimap.visible);
   input.onFullMap = () => { if (driving()) minimap.toggleExpand(); };
@@ -2110,7 +2113,7 @@ async function main() {
       ]);
       route = newRoute;
       routeJson = JSON.stringify(route);
-      minimap.setRoute(route.samples);
+      minimap.setRoute(route.samples, route.closed !== false);
       if (newMap) minimap.addGraph(newMap);
 
       loader.text(`Streaming ${cityInfo.name} 1:1 tiles…`, 32);
@@ -2139,8 +2142,8 @@ async function main() {
 
       // Rebind AI, cops, driving line, zones & race nodes to the new city's roads
       loader.text('Syncing traffic, zones & reflections…', 84);
-      ai.setRoute(route.samples);
-      cops.setLane(new Lane(route.samples));
+      ai.setRoute(route.samples, route.closed !== false);
+      cops.setLane(new Lane(route.samples, route.closed !== false));
       drivingLine.setCar(applyMods(physics[sel.car], modsOf(sel)));
       zones = new CityZones(scene, cityInfo.id, route.samples, {
         onScore: (z, score, stars, isPB, xp) => {

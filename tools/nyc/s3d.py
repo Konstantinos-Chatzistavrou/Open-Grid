@@ -47,6 +47,7 @@ ROOF_STYLE = {
     "miami": [(9.0, "hipped", "tiles", 0.22, 0.45)],
     "chicago": [(10.0, "gabled", "slate", 0.3, 0.45)],
     "singapore": [(12.0, "hipped", "tiles", 0.25, 0.4)],
+    "crete": [(12.0, "hipped", "tiles", 0.22, 0.65)],
 }
 
 CSS = {   # sRGB 0-255; the common building:colour / roof:colour values

@@ -155,6 +155,7 @@ const CITY_TREES: Record<string, Partial<Record<TreeSpecies, number>>> = {
   seoul: { pear: 0.45, plane: 0.35, linden: 0.2 },
   melbourne: { plane: 0.6, oak: 0.3, palm: 0.1 },
   sanfrancisco: { plane: 0.35, pear: 0.25, locust: 0.2, palm: 0.2 },
+  crete: { oak: 0.42, locust: 0.33, pear: 0.15, palm: 0.1 },
 };
 let treeW: Record<TreeSpecies, number> = Object.fromEntries(TREE_SPECIES.map((s) => [s.id, s.w])) as Record<TreeSpecies, number>;
 export function setTreeCity(id: string) {

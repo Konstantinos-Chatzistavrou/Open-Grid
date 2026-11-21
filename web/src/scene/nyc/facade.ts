@@ -57,6 +57,8 @@ const CITY_STYLES: Record<string, CityStyle> = {
   melbourne: [[1.0, 0.95, 1.05, 1.0], [0.12, 0.0, 0.5, 0.0], [0.2, 0.2, 0.2]],
   toronto: [[1.0, 1.0, 1.0, 1.0], [0.08, 0.0, 0.3, 0.0], [0.2, 0.2, 0.2]],
   chicago: [[1.0, 1.0, 1.0, 1.0], [0.04, 0.0, 0.1, 0.0], [0.2, 0.2, 0.2]],
+  // Cretan mountain villages: whitewashed plaster, wooden blue-green shutters, low balconies
+  crete: [[0.92, 0.72, 0.96, 0.92], [0.35, 0.65, 0.95, 0.0], [0.10, 0.22, 0.32]],
 };
 /** The city's architecture for every facade (unknown ids, New York: the original look). */
 export function setCityStyle(id: string) {
