@@ -54,7 +54,26 @@
         "static_camber_deg": { "type": "number" },
         "camber_gain_deg_per_m": { "type": "number" },
         "caster_deg": { "type": "number" },
-        "kpi_deg": { "type": "number" }
+        "kpi_deg": { "type": "number" },
+        "kinematics": {
+          "type": "object",
+          "description": "Optional explicit 3D suspension hardpoints (left corner, axle-local frame: +X fwd, +Y left, +Z up from static ground).",
+          "required": ["type", "lca_front", "lca_rear", "lca_outer", "tie_inner", "tie_outer"],
+          "properties": {
+            "type": { "enum": ["double_wishbone", "macpherson"] },
+            "lca_front": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+            "lca_rear": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+            "lca_outer": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+            "uca_front": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+            "uca_rear": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+            "uca_outer": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+            "strut_top": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+            "tie_inner": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+            "tie_outer": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+            "shock_lower": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+            "shock_upper": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } }
+          }
+        }
       },
       "required": ["track_m", "spring_rate_n_per_m", "spring_rest_length_m", "max_compression_m", "damper_bump_ns_per_m", "damper_rebound_ns_per_m", "anti_roll_rate_n_per_m", "roll_centre_height_m"]
     },

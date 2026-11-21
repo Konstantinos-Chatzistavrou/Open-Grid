@@ -5,6 +5,7 @@
 #include <cstdio>
 #include "harness.hpp"
 #include "rs/kinematics.hpp"
+#include "rs/telemetry.hpp"
 
 using namespace rs;
 
@@ -287,5 +288,47 @@ RS_TEST(kinematics) {
         test::check("Lookup table camber matches direct solver (< 0.05 deg)", max_cam_err_deg < 0.05);
         test::check("Lookup table steer matches direct solver (< 0.05 deg)", max_st_err_deg < 0.05);
         test::check("Lookup table RC matches direct solver (< 0.002 m)", max_rc_err < 0.002);
+    }
+
+    // ---------------------------------------------------------------- 7. Explicit car JSON configs + Vehicle telemetry
+    {
+        const CarConfig vela = load_car_config(test::data_path("cars/vela_gt.json"));
+        test::check("Vela GT front uses explicit DoubleWishbone",
+                    vela.front.kinematics.explicit_in_config && vela.front.kinematics.type == SuspensionType::DoubleWishbone);
+        test::check("Vela GT rear uses explicit DoubleWishbone",
+                    vela.rear.kinematics.explicit_in_config && vela.rear.kinematics.type == SuspensionType::DoubleWishbone);
+        const WheelKinematicSample vf0 = vela.axle_kinematics[0]->sample_left(0.0, 0.0);
+        const AxleRollCentre vfrc0 = vela.axle_kinematics[0]->roll_centre(0.0, 0.0, 0.0);
+        const AxleRollCentre vrrc0 = vela.axle_kinematics[1]->roll_centre(0.0, 0.0, 0.0);
+        std::printf("         Vela GT explicit DW front: slope=%.1f deg/m, caster=%.2f deg, KPI=%.2f deg, scrub=%.1f mm, RC_f=%.4f m, RC_r=%.4f m, MR=%.3f\n",
+                    vf0.dcamber_dz * kRadToDeg, vf0.caster_rad * kRadToDeg, vf0.kpi_rad * kRadToDeg,
+                    vf0.scrub_radius_m * 1000.0, vfrc0.height_m, vrrc0.height_m, vf0.motion_ratio);
+        test::check_range("Vela GT front camber gain", vf0.dcamber_dz * kRadToDeg, -55.0, -35.0, "deg/m");
+        test::check_range("Vela GT front static RC", vfrc0.height_m, 0.045, 0.075, "m");
+        test::check_range("Vela GT rear static RC", vrrc0.height_m, 0.085, 0.115, "m");
+
+        const CarConfig hayate = load_car_config(test::data_path("cars/hayate.json"));
+        test::check("Hayate front uses explicit MacPherson",
+                    hayate.front.kinematics.explicit_in_config && hayate.front.kinematics.type == SuspensionType::MacPherson);
+        test::check("Hayate rear uses explicit DoubleWishbone",
+                    hayate.rear.kinematics.explicit_in_config && hayate.rear.kinematics.type == SuspensionType::DoubleWishbone);
+        const WheelKinematicSample hf0 = hayate.axle_kinematics[0]->sample_left(0.0, 0.0);
+        const AxleRollCentre hfrc0 = hayate.axle_kinematics[0]->roll_centre(0.0, 0.0, 0.0);
+        std::printf("         Hayate explicit MacPherson front: slope=%.1f deg/m, caster=%.2f deg, KPI=%.2f deg, scrub=%.1f mm, RC_f=%.4f m, MR=%.3f\n",
+                    hf0.dcamber_dz * kRadToDeg, hf0.caster_rad * kRadToDeg, hf0.kpi_rad * kRadToDeg,
+                    hf0.scrub_radius_m * 1000.0, hfrc0.height_m, hf0.motion_ratio);
+        test::check_range("Hayate MacPherson KPI", hf0.kpi_rad * kRadToDeg, 11.0, 16.0, "deg");
+        test::check_range("Hayate MacPherson RC", hfrc0.height_m, 0.045, 0.085, "m");
+        test::check_range("Hayate MacPherson MR", hf0.motion_ratio, 0.88, 1.00, "-");
+
+        // Verify VehicleOutput + TelemetrySample expose dynamic camber, toe, and axle roll centres
+        auto sim = test::make_sim(vela);
+        sim->settle(1.0);
+        const TelemetrySample ts = make_telemetry_sample(sim->last, sim->body.state, DriverInput{}, vela, sim->time);
+        test::check("Telemetry exposes non-zero settled camber FL", std::abs(ts.wheel_camber_rad[FL]) > 0.01);
+        test::check("Telemetry exposes rear static toe RL", std::abs(ts.wheel_toe_rad[RL] * kRadToDeg - vela.rear.static_toe_deg) < 0.1);
+        test::check("Telemetry exposes front & rear roll centre heights",
+                    std::abs(ts.roll_centre_front_m - vfrc0.height_m) < 0.01 &&
+                    std::abs(ts.roll_centre_rear_m - vrrc0.height_m) < 0.01);
     }
 }
