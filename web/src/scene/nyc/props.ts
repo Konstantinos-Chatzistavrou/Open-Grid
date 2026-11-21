@@ -171,16 +171,14 @@ export function speciesOf(x: number, y: number): TreeSpecies {
   return TREE_SPECIES[0].id;
 }
 
-/** Sidewalk tree pit: granite border, mulch, cast-iron guard (NYC Parks standard). */
+/**
+ * Sidewalk tree pit: granite border and mulch. These low-poly trees are only drawn beyond the photoreal range (~80 m;
+ * trees.ts, which has no pit), where the old 3 cm cast-iron guard (96 of ~440 triangles, x ~1,000 trees) was sub-pixel:
+ * it is gone (and it was a New York fixture on every city's trees).
+ */
 function treePit(k: Kit) {
   k.box(1.55, 0.08, 1.55, 0, 0.04, 0, [0.18, 0.18, 0.17], 0);
   k.box(1.35, 0.09, 1.35, 0, 0.05, 0, [0.035, 0.026, 0.020], 0);
-  for (const s of [-0.68, 0.68]) {
-    k.box(1.38, 0.03, 0.03, 0, 0.36, s, DARK, 0);
-    k.box(0.03, 0.03, 1.38, s, 0.36, 0, DARK, 0);
-    k.cyl(0.02, 0.02, 0.36, s, 0, s, DARK, 0, 4);
-    k.cyl(0.02, 0.02, 0.36, s, 0, -s, DARK, 0, 4);
-  }
 }
 const ring = (n: number, r: number, off = 0) => Array.from({ length: n }, (_, i) => { const a = (i / n) * Math.PI * 2 + off; return [Math.cos(a) * r, Math.sin(a) * r] as const; });
 
