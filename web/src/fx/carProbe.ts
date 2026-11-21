@@ -78,6 +78,9 @@ export class CarProbe {
   /** Fill the probe from a ready cube map of the same size (the garage's own capture) instead of rendering the city. */
   fromCube(cube: THREE.Texture) { this.pmrem.fromCubemap(cube, this.filtered); this.face = 0; }
 
+  /** set by main.ts with the kit HDRI (fx/kitHdri.ts): 1 while the probe renders, so its sky is the HDRI */
+  captureSky: { value: number } | null = null;
+
   private begin(pos: THREE.Vector3, hide: THREE.Object3D) {
     this.cube.position.copy(pos);
     this.cube.position.y += this.height;
@@ -102,6 +105,7 @@ export class CarProbe {
     }
     const faceCam = this.cube.children[i] as THREE.Camera;
     this.onBeforeFace?.(faceCam);
+    if (this.captureSky) this.captureSky.value = 1;   // this face's sky is the kit HDRI (reset after the render below)
     const prevRT = r.getRenderTarget(), prevFace = r.getActiveCubeFace(), prevMip = r.getActiveMipmapLevel();
     // No shadow sampling in the probe's shaders: building the lights' ShadowNodes a second time (for this render
     // context) replaces their shadow maps and destroys the ones the main pass still binds (WebGPU "Destroyed
@@ -111,6 +115,7 @@ export class CarProbe {
     r.shadowMap.enabled = false;
     r.setRenderTarget(this.rt, i);
     r.render(this.scene, faceCam);
+    if (this.captureSky) this.captureSky.value = 0;
     r.setRenderTarget(prevRT, prevFace, prevMip);
     r.shadowMap.enabled = sh;
   }

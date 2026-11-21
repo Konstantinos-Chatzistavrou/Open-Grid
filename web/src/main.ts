@@ -11,6 +11,7 @@ import { ClusteredForwardLighting, PROP_DETAIL_LAYER, Post, PRESETS, PRESET_ORDE
 import { advancePaintWear, createPaintWearState, resetPaintWear } from './gpu/materials/carPaint';
 import { CarProbe } from './fx/carProbe';
 import { nightEnvTexture } from './fx/nightEnv';
+import { KitSky, kitHdriOn } from './fx/kitHdri';
 import { Particles } from './scene/damage';
 import { Garage } from './scene/garage';
 import { SHOW_PRESETS, ShowroomPost } from './showroomPost';
@@ -402,6 +403,7 @@ async function main() {
   const nr = loadNightRunners();
   const ret = loadRetention();
   const worldClock = new WorldClock();
+  { const w = params.get('weather'); if (w === 'dry' || w === 'rain') worldClock.setWeather(w); }   // screenshots: a fixed sky
   const voice = new VoiceChat();
   // credits, owned cars and upgrades. Dev server tests (?car=..., ?unlockall=1) own everything.
   // careers: single player (XP levels, this device) and online (the server's profile). Dev tests (?car=, ?unlockall=1)
@@ -482,15 +484,24 @@ async function main() {
   let obstacles = streetProps && params.get('solidprops') !== '0' ? new StreetObstacles(pw, streetProps) : null;
   const city = nyc ? nycCityShim() : await loadCity(scene, pw, core.info.surfaces, (f) => say(`Loading city… ${Math.round(f * 100)}%`, 20 + f * 55), webgpu && num('bundle', 1) === 1);
   const cityLights = new CityLighting(scene, city.lights, webgpu, num('lights', 12));
+  // Kit HDRIs (fx/kitHdri.ts): real captured skies for what the captures reflect. ?hdri=0: the look before the kit.
+  const kitSky = webgpu && kitHdriOn(params) ? await KitSky.load(cityInfo.id) : null;
+  kitSky?.setWeather(worldClock.weather);
   // Reflections: capture the lit city once from street level (the car isn't in the scene yet).
   {
     const s0 = nycS0 ?? route.samples[0];
     camera.position.set(s0.x, s0.z + 2, -s0.y);
     cityLights.update(1, camera);
+    kitSky?.wrapSky(scene);
     // Potato: a generated night environment (fx/nightEnv.ts) instead of the capture, which compiles every city
-    // material again for the cube pass (44 pipelines: minutes of a weak phone's load).
-    if (potato) { const eq = nightEnvTexture(); scene.environment = pmrem.fromEquirectangular(eq).texture; eq.dispose(); }
-    else scene.environment = pmrem.fromScene(scene, 0.02, 0.5, 400, { size: 256, position: camera.position.clone() }).texture;
+    // material again for the cube pass (44 pipelines: minutes of a weak phone's load). With the kit: the HDRI itself.
+    if (potato) {
+      if (kitSky) scene.environment = pmrem.fromEquirectangular(kitSky.night).texture;
+      else { const eq = nightEnvTexture(); scene.environment = pmrem.fromEquirectangular(eq).texture; eq.dispose(); }
+    } else {
+      const cap = () => pmrem.fromScene(scene, 0.02, 0.5, 400, { size: 256, position: camera.position.clone() }).texture;
+      scene.environment = kitSky ? kitSky.during(cap) : cap();
+    }
     // The capture is for REFLECTIONS (lamps and neon in paint and wet asphalt). At full strength its
     // diffuse part lit every wall like an overcast sky and undid the darkness.
     scene.environmentIntensity = nyc ? 0.65 : 0.5;
@@ -517,6 +528,7 @@ async function main() {
   const probeIntensity = num('probei', 1.25);
   const probeSize = num('probesize', isTouch ? 48 : 128);
   const probe = webgpu && probeEvery > 0 ? new CarProbe(renderer, scene, pmrem, probeSize, probeEvery) : null;
+  if (probe && kitSky) probe.captureSky = kitSky.capture;
   // The garage: its own scene (scene/garage). Built while the car loads; its cube matches the probe's so the probe
   // can prefilter the room into the texture the car's materials already sample (no material ever changes).
   // Potato has no garage room: the title and the garage menus show the car parked on the street (the showroom camera's
@@ -604,6 +616,7 @@ async function main() {
   // below can see the city (without this the first spawn misses the road and drops 3 m).
   pw.world.step();
   const garage = await garageP;
+  if (garage && kitSky) garage.setHdri(kitSky.garage ?? kitSky.night, num('garagehdri', 1) * kitSky.garageStrength);   // ?garagehdri=x: x times the measured strength
   const aiCount = Math.max(0, Math.min(5, num('ai', 5)));
   if (aiCount > 0) say('Loading rivals…');
   const ai = await AiTraffic.create(scene, pw, defaultCfg, route.samples, aiCount, params.get('blackcar') === '1', physics.vela_gt ?? physics[catalog[0].id]);
@@ -2153,7 +2166,9 @@ async function main() {
       if (!potato) {
         const oldEnv = scene.environment;
         const envPos = new THREE.Vector3(s0.x, s0.z + 2, -s0.y);
-        scene.environment = pmrem.fromScene(scene, 0.02, 0.5, 400, { size: 256, position: envPos }).texture;
+        kitSky?.wrapSky(scene);
+        const cap = () => pmrem.fromScene(scene, 0.02, 0.5, 400, { size: 256, position: envPos }).texture;
+        scene.environment = kitSky ? kitSky.during(cap) : cap();
         oldEnv?.dispose();
       }
       probe?.invalidate();
@@ -2321,7 +2336,8 @@ async function main() {
     // grid: single-player race = P4 of 6 between the rivals; Free Roam = live cruising AI traffic + Speed Traps / Drift Zones (NO COPS);
     // online race = party grid slots (8-12 max).
     const isFreeSession = mode === 'free' || (mode === 'online' && party?.mode === 'free');
-    worldClock.rollWeather(!isFreeSession);
+    { const w = params.get('weather'); if (w === 'dry' || w === 'rain') worldClock.setWeather(w); else worldClock.rollWeather(!isFreeSession); }
+    kitSky?.setWeather(worldClock.weather);
     zones.setVisible(isFreeSession);
     raceNodes.setVisible(isFreeSession);
     crashCineT = 0;
