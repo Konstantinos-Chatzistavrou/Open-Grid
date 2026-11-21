@@ -22,6 +22,48 @@ const v3 = (r: number, g: number, b: number) => vec3(r, g, b);
 const hash11 = (p: any) => fract(sin(p.mul(127.1)).mul(43758.5453));
 const hash12 = (p: any) => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453));
 const cov = (d: any, w: any) => smoothstep(w.negate(), w, d);
+
+// ---- Per-city architecture (setCityStyle, called by the streamer when a city loads; uniforms: no recompile) -------------------
+/** x window-bay width, y window width, z window height, w floor height: scales of the per-kind values */
+const styleDims = uniform(new THREE.Vector4(1, 1, 1, 1));
+/** x share of buildings with wrought-iron balconies, y with wooden shutters, z plaster (smooth render instead of stone
+ *  joints on non-brick walls), w Paris-style balcony bands (continuous along the 2nd and 5th floors only) */
+const styleDeco = uniform(new THREE.Vector4(0, 0, 0, 0));
+const shutterCol = uniform(new THREE.Color(0.2, 0.26, 0.2));
+type CityStyle = [dims: [number, number, number, number], deco: [number, number, number, number], shutter: [number, number, number]];
+const CITY_STYLES: Record<string, CityStyle> = {
+  // Haussmann: tall French windows, stone, balcony bands on the 2nd and 5th floors
+  paris: [[1.0, 0.8, 1.2, 0.95], [0.9, 0.12, 0.55, 1.0], [0.17, 0.2, 0.18]],
+  // Eixample: stone and render, a balcony at every window, green louvred shutters
+  barcelona: [[1.0, 0.76, 1.22, 1.0], [0.88, 0.45, 0.75, 0.0], [0.12, 0.2, 0.13]],
+  madrid: [[1.05, 0.78, 1.18, 1.0], [0.78, 0.25, 0.7, 0.0], [0.24, 0.16, 0.1]],
+  // pastel render, iron balconies, shutters
+  lisbon: [[0.95, 0.76, 1.12, 0.95], [0.62, 0.5, 0.95, 0.0], [0.12, 0.2, 0.28]],
+  // Altbau: rendered facades, tall windows, some balconies
+  berlin: [[1.05, 0.82, 1.15, 1.05], [0.35, 0.0, 0.85, 0.0], [0.2, 0.2, 0.2]],
+  // brick and stucco terraces, sash windows
+  london: [[0.95, 0.74, 1.15, 1.0], [0.06, 0.0, 0.25, 0.0], [0.15, 0.15, 0.15]],
+  // narrow brick canal houses, big white-framed windows
+  amsterdam: [[0.82, 0.8, 1.22, 0.95], [0.0, 0.0, 0.1, 0.0], [0.1, 0.15, 0.1]],
+  // tiled concrete mid-rises, wide windows, balcony railings on the apartments
+  tokyo: [[1.15, 1.12, 0.82, 0.88], [0.5, 0.0, 0.9, 0.0], [0.3, 0.3, 0.3]],
+  seoul: [[1.12, 1.12, 0.85, 0.9], [0.45, 0.0, 0.9, 0.0], [0.3, 0.3, 0.3]],
+  singapore: [[1.1, 1.08, 0.9, 1.0], [0.3, 0.25, 0.9, 0.0], [0.15, 0.3, 0.22]],
+  miami: [[1.1, 1.0, 0.95, 1.0], [0.4, 0.05, 0.95, 0.0], [0.2, 0.3, 0.32]],
+  losangeles: [[1.1, 1.0, 1.0, 1.0], [0.12, 0.0, 0.8, 0.0], [0.2, 0.2, 0.2]],
+  // narrow bays (bay windows), painted wood and render
+  sanfrancisco: [[0.85, 0.8, 1.15, 0.95], [0.08, 0.0, 0.85, 0.0], [0.2, 0.2, 0.2]],
+  melbourne: [[1.0, 0.95, 1.05, 1.0], [0.12, 0.0, 0.5, 0.0], [0.2, 0.2, 0.2]],
+  toronto: [[1.0, 1.0, 1.0, 1.0], [0.08, 0.0, 0.3, 0.0], [0.2, 0.2, 0.2]],
+  chicago: [[1.0, 1.0, 1.0, 1.0], [0.04, 0.0, 0.1, 0.0], [0.2, 0.2, 0.2]],
+};
+/** The city's architecture for every facade (unknown ids, New York: the original look). */
+export function setCityStyle(id: string) {
+  const st = CITY_STYLES[id] ?? [[1, 1, 1, 1], [0, 0, 0, 0], [0.2, 0.26, 0.2]];
+  styleDims.value.set(...st[0]);
+  styleDeco.value.set(...st[1]);
+  shutterCol.value.setRGB(...st[2]);
+}
 const pulse = (x: any, a: any, b: any, w: any) => cov(x.sub(a), w).mul(cov(b.sub(x), w));
 
 /**
@@ -174,28 +216,31 @@ function facadeGraph() {
   const k3 = step(2.5, kind).mul(step(kind, 3.5));
   const k4 = step(3.5, kind).mul(step(kind, 4.5));
 
-  const fh = select(kind.lessThan(0.5), float(3.4),
+  const fh0 = select(kind.lessThan(0.5), float(3.4),
     select(kind.lessThan(1.5), float(3.6),
       select(kind.lessThan(2.5), float(4.0),
         select(kind.lessThan(3.5), float(4.1),
           select(kind.lessThan(4.5), float(4.2), float(4.0))))));
-  const bw = select(kind.lessThan(0.5), float(1.75),
+  const bw0 = select(kind.lessThan(0.5), float(1.75),
     select(kind.lessThan(1.5), float(2.2),
       select(kind.lessThan(2.5), float(2.8),
         select(kind.lessThan(3.5), float(1.9),
           select(kind.lessThan(4.5), float(3.4), float(2.6))))));
-  const wf = select(kind.lessThan(0.5), float(0.46),
+  const wf0 = select(kind.lessThan(0.5), float(0.46),
     select(kind.lessThan(1.5), float(0.54),
       select(kind.lessThan(2.5), float(0.68),
         select(kind.lessThan(3.5), float(0.88),
           select(kind.lessThan(4.5), float(0.70), float(0.55))))));
-  const hf = select(kind.lessThan(0.5), float(0.56),
+  const hf0 = select(kind.lessThan(0.5), float(0.56),
     select(kind.lessThan(1.5), float(0.58),
       select(kind.lessThan(2.5), float(0.66),
         select(kind.lessThan(3.5), float(0.82),
           select(kind.lessThan(4.5), float(0.68), float(0.62))))));
 
   const gf = select(kind.lessThan(0.5), float(3.8), select(kind.lessThan(1.5), float(4.2), float(4.8)));
+  const isMon = step(5.5, kind);   // kind 6: churches, towers, monuments: stone, no window grid, no shopfronts
+  const fh = fh0.mul(styleDims.w), bw = bw0.mul(styleDims.x);
+  const wf = min(wf0.mul(styleDims.y), float(0.92)), hf = min(hf0.mul(styleDims.z), float(0.8));
   const xF = u.div(bw), yF = v.sub(gf).div(fh);
   const bid = floor(xF), fidx = floor(yF);
   const fx = fract(xF), fy = fract(yF);
@@ -205,7 +250,10 @@ function facadeGraph() {
   const y0 = float(0.18), y1 = y0.add(hf);
   const inX = pulse(fx, x0, x1, wx);
   const inY = pulse(fy, y0, y1, wy);
-  const win = inX.mul(inY);
+  const notMon = float(1).sub(isMon);
+  const hasSh = step(hash11(seed.mul(5.3)), styleDeco.y).mul(notMon).mul(float(1).sub(k3)).mul(step(0.0, fidx));
+  const closedSh = hasSh.mul(step(hash12(vec2(bid, fidx).add(seed.mul(31.0))), 0.3));
+  const win = inX.mul(inY).mul(notMon).mul(float(1).sub(closedSh));
 
   const hasTrim = float(1).sub(k3);
   const sill = pulse(fx, x0.sub(0.04), x1.add(0.04), wx).mul(pulse(fy, y0.sub(0.055), y0, wy)).mul(k0.add(k1).add(k4));
@@ -230,7 +278,7 @@ function facadeGraph() {
   const sRow = floor(v.mul(2.2));
   const sCols = fract(u.mul(0.9).add(mod(sRow, 2.0).mul(0.5)));
   const stoneJ = float(1).sub(smoothstep(0.0, 0.06, sCourses).mul(smoothstep(0.0, 0.05, sCols)));
-  const joint = mix(stoneJ, brickJ, isBrick).mul(mfade);
+  const joint = mix(stoneJ, brickJ, isBrick).mul(mfade).mul(float(1).sub(styleDeco.z.mul(float(1).sub(isBrick)).mul(notMon)));
   const courseVar = hash11(mix(sRow, bRow, isBrick).add(seed.mul(37.0))).sub(0.5).mul(0.07).mul(mfade);
   const wallLit = tint.mul(float(1).add(courseVar)).mul(float(1).sub(joint.mul(0.22)));
   const stoneCol = mix(wallLit, v3(0.56, 0.52, 0.44), 0.55);
@@ -252,7 +300,7 @@ function facadeGraph() {
 
   // Ground-floor bay layout & per-bay independent 2D hashes
   const atlas = getSignAtlasTexture();
-  const gAA = cov(gf.sub(v), fw.y);
+  const gAA = cov(gf.sub(v), fw.y).mul(notMon);
   const isGround = step(v, gf);
   const sbw = hash11(seed.mul(3.3)).mul(2.6).add(4.6);
   const sxF = u.div(sbw).add(fract(seed.mul(5.9)));
@@ -277,16 +325,8 @@ function facadeGraph() {
   const vShop = clamp(v.sub(0.58).div(max(gf.sub(1.86), 1.4)), 0, 1);
   const shopDepth = mix(0.38, 0.62, hs2);
 
-  const rm = rayBoxRoom(
-    mix(uWin, uShop, isGround),
-    mix(vWin, vShop, isGround),
-    rayX, rayY, rayZ,
-    mix(roomDepth, shopDepth, isGround),
-  );
-
-  // Shared by the upper-floor rooms and the storefronts (both read the one ray-box trace `rm`)
-  const zAtten = float(1.04).sub(rm.hitZ.mul(0.36));
-  const floorBounce = rm.onFloor.mul(mix(0.22, 0.44, float(1).sub(rm.hitZ)));
+  // its inputs (no derivatives: the trace itself runs inside the glass branch below, see emissiveSplit)
+  const rbU = mix(uWin, uShop, isGround), rbV = mix(vWin, vShop, isGround), rbD = mix(roomDepth, shopDepth, isGround);
 
   const signY = cov(v.sub(gf.sub(1.18)), fw.y).mul(cov(gf.sub(0.36).sub(v), fw.y));
   const signX = cov(sf.sub(0.16), swx).mul(cov(float(0.84).sub(sf), swx));
@@ -315,11 +355,13 @@ function facadeGraph() {
   // WGSL rule: no implicit derivatives inside the (per-pixel) branches - every input that uses fwidth (fw: win, rail,
   // munt, shopGlass, sign, frame, gAA) and the sign atlas UV gradients are materialized as vars before them, and the
   // atlas is read with explicit gradients. Inputs shared by both branches are vars too, so they are computed once.
+  // The room trace only shows through glass: both emissive terms are multiplied by the window, shop-glass or sign
+  // coverage, so where all three are 0 (solid wall, most of a facade) they are exactly 0 and the trace is skipped.
   const emissiveSplit = Fn(() => {
-    const E = {
-      hitX: rm.hitX.toVar(), hitY: rm.hitY.toVar(), hitZ: rm.hitZ.toVar(), midX: rm.midX.toVar(), midY: rm.midY.toVar(),
-      inMid: rm.inMid.toVar(), onCeil: rm.onCeil.toVar(), onSide: rm.onSide.toVar(), onBack: rm.onBack.toVar(), roomAO: rm.roomAO.toVar(),
-      zAtten: zAtten.toVar(), floorBounce: floorBounce.toVar(),
+    const rbu = rbU.toVar(), rbv = rbV.toVar(), rbd = rbD.toVar(), rxv = rayX.toVar(), ryv = rayY.toVar(), rzv = rayZ.toVar();
+    const glassHere = max(win, max(shopGlass, sign)).toVar();
+    const E0 = {
+
       // upper floors
       h1: h1.toVar(), h2: h2.toVar(), h3: h3.toVar(), h4, office: office.toVar(), litOn, litFrac,
       uWin: uWin.toVar(), wl: wl.toVar(), fy: fy.toVar(), dfade: dfade.toVar(), win: win.toVar(), rail: rail.toVar(), munt: munt.toVar(),
@@ -329,8 +371,17 @@ function facadeGraph() {
     };
     const g = gAA.toVar();
     const eU = vec3(0).toVar(), eG = vec3(0).toVar();
+    If(glassHere.greaterThan(0), () => {
+    const rm = rayBoxRoom(rbu, rbv, rxv, ryv, rzv, rbd);
+    const E = {
+      ...E0,
+      hitX: rm.hitX, hitY: rm.hitY, hitZ: rm.hitZ, midX: rm.midX, midY: rm.midY,
+      inMid: rm.inMid, onCeil: rm.onCeil, onSide: rm.onSide, onBack: rm.onBack, roomAO: rm.roomAO,
+      zAtten: float(1.04).sub(rm.hitZ.mul(0.36)), floorBounce: rm.onFloor.mul(mix(0.22, 0.44, float(1).sub(rm.hitZ))),
+    };
     If(g.lessThan(1), () => { eU.assign(upperRoomEmissive(E)); });
     If(g.greaterThan(0), () => { eG.assign(storefrontEmissive(E)); });
+    });
     return mix(eU, eG, g);
   })();
 
@@ -353,7 +404,20 @@ function facadeGraph() {
   const stoneMix = clamp(trim, 0, 1);
   const upperWall = mix(wallCol, stoneCol, stoneMix);
   const upperAlb = mix(upperWall, glassKind, win.mul(float(1).sub(rail.mul(0.7)).sub(munt.mul(0.7))));
-  const albedo = mix(upperAlb, gAlb, gAA);
+  // the city's balconies (iron rail and balusters across the lower window; Paris: continuous bands) and shutters
+  const hasBal = step(hash11(seed.mul(7.7)), styleDeco.x).mul(notMon).mul(float(1).sub(k3)).mul(step(0.0, fidx));
+  const bandFloors = step(abs(fidx.sub(1.0)), 0.5).add(step(abs(fidx.sub(4.0)), 0.5));
+  const balRow = mix(float(1), bandFloors, styleDeco.w);
+  const balXs = max(pulse(fx, x0.sub(0.07), x1.add(0.07), wx), styleDeco.w.mul(bandFloors));
+  const balY = pulse(fy, y0.sub(0.005), y0.add(hf.mul(0.3)), wy);
+  const bars = float(1).sub(smoothstep(0.22, 0.38, abs(fract(u.div(0.11)).sub(0.5)))).mul(0.8);
+  const railTop = pulse(fy, y0.add(hf.mul(0.26)), y0.add(hf.mul(0.31)), wy);
+  const balcony = hasBal.mul(balRow).mul(balXs).mul(balY).mul(max(railTop, bars)).mul(dfade);
+  const shOpen = hasSh.mul(float(1).sub(closedSh)).mul(max(pulse(fx, x0.sub(wf.mul(0.48)), x0.sub(0.01), wx), pulse(fx, x1.add(0.01), x1.add(wf.mul(0.48)), wx))).mul(inY);
+  const shutter = clamp(shOpen.add(closedSh.mul(inX).mul(inY)), 0, 1).mul(dfade);
+  const slats = float(0.8).add(smoothstep(0.25, 0.45, abs(fract(fy.mul(fh).div(0.06)).sub(0.5))).mul(0.2));
+  const upperDeco = mix(mix(upperAlb, shutterCol.mul(slats), shutter), v3(0.018, 0.018, 0.02), balcony);
+  const albedo = mix(upperDeco, gAlb, gAA);
   const aoG = mix(0.62, 1.0, smoothstep(0.0, 5.0, v));
   const winMask = mix(win, clamp(shopGlass.add(sign), 0, 1), gAA);
   const night = facadeNight;
@@ -367,7 +431,8 @@ function facadeGraph() {
   const faaPulse = smoothstep(0.35, 0.95, sin(time.mul(2.4).add(seed.mul(19.0))).mul(0.5).add(0.5));
   const faaPos = step(95.0, v).mul(smoothstep(0.955, 0.992, topFrac)).mul(step(0.88, fract(u.mul(0.11).add(seed))));
   const faaBeacon = v3(2.8, 0.08, 0.04).mul(faaPos).mul(faaPulse);
-  const extEmissive = emissiveSplit.mul(night)
+  const flood = v3(1.0, 0.74, 0.46).mul(isMon).mul(mix(float(0.16), float(0.05), smoothstep(0.0, 90.0, v))).mul(tint.add(0.15));
+  const extEmissive = emissiveSplit.mul(night).mul(float(1).sub(balcony.mul(0.75))).add(flood.mul(night))
     .add(glow.mul(night)).add(crownGlow.mul(night)).add(faaBeacon.mul(night)).add(refl.mul(night.mul(0.85).add(0.25)));
   const extColor = albedo.mul(ao.mul(aoG));
   const extRough = mix(mix(0.88, 0.68, float(1).sub(isBrick)), mix(0.09, 0.035, k3), winMask);
@@ -392,28 +457,31 @@ function farFacadeGraph() {
   const fw = max(fwidth(U), vec2(1e-4, 1e-4)).toVar();
 
   const k3 = step(2.5, kind).mul(step(kind, 3.5));
-  const fh = select(kind.lessThan(0.5), float(3.4),
+  const fh0 = select(kind.lessThan(0.5), float(3.4),
     select(kind.lessThan(1.5), float(3.6),
       select(kind.lessThan(2.5), float(4.0),
         select(kind.lessThan(3.5), float(4.1),
           select(kind.lessThan(4.5), float(4.2), float(4.0))))));
-  const bw = select(kind.lessThan(0.5), float(1.75),
+  const bw0 = select(kind.lessThan(0.5), float(1.75),
     select(kind.lessThan(1.5), float(2.2),
       select(kind.lessThan(2.5), float(2.8),
         select(kind.lessThan(3.5), float(1.9),
           select(kind.lessThan(4.5), float(3.4), float(2.6))))));
-  const wf = select(kind.lessThan(0.5), float(0.46),
+  const wf0 = select(kind.lessThan(0.5), float(0.46),
     select(kind.lessThan(1.5), float(0.54),
       select(kind.lessThan(2.5), float(0.68),
         select(kind.lessThan(3.5), float(0.88),
           select(kind.lessThan(4.5), float(0.70), float(0.55))))));
-  const hf = select(kind.lessThan(0.5), float(0.56),
+  const hf0 = select(kind.lessThan(0.5), float(0.56),
     select(kind.lessThan(1.5), float(0.58),
       select(kind.lessThan(2.5), float(0.66),
         select(kind.lessThan(3.5), float(0.82),
           select(kind.lessThan(4.5), float(0.68), float(0.62))))));
 
   const gf = select(kind.lessThan(0.5), float(3.8), select(kind.lessThan(1.5), float(4.2), float(4.8)));
+  const isMon = step(5.5, kind);   // kind 6: churches, towers, monuments: stone, no window grid, no shopfronts
+  const fh = fh0.mul(styleDims.w), bw = bw0.mul(styleDims.x);
+  const wf = min(wf0.mul(styleDims.y), float(0.92)), hf = min(hf0.mul(styleDims.z), float(0.8));
   const xF = u.div(bw), yF = v.sub(gf).div(fh);
   const bid = floor(xF), fidx = floor(yF);
   const fx = fract(xF), fy = fract(yF);
@@ -421,7 +489,7 @@ function farFacadeGraph() {
 
   const x0 = float(1).sub(wf).mul(0.5), x1 = float(1).sub(x0);
   const y0 = float(0.18), y1 = y0.add(hf);
-  const win = pulse(fx, x0, x1, wx).mul(pulse(fy, y0, y1, wy)).mul(step(gf, v));
+  const win = pulse(fx, x0, x1, wx).mul(pulse(fy, y0, y1, wy)).mul(step(gf, v)).mul(float(1).sub(isMon));
 
   const sd2 = floor(seed.mul(997.0));
   const cell = vec2(bid.add(sd2), fidx.add(sd2.mul(0.73)));
@@ -458,7 +526,8 @@ function farFacadeGraph() {
   const faaPos = step(95.0, v).mul(smoothstep(0.955, 0.992, topFrac)).mul(step(0.88, fract(u.mul(0.11).add(seed))));
   const faaBeacon = v3(2.8, 0.08, 0.04).mul(faaPos).mul(faaPulse);
 
-  const emissive = emWin.mul(night).add(glow.mul(night)).add(crownGlow.mul(night)).add(faaBeacon.mul(night)).add(refl.mul(night.mul(0.85).add(0.25)));
+  const flood = v3(1.0, 0.74, 0.46).mul(isMon).mul(mix(float(0.16), float(0.05), smoothstep(0.0, 90.0, v))).mul(tint.add(0.15));
+  const emissive = emWin.mul(night).add(glow.mul(night)).add(crownGlow.mul(night)).add(faaBeacon.mul(night)).add(refl.mul(night.mul(0.85).add(0.25))).add(flood.mul(night));
   const color = albedo.mul(ao);
   const rough = mix(float(0.78), mix(0.09, 0.035, k3), win);
   const metal = mix(float(0.0), mix(0.22, 0.45, k3), win);
@@ -495,17 +564,69 @@ export function createFarFacadeMaterial(): THREE.Material {
   return m;
 }
 
+/** distance-aware line: 1 on the lines x = k * period (width w metres), antialiased, faded out once a pixel spans the period */
+const lines = (x: any, period: number, w: number, fwx: any) => {
+  const d = abs(fract(x.div(period).add(0.5)).sub(0.5)).mul(period);
+  return float(1).sub(smoothstep(w * 0.5, fwx.add(w * 0.5), d)).mul(float(1).sub(smoothstep(period * 0.25, period * 0.6, fwx)));
+};
+
+/**
+ * Roofs. The pipeline (tools/nyc/s3d.py) puts the roof's MATERIAL on its UV: u + code * 16384 (U_OFF), u along the eave and
+ * v up the slope in metres. 0 flat (tar and gravel on top, seamed sides), 1 clay tiles, 2 slate, 3 standing-seam metal
+ * (zinc), 4 glass, 5 copper, 6 floodlit metal (lattice towers, wheels: tools/nyc/landmarks3d.py; glows at night).
+ * Colour = COLOR_0 (roof:colour or the material's own), alpha = AO.
+ */
 function roofGraph() {
-  const U = uv();
+  const U0 = uv();
   const col = attribute('color', 'vec4');
+  const code = floor(U0.x.add(8192.0).div(16384.0));   // s3d.U_OFF = 16384, u centred on each roof
+  const U = vec2(U0.x.sub(code.mul(16384.0)), U0.y);
   const fw = fwidth(U).toVar();
   const up = step(0.7, normalWorld.y);
+  // 0: flat roof (the old look)
   const g1 = hash12(floor(U.mul(3.5))).sub(0.5).mul(0.12);
   const g2 = hash12(floor(U.mul(19.0))).sub(0.5).mul(0.08);
   const tar = col.rgb.mul(float(1).add(g1).add(g2));
   const seam = float(1).sub(cov(abs(fract(U.y.mul(0.9)).sub(0.5)).sub(0.03), fw.y.mul(0.9))).mul(0.18);
-  const side = col.rgb.mul(float(1).sub(seam));
-  return { color: mix(side, tar, up).mul(col.a) };
+  const flatCol = mix(col.rgb.mul(float(1).sub(seam)), tar, up);
+  // 1: clay tiles: courses every 0.34 m up the slope, rounded tiles every 0.21 m along it, half-offset per course
+  const tv = U.y.div(0.34);
+  const tu = U.x.div(0.21).add(floor(tv).mul(0.5));
+  const near = float(1).sub(smoothstep(0.05, 0.16, max(fw.x, fw.y)));
+  const barrel = sin(fract(tu).mul(3.14159));
+  const lap = smoothstep(0.0, 0.16, fract(tv));
+  const tileVar = hash12(floor(vec2(tu, tv))).sub(0.5).mul(0.3).add(1.0);
+  const tiles = col.rgb.mul(mix(float(0.86), mix(float(0.5), float(1.1), barrel).mul(mix(float(0.55), float(1.0), lap)).mul(tileVar), near));
+  // 2: slate: 0.22 m courses, 0.3 m slates, staggered, dark joints
+  const sv = U.y.div(0.22);
+  const su = U.x.div(0.3).add(floor(sv).mul(0.5));
+  const sj = max(lines(U.y, 0.22, 0.012, fw.y), lines(su.mul(0.3), 0.3, 0.008, fw.x));
+  const slateVar = hash12(floor(vec2(su, sv))).sub(0.5).mul(0.22).add(1.0);
+  const slate = col.rgb.mul(slateVar).mul(float(1).sub(sj.mul(0.55)));
+  // 3 / 5: standing-seam metal: raised seams every 0.5 m running up the slope, a faint sheet-to-sheet variation
+  const ms = lines(U.x, 0.5, 0.03, fw.x);
+  const sheet = hash12(vec2(floor(U.x.div(0.5)), code)).sub(0.5).mul(0.08).add(1.0);
+  const metalCol = col.rgb.mul(sheet).mul(float(1).add(ms.mul(0.35)));
+  // 4: glass roof: dark panes between mullions every 1.2 m by 2 m
+  const mull = max(lines(U.x, 1.2, 0.06, fw.x), lines(U.y, 2.0, 0.06, fw.y));
+  const glass = mix(col.rgb, v3(0.32, 0.33, 0.35), mull);
+  const lit = step(5.5, code);
+  const color = select(code.lessThan(0.5), flatCol,
+    select(code.lessThan(1.5), tiles,
+      select(code.lessThan(2.5), slate,
+        select(code.lessThan(3.5), metalCol,
+          select(code.lessThan(4.5), glass, select(code.lessThan(5.5), metalCol, col.rgb.mul(0.7)))))));
+  // floodlit iron / steel: lit from below, brighter towards the light (lower on the structure)
+  const emissive = col.rgb.mul(lit).mul(mix(float(2.4), float(1.1), smoothstep(0.0, 250.0, positionWorld.y))).mul(facadeNight);
+  const rough = select(code.lessThan(0.5), float(0.9),
+    select(code.lessThan(1.5), float(0.72),
+      select(code.lessThan(2.5), float(0.55),
+        select(code.lessThan(3.5), float(0.38),
+          select(code.lessThan(4.5), float(0.08), float(0.45))))));
+  const metal = select(code.lessThan(2.5), float(0.06),
+    select(code.lessThan(3.5), float(0.6),
+      select(code.lessThan(4.5), float(0.25), float(0.45))));
+  return { color: color.mul(col.a), rough, metal, emissive };
 }
 
 export function createRoofMaterial(): THREE.Material {
@@ -513,7 +634,8 @@ export function createRoofMaterial(): THREE.Material {
   const m = new THREE.MeshStandardNodeMaterial();
   m.name = 'nyc-roof';
   m.colorNode = g.color;
-  m.roughness = 0.9;
-  m.metalness = 0.08;
+  m.roughnessNode = g.rough;
+  m.metalnessNode = g.metal;
+  m.emissiveNode = g.emissive;
   return m;
 }

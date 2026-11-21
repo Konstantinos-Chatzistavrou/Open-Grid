@@ -10,7 +10,7 @@
 import * as THREE from 'three/webgpu';
 import {
   uv, vec2, vec3, float, mix, smoothstep, step, fract, floor, abs, max, min, clamp, hash, vertexColor, positionView, time,
-  bumpMap, length, normalWorld, uniform,
+  bumpMap, length, normalWorld, uniform, mod, sin,
 } from 'three/tsl';
 import { noise01, worleyEdge } from '../../fx/noiseTex';
 
@@ -23,6 +23,30 @@ let CS = Math.cos((29 * Math.PI) / 180);
 let SN = Math.sin((29 * Math.PI) / 180);
 /** The street grid's angle from east (degrees) for slabs and pavers; call before createGroundMaterials. */
 export function setGroundGrid(deg: number) { CS = Math.cos((deg * Math.PI) / 180); SN = Math.sin((deg * Math.PI) / 180); }
+
+/**
+ * Each city's sidewalk (setGroundCity, before the streamer builds its materials: only that city's pattern is compiled).
+ * slab: concrete / stone flags (a x b m, `bond`: rows offset by half); tile: Barcelona's 20 cm "panot de flor" (four
+ * raised discs per tile); brick: Amsterdam's klinkers (running bond); calcada: Lisbon's limestone cubes with black waves;
+ * asphalt: Paris' asphalt pavements; paver: interlocking concrete blocks, several tones (Tokyo, Seoul, Singapore).
+ */
+type Sidewalk = { kind: 'slab' | 'tile' | 'brick' | 'calcada' | 'asphalt' | 'paver'; a: number; b: number; col: [number, number, number]; bond?: boolean; grates?: boolean };
+const SIDEWALKS: Record<string, Sidewalk> = {
+  nyc: { kind: 'slab', a: 1.52, b: 1.52, col: [0.165, 0.162, 0.158], grates: true },
+  london: { kind: 'slab', a: 0.9, b: 0.6, col: [0.2, 0.19, 0.17], bond: true },
+  paris: { kind: 'asphalt', a: 1, b: 1, col: [0.075, 0.074, 0.078] },
+  barcelona: { kind: 'tile', a: 0.2, b: 0.2, col: [0.15, 0.15, 0.155] },
+  madrid: { kind: 'slab', a: 0.4, b: 0.4, col: [0.19, 0.185, 0.18] },
+  lisbon: { kind: 'calcada', a: 0.065, b: 0.065, col: [0.42, 0.41, 0.38] },
+  amsterdam: { kind: 'brick', a: 0.21, b: 0.105, col: [0.16, 0.07, 0.045], bond: true },
+  berlin: { kind: 'slab', a: 1.2, b: 0.6, col: [0.17, 0.17, 0.175], bond: true },
+  tokyo: { kind: 'paver', a: 0.3, b: 0.3, col: [0.19, 0.18, 0.17] },
+  seoul: { kind: 'paver', a: 0.3, b: 0.15, col: [0.17, 0.15, 0.14], bond: true },
+  singapore: { kind: 'paver', a: 0.2, b: 0.1, col: [0.15, 0.095, 0.075], bond: true },
+  melbourne: { kind: 'slab', a: 0.6, b: 0.3, col: [0.06, 0.065, 0.075], bond: true },
+};
+let SW: Sidewalk = { kind: 'slab', a: 1.52, b: 1.52, col: [0.165, 0.162, 0.158] };
+export function setGroundCity(id: string) { SW = SIDEWALKS[id] ?? { kind: 'slab', a: 1.5, b: 1.5, col: [0.165, 0.162, 0.158] }; }
 
 /** Dynamic rain wetness uniform (0.15 dry night sheen .. 1.0 full rainstorm puddles): zero-cost uniform update. */
 const roadWetnessU = uniform(0.45);
@@ -98,23 +122,36 @@ function road() {
 
 function sidewalk() {
   const m = std(0.65);
-  const SLAB = 1.52;                                  // 5 ft squares
-  const q = R.div(SLAB);
+  const sw = SW, small = sw.a < 0.35;
+  // the city's units: a x b m, rows offset by half a unit in a running bond
+  const q0 = vec2(R.x.div(sw.a), R.y.div(sw.b));
+  const q = sw.bond ? vec2(q0.x.add(mod(floor(q0.y), 2.0).mul(0.5)), q0.y) : q0;
   const f = fract(q), id = floor(q);
-  const dj = min(min(f.x, float(1).sub(f.x)), min(f.y, float(1).sub(f.y))).mul(SLAB);   // metres to the nearest joint
-  const joint = float(1).sub(smoothstep(0.004, 0.022, dj));
+  const dj = min(min(f.x, float(1).sub(f.x)).mul(sw.a), min(f.y, float(1).sub(f.y)).mul(sw.b));   // metres to the nearest joint
+  const jw = small ? 0.004 : 0.004, jw1 = small ? 0.009 : 0.022;
+  const nearSmall = small ? float(1).sub(smoothstep(8, 30, dist)) : near;   // tiny units: joints fade sooner (no moire)
+  const joint = sw.kind === 'asphalt' ? float(0) : float(1).sub(smoothstep(jw, jw1, dj)).mul(nearSmall);
   const jointV = joint.mul(mix(0.35, 1.0, near));
-  const tint = cellHash(id).mul(0.24).add(0.88);
+  const tone = sw.kind === 'paver' ? mix(float(0.78), float(1.12), cellHash(id.add(vec2(9.0, 4.0)))) : float(1);
+  const tint = cellHash(id).mul(sw.kind === 'brick' ? 0.4 : 0.24).add(sw.kind === 'brick' ? 0.8 : 0.88).mul(tone);
   const wearLo = n01(P.mul(0.05).add(vec2(2.0, 8.0)));
   const wearMid = n01(P.mul(0.31));
   const speck = n01(P.mul(17.0));
   const damp = step(0.76, cellHash(id.add(vec2(5.0, 1.0)))).mul(0.8).add(smoothstep(0.62, 0.8, wearMid).mul(0.5)).mul(mix(0.45, 1.35, roadWetnessU));
   // 1:1 NYC Midtown subway sidewalk ventilation grates (1.52 m x 1.52 m iron bar grates embedded near curbs where ao < 0.90)
-  const grateCell = step(0.88, cellHash(id.add(vec2(23.0, 41.0)))).mul(step(ao, 0.90));
+  const grateCell = sw.grates ? step(0.88, cellHash(id.add(vec2(23.0, 41.0)))).mul(step(ao, 0.90)) : float(0);
   const grateInset = step(0.08, f.x).mul(step(f.x, 0.92)).mul(step(0.06, f.y)).mul(step(f.y, 0.94));
   const grateBars = step(0.45, fract(R.x.mul(22.0))).max(step(0.84, fract(R.y.mul(5.5))));
   const isGrate = grateCell.mul(grateInset).mul(near);
-  let albedo: any = vec3(0.165, 0.162, 0.158).mul(tint).mul(mix(0.78, 1.12, wearLo)).mul(float(0.92).add(speck.mul(0.16).mul(near)));
+  let base: any = vec3(...sw.col);
+  if (sw.kind === 'calcada') {   // Lisbon: white limestone cubes, black basalt in sweeping waves (the Rossio pattern)
+    const wave = sin(R.y.mul(0.9).add(sin(R.x.mul(0.42)).mul(2.2)));
+    base = mix(base, vec3(0.03, 0.03, 0.035), smoothstep(0.55, 0.62, wave));
+  } else if (sw.kind === 'tile') {   // Barcelona: four raised discs on each 20 cm panot
+    const fl = length(fract(q.mul(2.0)).sub(0.5));
+    base = base.mul(mix(float(1), mix(float(0.82), float(1.08), smoothstep(0.22, 0.3, fl)), nearSmall));
+  }
+  let albedo: any = base.mul(tint).mul(mix(0.78, 1.12, wearLo)).mul(float(0.92).add(speck.mul(0.16).mul(near)));
   albedo = albedo.mul(mix(1.0, 0.42, jointV)).mul(mix(1.0, 0.62, clamp(damp, 0, 1))).mul(mix(0.48, 1.0, ao));
   const grateCol = mix(vec3(0.008, 0.009, 0.011), vec3(0.095, 0.092, 0.088), grateBars);
   m.colorNode = mix(albedo, grateCol, isGrate);

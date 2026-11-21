@@ -22,9 +22,13 @@ from shapely.geometry.polygon import orient
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tilelib as tl
 from tilelib import Mesh
+import s3d
+import landmarks3d
 
 TRI_BUDGET = 60000
-FLOOR_H = [3.4, 3.6, 4.0, 4.1, 4.2, 4.0]          # metres per floor by kind (facade.ts uses the same table)
+FLOOR_H = [3.4, 3.6, 4.0, 4.1, 4.2, 4.0, 4.0]     # metres per floor by kind (facade.ts uses the same table); 6 = monument
+MONUMENT_CODES = {"church", "cathedral", "chapel", "basilica", "mosque", "temple", "shrine", "synagogue", "monastery",
+                  "castle", "bell_tower", "monument", "triumphal_arch", "fort"}
 # landmarks: matched to the real footprint (by bbl or by the tallest footprint near a point). tiers: (fraction of roof height, inset as a fraction of
 # the footprint's inscribed radius); spire = metres above the roof.
 LANDMARKS = [
@@ -447,13 +451,37 @@ def build_building(A, poly, d, idx, lm, detail, far=False):
     year = city_year(d, rng)
     area = poly.area
     kind = 5 if lm is not None else (classify(h, area, year, rng) if tl.CITY_ID == "nyc" else classify_city(h, area, year, d.get("code", ""), rng))
+    monument = lm is None and (d.get("code") in MONUMENT_CODES or d.get("mm") in ("tower", "obelisk", "lighthouse"))
+    if monument:
+        kind = 6
     era = float(np.clip(((year if year > 1700 else 1930) - 1900) / 100.0, 0.0, 1.0))
     floors = max(1, int(round(h / FLOOR_H[kind])))
-    tint = np.array(lm["tint"], np.float32) if lm else tint_for(kind, rng)
+    tint = np.array(lm["tint"], np.float32) if lm else (tint_for(min(kind, 4), rng) if not monument else
+                                                        np.array([0.46, 0.42, 0.35], np.float32) * (0.85 + 0.3 * rng.random()))
     bld = np.array([seed01, floors, kind, era], np.float32)
     stone = np.clip(tint * 1.18 + 0.04, 0, 1)
     roofc = np.array([0.075, 0.075, 0.08], np.float32) * (0.8 + 0.5 * rng.random())
     F, R = A["facade"], A["roof"]
+    if landmarks3d.match(d, poly) is not None:    # modelled from its real dimensions (a footprint cannot describe it)
+        return landmarks3d.build(A, poly, d, far)
+    bc = s3d.colour(d.get("bc"))
+    if bc is not None and lm is None:
+        tint = bc
+    fk = s3d.facade_kind(d.get("bm"))
+    if fk is not None and lm is None and kind != fk:
+        kind = fk
+        floors = max(1, int(round(h / FLOOR_H[kind])))
+        bld = np.array([seed01, floors, kind, era], np.float32)
+    if d.get("_parts"):
+        return build_parts(A, d, bld, tint, far)
+    shape = (d.get("rs") or "").lower()
+    if shape in s3d.PITCHED and lm is None:
+        return build_s3d_building(A, poly, d, bld, tint, shape, d.get("rh"), d.get("rl"), d.get("rm"), d.get("rc"), far)
+    sr = s3d.style_roof(tl.CITY_ID, h, poly.area, hash01(key + "roof"), bool(shape)) if lm is None and h >= 3 else None
+    if sr is not None:
+        sshape, smat, rise = sr
+        rh = s3d.roof_height(sshape, poly, None, None, rise)
+        return build_s3d_building(A, poly, {**d, "h": h + rh}, bld, tint, sshape, rh, None, smat, None, far)
     if far:
         poly = orient(poly.simplify(1.8, preserve_topology=True), 1.0)
         if poly.is_empty or poly.area < 30 or h < 7:      # beyond 500 m a shed is invisible
@@ -503,6 +531,75 @@ def build_building(A, poly, d, idx, lm, detail, far=False):
                 cap(R, top_poly.difference(inner), z0 + 0.9, stone, 1.0)
     if detail >= 1:
         add_roof_stuff(R, top_poly, h, z0, kind, era, area, rng, tint, detail, lm)
+    return F.tris + R.tris - tris0
+
+
+def build_s3d_building(A, poly, d, bld, tint, shape, rh, rl, rmat, rcol, far):
+    """One volume with a roof shape (roof:shape tagged, or the city's typical roof): walls to the eaves, the roof above
+    (s3d.build_roof), gable-end walls under band roofs. Falls back to a flat top when the shape does not fit the outline."""
+    F, R = A["facade"], A["roof"]
+    h = float(d["h"]); z0 = float(d.get("min") or 0.0)
+    if far:
+        poly = orient(poly.simplify(1.2, preserve_topology=True), 1.0)
+        if poly.is_empty or poly.area < 30 or h < 6:
+            return 0
+        poly = Polygon(poly.exterior)
+    poly = orient(poly, 1.0)
+    tris0 = F.tris + R.tris
+    rh = min(s3d.roof_height(shape, poly, rh, rl), max(0.5, (h - z0) * 0.8))
+    zw = max(z0 + 0.5, h - rh)
+    mat = s3d.roof_material(rmat, shape) or ("metal" if shape in ("dome", "onion", "cone", "spherical") else
+                                             (s3d.ROOF_STYLE.get(tl.CITY_ID, [(0, 0, "slate")])[0][2]))
+    rgb = s3d.colour(rcol)
+    if rgb is None and not rmat and shape in ("pyramidal", "cone") and rh > 8:   # a spire: the tower's own stone
+        rgb, mat = np.asarray(tint, np.float32) * 0.92, "slate"
+    rgb = np.asarray(s3d.ROOF_RGB.get(mat, s3d.ROOF_RGB["slate"]), np.float32) if rgb is None else rgb
+    for q in parts(poly):
+        walls(F, ring_arr(q.exterior), [(z0, 1.0 if z0 > 0.5 else 0.9), (zw, 1.0)], tint, bld)
+        res = s3d.build_roof(R, q, zw, shape, h - zw, rgb, mat, d.get("ro"), d.get("rd"))
+        if res is False:      # the shape does not fit this outline: flat top at the full height
+            walls(F, ring_arr(q.exterior), [(zw, 1.0), (h, 1.0)], tint, bld)
+            cap(R, q, h, np.asarray(s3d.ROOF_RGB["flat"], np.float32), 1.0)
+        elif isinstance(res, list):   # band roofs (gabled, round ...): the gable ends are wall
+            c, ex, ey, hl, hw = s3d._frame(q, d.get("ro"))
+            s3d.gable_walls(F, q, zw, res, c, ey, tint, bld)
+        if z0 > 0.5:
+            cap(R, q, z0, tint * 0.6, 0.7, up=False)
+    return F.tris + R.tris - tris0
+
+
+def build_parts(A, d, bld, tint, far):
+    """A building drawn from its building:part volumes (each from min_height to height, with its own roof, colour and
+    material); a part without a height takes the building's."""
+    F, R = A["facade"], A["roof"]
+    tris0 = F.tris + R.tris
+    H = float(d.get("h") or 0)
+    for pd, pg in d["_parts"]:
+        h = float(pd.get("h") or H)
+        z0 = float(pd.get("min") or 0.0)
+        if h - z0 < 0.3 or (far and (pg.area < 6 or h < 5)):
+            continue
+        pt = s3d.colour(pd.get("bc"))
+        pt = tint if pt is None else pt
+        pb = bld
+        fk = s3d.facade_kind(pd.get("bm"))
+        if fk is not None:
+            pb = np.array([bld[0], max(1, int(round((h - z0) / FLOOR_H[fk]))), fk, bld[3]], np.float32)
+        shape = (pd.get("rs") or "flat").lower()
+        if shape in s3d.PITCHED:
+            build_s3d_building(A, pg, {**pd, "h": h, "min": z0}, pb, pt, shape, pd.get("rh"), pd.get("rl"), pd.get("rm") or d.get("rm"),
+                               pd.get("rc") or d.get("rc"), far)
+            continue
+        q = pg if not far else orient(pg.simplify(0.8, preserve_topology=True), 1.0)
+        for r in parts(q):
+            walls(F, ring_arr(r.exterior), [(z0, 1.0 if z0 > 0.5 else 0.9), (h, 1.0)], pt, pb)
+            if not far:
+                for hole in r.interiors:
+                    walls(F, ring_arr(hole), [(z0, 1.0), (h, 1.0)], pt, pb)
+            rc = s3d.colour(pd.get("rc") or d.get("rc"))
+            cap(R, r, h, np.asarray(s3d.ROOF_RGB["flat"], np.float32) if rc is None else rc, 1.0)
+            if z0 > 0.5:    # an overhang's underside
+                cap(R, r, z0, pt * 0.6, 0.7, up=False)
     return F.tris + R.tris - tris0
 
 
@@ -614,6 +711,52 @@ def init_world():
             continue
         c = g.centroid
         _BUCKETS.setdefault(tl.tile_of(c.x, c.y), []).append(i)
+    _load_parts()
+
+
+_PARTS = {}          # building index -> [(part item, part polygon)]: drawn instead of the outline (Simple 3D Buildings)
+_LOOSE = []          # parts inside no outline: drawn on their own
+_LOOSE_BUCKETS = {}
+
+
+def _load_parts():
+    """building:part volumes (extract.py -> parts.ndjson). A building whose parts cover >= 40 % of its outline is built
+    from them; parts outside every outline stand on their own."""
+    path = os.path.join(tl.DERIVED, "parts.ndjson")
+    if not os.path.exists(path):
+        return
+    from shapely.strtree import STRtree
+    items, polys = [], []
+    for line in open(path):
+        d = json.loads(line)
+        try:
+            p = Polygon(d["rings"][0], d["rings"][1:])
+            p = p if p.is_valid else p.buffer(0)
+        except Exception:
+            continue
+        for q in parts(p):
+            if q.area >= 0.5:
+                items.append(d); polys.append(q)
+    if not polys:
+        return
+    pts = [p.representative_point() for p in polys]
+    tree = STRtree(pts)
+    used = np.zeros(len(polys), bool)
+    for i, g in enumerate(_W.geoms["buildings"]):
+        if g.is_empty:
+            continue
+        ks = [k for k in tree.query(g.buffer(0.3), predicate="contains") if not used[k]]
+        if ks and sum(polys[k].area for k in ks) >= 0.4 * g.area:
+            _PARTS[i] = [(items[k], polys[k]) for k in ks]
+            used[ks] = True
+    for k in np.where(~used)[0]:
+        d = items[k]
+        if (d.get("h") or 0) < 2.0:
+            continue
+        _LOOSE.append((d, polys[k]))
+        c = polys[k].centroid
+        _LOOSE_BUCKETS.setdefault(tl.tile_of(c.x, c.y), []).append(len(_LOOSE) - 1)
+    print(f"parts: {len(polys)}, {len(_PARTS)} buildings built from parts, {len(_LOOSE)} loose", flush=True)
 
 
 _ASPHALT = {}
@@ -659,8 +802,21 @@ def tile_buildings(ix, iy):
         j = 0
         for p in clean_polygons(_W.geoms["buildings"][i]):
             for q in off_the_road(p, A):
-                out.append((item, q, j))
+                it = item
+                if i in _PARTS:    # its parts, clipped to this piece of the outline (which the road was cut out of)
+                    pp = []
+                    for pd, pg in _PARTS[i]:
+                        for r in parts(pg.intersection(q.buffer(0.05)) if not q.contains(pg) else pg):
+                            if r.area >= 0.5:
+                                pp.append((pd, orient(r, 1.0)))
+                    if pp:
+                        it = {**item, "_parts": pp}
+                out.append((it, q, j))
                 j += 1
+    for k in _LOOSE_BUCKETS.get((ix, iy), []):
+        pd, pg = _LOOSE[k]
+        for q in off_the_road(pg, A):
+            out.append(({**pd, "code": "part", "year": 0, "_parts": [(pd, orient(q, 1.0))]}, q, 0))
     return out
 
 
@@ -782,9 +938,16 @@ def build_tile(ix, iy, outdir, compress=True):
     # colliders: tiny neighbours merged into one box when they touch; none may reach onto the drawn road
     cols = []
     A = asphalt(ix, iy)
-    small = [(p, float(it["h"])) for it, p, j in bl if p.area < 70]
+    small = [(p, float(it["h"])) for it, p, j in bl if p.area < 70 and not it.get("_parts") and landmarks3d.match(it, p) is None]
     for k, (it, p, j) in enumerate(bl):
-        if p.area >= 70:
+        lmc = landmarks3d.colliders(it, p)
+        if lmc is not None:    # a modelled landmark: what stands on the ground
+            cols += [_seat_box(c, bases[k]) for c in lmc]
+        elif it.get("_parts"):   # built from parts: what stands on the ground (a tower's legs, not the air between them)
+            for pd, pg in it["_parts"]:
+                if float(pd.get("min") or 0) < 2.5 and pg.area >= 8:
+                    cols += [_seat_box(c, bases[k]) for c in colliders(pg, float(pd.get("h") or it["h"]), 0, A)]
+        elif p.area >= 70:
             cols += [_seat_box(c, bases[k]) for c in colliders(p, float(it["h"]), 0, A)]
     used = [False] * len(small)
     for a in range(len(small)):

@@ -39,6 +39,8 @@ PARK_KINDS = {"park", "grass", "pitch", "cemetery"}
 PLAZA_KINDS = {"plaza", "pedestrian", "fountain"}
 YELLOW = (1.0, 0.78, 0.12, 1.0)
 WHITE = (0.93, 0.93, 0.9, 1.0)
+CENTRE_LINE = {"nyc": "yellow2", "losangeles": "yellow2", "chicago": "yellow2", "miami": "yellow2", "toronto": "yellow2",
+               "sanfrancisco": "yellow2", "seoul": "yellow2", "tokyo": "white_solid"}   # elsewhere: white dashes
 
 
 # ---------------------------------------------------------------- road classes
@@ -617,9 +619,15 @@ def build_tile(ctx, ix, iy, debug=False):
         park_w = 5.0 if hw in ("primary", "secondary", "tertiary", "residential", "unclassified") else 0.0
         tw = max(w - park_w, 3.0)
         lw = tw / n
-        if not ow and n >= 2:
-            for o in (-0.14, 0.14):
-                ribbon(offset_pts(c, o), 0.12, Z_MARK, YELLOW, owns, acc)
+        if not ow and n >= 2:   # the country's centre line: double yellow (US, Canada, Korea), white solid (Japan), white dashes
+            cl = CENTRE_LINE.get(tilelib.CITY_ID, "white_dash")
+            if cl == "yellow2":
+                for o in (-0.14, 0.14):
+                    ribbon(offset_pts(c, o), 0.12, Z_MARK, YELLOW, owns, acc)
+            elif cl == "white_solid":
+                ribbon(c, 0.15, Z_MARK, WHITE, owns, acc)
+            else:
+                dashes(c, 0.0, 0.15, 4.0, 6.0, Z_MARK, WHITE, owns, acc)
             half = n // 2
             for k in range(1, half):
                 for sgn in (-1, 1):

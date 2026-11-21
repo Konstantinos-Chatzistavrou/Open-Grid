@@ -132,14 +132,42 @@ export const TREE_SPECIES = [
   { id: 'pear', w: 0.21 },     // Callery pear: dense upright teardrop, glossy mid green
   { id: 'oak', w: 0.16 },      // pin oak: central leader, narrowing tiers, drooping lower branches, dark green
   { id: 'linden', w: 0.11 },   // littleleaf linden: dense symmetric pyramid-oval
+  { id: 'palm', w: 0 },        // palm (fan of arching fronds on a tall ringed trunk): Los Angeles, Miami, Barcelona ...
 ] as const;
 export type TreeSpecies = typeof TREE_SPECIES[number]['id'];
+/**
+ * Each city's street trees (setTreeCity, before the props are built): the same silhouettes stand in for local species
+ * of that habit (plane: London / Barcelona planes, zelkova, rain tree; linden: Berlin's lindens; oak: elms, horse
+ * chestnuts; pear: ginkgo; locust: jacaranda). New York and unlisted cities keep the census mix above.
+ */
+const CITY_TREES: Record<string, Partial<Record<TreeSpecies, number>>> = {
+  losangeles: { palm: 0.55, pear: 0.15, locust: 0.15, plane: 0.15 },
+  miami: { palm: 0.7, plane: 0.15, oak: 0.15 },
+  singapore: { plane: 0.5, palm: 0.3, linden: 0.2 },
+  barcelona: { plane: 0.72, palm: 0.12, locust: 0.1, linden: 0.06 },
+  lisbon: { plane: 0.35, locust: 0.25, linden: 0.25, palm: 0.15 },
+  madrid: { plane: 0.45, locust: 0.25, linden: 0.15, pear: 0.15 },
+  paris: { plane: 0.45, linden: 0.25, oak: 0.15, pear: 0.15 },
+  london: { plane: 0.6, linden: 0.15, pear: 0.15, oak: 0.1 },
+  berlin: { linden: 0.6, plane: 0.15, oak: 0.15, locust: 0.1 },
+  amsterdam: { oak: 0.45, linden: 0.3, plane: 0.25 },
+  tokyo: { pear: 0.35, plane: 0.35, linden: 0.3 },
+  seoul: { pear: 0.45, plane: 0.35, linden: 0.2 },
+  melbourne: { plane: 0.6, oak: 0.3, palm: 0.1 },
+  sanfrancisco: { plane: 0.35, pear: 0.25, locust: 0.2, palm: 0.2 },
+};
+let treeW: Record<TreeSpecies, number> = Object.fromEntries(TREE_SPECIES.map((s) => [s.id, s.w])) as Record<TreeSpecies, number>;
+export function setTreeCity(id: string) {
+  const c = CITY_TREES[id];
+  treeW = Object.fromEntries(TREE_SPECIES.map((s) => [s.id, c ? (c[s.id] ?? 0) : s.w])) as Record<TreeSpecies, number>;
+}
+export const treeWeight = (sp: TreeSpecies) => treeW[sp];
 /** photoreal tree range (m around the camera) and its capacity per species */
 const NEAR_CAP = 90;
 export function speciesOf(x: number, y: number): TreeSpecies {
   const h = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
   let acc = 0;
-  for (const sp of TREE_SPECIES) { acc += sp.w; if (h < acc) return sp.id; }
+  for (const sp of TREE_SPECIES) { acc += treeW[sp.id]; if (h < acc) return sp.id; }
   return TREE_SPECIES[0].id;
 }
 
@@ -209,6 +237,24 @@ function treeGeo(sp: TreeSpecies) {
     for (const [cx, cz] of ring(3, 1.05, 0.4)) k.ico(0.95, cx, 7.0, cz, 1.1, 0.85, 1.1, [0.019, 0.042, 0.018], 0, 0);
     k.ico(0.8, 0, 8.6, 0, 1.0, 0.95, 1.0, [0.020, 0.044, 0.019], 0, 0);
     k.ico(0.5, 0, 9.5, 0, 1.0, 1.0, 1.0, [0.021, 0.046, 0.020], 0, 0);
+  } else if (sp === 'palm') {
+    // a tall, slightly curved ringed trunk; a fan of arching fronds with drooping leaf masses
+    const trunkC: RGB = [0.075, 0.062, 0.048];
+    let px = 0, pz = 0;
+    for (let i = 0; i < 5; i++) {
+      const y0 = i * 1.9, y1 = (i + 1) * 1.9, nx = 0.04 * (i + 1) * (i + 1) * 0.12, r0 = 0.2 - i * 0.012, r1 = 0.2 - (i + 1) * 0.012;
+      k.limb(r0, r1, px, y0, pz, nx, y1, 0, i % 2 ? trunkC : barkMid, 0, 6);
+      px = nx; pz = 0;
+    }
+    const top: [number, number, number] = [px, 9.5, 0];
+    const frond: RGB = [0.024, 0.05, 0.018];
+    for (const [i, [cx, cz]] of ring(11, 1.0, 0.25).entries()) {
+      const up = i % 3 === 0 ? 0.9 : 0.35, out = i % 3 === 0 ? 1.7 : 2.4;
+      k.limb(0.05, 0.03, top[0], top[1], top[2], top[0] + cx * out * 0.55, top[1] + up, top[2] + cz * out * 0.55, frond, 0, 4);
+      k.limb(0.03, 0.01, top[0] + cx * out * 0.55, top[1] + up, top[2] + cz * out * 0.55, top[0] + cx * out, top[1] + up - 1.3, top[2] + cz * out, frond, 0, 4);
+      k.ico(0.62, top[0] + cx * out * 0.62, top[1] + up - 0.45, top[2] + cz * out * 0.62, 1.5, 0.28, 0.75, frond, 0.08, 0);
+    }
+    k.ico(0.42, top[0], top[1] + 0.1, top[2], 1.0, 0.9, 1.0, [0.05, 0.045, 0.03], 0, 0);
   } else {
     // littleleaf linden
     k.cyl(0.2, 0.16, 1.0, 0, 0, 0, bark, 0, 6);
@@ -596,9 +642,10 @@ export class NycProps {
     mk('lamp', lampGeo(), litMaterial(5.0, 0.45, 0.35), 6000);
     // one instanced mesh per species (capacity ~ census share; 19,000 in all)
     const treeMat = treeMaterial();
-    for (const sp of TREE_SPECIES) mk(`tree_${sp.id}`, treeGeo(sp.id), treeMat, Math.round(19000 * sp.w));
+    for (const sp of TREE_SPECIES) if (treeW[sp.id] > 0) mk(`tree_${sp.id}`, treeGeo(sp.id), treeMat, Math.round(19000 * treeW[sp.id]));
     // photoreal near range (trees.ts): bark + leaf cards per species; the trees around the camera are moved here
     for (const sp of TREE_SPECIES) {
+      if (treeW[sp.id] <= 0) continue;   // not planted in this city
       const g = buildTree(sp.id);
       const mkNear = (geo: THREE.BufferGeometry, mat: THREE.Material, nm: string) => {
         const m = new THREE.InstancedMesh(geo, mat, instanceSlots(NEAR_CAP));
@@ -748,7 +795,8 @@ export class NycProps {
     for (const [k, c] of want) if (!this.nearNow.has(k)) { const m = this.sets[c.set].getSlot(c.slot); this.sets[c.set].hideSlot(c.slot); this.nearNow.set(k, { ...c, m }); changed = true; }
     if (!changed) return;   // nothing entered or left the range: no upload
     for (const sp of TREE_SPECIES) {
-      const N = this.nearTrees[sp.id]!, set = `tree_${sp.id}`;
+      const N = this.nearTrees[sp.id], set = `tree_${sp.id}`;
+      if (!N) continue;
       const arr = N.bark.instanceMatrix.array as Float32Array, arr2 = N.leaves.instanceMatrix.array as Float32Array;
       let i = 0;
       for (const t of this.nearNow.values()) if (t.set === set && i < NEAR_CAP) { arr.set(t.m, i * 16); arr2.set(t.m, i * 16); i++; }
@@ -856,6 +904,7 @@ export class NycProps {
     const trees: { set: string; slot: number; x: number; y: number; z: number; scale: number }[] = [];
     for (const sp of TREE_SPECIES) {
       const rows = treeRows.filter((r) => speciesOf(r[0], r[1]) === sp.id), set = `tree_${sp.id}`;
+      if (!rows.length || !S[set]) continue;
       const slots = S[set].add(key, rows, (r, m, mo) => writeMatrix(m, mo, r[0], r[1], zAt(r[0], r[1]), r[2], r[3], r[3] * (0.9 + 0.2 * ((r[2] * 7) % 1)), r[3]));
       slots.forEach((slot, i) => trees.push({ set, slot, x: rows[i][0], y: rows[i][1], z: zAt(rows[i][0], rows[i][1]), scale: rows[i][3] ?? 1 }));
     }
