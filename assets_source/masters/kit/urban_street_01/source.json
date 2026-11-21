@@ -1,0 +1,16 @@
+{
+  "name": "Urban Street 01",
+  "url": "https://polyhaven.com/a/urban_street_01",
+  "author": "Andreas Mischok",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "urban_street_01_4k.exr"
+  ],
+  "notes": "Poly Haven HDRI, 4K EXR (27.9 MB, MD5 cc728194ef994a4141844ce272d25f19 checked) through the official API; stored as an asset of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 16K.",
+  "sha256": {
+    "urban_street_01_4k.exr": "52e8041dc5ed8986a66949f11ca2a4e824a7e124812ea1b603122c7fbda1bbe8"
+  },
+  "master_release": "kit-masters-v1"
+}

@@ -1,0 +1,16 @@
+{
+  "name": "Hansaplatz",
+  "url": "https://polyhaven.com/a/hansaplatz",
+  "author": "Greg Zaal",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "hansaplatz_4k.exr"
+  ],
+  "notes": "Poly Haven HDRI, 4K EXR (25.4 MB, MD5 2372b08ad07bbd0f5c1f8b5e447a01d7 checked) through the official API; stored as an asset of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 16K.",
+  "sha256": {
+    "hansaplatz_4k.exr": "bca5e1ec648f3643e8acd946e20d4569bd23282939c3bb884cf83817960d7619"
+  },
+  "master_release": "kit-masters-v1"
+}

@@ -1,0 +1,16 @@
+{
+  "name": "Cobblestone Street Night",
+  "url": "https://polyhaven.com/a/cobblestone_street_night",
+  "author": "Greg Zaal, Jenelle van Heerden (Backplates)",
+  "licence": "CC0-1.0",
+  "licence_url": "https://polyhaven.com/license",
+  "downloaded": "2026-11-21",
+  "files": [
+    "cobblestone_street_night_4k.hdr"
+  ],
+  "notes": "Poly Haven HDRI, 4K HDR (26.9 MB, MD5 d3840cba127cedf24dc15662a31e1e24 checked) through the official API; stored as an asset of the GitHub release kit-masters-v1 (not in git). Licence read 2026-11-21 from https://polyhaven.com/license (all Poly Haven assets CC0; evidence/). Masters are locked at 4K (data/asset_budgets.json); the source goes up to 24K.",
+  "sha256": {
+    "cobblestone_street_night_4k.hdr": "74b6d68b472e4ce0f6c0bad0c8384ffea1fe003f2cd2db859a71354915cde32c"
+  },
+  "master_release": "kit-masters-v1"
+}
