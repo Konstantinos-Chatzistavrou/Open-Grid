@@ -10,6 +10,7 @@
 #include <functional>
 #include "harness.hpp"
 #include "rs/pinnacle.hpp"
+#include "rs/controls.hpp"
 
 using namespace rs;
 
@@ -594,4 +595,66 @@ RS_TEST(wet_braking) {
     test::check("water depth matters at 110 km/h", high < 0.85);
     test::check("a damp film below the critical depth keeps the grip", wet_grip_factor(30 / 3.6, 230, 0, 0.1) > 0.98);
     test::check("dry road: no change", wet_grip_factor(30, 230, 0.5, 0.0) == 1.0);
+}
+
+// ---------------------------------------------------------------- burnout (line lock)
+RS_TEST(burnout) {
+    const CarConfig cfg = test::car();
+    auto run = [&](bool tc, double secs, double* moved, double* spin, double* heat, double* flash_over, double* front_w) {
+        auto s = test::make_sim(cfg);
+        s->settle(0.5);
+        s->vehicle.assists().tc = s->vehicle.assists().esc = tc;
+        const double x0 = s->body.state.position.x, t0 = s->last.wheels[RL].condition.surface_c;
+        double fw = 0;
+        while (s->time < 0.5 + secs) {
+            DriverInput in; in.gear = 2; in.throttle = 1.0; in.line_lock = 1.0; in.auto_clutch = true;
+            s->step(in);
+            fw = std::max(fw, std::abs(s->last.wheels[FL].angular_velocity));
+        }
+        const WheelOutput& r = s->last.wheels[RL];
+        *moved = s->body.state.position.x - x0;
+        *spin = r.angular_velocity * cfg.tire_rear.radius - s->last.speed;
+        *heat = r.condition.surface_c - t0;
+        *flash_over = r.condition.flash_c - r.condition.surface_c;
+        *front_w = fw;
+        return r.condition.wear;
+    };
+    double moved, spin, heat, flash, fw;
+    const double wear = run(false, 3.0, &moved, &spin, &heat, &flash, &fw);
+    std::printf("         line lock + full throttle, TC off, 3 s: rear tread %.1f m/s faster than the car, car moved %.2f m, "
+                "front wheel max %.2f rad/s, rear surface +%.0f C, flash %.0f C above it, wear %.4f\n", spin, moved, fw, heat, flash, wear);
+    test::check("the rear wheels spin up (burnout)", spin > 12.0);
+    test::check("the front brakes hold the front wheels still", fw < 0.5);
+    test::check("the car stays roughly in place (creeps at most a few metres)", moved < 6.0);
+    test::check("the rear tread heats up", heat > 30.0);
+    test::check("sliding raises the flash temperature above the tread surface", flash > 20.0);
+    test::check("the burnout wears the rear tread", wear > 0.0);
+    double m2, spin_tc, h2, f2, fw2;
+    run(true, 3.0, &m2, &spin_tc, &h2, &f2, &fw2);
+    std::printf("         the same with traction control on: rear tread %.1f m/s over the car\n", spin_tc);
+    test::check("traction control prevents the burnout", spin_tc < 4.0);
+    // Line lock is cancelled above 40 km/h (Ford's rule): at 60 km/h it must not brake the front wheels.
+    {
+        auto s = test::make_sim(cfg);
+        s->reset({}, 0, 60 / 3.6, 3);
+        for (int i = 0; i < 240; ++i) { DriverInput in; in.gear = 3; in.clutch = 1; in.line_lock = 1.0; s->step(in); }
+        std::printf("         line lock at 60 km/h: speed after 1 s %.1f km/h\n", s->last.speed * 3.6);
+        test::check("line lock does nothing above 40 km/h", s->last.speed * 3.6 > 55.0);
+    }
+    // Keyboard: both pedals at a standstill become line lock.
+    {
+        Controls c(cfg);
+        VehicleOutput last;
+        RawInput raw;
+        raw.device = InputDevice::Keyboard;
+        raw.throttle = raw.brake = 1.0;
+        DriverInput in;
+        for (int i = 0; i < 60; ++i) in = c.update(raw, last, 1.0 / 60.0);
+        test::check("keyboard throttle + brake at a standstill = line lock, no brake", in.line_lock == 1.0 && in.brake == 0.0);
+        c.settings.auto_gearbox = true;
+        c.set_gear(2);
+        last.engine_rpm = cfg.engine.redline_rpm;   // on the limiter, wheels spinning
+        for (int i = 0; i < 120; ++i) in = c.update(raw, last, 1.0 / 60.0);
+        test::check("the auto gearbox holds 1st during a line-lock burnout", c.gear() == 2);
+    }
 }

@@ -35,7 +35,7 @@ export async function loadCore(): Promise<void> {
 }
 
 export interface RawInput {
-  steer: number; throttle: number; brake: number; clutch: number; handbrake: number;
+  steer: number; throttle: number; brake: number; clutch: number; handbrake: number; lineLock?: number;
   shiftUp: boolean; shiftDown: boolean; device: 0 | 1 | 2;
   /** H-pattern shifter: gear index the lever is in (0 R, 1 N, 2 1st ...); undefined / -99 = no shifter */
   directGear?: number;
@@ -145,6 +145,7 @@ export class CoreCar {
     b[88] = +assists.abs; b[89] = +assists.tc; b[90] = +assists.esc; b[91] = +assists.autoGearbox;
     b[93] = assists.absSlip ?? 0; b[94] = assists.tcSlip ?? 0; b[95] = assists.countersteer ?? 0;
     b[92] = raw.directGear ?? -99;
+    b[41] = raw.lineLock ?? 0;
     b[40] = assists.autoClutch === 'off' ? -1 : assists.autoClutch === 'poor' ? 2 : assists.autoClutch === 'normal' ? 1 : 0;
     mod!._rs_step(this.id, dt);
     return b;
@@ -159,6 +160,7 @@ export class CoreCar {
     b[88] = +assists.abs; b[89] = +assists.tc; b[90] = +assists.esc; b[91] = +assists.autoGearbox;
     b[93] = assists.absSlip ?? 0; b[94] = assists.tcSlip ?? 0; b[95] = assists.countersteer ?? 0;
     b[92] = raw.directGear ?? -99;
+    b[41] = raw.lineLock ?? 0;
     b[40] = assists.autoClutch === 'off' ? -1 : assists.autoClutch === 'poor' ? 2 : assists.autoClutch === 'normal' ? 1 : 0;
     mod!._rs_step_patch(this.id, dt);
     return b;

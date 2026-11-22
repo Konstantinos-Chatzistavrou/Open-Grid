@@ -70,6 +70,7 @@ export class ControlsUi {
       { id: 'shiftUp', label: 'Shift Up', pad: true },
       { id: 'shiftDown', label: 'Shift Down', pad: true },
       { id: 'handbrake', label: 'Handbrake', pad: true },
+      { id: 'lineLock', label: 'Line lock (front brakes: burnout)', pad: true },
       { id: 'clutch', label: 'Clutch', pad: true },
       { id: 'reset', label: 'Recover / Repair', pad: true },
       { id: 'camera', label: 'Camera', pad: true },

@@ -92,6 +92,14 @@ DriverInput Controls::update(const RawInput& raw, const VehicleOutput& last, dou
     in.brake = brake_;
     in.clutch = raw.clutch;
     in.handbrake = raw.handbrake;
+    in.line_lock = raw.line_lock;
+    // Keyboard burnout: a key is a full pedal, so both pedals at a standstill cannot be the half-brake a driver would
+    // hold; it acts as a line-lock button instead (front brakes held, rears free).
+    if (raw.device == InputDevice::Keyboard && s.keyboard_line_lock && raw.throttle > 0.5 && raw.brake > 0.5
+        && std::abs(last.speed) < 3.0 && !pedal_reverse_) {
+        in.line_lock = 1.0;
+        in.brake = 0.0;
+    }
     in.auto_clutch = s.auto_clutch;
     in.auto_clutch_quality = s.auto_clutch_quality;
 
@@ -112,7 +120,8 @@ DriverInput Controls::update(const RawInput& raw, const VehicleOutput& last, dou
     }
     if (s.auto_gearbox && gear_ >= 2 && shift_cooldown_ <= 0) {
         double rpm = last.engine_rpm;
-        if (rpm > s.upshift_rpm_fraction * cfg_.engine.redline_rpm && gear_ < top && throttle_ > 0.1) {
+        // no upshifts while line lock holds the car: the wheels spin but the car is not going anywhere
+        if (rpm > s.upshift_rpm_fraction * cfg_.engine.redline_rpm && gear_ < top && throttle_ > 0.1 && in.line_lock <= 0) {
             set_gear(gear_ + 1);
             shift_cooldown_ = 0.6;
         } else if (gear_ > 2 && rpm < s.downshift_rpm) {

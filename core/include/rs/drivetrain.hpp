@@ -12,6 +12,7 @@ struct DrivetrainInput {
     int gear = 1;
     double engine_power_scale = 1.0;            // damage hook
     double brake_power_scale = 1.0;             // damage hook: brake fade / failure (all brakes)
+    double line_lock = 0;                       // 0..1: front brakes held at this share of their full torque (no ABS)
     std::array<double, 4> brake_scale{1, 1, 1, 1};   // ABS: fraction of driver brake pressure
     std::array<double, 4> extra_brake{};             // ESC: added brake torque, N m
     std::array<double, 4> pad_mu{1, 1, 1, 1};        // brake pad friction vs. its working range (disc temperature)

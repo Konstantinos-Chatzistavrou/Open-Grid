@@ -10,7 +10,7 @@ type RumblePad = Gamepad & { vibrationActuator?: { playEffect(t: string, o: obje
 
 export type BindAction =
   | 'throttle' | 'brake' | 'steerLeft' | 'steerRight'
-  | 'shiftUp' | 'shiftDown' | 'handbrake' | 'clutch'
+  | 'shiftUp' | 'shiftDown' | 'handbrake' | 'clutch' | 'lineLock'
   | 'reset' | 'camera' | 'lights' | 'flash' | 'stake' | 'board'
   | 'photo' | 'replay' | 'carMeet' | 'stepOut' | 'interact'
   | 'hud' | 'map' | 'garage' | 'pause';
@@ -23,6 +23,7 @@ export const DEFAULT_KEY_BINDS: Record<BindAction, string> = {
   shiftUp: 'KeyE',
   shiftDown: 'KeyQ',
   handbrake: 'Space',
+  lineLock: 'KeyK',
   clutch: 'ShiftLeft',
   reset: 'KeyR',
   camera: 'KeyC',
@@ -49,6 +50,7 @@ export const DEFAULT_PAD_BINDS: Record<BindAction, number> = {
   shiftUp: BTN.rb,
   shiftDown: BTN.lb,
   handbrake: BTN.a,
+  lineLock: -1,
   clutch: -1,
   reset: BTN.b,
   camera: BTN.y,
@@ -70,7 +72,7 @@ export const DEFAULT_PAD_BINDS: Record<BindAction, number> = {
 const BINDS_KEY = 'nr.binds.v1';
 
 export class Input {
-  readonly raw: RawInput = { steer: 0, throttle: 0, brake: 0, clutch: 0, handbrake: 0, shiftUp: false, shiftDown: false, device: 0, directGear: -99 };
+  readonly raw: RawInput = { steer: 0, throttle: 0, brake: 0, clutch: 0, handbrake: 0, lineLock: 0, shiftUp: false, shiftDown: false, device: 0, directGear: -99 };
   readonly assists: AssistToggles = { abs: true, tc: true, esc: false, autoGearbox: true };
   readonly settings: ControlsSettings = loadSettings();
   keyBinds: Record<BindAction, string> = { ...DEFAULT_KEY_BINDS };
@@ -332,7 +334,7 @@ export class Input {
     }
     const t = this.touch?.state;
     if (t?.active) { this.setSource('touch'); t.active = false; }   // a new touch: touch drives until keys/pad
-    if (this.suspended) { r.steer = r.throttle = r.brake = r.clutch = r.handbrake = 0; r.shiftUp = r.shiftDown = false; return r; }
+    if (this.suspended) { r.steer = r.throttle = r.brake = r.clutch = r.handbrake = r.lineLock = 0; r.shiftUp = r.shiftDown = false; return r; }
 
     if (this.source === 'touch' && this.touch) {
       // analog steering pad (or tilt) -> gamepad-style shaping in the core; pedals are full on/off
@@ -363,6 +365,7 @@ export class Input {
       r.throttle = pb.throttle >= 0 ? (pad.buttons[pb.throttle]?.value ?? 0) : 0;
       r.brake = pb.brake >= 0 ? (pad.buttons[pb.brake]?.value ?? 0) : 0;
       r.handbrake = pb.handbrake >= 0 && pad.buttons[pb.handbrake]?.pressed ? 1 : 0;
+      r.lineLock = pb.lineLock >= 0 && pad.buttons[pb.lineLock]?.pressed ? 1 : 0;
       r.clutch = pb.clutch >= 0 ? (pad.buttons[pb.clutch]?.value ?? 0) : 0;
       const edge = this.edges(pad);
       const hit = (i: number) => i >= 0 && edge(i);
@@ -390,12 +393,14 @@ export class Input {
         r.throttle = keys.has(kb.throttle) ? 1 : 0;
         r.brake = keys.has(kb.brake) ? 1 : 0;
         r.handbrake = keys.has(kb.handbrake) ? 1 : 0;
+        r.lineLock = keys.has(kb.lineLock) ? 1 : 0;
         r.clutch = keys.has(kb.clutch) ? 1 : 0;
       } else {
         r.steer = (keys.has(kb.steerLeft) || keys.has('ArrowLeft') ? 1 : 0) - (keys.has(kb.steerRight) || keys.has('ArrowRight') ? 1 : 0);
         r.throttle = keys.has(kb.throttle) || keys.has('ArrowUp') ? 1 : 0;
         r.brake = keys.has(kb.brake) || keys.has('ArrowDown') ? 1 : 0;
         r.handbrake = keys.has(kb.handbrake) ? 1 : 0;
+        r.lineLock = keys.has(kb.lineLock) ? 1 : 0;
         r.clutch = keys.has(kb.clutch) || keys.has('ShiftRight') ? 1 : 0;
       }
     }

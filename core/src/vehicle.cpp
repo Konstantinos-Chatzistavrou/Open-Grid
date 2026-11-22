@@ -768,6 +768,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     DrivetrainInput din{input_.throttle, input_.clutch, input_.brake, input_.handbrake, input_.gear,
                         damage_.engine_power};
     din.brake_power_scale = damage_.brakes;
+    // Line lock (Ford's rule): forward gears only, cancelled above 40 km/h.
+    din.line_lock = (input_.gear >= 2 && std::abs(out.speed) < 40.0 / 3.6) ? clamp(input_.line_lock, 0.0, 1.0) : 0.0;
     din.nos_active = input_.nos;
     din.starter_crank = input_.starter;
     din.airspeed_mps = std::abs(out.speed);

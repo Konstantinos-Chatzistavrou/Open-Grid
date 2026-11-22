@@ -31,6 +31,7 @@ struct DriverInput {
     double brake = 0;       // 0..1
     double clutch = 0;      // 0 = engaged (pedal up) .. 1 = disengaged (pedal down)
     double handbrake = 0;   // 0..1
+    double line_lock = 0;   // 0..1: hold the FRONT brakes only (line lock): burnouts, drag-strip tyre warm-up
     int gear = 1;           // index into gear_ratios: 0 = reverse, 1 = neutral, 2 = 1st, ...
     bool auto_clutch = false;   // ASSIST: clutch handled automatically (launch, anti-stall, shifts)
     AutoClutchQuality auto_clutch_quality = AutoClutchQuality::Perfect;

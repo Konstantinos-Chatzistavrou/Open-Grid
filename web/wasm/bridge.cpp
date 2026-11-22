@@ -201,6 +201,7 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     raw.brake = b[82];
     raw.clutch = b[83];
     raw.handbrake = b[84];
+    raw.line_lock = b[41];   // line lock: front brakes held (burnout)
     raw.shift_up = b[85] > 0.5;
     raw.shift_down = b[86] > 0.5;
     raw.device = rs::InputDevice(int(b[87]));

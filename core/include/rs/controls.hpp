@@ -15,6 +15,7 @@ struct RawInput {
     double brake = 0;        // 0..1
     double clutch = 0;       // 0..1 (pedal down = 1)
     double handbrake = 0;    // 0..1
+    double line_lock = 0;    // 0..1: front brakes only (a line-lock button: hold it and the throttle for a burnout)
     bool shift_up = false;   // edge events: true for ONE update when pressed
     bool shift_down = false;
     // H-pattern shifter: the gear index the lever is in (0 = R, 1 = N, 2 = 1st ...), or -99 when there is no shifter.
@@ -25,6 +26,7 @@ struct RawInput {
 
 struct ControlSettings {
     bool speed_sensitive_steering = true;
+    bool keyboard_line_lock = true;      // keyboard: throttle + brake at a standstill = line lock (burnout)
     bool countersteer_assist = false;
     // Hands-off self-alignment (keyboard / gamepad, physical, on by default): with no steering input the front wheels
     // are free to caster toward their own path (rack torque -> 0), the way a loosely held wheel spins into a slide.
