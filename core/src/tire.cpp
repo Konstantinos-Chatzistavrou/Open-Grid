@@ -359,7 +359,12 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
         middle_c += (surface_c - middle_c) * alpha_sync;
         outer_c += (surface_c - outer_c) * alpha_sync;
     }
-    flash_c = surface_c;
+    // Micro-asperity flash temperature (~8 ms response) on top of the tread surface: rises with sliding power. (It
+    // used to be reset to the surface here every call, which cancelled the relaxation in update_zones.)
+    {
+        const double rise = clamp(std::max(0.0, slip_power_w) / 950.0, 0.0, 58.0);
+        flash_c = clamp(flash_c + (surface_c + rise - flash_c) * (1.0 - std::exp(-dt / 0.008)), 10.0, 310.0);
+    }
     last_carcass_c_ = temperature_c;
     last_inner_air_c_ = inner_air_c;
 }
@@ -375,7 +380,9 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
     }
     const double z_in0 = inner_c, z_mid0 = middle_c, z_out0 = outer_c;
 
+    const double flash_before = flash_c;   // the zone pass below does the flash step from the rib surfaces
     update(slip_power_w, load_n, speed_mps, dt, p);
+    flash_c = flash_before;
 
     inner_c = z_in0;
     middle_c = z_mid0;
