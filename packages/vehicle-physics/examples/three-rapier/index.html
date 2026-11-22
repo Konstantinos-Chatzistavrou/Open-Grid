@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>open-grid-physics + three.js + Rapier</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #101418; color: #e8eef2; font: 14px/1.4 system-ui, sans-serif; overflow: hidden; }
+    canvas { display: block; }
+    #hud { position: fixed; left: 16px; bottom: 16px; font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px #000; }
+    #hud b { font-size: 32px; }
+    #help { position: fixed; left: 16px; top: 16px; opacity: 0.8; max-width: 30em; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "@dimforge/rapier3d-compat": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.14.0/rapier.es.js",
+      "open-grid-physics": "../../index.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="help">open-grid-physics in Rapier: arrows or WASD to drive, Space handbrake, R reset. Rapier owns the body and
+    the raycasts; the core turns them into tyre, suspension and drivetrain forces.</div>
+  <div id="hud"></div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

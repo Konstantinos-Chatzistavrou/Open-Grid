@@ -20,6 +20,8 @@
 /web/node_modules/
 /server/node_modules/
 /web/dist/
+/packages/vehicle-physics/dist/
+/packages/vehicle-physics/node_modules/
 
 # Local tooling
 /.playwright-mcp/
