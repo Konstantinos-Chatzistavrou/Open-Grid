@@ -85,6 +85,7 @@ import { registerCarMeta } from './brands';
 import { CAR_REQ, CAR_VMAX_KMH } from './progression';
 import { BASE_CAR_VALUATION } from './auctionMarket';
 import { Player2Input, SplitHud, connectedGamepads, type Player2Poll, type SplitLayout } from './splitScreen';
+import { ScreenAwake } from './wakeLock';
 
 const params = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d);
@@ -815,9 +816,11 @@ async function main() {
   let pausedFrom: State = 'race';
   let settledShowroom = 0;
   const driving = () => state === 'race' || state === 'countdown' || state === 'paused' || state === 'spectate' || state === 'results';
+  const screenAwake = new ScreenAwake();
   const setState = (st: State) => {
     state = st;
     const inDriving = driving();
+    screenAwake.set(st === 'race' || st === 'countdown' || st === 'spectate');
     const overlayOpen = st === 'paused' || st === 'results';
     if (!inDriving) settledShowroom = 0;
     document.body.classList.toggle('menu', !inDriving);
