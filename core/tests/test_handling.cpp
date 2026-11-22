@@ -605,15 +605,22 @@ RS_TEST(burnout) {
         s->settle(0.5);
         s->vehicle.assists().tc = s->vehicle.assists().esc = tc;
         const double x0 = s->body.state.position.x, t0 = s->last.wheels[RL].condition.surface_c;
-        double fw = 0;
+        double fw = 0, spin_sum = 0;
+        int spin_n = 0;
         while (s->time < 0.5 + secs) {
             DriverInput in; in.gear = 2; in.throttle = 1.0; in.line_lock = 1.0; in.auto_clutch = true;
             s->step(in);
             fw = std::max(fw, std::abs(s->last.wheels[FL].angular_velocity));
+            // the tread speed over the car, averaged over the last second: traction control cuts and restores the
+            // torque a few times a second, so any single instant may catch a burst
+            if (s->time > 0.5 + secs - 1.0) {
+                spin_sum += s->last.wheels[RL].angular_velocity * cfg.tire_rear.radius - s->last.speed;
+                ++spin_n;
+            }
         }
         const WheelOutput& r = s->last.wheels[RL];
         *moved = s->body.state.position.x - x0;
-        *spin = r.angular_velocity * cfg.tire_rear.radius - s->last.speed;
+        *spin = spin_n > 0 ? spin_sum / spin_n : 0.0;
         *heat = r.condition.surface_c - t0;
         *flash_over = r.condition.flash_c - r.condition.surface_c;
         *front_w = fw;
@@ -621,7 +628,7 @@ RS_TEST(burnout) {
     };
     double moved, spin, heat, flash, fw;
     const double wear = run(false, 3.0, &moved, &spin, &heat, &flash, &fw);
-    std::printf("         line lock + full throttle, TC off, 3 s: rear tread %.1f m/s faster than the car, car moved %.2f m, "
+    std::printf("         line lock + full throttle, TC off, 3 s: rear tread %.1f m/s faster than the car (last 1 s), car moved %.2f m, "
                 "front wheel max %.2f rad/s, rear surface +%.0f C, flash %.0f C above it, wear %.4f\n", spin, moved, fw, heat, flash, wear);
     test::check("the rear wheels spin up (burnout)", spin > 12.0);
     test::check("the front brakes hold the front wheels still", fw < 0.5);
@@ -631,7 +638,7 @@ RS_TEST(burnout) {
     test::check("the burnout wears the rear tread", wear > 0.0);
     double m2, spin_tc, h2, f2, fw2;
     run(true, 3.0, &m2, &spin_tc, &h2, &f2, &fw2);
-    std::printf("         the same with traction control on: rear tread %.1f m/s over the car\n", spin_tc);
+    std::printf("         the same with traction control on: rear tread %.1f m/s over the car (last 1 s)\n", spin_tc);
     test::check("traction control prevents the burnout", spin_tc < 4.0);
     // Line lock is cancelled above 40 km/h (Ford's rule): at 60 km/h it must not brake the front wheels.
     {
