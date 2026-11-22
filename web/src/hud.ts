@@ -26,6 +26,33 @@ export function formatLap(t: number) {
 /** ring capacity for the drawn-frame times of the last second (enough for a 500 Hz display) */
 const FRAME_RING = 512;
 
+// ---- small dials (water / oil / boost) and warning lamps: values come from the core's instrument cluster
+// (rs/cluster.hpp: sensor lag, CAN sample-and-hold, stepper needles, key-on bulb check)
+const MINI_A0 = -210, MINI_SWEEP = 240;
+const miniAt = (f: number, r: number) => {
+  const a = ((MINI_A0 + MINI_SWEEP * f) * Math.PI) / 180;
+  return [50 + Math.cos(a) * r, 50 + Math.sin(a) * r] as const;
+};
+interface MiniDef { id: string; label: string; min: number; max: number; marks: [number, string][]; red?: [number, number]; unit: string }
+const MINIS: MiniDef[] = [
+  { id: 'water', label: 'WATER', min: 50, max: 130, marks: [[50, 'C'], [90, ''], [130, 'H']], red: [115, 130], unit: '' },
+  { id: 'oil', label: 'OIL', min: 50, max: 150, marks: [[50, '50'], [100, '100'], [150, '150']], red: [130, 150], unit: '°C' },
+  { id: 'boost', label: 'BOOST', min: -1, max: 2, marks: [[-1, '-1'], [0, '0'], [1, '1'], [2, '2']], unit: 'bar' },
+];
+// lamp order = rs::ClusterLamp bit order; colour as on a real cluster (red: stop / danger, amber: caution)
+const LAMPS: { bit: number; title: string; red: boolean; svg: string }[] = [
+  { bit: 1 << 0, title: 'Check engine', red: false, svg: '<path d="M3 10h2V8h3V6h5v2h3l2 2h2v-2h1v7h-1v-2h-2l-2 3H8l-2-2H5v2H3z"/>' },
+  { bit: 1 << 1, title: 'Oil pressure', red: true, svg: '<path d="M2 12l5-1 2-3h6l2 2 5-2-5 7H6z"/><path d="M21 15c0 1.2-.8 2-1.5 2s-1.5-.8-1.5-2l1.5-2.2z"/>' },
+  { bit: 1 << 2, title: 'Charging', red: true, svg: '<path d="M3 8h18v10H3z M6 6h3v2H6z M15 6h3v2h-3z" fill-rule="evenodd"/><path d="M6 13h4M16 11v4M14 13h4" stroke="#000" stroke-width="1.6"/>' },
+  { bit: 1 << 3, title: 'ABS', red: false, svg: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><text x="12" y="15.2" font-size="7.5" font-weight="800" text-anchor="middle">ABS</text>' },
+  { bit: 1 << 4, title: 'Stability control active', red: false, svg: '<path d="M5 11l2-4h10l2 4v4H5z"/><path d="M6 19c2-2 3 0 5-2M13 19c2-2 3 0 5-2" fill="none" stroke="currentColor" stroke-width="1.6"/>' },
+  { bit: 1 << 5, title: 'Stability control off', red: false, svg: '<path d="M5 9l2-4h10l2 4v4H5z"/><text x="12" y="21.5" font-size="7" font-weight="800" text-anchor="middle">OFF</text>' },
+  { bit: 1 << 6, title: 'Brake', red: true, svg: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><text x="12" y="16.5" font-size="12" font-weight="900" text-anchor="middle">!</text>' },
+  { bit: 1 << 7, title: 'Coolant temperature', red: true, svg: '<path d="M11 3h2v9.3a3.2 3.2 0 1 1-2 0z"/><path d="M15 6h3M15 9h3M4 20c2-1.5 3 1.5 5 0s3 1.5 5 0 3 1.5 5 0" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
+  { bit: 1 << 8, title: 'Low fuel', red: false, svg: '<path d="M5 4h9v16H5z M7 6v4h5V6z" fill-rule="evenodd"/><path d="M14 9h2l2 2v6a1 1 0 0 0 2 0v-8l-2-2" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
+  { bit: 1 << 9, title: 'Tyre pressure', red: false, svg: '<path d="M5 6c-2 4-2 8 0 12h14c2-4 2-8 0-12" fill="none" stroke="currentColor" stroke-width="2"/><text x="12" y="15.5" font-size="10" font-weight="900" text-anchor="middle">!</text>' },
+];
+
 export class Hud {
   /** drawn-frame timestamps of the last second: O(1) ring (head = oldest), no shift() and no arrays per frame */
   private frames = new Float64Array(FRAME_RING);
@@ -59,9 +86,87 @@ export class Hud {
   private needleKey = '';
   private shiftOn = false;
   private dialKey = '';
+  private miniNeedles: Record<string, SVGLineElement> = {};
+  private miniKeys: Record<string, string> = {};
+  private miniBoost: HTMLElement | null = null;
+  private lampEls: HTMLElement[] = [];
+  private lampBits = -1;
+  private turboShown: boolean | null = null;
 
   constructor() {
     this.buildTach(9000, 7500);
+    this.buildMinis();
+  }
+
+  /** Water, oil and boost dials beside the tach, and the warning lamp row under it. */
+  private buildMinis() {
+    const dash = $('dash');
+    const col = document.createElement('div');
+    col.id = 'minigauges';
+    for (const d of MINIS) {
+      const wrap = document.createElement('div');
+      wrap.className = 'mini';
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 100 100');
+      const f = (v: number) => (v - d.min) / (d.max - d.min);
+      let inner = `<circle cx="50" cy="50" r="47" class="mini-bg"/>`;
+      if (d.red) {
+        const [x0, y0] = miniAt(f(d.red[0]), 40), [x1, y1] = miniAt(f(d.red[1]), 40);
+        const large = (f(d.red[1]) - f(d.red[0])) * MINI_SWEEP > 180 ? 1 : 0;
+        inner += `<path d="M${x0} ${y0} A40 40 0 ${large} 1 ${x1} ${y1}" class="mini-red"/>`;
+      }
+      for (let i = 0; i <= 8; i++) {
+        const [x0, y0] = miniAt(i / 8, i % 2 ? 36 : 33), [x1, y1] = miniAt(i / 8, 42);
+        inner += `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" class="mini-tick${i % 2 ? '' : ' major'}"/>`;
+      }
+      for (const [v, t] of d.marks) {
+        if (!t) continue;
+        const [x, y] = miniAt(f(v), 24);
+        inner += `<text x="${x}" y="${y}" class="mini-lbl">${t}</text>`;
+      }
+      inner += `<text x="50" y="78" class="mini-name">${d.label}</text>`;
+      if (d.unit) inner += `<text x="50" y="91" class="mini-unit">${d.unit}</text>`;
+      inner += `<line x1="50" y1="50" x2="50" y2="14" class="mini-needle"/><circle cx="50" cy="50" r="4" class="mini-hub"/>`;
+      svg.innerHTML = inner;
+      wrap.appendChild(svg);
+      col.appendChild(wrap);
+      this.miniNeedles[d.id] = svg.querySelector('.mini-needle') as SVGLineElement;
+      if (d.id === 'boost') this.miniBoost = wrap;
+    }
+    dash.appendChild(col);
+    const lamps = document.createElement('div');
+    lamps.id = 'lamps';
+    for (const l of LAMPS) {
+      const el = document.createElement('span');
+      el.className = 'lamp' + (l.red ? ' red' : ' amber');
+      el.title = l.title;
+      el.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor">${l.svg}</svg>`;
+      lamps.appendChild(el);
+      this.lampEls.push(el);
+    }
+    dash.appendChild(lamps);
+  }
+
+  private updateMinis(out: Float64Array) {
+    if (!(out[OUT.tachMax] > 0)) return;   // no cluster data (old buffer)
+    const vals: Record<string, number> = { water: out[OUT.waterNeedle], oil: out[OUT.oilNeedle], boost: out[OUT.boostNeedle] };
+    for (const d of MINIS) {
+      const f = Math.max(0, Math.min(1, (vals[d.id] - d.min) / (d.max - d.min)));
+      const [x, y] = miniAt(f, 36);
+      const k = `${x.toFixed(1)} ${y.toFixed(1)}`;
+      if (k !== this.miniKeys[d.id]) {
+        this.miniKeys[d.id] = k;
+        this.miniNeedles[d.id].setAttribute('x2', x.toFixed(1));
+        this.miniNeedles[d.id].setAttribute('y2', y.toFixed(1));
+      }
+    }
+    const turbo = out[OUT.turbo] > 0.5;
+    if (turbo !== this.turboShown && this.miniBoost) { this.turboShown = turbo; this.miniBoost.hidden = !turbo; }
+    const bits = Math.round(out[OUT.lamps]) | 0;
+    if (bits !== this.lampBits) {
+      this.lampBits = bits;
+      LAMPS.forEach((l, i) => this.lampEls[i].classList.toggle('on', (bits & l.bit) !== 0));
+    }
   }
 
   /**
@@ -158,7 +263,9 @@ export class Hud {
     const cap = this.cap ? ` (cap ${this.cap})` : '';
     const st = this.stats ? ` · ${this.stats.calls} calls · ${this.stats.textureMB} MB tex${this.stats.noMips ? ` · ${this.stats.noMips} NO MIPS` : ''}` : '';
     this.text('perf', `${fps} fps${cap} · ${med.toFixed(0)} ms · p95 ${p95.toFixed(0)}${st}\n${this.extra}`);
-    this.text('speed', Math.round(kmh).toString());
+    // the speedometer reads a few per cent high, as real ones do (core cluster: UN R39 limits)
+    this.text('speed', Math.round(out[OUT.tachMax] > 0 ? out[OUT.speedIndicated] : kmh).toString());
+    this.updateMinis(out);
     const g = out[OUT.gear];
     this.text('gear', g === 0 ? 'R' : g === 1 ? 'N' : String(g - 1));
     const on = (n: string, v: boolean, act = false) => (v ? `<b>${act ? '● ' : ''}${n}</b>` : n);

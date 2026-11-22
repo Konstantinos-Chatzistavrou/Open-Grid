@@ -39,7 +39,26 @@ body.overlay-menu #countdown, body.overlay-menu #launch { display: none !importa
 #perf { font: 11px/1.45 ui-monospace, "JetBrains Mono", monospace; color: var(--dim); white-space: pre; text-shadow: 0 1px 2px #000; }
 
 /* speedometer */
-#dash { position: absolute; right: 26px; bottom: 22px; width: 240px; text-align: center; text-shadow: 0 2px 6px #000c; contain: layout style paint; }
+#dash { position: absolute; right: 26px; bottom: 22px; width: 240px; text-align: center; text-shadow: 0 2px 6px #000c; contain: layout style; }
+/* water / oil / boost dials left of the tach, warning lamps under it (values: core rs/cluster.hpp) */
+#minigauges { position: absolute; right: calc(100% + 8px); bottom: 118px; display: flex; flex-direction: column-reverse; gap: 5px; }   /* above the tyre panel */
+#minigauges .mini { width: 70px; height: 70px; }
+#minigauges .mini[hidden] { display: none; }
+#minigauges svg { width: 100%; height: 100%; display: block; }
+#minigauges .mini-bg { fill: #05070cd8; stroke: #ffffff18; stroke-width: 1; }
+#minigauges .mini-tick { stroke: #ffffff50; stroke-width: 1.4; }
+#minigauges .mini-tick.major { stroke: #ffffffc8; stroke-width: 2.2; }
+#minigauges .mini-red { fill: none; stroke: #e02020a0; stroke-width: 6; }
+#minigauges .mini-lbl { fill: #ffffffc8; font: 700 13px var(--display, system-ui); text-anchor: middle; dominant-baseline: middle; }
+#minigauges .mini-name { fill: #ffffffa0; font: 700 11px var(--display, system-ui); letter-spacing: .14em; text-anchor: middle; }
+#minigauges .mini-unit { fill: #ffffff70; font: 600 9px var(--display, system-ui); text-anchor: middle; }
+#minigauges .mini-needle { stroke: #ff3b30; stroke-width: 2.4; stroke-linecap: round; }
+#minigauges .mini-hub { fill: #0b0f17; stroke: #ff3b30; stroke-width: 1.5; }
+#lamps { display: flex; justify-content: center; gap: 5px; margin-top: 6px; }
+#lamps .lamp { width: 17px; height: 17px; color: #ffffff12; transition: color .05s; }
+#lamps .lamp svg { width: 100%; height: 100%; display: block; }
+#lamps .lamp.on.amber { color: #ffb21f; filter: drop-shadow(0 0 4px #ffb21fb0); }
+#lamps .lamp.on.red { color: #ff3324; filter: drop-shadow(0 0 4px #ff3324b0); }
 #gauge { width: 240px; height: 240px; display: block; }
 #gauge .dial-bg { fill: #05080ecc; stroke: #ffffff10; stroke-width: 1; }
 #gauge .tick { stroke: #ffffff55; stroke-width: 1.5; }
@@ -793,3 +812,4 @@ body.touch #cops { position: absolute; top: calc(44px + env(safe-area-inset-top)
   #menu .careers { max-width: min(390px, 54vw); }
 }
 
+body.touch #minigauges { display: none; }
