@@ -466,6 +466,12 @@ export class CarVisual {
     // Soft ground contact shadow beneath chassis + 4 tires
     const cb = cfg.collision_box;
     this.contactShadow = createContactShadow(cb.size_m[0] * 1.24, cb.size_m[2] * 1.18, cb.centre_in_model_m[2], this.shadowOp as unknown as THREE.Node<'float'>);
+    // Seat contact shadow (and therefore visual.groundY) immediately from measured tyre bottoms so frame 0 in Garage sits flush on the turntable
+    if (this.wheels.length) {
+      let minB = Infinity;
+      for (const w of this.wheels) minB = Math.min(minB, w.restPos.y - w.radius);
+      if (Number.isFinite(minB)) this.contactShadow.position.y = minB + 0.014;
+    }
     model.add(this.contactShadow);
 
     // The player's own car never needs to be in its headlight shadow map (the spots sit at its nose and shine away
@@ -559,6 +565,9 @@ export class CarVisual {
     // -90 deg about X (a Z-up export): their "y" was the model's -z, so the car measured its ground 1.8 m too low and
     // stood that far above the garage floor.
     if (node.parent && node.parent !== this.model) { this.model.updateWorldMatrix(true, true); this.model.attach(node); }
+    // A leaf mesh wheel (e.g. meshopt-quantized Sketchfab wheel_FL with 0 children) already carries its origin at the hub;
+    // shifting node.position without children would displace it without moving its geometry.
+    if (node.children.length === 0) return;
     node.updateWorldMatrix(true, true);
     const b = exactBox(node, new THREE.Matrix4().copy(node.matrixWorld).invert(), (m) => m.name.startsWith('wheel_blur_'));
     if (b.isEmpty()) return;
@@ -571,10 +580,11 @@ export class CarVisual {
 
   private addBlurDisc(node: THREE.Object3D, rotorHeat: THREE.UniformNode<'float', number>): number {
     const rimBox = new THREE.Box3(), all = new THREE.Box3(), tmp = new THREE.Box3();
-    // Boxes in the wheel node's own space. The transform is the whole chain below the node (quantized glTF meshes
-    // carry their scale on a node between the wheel and the mesh): with the mesh's local matrix alone the tyre
-    // measured 1 m in radius and everything derived from it (contact shadow height, blur disc) was wrong.
+    // Boxes in the wheel node's own space for child meshes (blur ring / rotor glow inherit node.scale), while the
+    // returned tyreRadius MUST be in model-space metres — meshopt-quantized leaf wheel meshes carry `node.scale = r`
+    // (vertices in [-1, 1]), so without multiplying by nodeScale the tyre measured 1.0 m and floated the car +0.66 m!
     node.updateWorldMatrix(true, true);
+    const nodeScale = Math.max(Math.abs(node.scale.x), Math.abs(node.scale.y), Math.abs(node.scale.z)) || 1;
     // exact vertex extents (exactBox): a tyre mesh modelled at an angle inflates a transformed bounding box
     const nodeInv = new THREE.Matrix4().copy(node.matrixWorld).invert();
     const isRim = (m: THREE.Object3D) => { for (let o: THREE.Object3D | null = m; o && o !== node; o = o.parent) if (/rim/i.test(o.name)) return true; return false; };
@@ -582,13 +592,14 @@ export class CarVisual {
     rimBox.copy(exactBox(node, nodeInv, (m) => m.name.startsWith('wheel_blur_') || !isRim(m)));
     void tmp;
     const box = rimBox.isEmpty() ? all : rimBox;
-    const tyreRadius = all.isEmpty() ? 0.335 : Math.max(all.max.y - all.min.y, all.max.z - all.min.z) / 2;
+    const localTyreRadius = all.isEmpty() ? (0.335 / nodeScale) : Math.max(all.max.y - all.min.y, all.max.z - all.min.z) / 2;
+    const tyreRadius = localTyreRadius * nodeScale;
     if (box.isEmpty()) return tyreRadius;
-    const rimRadius = Math.min(tyreRadius * 0.76, Math.max(box.max.y - box.min.y, box.max.z - box.min.z) / 2 * 0.92);
+    const rimRadius = Math.min(localTyreRadius * 0.76, Math.max(box.max.y - box.min.y, box.max.z - box.min.z) / 2 * 0.92);
     const side = node.position.x >= 0 ? 1 : -1;
-    // Place recessed 14 mm inside the outer rim lip so center-lock nuts & rim lips stay crisp in 3D
+    // Place recessed 14 mm (in model metres -> divided by nodeScale in local space) inside the outer rim lip
     const outerX = side > 0 ? box.max.x : box.min.x;
-    const x = outerX - side * 0.014;
+    const x = outerX - side * (0.014 / nodeScale);
     if (!this.blurMat) {
       const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.24, metalness: 0.88, transparent: true, depthWrite: false, side: THREE.DoubleSide });
       const st = texture(spokeBlurTex(), uv());
@@ -616,7 +627,7 @@ export class CarVisual {
     rotorGlow.scale.setScalar(rimRadius);
     rotorGlow.name = `wheel_rotor_glow_${node.name}`;
     rotorGlow.rotation.y = side * Math.PI / 2;
-    rotorGlow.position.set(outerX - side * 0.052, (box.max.y + box.min.y) / 2, (box.max.z + box.min.z) / 2);
+    rotorGlow.position.set(outerX - side * (0.052 / nodeScale), (box.max.y + box.min.y) / 2, (box.max.z + box.min.z) / 2);
     node.add(rotorGlow);
 
     return tyreRadius;
@@ -881,15 +892,9 @@ export class CarVisual {
     this.flameGroup.visible = on;
     this.flameIntU.value = on ? Math.min(1.25, this.flameLevel) : 0;
     this.flameNosU.value = blueNos ? 1 : 0;
-    if (on && !this.flameLight) {
-      this.flameLight = new THREE.PointLight(0xff7418, 0, 4.2, 2);   // 0 intensity when off -> skipped by Clustered Forward+
-      this.flameLight.position.copy(this.flameLightAt);
-      this.flameGroup.add(this.flameLight);
-    }
-    if (this.flameLight) {
-      this.flameLight.color.setHex(blueNos ? 0x38bdf8 : 0xff6b14);
-      this.flameLight.intensity = on ? (10 + Math.random() * 6) * this.flameLevel : 0;
-    }
+    // NOTE: Never add a THREE.PointLight lazily on first flame — mutating scene light count at runtime
+    // forces Three.js WebGPU to recompile ~32 garage/street WGSL pipelines synchronously (~1.5-3s freeze on Rev/Start).
+    // The additive HDR flame cones + post bloom provide the tailpipe flash with zero shader recompiles.
     if (on) {
       for (let i = 0; i < this.flameNozzles.length; i++) {
         const flick = 0.72 + Math.random() * 0.56;

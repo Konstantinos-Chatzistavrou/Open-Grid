@@ -276,6 +276,10 @@ export class GameAudio {
   // 4-zone physical combustion & FX audio stems (`/assets/audio/<id>.ogg`) with graceful synth fallback
   private stemBuffers = new Map<string, AudioBuffer>();
   private stemAttempted = new Set<string>();
+  private stemQueue: string[] = [];
+  private stemDecoding = false;
+  private appliedVoiceId: EngineVoiceId | null = null;
+  private shaperCache = new Map<string, Float32Array<ArrayBuffer>>();
   private stemZoneSrcs: (AudioBufferSourceNode | null)[] = [null, null, null, null];
   private stemZoneIds: (string | null)[] = [null, null, null, null];
   private stemZoneGains: (GainNode | null)[] = [null, null, null, null];
@@ -385,6 +389,12 @@ export class GameAudio {
     const e = this.eng;
     const ctx = this.ctx;
     if (!e || !ctx) return;
+    // Fast O(1) no-op if this voice is already active (prevents WaveShaper/PeriodicWave audio-thread hitches on Rev/Ignition clicks!)
+    if (this.appliedVoiceId === this.voiceId) {
+      this.syncEngineStemSources();
+      return;
+    }
+    this.appliedVoiceId = this.voiceId;
     const v = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
     const t = ctx.currentTime;
     const w = this.waves[v.waveKey];
@@ -401,7 +411,10 @@ export class GameAudio {
     e.formant1.frequency.setTargetAtTime(v.f1[0], t, 0.04); e.formant1.Q.value = v.f1[1]; e.formant1.gain.value = v.f1[2];
     e.formant2.frequency.setTargetAtTime(v.f2[0], t, 0.04); e.formant2.Q.value = v.f2[1]; e.formant2.gain.value = v.f2[2];
     e.formant3.frequency.setTargetAtTime(v.f3[0], t, 0.04); e.formant3.Q.value = v.f3[1]; e.formant3.gain.value = v.f3[2];
-    e.shaper.curve = distortion(v.drive);
+    const dKey = `d:${v.drive}`;
+    let dCurve = this.shaperCache.get(dKey);
+    if (!dCurve) { dCurve = distortion(v.drive); this.shaperCache.set(dKey, dCurve); }
+    e.shaper.curve = dCurve;
     // Helical roots supercharger whine uses richer triangle harmonics; turbo compressor whistle stays pure sine
     e.oBoost.type = v.boost === 'supercharger' ? 'triangle' : 'sine';
     // Gentle warm mastering EQ for real recorded engine stems (natural chest punch, zero nasal RC-car buzz)
@@ -420,7 +433,11 @@ export class GameAudio {
       this.stemF3.Q.value = 1.1;
       this.stemF3.gain.setTargetAtTime(-1.2, t, 0.04);
     }
-    if (this.stemShaper) this.stemShaper.curve = warmExhaustCurve(1.06);
+    if (this.stemShaper && !this.stemShaper.curve) {
+      let sCurve = this.shaperCache.get('s:1.06');
+      if (!sCurve) { sCurve = warmExhaustCurve(1.06); this.shaperCache.set('s:1.06', sCurve); }
+      this.stemShaper.curve = sCurve;
+    }
     this.preloadVoiceStems(this.voiceId);
     this.preloadFxStems();
     this.syncEngineStemSources();
@@ -997,7 +1014,7 @@ export class GameAudio {
 
     const shaper = ctx.createWaveShaper();
     shaper.curve = distortion(4.2);
-    shaper.oversample = '2x';
+    shaper.oversample = 'none';
 
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
@@ -1015,15 +1032,15 @@ export class GameAudio {
     oGear.connect(gearFilter).connect(gearGain).connect(this.out!);
     oGear.start();
 
-    // Environmental wall/tunnel acoustic reverb convolver (skipped on low-power phones to save ARM FFT CPU)
+    // Lightweight 0.28s environmental wall/garage slapback reverb (3x lighter FFT than 0.9s; skipped in lowPower)
     if (!this.lowPower) {
-      const irLen = Math.floor(ctx.sampleRate * 0.9);
+      const irLen = Math.floor(ctx.sampleRate * 0.28);
       const irBuf = ctx.createBuffer(2, irLen, ctx.sampleRate);
       for (let ch = 0; ch < 2; ch++) {
         const data = irBuf.getChannelData(ch);
         for (let i = 0; i < irLen; i++) {
-          const dec = Math.pow(1 - i / irLen, 2.6);
-          data[i] = (Math.random() * 2 - 1) * dec * (i < 900 ? 0.85 : 0.45);
+          const dec = Math.pow(1 - i / irLen, 2.4);
+          data[i] = (Math.random() * 2 - 1) * dec * (i < 600 ? 0.78 : 0.36);
         }
       }
       const conv = ctx.createConvolver();
@@ -1123,8 +1140,10 @@ export class GameAudio {
     stemToneFilter.Q.value = 0.78;
 
     const stemShaper = ctx.createWaveShaper();
-    stemShaper.curve = warmExhaustCurve(1.6);
-    stemShaper.oversample = '2x';
+    let warmC = this.shaperCache.get('s:1.06');
+    if (!warmC) { warmC = warmExhaustCurve(1.06); this.shaperCache.set('s:1.06', warmC); }
+    stemShaper.curve = warmC;
+    stemShaper.oversample = 'none';
 
     // Centered sub/body + 3.5 ms L/R Haas stereo exhaust width above 180 Hz (huge 3D engine without mono bass cancellation)
     const stemMerger = ctx.createChannelMerger(2);
@@ -1188,12 +1207,42 @@ export class GameAudio {
 
   private preloadVoiceStems(voice: EngineVoiceId) {
     const zones = ENGINE_STEM_ZONES[voice] ?? ENGINE_STEM_ZONES.v8_crossplane;
-    for (const z of zones) void this.loadStem(z.id);
+    // Active engine voice stems jump to the front of the serial decode queue (zero main-thread decode storm!)
+    for (let i = zones.length - 1; i >= 0; i--) this.enqueueStem(zones[i].id, true);
   }
 
   private preloadFxStems() {
-    for (const id of FX_LOOP_STEMS) void this.loadStem(id);
-    for (const id of FX_ONESHOT_STEMS) void this.loadStem(id);
+    for (const id of FX_LOOP_STEMS) this.enqueueStem(id, false);
+    for (const id of FX_ONESHOT_STEMS) this.enqueueStem(id, false);
+  }
+
+  private enqueueStem(id: string, highPriority: boolean) {
+    if (this.stemBuffers.has(id) || this.stemAttempted.has(id)) return;
+    if (this.stemQueue.includes(id)) {
+      if (highPriority) {
+        this.stemQueue = [id, ...this.stemQueue.filter((x) => x !== id)];
+      }
+      return;
+    }
+    if (highPriority) this.stemQueue.unshift(id);
+    else this.stemQueue.push(id);
+    if (!this.stemDecoding) void this.drainStemQueue();
+  }
+
+  /** Serialized 1-at-a-time fetch + decode with 20 ms frame yields so decoding NEVER freezes gameplay or Ignition/Rev! */
+  private async drainStemQueue(): Promise<void> {
+    if (this.stemDecoding) return;
+    this.stemDecoding = true;
+    try {
+      while (this.stemQueue.length > 0 && this.ctx) {
+        const id = this.stemQueue.shift()!;
+        await this.loadStem(id);
+        // Yield at least 1 render frame (~20 ms) before starting the next OGG decode so WebGPU stays butter-smooth
+        await new Promise<void>((r) => setTimeout(r, 20));
+      }
+    } finally {
+      this.stemDecoding = false;
+    }
   }
 
   /** Non-blocking fetch + decode for `/assets/audio/<id>.ogg` with one-time caching and silent fallback. */
