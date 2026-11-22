@@ -254,6 +254,7 @@ CarConfig parse_car_config(const std::string& text) {
     if (c.engine.torque_curve.size() < 2) throw std::runtime_error("car config: torque_curve needs >= 2 points");
     c.engine.idle_rpm = num(e, "idle_rpm", "engine");
     c.engine.redline_rpm = num(e, "redline_rpm", "engine");
+    c.engine.limiter_hysteresis_rpm = num_or(e, "rev_limiter_hysteresis_rpm", c.engine.limiter_hysteresis_rpm);
     c.engine.inertia = num(e, "inertia_kgm2", "engine");
     c.engine.friction_const = num(e, "friction_const_nm", "engine");
     c.engine.friction_linear = num(e, "friction_linear_nm_per_radps", "engine");

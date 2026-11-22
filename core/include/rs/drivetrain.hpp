@@ -106,6 +106,7 @@ struct EngineSystemState {
     double popout_stress_s = 0.0;          // accumulated peak-torque stress for heavily damaged tooth pop-out
     bool gear_grind = false;               // true while synchro / dog teeth are grinding from a missed shift
     double grind_timer_s = 0.0;
+    bool limiter_cut = false;              // rev limiter fuel cut active (cut at redline, refuel below redline - hysteresis)
     bool shift_cut_active = false;         // true during a Sequential Dog-Box 55 ms ignition cut (triggers exhaust flame/pop)
     double shift_cut_timer_s = 0.0;
 

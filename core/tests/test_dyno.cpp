@@ -40,7 +40,7 @@ RS_TEST(dyno) {
         const auto contacts = road.contacts(v);
         const VehicleOutput out = v.update(road.state(), contacts, 1.0 / 240.0);
         road.integrate(out, 1.0 / 240.0);
-        meter.sample(out, v.engine_rpm(), 1.0 / 240.0);
+        meter.sample(out, v.engine_rpm(), 1.0 / 240.0, in.throttle);
         const Vec3 f = road.state().orientation.rotate({1, 0, 0});
         heading_err = std::max(heading_err, std::abs(std::atan2(f.y, f.x)));
         side = std::max(side, std::abs(road.state().position.y));
@@ -83,7 +83,7 @@ RS_TEST(dyno) {
             const auto contacts = groad.contacts(g);
             const VehicleOutput out = g.update(groad.state(), contacts, 1.0 / 240.0);
             groad.integrate(out, 1.0 / 240.0);
-            gm.sample(out, g.engine_rpm(), 1.0 / 240.0);
+            gm.sample(out, g.engine_rpm(), 1.0 / 240.0, in.throttle);
             return out;
         });
         std::printf("         dyno, game feature set: peak %.0f kW at the wheels at %.0f rpm\n", gm.peak_wheel_power_w() / 1000, gm.peak_power_rpm());
@@ -96,7 +96,7 @@ RS_TEST(dyno) {
     DynoMeter road_meter(cfg);
     flat_out(cfg, 90, [&](const DriverInput& in) {
         s->step(in);
-        road_meter.sample(s->last, s->vehicle.engine_rpm(), s->dt);
+        road_meter.sample(s->last, s->vehicle.engine_rpm(), s->dt, in.throttle);
         return s->last;
     });
     std::printf("         road: 0-100 km/h %.2f s, top speed %.1f km/h\n", road_meter.zero_to_100_s(), road_meter.top_speed_mps() * 3.6);

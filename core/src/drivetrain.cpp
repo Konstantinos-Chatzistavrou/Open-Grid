@@ -414,7 +414,11 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         double rpm = engine_rpm();
         // Idle controller: opens the throttle a little when revs fall below idle.
         double thr = std::max(in.throttle, clamp((e.idle_rpm - rpm) / 300.0, 0.0, 1.0) * 0.5);
-        if (rpm > e.redline_rpm) thr = 0;               // rev limiter (fuel cut)
+        // Rev limiter, hard fuel cut with hysteresis: cut at redline, refuel below redline - band. (A cut that refuels the
+        // moment rpm dips under redline holds the revs glued to it; the band gives the real bounce.)
+        if (rpm >= e.redline_rpm) systems.limiter_cut = true;
+        else if (rpm < e.redline_rpm - std::max(e.limiter_hysteresis_rpm, 1.0)) systems.limiter_cut = false;
+        if (systems.limiter_cut) thr = 0;
         if (systems.shift_cut_active) thr = 0;          // sequential dog-box flat-shift ignition cut
         if (systems.fuel_consumption_enabled && systems.fuel_liters <= 0.0) thr = 0; // out of fuel
 

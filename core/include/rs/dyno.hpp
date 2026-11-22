@@ -47,7 +47,9 @@ class DynoMeter {
 public:
     explicit DynoMeter(const CarConfig& cfg);
     void reset();
-    void sample(const VehicleOutput& out, double engine_rpm, double dt);
+    /** driver_throttle: the pedal (the limiter cuts throttle_applied while the car sits at its top speed on the limiter);
+     *  < 0 uses throttle_applied. */
+    void sample(const VehicleOutput& out, double engine_rpm, double dt, double driver_throttle = -1);
 
     // live readings
     double rpm = 0, speed_mps = 0, wheel_force_n = 0, wheel_power_w = 0, crank_torque_nm = 0;

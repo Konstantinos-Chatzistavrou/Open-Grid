@@ -160,6 +160,9 @@ struct DiffParams {
 struct EngineParams {
     std::vector<std::array<double, 2>> torque_curve;   // [rpm, N m] at full throttle
     double idle_rpm = 900, redline_rpm = 7500;
+    // Rev limiter (hard fuel cut): cuts at redline, refuels once the revs fall this far below it. The band is what
+    // makes the revs (and the needle, and the sound) bounce on the limiter; ECU makers and tuners use ~50-150 rpm.
+    double limiter_hysteresis_rpm = 100;
     double inertia = 0.25;            // kg m^2 crank + flywheel
     double friction_const = 20;       // N m, engine braking: T = c0 + c1 * omega (throttle off)
     double friction_linear = 0.03;    // N m / (rad/s)

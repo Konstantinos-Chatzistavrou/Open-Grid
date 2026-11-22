@@ -62,7 +62,7 @@ void DynoMeter::reset() {
     rpm = speed_mps = wheel_force_n = wheel_power_w = crank_torque_nm = 0;
 }
 
-void DynoMeter::sample(const VehicleOutput& out, double engine_rpm, double dt) {
+void DynoMeter::sample(const VehicleOutput& out, double engine_rpm, double dt, double driver_throttle) {
     if (dt <= 0) return;
     rpm = engine_rpm;
     speed_mps = out.speed;
@@ -90,12 +90,13 @@ void DynoMeter::sample(const VehicleOutput& out, double engine_rpm, double dt) {
         if (power_f_ > peak_p_) { peak_p_ = power_f_; peak_p_rpm_ = engine_rpm; }
         if (crank > peak_t_) { peak_t_ = crank; peak_t_rpm_ = engine_rpm; }
     }
-    // top speed: full throttle and the speed has stopped rising (< 0.03 m/s^2 for 3 s)
+    // top speed: pedal flat and the speed has stopped rising (< 0.03 m/s^2 for 3 s), also when that is on the limiter
+    const bool pedal_full = (driver_throttle >= 0 ? driver_throttle : out.throttle_applied) > 0.95 && out.gear >= 2;
     const double a = (speed_mps - prev_speed_) / dt;
     prev_speed_ = speed_mps;
-    accel_f_ += (a - accel_f_) * std::min(1.0, dt / 0.5);
+    accel_f_ += (a - accel_f_) * std::min(1.0, dt / 2.0);   // 2 s: averages out the limiter bounce at top speed
     max_speed_ = std::max(max_speed_, speed_mps);
-    if (full && speed_mps > 10.0 && std::abs(accel_f_) < 0.03) {
+    if (pedal_full && speed_mps > 10.0 && std::abs(accel_f_) < 0.03) {
         steady_t_ += dt;
         if (steady_t_ > 3.0) top_speed_ = std::max(top_speed_, speed_mps);
     } else {
