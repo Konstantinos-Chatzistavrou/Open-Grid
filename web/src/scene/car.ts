@@ -4,7 +4,7 @@ import * as THREE from 'three/webgpu';
 import { applyPlate } from './plate';
 import { abs, float, max, mix, normalView, pow, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 import { noise01 } from '../fx/noiseTex';
-import { OUT } from '../physics/core';
+import { OUT, incandescence } from '../physics/core';
 import { materialsOf } from './city';
 import { assetUrl, loadGLTF } from './loaders';
 
@@ -15,6 +15,13 @@ import type { CarPaintWgslUniforms } from '../fx/carPaintWgsl';
 import { exactBox } from './parts/fit';
 import { Driver } from './driver';
 import { mergeStaticMeshes } from './merge';
+
+// Brake glow: nits per renderer emissive unit (see CarVisual.applyRotorTemp). The renderer is not calibrated in nits, so
+// this is the one look choice: 25 (chosen: the brighter, more cinematic option, a strong bloom from ~900 C), 78 would
+// match the old art peak in the red channel (deep red light carries ~3.8x its luminance in red). ?glownits=x overrides it, ?brakeglowc=T forces every disc to T C (look tests).
+const glowParam = (k: string) => { try { const v = new URLSearchParams(location.search).get(k); return v === null ? null : Number(v); } catch { return null; } };
+const GLOW_NITS_PER_UNIT = glowParam('glownits') ?? 25;
+const GLOW_FORCE_C = glowParam('brakeglowc');
 
 /**
  * The garage's click-a-part classes, in the order main.ts (partTab) tests them on "mesh name + material name + ancestor
@@ -423,7 +430,7 @@ export function setupCarMaterials(model: THREE.Object3D, cfg: CarVisualConfig, p
 
 export class CarVisual {
   readonly root = new THREE.Group();          // placed at the physics body (CG)
-  private wheels: { node: THREE.Object3D; rest: THREE.Quaternion; restPos: THREE.Vector3; radius: number; caliper?: THREE.Object3D; caliperRest?: THREE.Quaternion; spin: number; off: boolean; hub: THREE.Vector3; rotorHeat: THREE.UniformNode<'float', number>; blur?: THREE.Object3D; glow?: THREE.Object3D }[] = [];
+  private wheels: { node: THREE.Object3D; rest: THREE.Quaternion; restPos: THREE.Vector3; radius: number; caliper?: THREE.Object3D; caliperRest?: THREE.Quaternion; spin: number; off: boolean; hub: THREE.Vector3; rotorHeat: THREE.UniformNode<'float', number>; rotorGlow: THREE.UniformNode<'vec3', THREE.Vector3>; blur?: THREE.Object3D; glow?: THREE.Object3D }[] = [];
   /** seconds between DRAWN frames (main.ts sets it from the cap): decides when the spokes alias and the blur disc takes over */
   renderDt = 1 / 60;
   private blurMat: THREE.MeshStandardNodeMaterial | null = null;
@@ -462,7 +469,8 @@ export class CarVisual {
       const caliper = model.getObjectByName(name.replace('wheel', 'caliper'));
       this.recentreWheel(node);
       const rotorHeat = uniform(0);
-      const radius = this.addBlurDisc(node, rotorHeat);
+      const rotorGlow = uniform(new THREE.Vector3());
+      const radius = this.addBlurDisc(node, rotorGlow);
       this.wheels.push({
         node,
         rest: node.quaternion.clone(),
@@ -474,6 +482,7 @@ export class CarVisual {
         off: false,
         hub: node.position.clone(),
         rotorHeat,
+        rotorGlow,
         blur: node.getObjectByName(`wheel_blur_${node.name}`),
         glow: node.getObjectByName(`wheel_rotor_glow_${node.name}`),
       });
@@ -608,7 +617,7 @@ export class CarVisual {
     node.updateMatrixWorld(true);
   }
 
-  private addBlurDisc(node: THREE.Object3D, rotorHeat: THREE.UniformNode<'float', number>): number {
+  private addBlurDisc(node: THREE.Object3D, glowNits: THREE.UniformNode<'vec3', THREE.Vector3>): number {
     const rimBox = new THREE.Box3(), all = new THREE.Box3(), tmp = new THREE.Box3();
     // Boxes in the wheel node's own space for child meshes (blur ring / rotor glow inherit node.scale), while the
     // returned tyreRadius MUST be in model-space metres — meshopt-quantized leaf wheel meshes carry `node.scale = r`
@@ -647,21 +656,15 @@ export class CarVisual {
 
     // Thermal incandescent carbon-ceramic brake rotor glow ring inboard of spokes (uniform-only: 0 extra lights, 0 shader recompiles)
     const rMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-    const h = rotorHeat;
     const rp = uv().sub(0.5);
     const rr = rp.length().mul(2.0); // ~0.42 inner hat .. 0.79 outer rotor rim
-    // Swept brake-pad thermal profile: hottest in the middle swept friction band with fine machined rotor grooves
+    // Swept brake-pad band with fine machined grooves (the disc face, not the hat, carries the heat)
     const padBand = smoothstep(float(0.41), float(0.50), rr).mul(smoothstep(float(0.80), float(0.70), rr));
     const grooves = sin(rr.mul(76.0)).mul(0.09).add(0.91);
-    const localHeat = h.mul(padBand.mul(0.55).add(0.45)).mul(grooves).clamp(0, 1);
-    // Authentic blackbody ramp (360 C -> 920 C): deep cherry #880800 -> molten crimson #e82400 -> incandescent orange-gold #ff7818
-    const cherry = vec3(0.95, 0.055, 0.005);
-    const crimson = vec3(1.85, 0.28, 0.02);
-    const incand = vec3(3.45, 1.48, 0.28);
-    const stage1 = mix(cherry, crimson, smoothstep(float(0.0), float(0.52), localHeat));
-    const blackbody = mix(stage1, incand, smoothstep(float(0.46), float(1.0), localHeat));
-    rMat.colorNode = vec4(blackbody.mul(localHeat), 1);
-    rMat.opacityNode = localHeat.mul(0.92);
+    const profile = padBand.mul(0.55).add(0.45).mul(grooves).clamp(0, 1);
+    // Physical incandescence (core rs::incandescence): colour and brightness both come from the disc temperature
+    rMat.colorNode = vec4(glowNits.mul(profile), 1);
+    rMat.opacityNode = profile;
     if (!sharedRotorRingGeo) sharedRotorRingGeo = new THREE.RingGeometry(0.42, 0.79, 28, 1);
     const rotorGlow = new THREE.Mesh(sharedRotorRingGeo, rMat);
     rotorGlow.scale.setScalar(rimRadius);
@@ -757,15 +760,25 @@ export class CarVisual {
    * Accepts physical temperatures in Celsius (360 C dull cherry -> 920 C incandescent orange-gold)
    * or pre-normalized intensities in [0..1]. Zero allocations, uniform-only (0 shader recompiles).
    */
+  /**
+   * Disc temperature (C) -> the glow ring's emission, from physics (core rs::incandescence, oxidised iron): nothing
+   * below ~500 C, 1.1 nit at 700 C (dull red), 71 nit at 900 C. GLOW_NITS_PER_UNIT maps nits into this renderer's
+   * (uncalibrated) emissive units, 25 nit per unit (see GLOW_NITS_PER_UNIT). Returns units.
+   */
+  private applyRotorTemp(w: CarVisual['wheels'][number], tempC: number): number {
+    const t = GLOW_FORCE_C ?? tempC;
+    const g = incandescence(t);
+    w.rotorGlow.value.set(g[1] / GLOW_NITS_PER_UNIT, g[2] / GLOW_NITS_PER_UNIT, g[3] / GLOW_NITS_PER_UNIT);
+    w.rotorHeat.value = g[0] / GLOW_NITS_PER_UNIT;
+    return w.rotorHeat.value;
+  }
+
   setBrakeGlow(tempsC: readonly [number, number, number, number]) {
     this.externalBrakeGlow = true;
     for (let i = 0; i < this.wheels.length && i < 4; i++) {
       const w = this.wheels[i];
       const t = tempsC[i] ?? 20;
-      const heat = t <= 1.5
-        ? THREE.MathUtils.clamp(t, 0, 1)
-        : THREE.MathUtils.smoothstep(t, 360, 920);
-      w.rotorHeat.value = heat;
+      const heat = this.applyRotorTemp(w, t <= 1.5 ? 360 + THREE.MathUtils.clamp(t, 0, 1) * 560 : t);   // <= 1.5: old 0..1 input
       if (w.glow) {
         const v = this.warming || heat > 0.002;
         if (w.glow.visible !== v) w.glow.visible = v;
@@ -1182,8 +1195,7 @@ export class CarVisual {
       // Thermal incandescent brake rotor glow fallback when external ForzaVfxController thermal integrator is not driving it
       if (!this.externalBrakeGlow) {
         const bt = outValid ? (out[OUT.brakeTemp(i)] || 150) : 150;
-        const targetHeat = THREE.MathUtils.smoothstep(bt, 360, 920);
-        w.rotorHeat.value += (targetHeat - w.rotorHeat.value) * Math.min(1, dtS * 8);
+        this.applyRotorTemp(w, bt);
       }
     }
 
