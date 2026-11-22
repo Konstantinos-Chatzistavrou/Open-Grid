@@ -3236,8 +3236,11 @@ async function main() {
         const nrTick = tickEngineAndNos(eng, frame, car.out[OUT.rpm] || 800, core.info.redline, Math.abs(car.out[OUT.speed]), nosKey);
         car.nosThrustN = nrTick.nosThrustN;
         const shiftPop = (car.out[OUT.shiftCut] || 0) > 0.5 || (car.out[OUT.bovVenting] || 0) > 0.5;
-        if (nrTick.flameBurst || shiftPop) visual.setExhaustFlame(nrTick.nosActive ? 1.3 : shiftPop ? 1.05 : 0.9, nrTick.nosActive);
-        else visual.setExhaustFlame(0, false);
+        const audioFlame = audio.drivingFlameLevel;
+        if (nrTick.flameBurst || shiftPop || audioFlame > 0.05) {
+          const flInt = Math.max(audioFlame, nrTick.nosActive ? 1.3 : shiftPop ? 1.05 : nrTick.flameBurst ? 0.9 : 0);
+          visual.setExhaustFlame(flInt, nrTick.nosActive);
+        } else visual.setExhaustFlame(0, false);
         const nt = `NOS ${eng.nosLiters.toFixed(1)}L [X] · ${Math.round(eng.tempC)}°C · ENG ${Math.round(eng.health)}%`;
         if (nt !== lastNosText) {
           nosBarEl.textContent = lastNosText = nt;
