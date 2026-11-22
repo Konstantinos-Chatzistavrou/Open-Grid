@@ -155,7 +155,7 @@ represents or is endorsed by any real manufacturer.
 
 - **Kronos Taurus V12** (`kronos_taurus`, marque `kronos`): Original OpenGrid Parametric Sculpt (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
 
-- **Kronos Fulmine V10** (`kronos_fulmine`, marque `kronos`): Original OpenGrid Parametric Sculpt (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
+- **Kronos Fulmine V10** (`web/public/assets/cars/v5/kronos_fulmine_hero.glb`): modified from "Lamborghini Huracan Twin Turbo [LOST]" by Black Snow, https://sketchfab.com/3d-models/lamborghini-huracan-twin-turbo-lost-1d3809ea5a6749d9864ec4c32511d716, licensed CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: OEM marks, badges, plates and internal OEM names removed; subtle ~2.5% GTA 6-style proportional restyling applied; 3D OpenGrid brand crests added; unified clearcoat paint material, 4 axle-centered spinning wheels, decimated, WebP textures and meshopt compression (`tools/pipeline/sketchfab_gta6_blender.py`). Licence evidence: `assets_source/licenses/downloaded_cars_2026-11-22/kronos_fulmine.json`. Real manufacturer trademarks are not used.
 
 - **Falcorn 9R GT** (`falcorn_9r`, marque `falcorn`): Original OpenGrid Parametric Sculpt (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
 

@@ -13,7 +13,7 @@
   "cg_in_model_m": [
     0.0,
     0.421,
-    -0.15
+    -0.152
   ],
   "wheel_nodes": {
     "fl": "wheel_FL",
@@ -21,31 +21,32 @@
     "rl": "wheel_RL",
     "rr": "wheel_RR"
   },
-  "wheel_visual_offset_m": 0,
+  "wheel_visual_offset_m": 0.0,
   "collision_box": {
     "size_m": [
-      2.064,
-      0.748,
-      4.44
+      2.12,
+      0.746,
+      4.476
     ],
     "centre_in_model_m": [
       0.0,
-      0.585,
+      0.578,
       0.0
     ],
     "end_lift_m": 0.12,
-    "end_lift_start_m": 1.687
+    "end_lift_start_m": 1.686,
+    "note": "body 2.22 x 1.20 x 4.56 m; wheels are raycasts"
   },
   "headlights": [
     [
-      -0.702,
-      0.514,
-      2.04
+      -0.733,
+      0.554,
+      2.155
     ],
     [
-      0.702,
-      0.514,
-      2.04
+      0.733,
+      0.554,
+      2.155
     ]
   ],
   "driver_seat_m": [
@@ -55,69 +56,37 @@
   ],
   "driver_scale": 0.92,
   "panels": {
-    "front": [
-      "bumper_front",
-      "hood",
-      "grille",
-      "drl_L",
-      "drl_R"
-    ],
-    "rear": [
-      "bumper_rear",
-      "taillight_bar",
-      "diffuser"
-    ],
-    "left": [
-      "door_L",
-      "fender_L",
-      "quarter_L",
-      "mirror_L"
-    ],
-    "right": [
-      "door_R",
-      "fender_R",
-      "quarter_R",
-      "mirror_R"
-    ]
+    "front": [],
+    "rear": [],
+    "left": [],
+    "right": []
   },
-  "detachable": {
-    "bumper_front": [
-      "front",
-      0.7
-    ],
-    "bumper_rear": [
-      "rear",
-      0.7
-    ],
-    "mirror_L": [
-      "left",
-      0.45
-    ],
-    "mirror_R": [
-      "right",
-      0.45
-    ]
-  },
-  "front_lights": [
-    "beam_L_0",
-    "beam_R_0",
-    "drl_L",
-    "drl_R"
-  ],
-  "rear_lights": [
-    "taillight_bar"
-  ],
+  "detachable": {},
+  "front_lights": [],
+  "rear_lights": [],
   "exhaust_nozzles": [
     {
-      "x": -0.231,
-      "y": 0.448,
-      "z": -2.143,
+      "x": -0.594,
+      "y": 0.348,
+      "z": -2.172,
       "r": 0.055
     },
     {
-      "x": 0.231,
-      "y": 0.448,
-      "z": -2.143,
+      "x": 0.615,
+      "y": 0.359,
+      "z": -2.131,
+      "r": 0.055
+    },
+    {
+      "x": 0.312,
+      "y": 0.514,
+      "z": -1.996,
+      "r": 0.055
+    },
+    {
+      "x": -0.169,
+      "y": 0.457,
+      "z": -1.871,
       "r": 0.055
     }
   ],
@@ -126,5 +95,6 @@
     0.73,
     -0.93
   ],
-  "lod_distance_m": 32
+  "lod_distance_m": 32,
+  "notes": "GTA 6-style subtly restyled (~2.5%) build derived from 'Lamborghini Huracan Twin Turbo [LOST]' by Black Snow (CC-BY-4.0, CREDITS.md): OEM badges/plates stripped, 3D OpenGrid crests added, unified clearcoat paint & 4 axle-centered spinning wheels. Front axle z 1.170, rear -1.433 (wheelbase 2.603), hub y 0.341."
 }
