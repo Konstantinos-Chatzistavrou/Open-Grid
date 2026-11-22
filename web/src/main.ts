@@ -86,6 +86,7 @@ import { CAR_REQ, CAR_VMAX_KMH } from './progression';
 import { BASE_CAR_VALUATION } from './auctionMarket';
 import { Player2Input, SplitHud, connectedGamepads, type Player2Poll, type SplitLayout } from './splitScreen';
 import { ScreenAwake } from './wakeLock';
+import { GarageDyno } from './dyno';
 
 const params = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (params.has(k) ? Number(params.get(k)) : d);
@@ -896,6 +897,14 @@ async function main() {
   const syncHeadlights = () => { visual.dim = driving() ? 1 : 0.008; visual.applyHeadlights(); };
   // brake 0.5, not 1: a full brake while stopped engages the pedal reverse
   const IDLE: RawInput = { steer: 0, throttle: 0, brake: 0.5, clutch: 0, handbrake: 1, shiftUp: false, shiftDown: false, device: 0 };
+  // Garage dyno (dyno.ts): the car on rollers, same physics as the road; leaving restores the parked car.
+  const leaveDyno = () => {
+    dyno.exit(core);
+    if (garage) garage.holder.position.y = -visual.groundY;
+    menu.garageHideUi = false;
+    menu.render();
+  };
+  const dyno: GarageDyno = new GarageDyno(() => leaveDyno());
   let lapTimes: number[] = [], raceFinishedAt = -1;
   const prevPos = new THREE.Vector3(), prevQuat = new THREE.Quaternion();
   const physPos = new THREE.Vector3(), physQuat = new THREE.Quaternion();
@@ -1549,6 +1558,16 @@ async function main() {
     reportPlayer: (player, category) => {
       const rid = party?.code ?? `${cityInfo.id}_${Math.floor(Date.now() / 1000)}`;
       void submitModerationReport(cloud, maint, rid, player, category).then((r) => hud.toast('🚩 REPORT SUBMITTED', r.message));
+    },
+    garageDyno: () => {
+      if (dyno.active) { leaveDyno(); return; }
+      syncAudioEngine();
+      audio.muted = false;
+      input.suspended = false;
+      if (!garage) return;
+      dyno.enter(core, garage.scene, visual.cg);
+      menu.garageHideUi = true;
+      menu.render();
     },
     garageIgnition: () => {
       syncAudioEngine();
@@ -3025,7 +3044,7 @@ async function main() {
         launchIn.throttle = Math.min(tin.throttle, 0.55 + 0.45 * ph);   // ramp instead of instant full power
         tin = launchIn;
       }
-      car.tick(tin, input.assists);
+      if (!dyno.active) car.tick(tin, input.assists);   // on the dyno the core car runs on its virtual road (dyno.ts)
       if (polled) { polled.shiftUp = false; polled.shiftDown = false; }   // edges act on the first tick only
       if (splitActive && p2Car && p2Core) {
         const firstP2 = !p2p;
@@ -3163,7 +3182,18 @@ async function main() {
           visual.custom.setWear(paintWear.wear, paintWear.scuff, paintWear.wakeSpray);
         }
       }
-      visual.update(pos, quat, car.out, prevPos, prevQuat);   // car.out was computed from the pose BEFORE the last step
+      if (dyno.active && state !== 'garage') leaveDyno();   // left the garage (Drive, Esc): off the rollers
+      if (dyno.active && state === 'garage') {
+        // garage dyno: the same core car on its virtual road; the model stands on the platforms
+        if (input.isKeyDown('Escape')) leaveDyno();
+        else {
+          if (input.isKeyDown('KeyR') || dyno.runRequested) { dyno.runRequested = false; dyno.newRun(core); }
+          const dOut = dyno.step(core, input.poll(), input.assists, frame);
+          if (garage) garage.holder.position.y = -visual.groundY + dyno.lift;   // the model stands on the platforms
+          visual.update(pos, quat, dOut, dyno.physPos, dyno.physQuat);
+          dyno.frame(core, dOut, frame, now);
+        }
+      } else visual.update(pos, quat, car.out, prevPos, prevQuat);   // car.out was computed from the pose BEFORE the last step
       // Forza Horizon 6 Real-Time VFX: 4-wheel brake thermals, 4-wheel drift/lockup smoke, wet rooster-tail spray,
       // titanium sparks, high-speed rain streaks, and suspension curb/landing thump detection (zero allocations).
       forzaInput.dt = live ? (simDt > 0 ? simDt : frame) : frame;
@@ -3194,6 +3224,8 @@ async function main() {
       if (state === 'race' && forzaVfx.suspensionThump > 0.05) {
         audio.suspensionThump(forzaVfx.suspensionThump);
       }
+    } else if (state === 'garage' && dyno.active) {
+      audio.update(core.buf, core.buf[OUT.speed]);   // the dyno run, heard like the road
     } else if (state === 'garage') {
       audio.updateGarage(frame);
       audio.updateBrakes(0, 0, 40);

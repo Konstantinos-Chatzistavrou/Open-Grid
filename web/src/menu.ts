@@ -132,6 +132,7 @@ export interface MenuHooks {
   toggleInsurance?(on: boolean): void;
   reportPlayer?(player: string, category: ReportCategory): void;
   garageIgnition?(): void;
+  garageDyno?(): void;
   garageRev?(): void;
   garageRevHold?(held: boolean): void;
   garageWalk?(on: boolean): void;
@@ -249,7 +250,7 @@ export class Menu {
   private garagePillar: GaragePillar = 'style';
   private garageTab = 'paint';
   private garageCamIdx = 0;
-  private garageHideUi = false;
+  garageHideUi = false;
   /** Persistent scroll positions (vertical + horizontal) across re-renders until the menu screen itself is closed. */
   private scrollMem = new Map<string, { top: number; left: number }>();
   /** True when the Garage right/bottom customization drawer is visible (so camera frames car cleanly on the left/upper stage). */
@@ -799,6 +800,7 @@ export class Menu {
           ${dmgPill}
           <button class="chip g-eye-btn" data-act="g-hide-ui" title="Hide UI &amp; inspect car full-screen">👁<span class="lbl"> View</span></button>
           <button id="g-ign-btn" class="chip ${this.garageEngineOn ? 'on' : ''}" data-act="g-ignition" title="Toggle engine ignition ON / OFF">🔑<span class="lbl"> ${this.garageEngineOn ? 'Stop' : 'Start'}</span></button>
+          <button class="chip" data-act="g-dyno" title="Put the car on the dyno: run it, hear it, measure power and top speed">📈<span class="lbl"> Dyno</span></button>
           <button class="chip g-rev-btn" data-hold="g-rev" title="Hold to rev engine &amp; shoot exhaust flames" oncontextmenu="return false">🔥<span class="lbl"> Rev</span></button>
           <button class="chip" data-act="g-cam-cycle" title="Cycle showroom camera angle">📷<span class="lbl"> ${camNow.label}</span></button>
           ${this.nr.walkableGarage ? `<button class="chip ${this.garageWalkActive ? 'on' : ''}" data-act="g-walk" title="Walk around your car">🚶</button>` : ''}
@@ -1542,6 +1544,7 @@ export class Menu {
       }
       case 'g-hide-ui': this.garageHideUi = !this.garageHideUi; this.render(); break;
       case 'g-ignition': this.hooks.garageIgnition?.(); break;
+      case 'g-dyno': this.hooks.garageDyno?.(); break;
       case 'g-rev': this.hooks.garageRev?.(); break;
       case 'g-walk': this.garageWalkActive = !this.garageWalkActive; this.hooks.garageWalk?.(this.garageWalkActive); this.render(); break;
       case 'nr-walk': this.nr.walkableGarage = v === '1'; if (!this.nr.walkableGarage) this.garageWalkActive = false; this.hooks.nrChanged?.(); this.render(); break;
