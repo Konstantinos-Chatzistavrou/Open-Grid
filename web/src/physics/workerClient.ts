@@ -8,6 +8,7 @@ import {
   CMD_SLOT_DOUBLES,
   SNAP_OFF,
   SNAP_SLOT_DOUBLES,
+  OUT_DOUBLES,
   SabSpscRing,
 } from './sabRing';
 
@@ -182,7 +183,7 @@ export class PhysicsWorkerClient {
     this.cmdRing.tryPush(b, true);
   }
 
-  /** Drain snapshots from the worker->main SAB ring; updates prev/curr poses and copies latest 384-double telemetry into `outBuf`. */
+  /** Drain snapshots from the worker->main SAB ring; updates prev/curr poses and copies the latest OUT_DOUBLES telemetry into `outBuf`. */
   drain(outBuf: Float64Array): number {
     let popped = 0;
     while (this.snapRing.tryPop(this.snapBuf)) {
@@ -205,7 +206,7 @@ export class PhysicsWorkerClient {
       popped++;
     }
     if (popped > 0) {
-      outBuf.set(this.snapBuf.subarray(SNAP_OFF.out, SNAP_OFF.out + 384), 0);
+      outBuf.set(this.snapBuf.subarray(SNAP_OFF.out, SNAP_OFF.out + Math.min(OUT_DOUBLES, outBuf.length)), 0);
       this.lastSnapAt = performance.now();
     }
     return popped;

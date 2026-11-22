@@ -14,6 +14,7 @@ import {
   CMD_SLOT_DOUBLES,
   SNAP_OFF,
   SNAP_SLOT_DOUBLES,
+  OUT_DOUBLES,
   SabSpscRing,
 } from './sabRing';
 
@@ -92,7 +93,7 @@ let stepUsEma = 0;
 function getWasmBuf(): Float64Array {
   const m = wasm!;
   if (!wasmBuf || wasmBuf.buffer !== m.HEAPF64.buffer) {
-    wasmBuf = new Float64Array(m.HEAPF64.buffer, bufPtr, 384);
+    wasmBuf = new Float64Array(m.HEAPF64.buffer, bufPtr, OUT_DOUBLES);
   }
   return wasmBuf;
 }

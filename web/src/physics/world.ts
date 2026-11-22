@@ -1,3 +1,4 @@
+import { OUT_DOUBLES } from './sabRing';
 // Rigid-body world (Rapier): integrates the chassis, answers wheel raycasts against the city's
 // collision meshes and resolves crashes. Mirrors godot_ext/src/rs_vehicle.cpp: the core computes
 // tyre/suspension/aero forces, this file applies them and moves the body.
@@ -118,7 +119,7 @@ const PARK_ASSISTS: AssistToggles = { abs: true, tc: true, esc: true, autoGearbo
 /** One car: core vehicle + Rapier body. Origin of the body = centre of gravity. */
 export class CarBody {
   readonly body: RAPIER.RigidBody;
-  out: Float64Array = new Float64Array(384);
+  out: Float64Array = new Float64Array(OUT_DOUBLES);
   private state = new Float64Array(13);
   private contacts = new Float64Array(32);
   private contactsPatch = new Float64Array(96);

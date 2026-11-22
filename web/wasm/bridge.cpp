@@ -17,6 +17,7 @@
 
 #include "rs/incandescence.hpp"
 #include "rs/dyno.hpp"
+#include "rs/cluster.hpp"
 #include "rs/config.hpp"
 #include "rs/controls.hpp"
 #include "rs/damage.hpp"
@@ -68,6 +69,7 @@ struct Car {
     std::vector<double> buf = std::vector<double>(448, 0.0);
     std::unique_ptr<rs::DynoRoad> dyno_road;     // garage dyno (rs/dyno.hpp): set between rs_dyno_begin / rs_dyno_end
     std::unique_ptr<rs::DynoMeter> dyno_meter;
+    rs::InstrumentCluster cluster;               // dashboard needles (rs/cluster.hpp)
 };
 
 std::vector<std::unique_ptr<Car>> g_cars;
@@ -103,6 +105,7 @@ EMSCRIPTEN_KEEPALIVE int rs_create(const char* json) {
         c->vehicle->engine_systems().fuel_consumption_enabled = true;
         c->controls = std::make_unique<rs::Controls>(c->vehicle->config());
         c->buf[92] = -99;                                  // no H-pattern shifter until the page says so
+        c->cluster.configure(c->cfg.engine.redline_rpm, 320.0);
         g_cars.push_back(std::move(c));
         return int(g_cars.size()) - 1;
     } catch (const std::exception& e) {
@@ -145,6 +148,9 @@ EMSCRIPTEN_KEEPALIVE void rs_reset_motion(int id, double speed, int gear) {
 
 // Set live atmospheric climate & altitude (Celsius, metres, 0..1 humidity) for ISA air density,
 // NA/turbo engine output, and solid asphalt-to-tread thermal conduction.
+// Key on: the cluster sweeps its needles to full scale and back (self-test) before showing the signals.
+EMSCRIPTEN_KEEPALIVE void rs_cluster_sweep(int id) { g_cars[id]->cluster.ignition_sweep(); }
+
 // Incandescence of a hot surface (brake discs): [luminance nits, r, g, b linear sRGB nits] in a static buffer.
 EMSCRIPTEN_KEEPALIVE double* rs_incandescence(double temp_c, double emissivity) {
     static double o[4];
@@ -247,6 +253,14 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     c.vehicle->set_input(di);
     c.out = c.vehicle->update(c.cs, contacts, dt);
 
+    // Dashboard: needles as a real cluster shows them (CAN 50 Hz + stepper), rev limiter state.
+    // [420] tach pointer rpm [421] speedo pointer km/h [422] limiter cut [423] tach dial max rpm [424] speedo dial max km/h
+    c.cluster.step(c.vehicle->engine_rpm(), std::abs(c.out.speed) * 3.6, dt);
+    b[420] = c.cluster.tach.value();
+    b[421] = c.cluster.speedo.value();
+    b[422] = c.vehicle->engine_systems().limiter_cut ? 1 : 0;
+    b[423] = c.cluster.tach_max_rpm();
+    b[424] = c.cluster.speedo.params().full_scale;
     put(b + 96, c.out.force);
     put(b + 99, c.out.torque);
     b[102] = c.out.speed;
@@ -409,7 +423,7 @@ EMSCRIPTEN_KEEPALIVE void rs_dyno_step(int id, double dt) {
     step_with_contacts(c, contacts, dt);
     c.dyno_road->integrate(c.out, dt);
     rs::DynoMeter& m = *c.dyno_meter;
-    m.sample(c.out, c.vehicle->engine_rpm(), dt);
+    m.sample(c.out, c.vehicle->engine_rpm(), dt, c.vehicle->input().throttle);
     double* b = c.buf.data();
     put(b + 400, c.dyno_road->state().position);
     put_quat(b + 403, c.dyno_road->state().orientation);

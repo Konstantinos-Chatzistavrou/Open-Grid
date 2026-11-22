@@ -169,8 +169,10 @@ export const CMD_OFF = {
 //   [11..13] linvel xyz
 //   [14..16] angvel xyz
 //   [17..23] reserved
-//   [24..407] full rs_core output buffer (384 doubles, mirrors CoreCar.buf)
-export const SNAP_SLOT_DOUBLES = 408;
+//   [24..471] full rs_core output buffer (OUT_DOUBLES = 448 doubles, mirrors CoreCar.buf)
+/** Length of the rs_core shared buffer (bridge.cpp Car::buf): physics outputs, dashboard needles, dyno. */
+export const OUT_DOUBLES = 448;
+export const SNAP_SLOT_DOUBLES = 24 + OUT_DOUBLES;
 export const SNAP_OFF = {
   tick: 0,
   simTime: 1,

@@ -20,6 +20,7 @@ interface RsModule {
   _rs_dyno_reset_meter(id: number): void;
   _rs_dyno_step(id: number, dt: number): void;
   _rs_dyno_curve(id: number): number;
+  _rs_cluster_sweep(id: number): void;
   _rs_set_turbo_stage(id: number, stage: number): void;
   _rs_rays(id: number): void;
   _rs_rays_patch(id: number): void;
@@ -157,6 +158,14 @@ export class CoreCar {
   }
 
   // ---- Garage dyno (core rs/dyno.hpp): the same car on a flat virtual road under straps; see the bridge for slots.
+  /** Dashboard needles (core rs/cluster.hpp): tach / speedo pointer positions, limiter cut, dial ranges. */
+  cluster() {
+    const b = this.buf;
+    return { tachRpm: b[420], speedoKmh: b[421], limiterCut: b[422] > 0.5, tachMaxRpm: b[423], speedoMaxKmh: b[424] };
+  }
+  /** Key on: needle sweep to full scale and back (cluster self-test). */
+  clusterSweep() { mod!._rs_cluster_sweep(this.id); }
+
   dynoBegin() { mod!._rs_dyno_begin(this.id); }
   dynoEnd() { mod!._rs_dyno_end(this.id); }
   dynoResetMeter() { mod!._rs_dyno_reset_meter(this.id); }
@@ -216,6 +225,8 @@ export interface Damage {
 
 // Output offsets (bridge.cpp, rs_step)
 export const OUT = {
+  /** dashboard (rs/cluster.hpp): tach / speedo pointer, limiter cut 0/1, dial ends */
+  tachNeedle: 420, speedoNeedle: 421, limiterCut: 422, tachMax: 423, speedoMax: 424,
   force: 96, torque: 99, speed: 102, rpm: 103, gear: 104, sideslip: 105, stalled: 106,
   throttle: 107, brake: 108, steer: 109, abs: 113, tc: 114, esc: 115, steerTorque: 116,
   wheel: (i: number) => 120 + 12 * i,   // centre xyz, steer, spin, contact, load, slipRatio, slipAngle, compression, angVel, surface
