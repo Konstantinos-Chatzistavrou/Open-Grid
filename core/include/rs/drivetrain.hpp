@@ -112,6 +112,7 @@ struct EngineSystemState {
     // Driveline Torsional Halfshaft Compliance & Mechanical Backlash Clunk
     bool torsional_compliance_enabled = false;
     double torsional_twist_rad = 0.0;              // axle shaft wind-up angle (rad)
+    double torsional_twist_mean_rad = 0.0;   // settled wind-up under the current load (low-passed twist)
     double torsional_vel_rads = 0.0;               // d(twist)/dt (rad/s)
     double torsional_stiffness_nm_per_rad = 8500.0;// halfshaft torsional spring rate (N m / rad)
     double torsional_damping_nms_per_rad = 180.0;  // halfshaft structural + tyre torsional damping (N m s / rad)

@@ -656,12 +656,17 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
                     systems.driveline_clunk_nm = std::min(650.0, std::abs(d_omega) * 55.0 + std::abs(prop_torque) * 0.25);
                     systems.last_backlash_side = cur_side;
                 }
+                // Shaft wind-up: the twist settles at whatever the load needs, so only its DEPARTURE from that settled
+                // value (low-passed over 0.3 s) drives the spring-damper. The shaft then shuffles around the torque the
+                // engine actually delivers instead of adding torque of its own: blending in k * twist directly made
+                // the wheels receive ~5 % more power than engine x efficiency (measured on the dyno, test dyno).
+                systems.torsional_twist_mean_rad += (eff_twist - systems.torsional_twist_mean_rad) * std::min(1.0, h / 0.3);
                 if (cur_side == 0) {
                     prop_torque = 0.0; // free-floating inside backlash deadzone
                 } else {
-                    const double spring_t = eff_twist * systems.torsional_stiffness_nm_per_rad
+                    const double spring_t = (eff_twist - systems.torsional_twist_mean_rad) * systems.torsional_stiffness_nm_per_rad
                                           + d_omega * systems.torsional_damping_nms_per_rad;
-                    prop_torque = 0.65 * prop_torque + 0.35 * clamp(spring_t, -std::abs(prop_torque) * 1.6 - 400.0, std::abs(prop_torque) * 1.6 + 400.0);
+                    prop_torque += 0.35 * clamp(spring_t, -std::abs(prop_torque) * 1.6 - 400.0, std::abs(prop_torque) * 1.6 + 400.0);
                     (void)i_ax;
                 }
             }
