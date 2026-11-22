@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "rs/incandescence.hpp"
 #include "rs/config.hpp"
 #include "rs/controls.hpp"
 #include "rs/damage.hpp"
@@ -125,6 +126,14 @@ EMSCRIPTEN_KEEPALIVE void rs_reset_motion(int id, double speed, int gear) {
 
 // Set live atmospheric climate & altitude (Celsius, metres, 0..1 humidity) for ISA air density,
 // NA/turbo engine output, and solid asphalt-to-tread thermal conduction.
+// Incandescence of a hot surface (brake discs): [luminance nits, r, g, b linear sRGB nits] in a static buffer.
+EMSCRIPTEN_KEEPALIVE double* rs_incandescence(double temp_c, double emissivity) {
+    static double o[4];
+    const rs::Incandescence g = rs::incandescence(temp_c, emissivity);
+    o[0] = g.luminance_nits; o[1] = g.r; o[2] = g.g; o[3] = g.b;
+    return o;
+}
+
 // Rain water film on the road in mm (wet grip + aquaplaning; 0 = dry). Puddles per contact add on top.
 EMSCRIPTEN_KEEPALIVE void rs_set_road_water(int id, double mm) { g_cars[id]->vehicle->road_water_mm = std::max(0.0, mm); }
 

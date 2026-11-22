@@ -22,6 +22,7 @@ add_library(rs_core STATIC
   src/route.cpp
   src/ai.cpp
   src/racing_line.cpp
+  src/incandescence.cpp
   src/race.cpp
   src/setup.cpp
   src/telemetry.cpp
@@ -96,7 +97,7 @@ if(RS_BUILD_TESTS)
   target_link_libraries(rs_tests PRIVATE rs_core opengrid_engine_audio Threads::Threads)
   target_compile_definitions(rs_tests PRIVATE RS_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../data")
   # One CTest entry per test case so failures are reported individually.
-  foreach(t tire tire_patch config kinematics static weight_transfer braking cornering acceleration timestep layouts auto_clutch abs tc esc controls auto_gearbox damage route ai_lap ai_traffic race race_uturn setup reference characters ue5_bridge telemetry cops authority ue5_upgrade gameplay pinnacle esports service ground_strip ground_strip_drive spsc_ring triple_buffer fixed_step runtime_determinism runtime_threaded ue5_async_bridge clutch_bite_point clutch_thermal_wear clutch_lockup_no_chatter gearbox_missed_shift gearbox_clutched_shift auto_clutch_quality anti_pitch brake_fade h_shifter self_aligning pedal_reverse wreck_drivable_fire_brakes tyre_thermal brake_cold_pads steering_feel diff_split_mu aero understeer_gradient trail_braking handbrake_slide snap_oversteer curb_strike wet_braking racing_line engine_audio)
+  foreach(t tire tire_patch config kinematics static weight_transfer braking cornering acceleration timestep layouts auto_clutch abs tc esc controls auto_gearbox damage route ai_lap ai_traffic race race_uturn setup reference characters ue5_bridge telemetry cops authority ue5_upgrade gameplay pinnacle esports service ground_strip ground_strip_drive spsc_ring triple_buffer fixed_step runtime_determinism runtime_threaded ue5_async_bridge clutch_bite_point clutch_thermal_wear clutch_lockup_no_chatter gearbox_missed_shift gearbox_clutched_shift auto_clutch_quality anti_pitch brake_fade h_shifter self_aligning pedal_reverse wreck_drivable_fire_brakes tyre_thermal brake_cold_pads steering_feel diff_split_mu aero understeer_gradient trail_braking handbrake_slide snap_oversteer curb_strike wet_braking racing_line incandescence engine_audio)
     add_test(NAME ${t} COMMAND rs_tests ${t})
   endforeach()
 endif()
