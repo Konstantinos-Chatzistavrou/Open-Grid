@@ -3283,6 +3283,8 @@ async function main() {
         const humidity = worldClock.weather === 'rain' ? 0.92 : 0.48;
         workerAirC = airC; workerTrackC = trackC; workerHumidity = humidity;
         core.setAtmosphere(airC, trackC, 15, humidity);
+        core.setRoadWater(worldClock.roadWaterMm);
+        p2Core?.setRoadWater(worldClock.roadWaterMm);
         setGroundWetness(worldClock.wetness);
       }
 

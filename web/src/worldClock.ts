@@ -103,7 +103,13 @@ export class WorldClock {
     return 0.85;
   }
 
-  /** Combined seasonal + weather tire grip multiplier applied to physics / wear. */
+  /** Water film on the road (mm) for the physics core's wet grip; same rule as core WorldEnvironmentState::road_water_mm. */
+  get roadWaterMm(): number {
+    const x = Math.max(0, Math.min(1, (this.wetness - 0.25) / 0.75));
+    return x * Math.sqrt(x);
+  }
+
+  /** Combined seasonal + weather tire grip multiplier (not used by the physics: wet grip comes from roadWaterMm). */
   get gripMultiplier(): number {
     const rainMul = this.weather === 'rain' ? 0.86 : 1.0;
     return +(this.season.gripMul * rainMul).toFixed(3);

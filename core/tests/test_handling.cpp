@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <functional>
 #include "harness.hpp"
+#include "rs/pinnacle.hpp"
 
 using namespace rs;
 
@@ -554,4 +555,43 @@ RS_TEST(curb_strike) {
     test::check("the kerb rolls the body (it is felt)", max_roll * kDeg > 0.3);
     test::check_range("heading disturbance with no steering input", max_yaw * kDeg, 0, 6.0, "deg");
     test::check("no launch: vertical speed bounded, loads finite", max_vz < 4.0 && std::isfinite(max_load));
+}
+
+// ---------------------------------------------------------------- wet roads
+RS_TEST(wet_braking) {
+    // ABS stops from 80 km/h, as in Continental's tread-depth test (wet, new 25.8 m / 3 mm 31.0 m / 1.6 mm 36.2 m).
+    const CarConfig cfg = test::car();
+    auto stop = [&](double water_mm, double wear) {
+        auto s = test::make_sim(cfg);
+        s->reset({}, 0, 80 / 3.6, 4);
+        s->vehicle.set_tyres(cfg.tire_front.start_c, wear);
+        s->vehicle.road_water_mm = water_mm;
+        s->vehicle.assists().abs = true;
+        double x0 = s->body.state.position.x;
+        while (test::speed(*s) > 0.3 && s->time < 20) {
+            DriverInput in;
+            in.gear = 1; in.clutch = 1; in.brake = std::min(1.0, s->time / 0.2);
+            s->step(in);
+        }
+        return s->body.state.position.x - x0;
+    };
+    // tread depth -> wear: 7.5 mm new to 1.2 mm at wear 1 (compute_hydroplaning)
+    const double w3 = (7.5 - 3.0) / 6.3, w16 = (7.5 - 1.6) / 6.3;
+    const double dry = stop(0, 0), wet = stop(1.0, 0), wet3 = stop(1.0, w3), wet16 = stop(1.0, w16), dry16 = stop(0, w16);
+    std::printf("         80-0 km/h ABS: dry %.1f m, 1 mm water: new %.1f m, 3 mm tread %.1f m, 1.6 mm %.1f m (dry at 1.6 mm %.1f m)\n",
+                dry, wet, wet3, wet16, dry16);
+    std::printf("         ratios: wet/dry %.3f, 3 mm/new %.3f (Continental 1.202), 1.6 mm/new %.3f (1.403)\n", wet / dry, wet3 / wet, wet16 / wet);
+    test::check_range("wet (1 mm) vs dry stopping distance, new tyres", wet / dry, 1.05, 1.25, "x");
+    test::check_range("3 mm tread vs new in the wet (Continental 1.20)", wet3 / wet, 1.10, 1.32, "x");
+    test::check_range("1.6 mm tread vs new in the wet (Continental / Auto Bild 1.40)", wet16 / wet, 1.25, 1.55, "x");
+    // Water depth: no effect below 50 km/h, a strong one at >= 96 km/h (Veith); a damp film below the critical
+    // depth keeps almost all the grip (Beautru).
+    const double low = wet_grip_factor(40 / 3.6, 230, 0, 2.0) / wet_grip_factor(40 / 3.6, 230, 0, 0.5);
+    const double high = wet_grip_factor(110 / 3.6, 230, 0, 2.0) / wet_grip_factor(110 / 3.6, 230, 0, 0.5);
+    std::printf("         friction 2 mm vs 0.5 mm water: %.3f at 40 km/h, %.3f at 110 km/h; damp 0.1 mm at 30 km/h %.3f\n",
+                low, high, wet_grip_factor(30 / 3.6, 230, 0, 0.1));
+    test::check("water depth hardly matters at 40 km/h", low > 0.93);
+    test::check("water depth matters at 110 km/h", high < 0.85);
+    test::check("a damp film below the critical depth keeps the grip", wet_grip_factor(30 / 3.6, 230, 0, 0.1) > 0.98);
+    test::check("dry road: no change", wet_grip_factor(30, 230, 0.5, 0.0) == 1.0);
 }

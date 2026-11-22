@@ -28,6 +28,18 @@ struct HydroplaningState {
 HydroplaningState compute_hydroplaning(double speed_mps, double pressure_kpa, double tire_wear_0_to_1,
                                        double water_depth_mm);
 
+/**
+ * Wet-road friction factor (1 = dry) for a tyre rolling at speed_mps through a water film water_depth_mm deep.
+ * Two effects, both measured:
+ *  - a damp film lubricates the road texture: friction holds until a critical depth, then drops (inverse-S;
+ *    the critical depth falls from ~0.34 mm at 20-40 km/h to ~0.15 mm at 60 km/h: Beautru, IFSTTAR);
+ *  - above it the tread must clear the water from the contact patch, which gets harder with speed, water depth
+ *    (log law, Veith) and wear: friction / (1 + (v / v_d)^2), v_d scaled from the Horne onset speed.
+ * Calibrated to Continental's wet ABS stops from 80 km/h (new 25.8 m, 3 mm 31.0 m, 1.6 mm 36.2 m). The full
+ * water-wedge lift (hydroplaning) is compute_hydroplaning and acts on the load, not the friction.
+ */
+double wet_grip_factor(double speed_mps, double pressure_kpa, double tire_wear_0_to_1, double water_depth_mm);
+
 // -----------------------------------------------------------------------------
 // 2. Dynamic Racing Line (Rubbering-In & Wet Drying Groove)
 // -----------------------------------------------------------------------------

@@ -27,8 +27,12 @@ struct WorldEnvironmentState {
     double hour_of_day() const;
     /** Realism: 22:00-05:30 has light underground street traffic (0.28..0.45); daytime rush is denser (0.85..1.0). */
     double traffic_density() const;
-    /** Combined tire grip multiplier from wetness and season (0.76 in wet winter .. 1.00 dry summer). */
+    /** Combined tire grip multiplier from wetness and season (0.76 in wet winter .. 1.00 dry summer). Not used by the
+     *  physics: wet grip is physical now (road_water_mm -> Vehicle::road_water_mm -> wet_grip_factor). */
     double surface_grip_multiplier() const;
+    /** Water film on the road (mm) for Vehicle::road_water_mm: 0 at a dry sheen (wetness <= 0.25), ~0.1 mm on a
+     *  damp winter road (0.42), ~0.2 mm at 0.5, 1 mm in rain (1.0). */
+    double road_water_mm() const;
     /** Roll 1-in-5 (20%) deterministic chance of rain for a session seed. */
     void roll_session_weather(std::uint32_t session_seed);
     /** Advance 1:4 accelerated world clock (15 real minutes = 1 game hour) and smooth wetness. */

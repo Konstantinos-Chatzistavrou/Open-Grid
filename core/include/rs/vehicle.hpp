@@ -280,6 +280,9 @@ public:
     /** Tests / tooling: set every brake disc to this temperature (C); reset_motion puts them back to warm. */
     void set_brake_temperature(double c) { disc_temp_.fill(c); disc_init_ = true; }
     void set_brake_fluid_temperature(double c) { fluid_temp_.fill(c); }
+    /** Rain water film on the road (mm), set by the host from the weather (0 = dry; ~0.1 damp, ~1 heavy rain).
+     *  Each contact uses max(this, WheelContact::water_depth_mm), so puddles from the ground add on top. */
+    double road_water_mm = 0.0;
     /** Tests / tooling: every tyre soaked at temp_c (tread, ribs, carcass; cavity air at the model's running share,
      *  never above temp_c) with wear 0..1, pressure from the ideal gas law. Call after reset (reset makes them new). */
     void set_tyres(double temp_c, double wear);

@@ -670,9 +670,15 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const double geo = prev_axle_fy_[a] * rch / ax.track;
         k.load = std::max(0.0, k.load + (left_wheel ? -geo : geo) + 0.5 * axle_jack_heave[a]);
         // Per-wheel Hydroplaning (Aquaplaning Water-Wedge Lift): asymmetric standing puddles lift only the submerged wheels
-        if (c.water_depth_mm > 0.05) {
+        const double water_mm = std::max(c.water_depth_mm, road_water_mm);
+        double wet_mu = 1.0;
+        if (water_mm > 0.0) {
             const double p_kpa = tire_condition_[w].pressure_kpa > 0.0 ? tire_condition_[w].pressure_kpa : tp.p_nominal_kpa;
-            const HydroplaningState hydro = compute_hydroplaning(std::hypot(k.vx, k.vy), p_kpa, tire_condition_[w].wear, c.water_depth_mm);
+            wet_mu = wet_grip_factor(std::hypot(k.vx, k.vy), p_kpa, tire_condition_[w].wear, water_mm);
+        }
+        if (water_mm > 0.05) {
+            const double p_kpa = tire_condition_[w].pressure_kpa > 0.0 ? tire_condition_[w].pressure_kpa : tp.p_nominal_kpa;
+            const HydroplaningState hydro = compute_hydroplaning(std::hypot(k.vx, k.vy), p_kpa, tire_condition_[w].wear, water_mm);
             out.wheels[w].hydroplaning_lift = hydro.wedge_lift_fraction;
             k.load *= hydro.effective_load_scale;
             k.ffb_hydro_scale = hydro.ffb_aligning_torque_scale;
@@ -683,7 +689,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         tire_condition_[w].rib_contact_shares = c.rib_contact_shares;
         tire_condition_[w].enveloping_slope_tan = c.enveloping_slope_tan;
         k.mu = cfg_.grip_for_surface(c.surface) * tire_condition_[w].grip_factor(&cfg_.tire(w))
-             * (tire_zones_enabled ? tire_condition_[w].zone_health_grip_factor() : 1.0) * damage_.grip[w];
+             * (tire_zones_enabled ? tire_condition_[w].zone_health_grip_factor() : 1.0) * damage_.grip[w] * wet_mu;
         // Dynamic inclination / camber angle gamma in the tyre frame (+ = top tilted toward +left):
         //   1. Chassis roll relative to the road normal (dot(up, k.lat))
         //   2. 3D kinematic camber ks.camber_rad (includes static camber, nonlinear bump/droop camber curve,

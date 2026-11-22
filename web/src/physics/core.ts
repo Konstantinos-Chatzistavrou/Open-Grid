@@ -14,6 +14,7 @@ interface RsModule {
   _rs_info(id: number): void;
   _rs_reset_motion(id: number, speed: number, gear: number): void;
   _rs_set_atmosphere(id: number, airC: number, trackC: number, altitudeM: number, humidity: number): void;
+  _rs_set_road_water(id: number, mm: number): void;
   _rs_set_turbo_stage(id: number, stage: number): void;
   _rs_rays(id: number): void;
   _rs_rays_patch(id: number): void;
@@ -92,6 +93,9 @@ export class CoreCar {
   setAtmosphere(airC: number, trackC: number, altitudeM = 15, humidity = 0.5) {
     mod!._rs_set_atmosphere(this.id, airC, trackC, altitudeM, humidity);
   }
+
+  /** Rain water film on the road (mm): wet grip and aquaplaning in the core (0 = dry). */
+  setRoadWater(mm: number) { mod!._rs_set_road_water(this.id, mm); }
 
   /** Forced-induction turbo stage (0 = NA, 1..3 = Stage 1-3 turbocharger with spool & BOV flutter). */
   setTurboStage(stage: number) {

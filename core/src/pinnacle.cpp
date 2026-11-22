@@ -48,6 +48,23 @@ HydroplaningState compute_hydroplaning(double speed_mps, double pressure_kpa, do
     return st;
 }
 
+double wet_grip_factor(double speed_mps, double pressure_kpa, double tire_wear_0_to_1, double water_depth_mm) {
+    const double h = std::max(0.0, water_depth_mm);
+    if (h <= 0.0) return 1.0;
+    const double v = std::abs(speed_mps), vk = v * 3.6;
+    // Damp -> wet transition (inverse-S in depth), critical depth vs speed fitted to Beautru's 0.34 / 0.31 / 0.15 mm
+    // at 20 / 40 / 60 km/h. A treaded tyre loses ~5 % here (sipes clear thin films; smooth test rubber loses 30-60 %).
+    const double h_crit = 0.10 + 0.24 / (1.0 + std::exp((vk - 50.0) / 5.0));
+    const double film = 1.0 - 0.05 / (1.0 + std::exp(-(h - h_crit) / (0.15 * h_crit)));
+    // Drainage: the same tread / pressure / film terms as the Horne onset speed, plus the remaining tread depth and
+    // a log law in water depth (Veith: depth matters at >= 96 km/h, not below 50 km/h).
+    const HydroplaningState hp = compute_hydroplaning(v, pressure_kpa, tire_wear_0_to_1, h);
+    const double tread = hp.remaining_tread_mm;
+    const double v_d = 0.74 * hp.onset_speed_mps * std::pow(tread / 7.5, 0.2)
+                     / (1.0 + 0.5 * std::log(std::max(h, 0.12) / 1.0));
+    return film / (1.0 + (v / v_d) * (v / v_d));
+}
+
 // -----------------------------------------------------------------------------
 // 2. Dynamic Racing Line (Rubbering-In & Wet Drying Groove)
 // -----------------------------------------------------------------------------

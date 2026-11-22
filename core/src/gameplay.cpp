@@ -26,6 +26,11 @@ double WorldEnvironmentState::traffic_density() const {
     return 0.72;
 }
 
+double WorldEnvironmentState::road_water_mm() const {
+    const double x = clamp((wetness - 0.25) / 0.75, 0.0, 1.0);
+    return x * std::sqrt(x);
+}
+
 double WorldEnvironmentState::surface_grip_multiplier() const {
     double season_grip = 1.0;
     switch (season) {

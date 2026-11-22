@@ -125,6 +125,9 @@ EMSCRIPTEN_KEEPALIVE void rs_reset_motion(int id, double speed, int gear) {
 
 // Set live atmospheric climate & altitude (Celsius, metres, 0..1 humidity) for ISA air density,
 // NA/turbo engine output, and solid asphalt-to-tread thermal conduction.
+// Rain water film on the road in mm (wet grip + aquaplaning; 0 = dry). Puddles per contact add on top.
+EMSCRIPTEN_KEEPALIVE void rs_set_road_water(int id, double mm) { g_cars[id]->vehicle->road_water_mm = std::max(0.0, mm); }
+
 EMSCRIPTEN_KEEPALIVE void rs_set_atmosphere(int id, double air_c, double track_c, double altitude_m, double humidity) {
     Car& c = *g_cars[id];
     auto& atm = c.vehicle->atmosphere();
