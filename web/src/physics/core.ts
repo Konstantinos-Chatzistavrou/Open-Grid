@@ -15,6 +15,7 @@ interface RsModule {
   _rs_reset_motion(id: number, speed: number, gear: number): void;
   _rs_set_atmosphere(id: number, airC: number, trackC: number, altitudeM: number, humidity: number): void;
   _rs_set_road_water(id: number, mm: number): void;
+  _rs_incandescence(tempC: number, emissivity: number): number;
   _rs_set_turbo_stage(id: number, stage: number): void;
   _rs_rays(id: number): void;
   _rs_rays_patch(id: number): void;
@@ -30,6 +31,18 @@ interface RsModule {
 }
 
 let mod: RsModule | null = null;
+
+// Incandescence of hot metal from the core (rs::incandescence: Planck x emissivity over the CIE curves), cached per
+// whole degree C: [luminance, r, g, b] in nits (linear sRGB). Same numbers the Unreal material takes.
+const glowCache = new Float64Array(1400 * 4).fill(-1);
+export function incandescence(tempC: number): Float64Array {
+  const t = Math.max(0, Math.min(1399, Math.round(tempC)));
+  if (glowCache[t * 4] < 0) {
+    const p = mod!._rs_incandescence(t, 0.8) >> 3;
+    for (let k = 0; k < 4; k++) glowCache[t * 4 + k] = mod!.HEAPF64[p + k];
+  }
+  return glowCache.subarray(t * 4, t * 4 + 4);
+}
 export async function loadCore(): Promise<void> {
   mod = (await createRsCore({ locateFile: () => wasmUrl })) as RsModule;
 }
