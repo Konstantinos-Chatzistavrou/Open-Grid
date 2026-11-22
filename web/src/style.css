@@ -45,6 +45,12 @@ body.overlay-menu #countdown, body.overlay-menu #launch { display: none !importa
 #gauge .tick { stroke: #ffffff55; stroke-width: 1.5; }
 #gauge .tick.major { stroke: #ffffffd8; stroke-width: 2.5; }
 #gauge .lbl { fill: #ffffffa0; font: 600 11px "Inter", system-ui, sans-serif; text-anchor: middle; dominant-baseline: middle; }
+#gauge .tick.red { stroke: #ff3b30c0; }
+#gauge .lbl.red { fill: #ff5a4f; }
+#gauge .unit { fill: #ffffff70; font: 600 9px "Inter", system-ui, sans-serif; text-anchor: middle; letter-spacing: .04em; }
+#redline { stroke: #e0202080; stroke-linecap: butt; }
+#shiftlight { fill: #2a0b0b; stroke: #ffffff22; stroke-width: 1; }
+#shiftlight.on { fill: #ff3b1f; stroke: #ffb199; filter: drop-shadow(0 0 6px #ff3b1f); }
 #revtrack { stroke: #ffffff14; }
 #revfill { stroke: var(--fg); transition: stroke .15s; }
 #revfill.red { stroke: var(--accent); }

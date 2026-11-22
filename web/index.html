@@ -75,9 +75,10 @@
     <div id="dash">
       <svg id="gauge" viewBox="0 0 240 240" aria-hidden="true">
         <circle cx="120" cy="120" r="114" class="dial-bg" />
+        <path id="redline" fill="none" stroke-width="9" />
         <g id="ticks"></g>
-        <path id="revtrack" fill="none" stroke-width="6" />
-        <path id="revfill" fill="none" stroke-width="6" />
+        <text id="tach-unit" x="120" y="214" class="unit">×1000 r/min</text>
+        <circle id="shiftlight" cx="120" cy="48" r="5.5" />
         <line id="needle" x1="120" y1="120" x2="120" y2="34" />
         <circle cx="120" cy="120" r="7" class="hub" />
       </svg>

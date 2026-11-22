@@ -33,8 +33,6 @@ export class Hud {
   private fCount = 0;
   private gaps = new Float64Array(FRAME_RING);
   private last = 0;
-  private needle = 0;            // smoothed needle position, km/h
-  private rev = 0;
   private lapsSeen = 0;
   private missedShiftsSeen = 0;
   private toastTimer = 0;
@@ -57,28 +55,41 @@ export class Hud {
   stats: { calls: number; textureMB: number; noMips: number } | null = null;
   /** the largest frame interval of the last second: logged, not shown (one hitch is not the frame time) */
   lastMax = 0;
-  private el = { needle: $('needle'), rev: $('revfill') };
+  private el = { needle: $('needle'), shift: $('shiftlight') };
   private needleKey = '';
-  private revKey = -1;
+  private shiftOn = false;
+  private dialKey = '';
 
   constructor() {
+    this.buildTach(9000, 7500);
+  }
+
+  /**
+   * The dial is a tachometer, as on a sports car's centre dial: 0 .. tachMax rpm (core rs/cluster.hpp picks it 1000-2000 rpm
+   * above the redline), a tick every 250 rpm, numbers every 1000, the red band from the redline. Speed and gear are digital.
+   */
+  private buildTach(tachMax: number, redline: number) {
+    const key = `${tachMax}|${redline}`;
+    if (key === this.dialKey) return;
+    this.dialKey = key;
     const ticks = $('ticks');
-    for (let v = 0; v <= MAX_KMH; v += 10) {
-      const f = v / MAX_KMH, major = v % 40 === 0;
-      const [x0, y0] = at(f, major ? 88 : 93), [x1, y1] = at(f, 100);
+    ticks.replaceChildren();
+    for (let v = 0; v <= tachMax + 1; v += 250) {
+      const f = v / tachMax, major = v % 1000 === 0, half = v % 500 === 0;
+      const [x0, y0] = at(f, major ? 86 : half ? 92 : 96), [x1, y1] = at(f, 102);
       const l = document.createElementNS(NS, 'line');
       l.setAttribute('x1', `${x0}`); l.setAttribute('y1', `${y0}`); l.setAttribute('x2', `${x1}`); l.setAttribute('y2', `${y1}`);
-      l.setAttribute('class', major ? 'tick major' : 'tick');
+      l.setAttribute('class', major ? 'tick major' : 'tick' + (v >= redline ? ' red' : ''));
       ticks.appendChild(l);
       if (major) {
-        const [tx, ty] = at(f, 76);
+        const [tx, ty] = at(f, 73);
         const t = document.createElementNS(NS, 'text');
-        t.setAttribute('x', `${tx}`); t.setAttribute('y', `${ty}`); t.setAttribute('class', 'lbl');
-        t.textContent = String(v);
+        t.setAttribute('x', `${tx}`); t.setAttribute('y', `${ty}`); t.setAttribute('class', 'lbl' + (v >= redline ? ' red' : ''));
+        t.textContent = String(v / 1000);
         ticks.appendChild(t);
       }
     }
-    $('revtrack').setAttribute('d', arc(0, 1, 110));
+    $('redline').setAttribute('d', arc(Math.min(1, redline / tachMax), 1, 106));
   }
 
   show() { ($('hud') as HTMLElement).hidden = false; document.getElementById('loading')?.remove(); this.resetFps(); }
@@ -100,26 +111,23 @@ export class Hud {
   update(now: number, dt: number, out: Float64Array, info: CarInfo, assists: AssistToggles, dmg: Damage | null, lap: LapInfo | null) {
     while (this.fCount && this.frames[this.fHead] < now - 1000) { this.fHead = (this.fHead + 1) % FRAME_RING; this.fCount--; }
 
-    // dial: the needle eases toward the true speed (critically damped feel, no ticking)
+    // Tach needle: the pointer position the core's cluster model gives (CAN 50 Hz + stepper motor: it lags a fast rev
+    // and twitches with the limiter bounce). No smoothing here. DOM writes only when the drawn value changes.
     const kmh = Math.abs(out[OUT.speed]) * 3.6;
-    this.needle += (kmh - this.needle) * (1 - Math.exp(-dt * 14));
-    this.rev += (Math.min(1, out[OUT.rpm] / info.redline) - this.rev) * (1 - Math.exp(-dt * 20));
-    // DOM writes only when the drawn value changes (0.1 px needle, 0.1 % rev ring): an SVG
-    // attribute write invalidates style + paint even when the value is the same, every frame.
-    const f = Math.min(1, this.needle / MAX_KMH);
-    const [nx, ny] = at(f, 86);
+    const tachMax = out[OUT.tachMax] > 0 ? out[OUT.tachMax] : Math.ceil((info.redline + 1000) / 1000) * 1000;
+    this.buildTach(tachMax, info.redline);
+    const pointer = out[OUT.tachMax] > 0 ? out[OUT.tachNeedle] : out[OUT.rpm];
+    const f = Math.max(0, Math.min(1, pointer / tachMax));
+    const [nx, ny] = at(f, 90);
     const nk = `${nx.toFixed(1)} ${ny.toFixed(1)}`;
     if (nk !== this.needleKey) {
       this.needleKey = nk;
       this.el.needle.setAttribute('x2', nx.toFixed(1));
       this.el.needle.setAttribute('y2', ny.toFixed(1));
     }
-    const rk = this.rev > 0.002 ? Math.round(this.rev * 1000) : 0;
-    if (rk !== this.revKey) {
-      this.revKey = rk;
-      this.el.rev.setAttribute('d', rk ? arc(0, rk / 1000, 110) : '');
-      this.el.rev.classList.toggle('red', this.rev > 0.92);
-    }
+    // Shift light: on from 95 % of the redline, on the pointer's rpm, so on the limiter it flickers with the bounce.
+    const shift = pointer >= 0.95 * info.redline;
+    if (shift !== this.shiftOn) { this.shiftOn = shift; this.el.shift.classList.toggle('on', shift); }
 
     if (lap) this.updateLapToast(lap, dt);   // the lap-finished card reacts every frame; its texts below at 10 Hz
     const missed = Math.round(out[OUT.missedShifts] || 0);
