@@ -19,6 +19,7 @@ public class OpenGrid : ModuleRules
             "WebSockets",
             "Json",
             "JsonUtilities",
+            "AudioMixer",
             "OpenGridPhysics"
         });
     }

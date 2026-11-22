@@ -41,6 +41,44 @@ if(WIN32)
   target_link_libraries(rs_core PUBLIC ws2_32)   # UDP telemetry sockets (src/telemetry.cpp)
 endif()
 
+# OpenGrid real-time physical combustion engine audio library:
+# Vendors AngeTheGreat's headless MIT engine-sim + simple-2d-constraint-solver + csv-io
+# (core/third_party/engine_sim/) and adds our dual-mic exhaust/intake waveguide, Forza-grade
+# exhaust stages, anti-lag detonations, turbo surge flutter, supercharger whine, and 4-rotor Wankel.
+find_package(Threads REQUIRED)
+file(GLOB ES_SOURCES CONFIGURE_DEPENDS
+  third_party/engine_sim/src/*.cpp
+  third_party/engine_sim/scs/src/*.cpp
+  third_party/engine_sim/csv_io/src/*.cpp)
+add_library(opengrid_engine_sim STATIC ${ES_SOURCES})
+target_include_directories(opengrid_engine_sim PUBLIC
+  third_party/engine_sim/include
+  third_party/engine_sim/scs/include
+  third_party/engine_sim/csv_io/include)
+target_link_libraries(opengrid_engine_sim PUBLIC Threads::Threads)
+set_target_properties(opengrid_engine_sim PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(opengrid_engine_sim PRIVATE -w)   # third-party MIT library
+  target_compile_definitions(opengrid_engine_sim PUBLIC __forceinline=inline)
+elseif(MSVC)
+  target_compile_options(opengrid_engine_sim PRIVATE /W0 /EHsc /utf-8 /D_CRT_SECURE_NO_WARNINGS /DNOMINMAX)
+endif()
+
+add_library(opengrid_engine_audio STATIC src/engine_audio.cpp)
+target_include_directories(opengrid_engine_audio PUBLIC include)
+target_link_libraries(opengrid_engine_audio PRIVATE opengrid_engine_sim)
+set_target_properties(opengrid_engine_audio PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+  target_compile_options(opengrid_engine_audio PRIVATE -Wall -Wextra -Wpedantic -Wno-changes-meaning)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(opengrid_engine_audio PRIVATE -Wall -Wextra -Wpedantic)
+elseif(MSVC)
+  target_compile_options(opengrid_engine_audio PRIVATE /W3 /EHsc /utf-8 /DNOMINMAX)
+endif()
+
+add_executable(opengrid_engine_dyno tools/opengrid_engine_dyno.cpp)
+target_link_libraries(opengrid_engine_dyno PRIVATE opengrid_engine_audio)
+
 # Per-tick CPU cost benchmark (not a test: timings depend on the machine).
 add_executable(rs_bench bench/bench_race.cpp)
 target_link_libraries(rs_bench PRIVATE rs_core)
@@ -54,10 +92,10 @@ if(RS_BUILD_TESTS)
   find_package(Threads REQUIRED)
   file(GLOB RS_TEST_SOURCES CONFIGURE_DEPENDS tests/*.cpp)
   add_executable(rs_tests ${RS_TEST_SOURCES})
-  target_link_libraries(rs_tests PRIVATE rs_core Threads::Threads)
+  target_link_libraries(rs_tests PRIVATE rs_core opengrid_engine_audio Threads::Threads)
   target_compile_definitions(rs_tests PRIVATE RS_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../data")
   # One CTest entry per test case so failures are reported individually.
-  foreach(t tire tire_patch config kinematics static weight_transfer braking cornering acceleration timestep layouts auto_clutch abs tc esc controls auto_gearbox damage route ai_lap ai_traffic race race_uturn setup reference characters ue5_bridge telemetry cops authority ue5_upgrade gameplay pinnacle esports service ground_strip ground_strip_drive spsc_ring triple_buffer fixed_step runtime_determinism runtime_threaded ue5_async_bridge clutch_bite_point clutch_thermal_wear clutch_lockup_no_chatter gearbox_missed_shift gearbox_clutched_shift auto_clutch_quality anti_pitch brake_fade h_shifter self_aligning pedal_reverse wreck_drivable_fire_brakes tyre_thermal brake_cold_pads steering_feel diff_split_mu aero understeer_gradient trail_braking handbrake_slide snap_oversteer curb_strike)
+  foreach(t tire tire_patch config kinematics static weight_transfer braking cornering acceleration timestep layouts auto_clutch abs tc esc controls auto_gearbox damage route ai_lap ai_traffic race race_uturn setup reference characters ue5_bridge telemetry cops authority ue5_upgrade gameplay pinnacle esports service ground_strip ground_strip_drive spsc_ring triple_buffer fixed_step runtime_determinism runtime_threaded ue5_async_bridge clutch_bite_point clutch_thermal_wear clutch_lockup_no_chatter gearbox_missed_shift gearbox_clutched_shift auto_clutch_quality anti_pitch brake_fade h_shifter self_aligning pedal_reverse wreck_drivable_fire_brakes tyre_thermal brake_cold_pads steering_feel diff_split_mu aero understeer_gradient trail_braking handbrake_slide snap_oversteer curb_strike engine_audio)
     add_test(NAME ${t} COMMAND rs_tests ${t})
   endforeach()
 endif()

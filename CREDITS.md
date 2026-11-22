@@ -205,15 +205,22 @@ CC0 1.0 (no credit required; listed with thanks):
 
 - **Valenza Integrale Evo** (`web/public/assets/cars/v5/valenza_integrale_hero.glb`): modified from "1992 Lancia Delta HF Integrale EVO II" by DisneyCars, https://sketchfab.com/3d-models/1992-lancia-delta-hf-integrale-evo-ii-7646bb58555a4b0896b64b34312ea901, licensed CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: OEM marks, badges, plates and internal OEM names removed; subtle ~2.5% GTA 6-style proportional restyling applied; 3D OpenGrid brand crests added; unified clearcoat paint material, 4 axle-centered spinning wheels, decimated, WebP textures and meshopt compression (`tools/pipeline/sketchfab_gta6_blender.py`). Licence evidence: `assets_source/licenses/downloaded_cars_2026-11-22/valenza_integrale.json`. Real manufacturer trademarks are not used.
 
-## Audio assets (AngeTheGreat engine-sim MIT + Verified Real FX CC BY 3.0)
-- **Engine Simulator (`engine-sim`)** by AngeTheGreat (Ange Yaghi), https://github.com/ange-yaghi/engine-sim,
-  licensed under the MIT License (Copyright 2022 AngeTheGreat / Ange Yaghi).
-  All 26 piston engine RPM loops (`eng_flat6_*`, `eng_v12_*`, `eng_v10_*`, `eng_tt_i6_*`, `eng_v8_cross_*`,
-  `eng_v8_flat_*`, `eng_sc_v8_*`) in `web/public/assets/audio/*.ogg` and `ue5/Import/Audio/*.wav` are rendered
-  headlessly via `tools/ue5/engine_sim_dyno.cpp` & `tools/ue5/render_engine_sim_stems.py` using AngeTheGreat's
-  real-time thermodynamic combustion, gas-dynamics, and exhaust impulse-response convolution simulator.
+## Audio assets & vendored combustion engine (`engine-sim` MIT + Verified Real FX CC BY 3.0)
+- **Engine Simulator (`engine-sim`)**, **Simple 2D Constraint Solver (`simple-2d-constraint-solver`)**, and **`csv-io`**
+  by AngeTheGreat (Ange Yaghi), https://github.com/ange-yaghi/engine-sim, licensed under the MIT License
+  (Copyright 2022 AngeTheGreat / Ange Yaghi; full MIT licence texts preserved in
+  `core/third_party/engine_sim/LICENSE`, `core/third_party/engine_sim/LICENSE-scs`, and
+  `core/third_party/engine_sim/LICENSE-csv`).
+  Vendored headlessly into `core/third_party/engine_sim/` and extended by OpenGrid (`core/src/engine_audio.cpp`,
+  `ue5/Source/OpenGrid/OpenGridEngineSynthComponent.cpp`) with dual-bank exhaust + intake plenum microphones,
+  Helmholtz & titanium acoustic exhaust waveguides, overrun anti-lag bangs, turbo spool/surge, supercharger whine,
+  and a dedicated 4-rotor 26B peripheral-port Wankel combustion model (`Rotary4`).
+  All 42 dual-load (ON-LOAD WOT + OFF-LOAD DECEL) engine RPM loops across 9 architectures (`eng_flat6_*`,
+  `eng_v12_*`, `eng_v10_*`, `eng_tt_i6_*`, `eng_v6_tt_*`, `eng_v8_cross_*`, `eng_v8_flat_*`, `eng_sc_v8_*`,
+  `eng_rotary4_*`) in `web/public/assets/audio/*.ogg` and `ue5/Import/Audio/*.wav` are rendered headlessly from
+  `core/build/opengrid_engine_dyno` via `tools/ue5/render_engine_sim_stems.py`.
 
 - **Verified Real FX Recordings (CC BY 3.0)** (https://creativecommons.org/licenses/by/3.0/), extracted via
-  `tools/ue5/extract_real_audio_stems.py` (full provenance in `assets_source/audio/manifest.json`):
+  `tools/ue5/render_engine_sim_stems.py` (full provenance in `assets_source/audio/manifest.json`):
   - **Lamborghini Aventador SVJ with Fi Exhaust - engine and exhaust sound (YouTube NCbywZoYDKE).opus** by FiExhaust (YouTube) (https://commons.wikimedia.org/wiki/File:Lamborghini_Aventador_SVJ_with_Fi_Exhaust_-_engine_and_exhaust_sound_(YouTube_NCbywZoYDKE).opus), CC BY 3.0.
   - **BMW M3 GTR - engine and exhaust sound (YouTube r4qL2wTGcFM).opus** by Binar Yustanto (YouTube) (https://commons.wikimedia.org/wiki/File:BMW_M3_GTR_-_engine_and_exhaust_sound_(YouTube_r4qL2wTGcFM).opus), CC BY 3.0.

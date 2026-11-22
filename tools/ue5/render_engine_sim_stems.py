@@ -54,50 +54,72 @@ class DynoJob:
     ref_rpm: int
     firings_per_rev: float
     throttle: float
+    load: float = 0.85
+    stage: str = "race"
     presence_db: float = 0.0
     add_sc_whine_hz: float = 0.0
 
 
 DYNO_JOBS: list[DynoJob] = [
-    # Porsche 911 GT3 4.0L Flat-6 Boxer (engine-sim MIT)
-    DynoJob("eng_flat6_1000", "flat6", "1000 RPM AngeTheGreat engine-sim Porsche 911 GT3 Flat-6 idle loop", 1000, 3.0, 0.06, 0.0),
-    DynoJob("eng_flat6_low",  "flat6", "2400 RPM AngeTheGreat engine-sim Porsche 911 GT3 Flat-6 low-mid pull loop", 2400, 3.0, 0.52, 1.5),
-    DynoJob("eng_flat6_4000", "flat6", "4800 RPM AngeTheGreat engine-sim Porsche 911 GT3 Flat-6 titanium howl loop", 4800, 3.0, 0.85, 2.5),
-    DynoJob("eng_flat6_7800", "flat6", "7800 RPM AngeTheGreat engine-sim Porsche 911 GT3 Flat-6 redline scream loop", 7800, 3.0, 1.00, 3.2),
+    # Porsche 911 GT3 4.0L Flat-6 Boxer (vendored & enhanced engine-sim MIT)
+    DynoJob("eng_flat6_1000", "flat6_na", "1000 RPM OpenGrid engine-sim Porsche GT3 Flat-6 idle loop", 1000, 3.0, 0.08, 0.10, "sport", 0.0),
+    DynoJob("eng_flat6_low",  "flat6_na", "2400 RPM OpenGrid engine-sim Porsche GT3 Flat-6 low-mid pull loop", 2400, 3.0, 0.60, 0.65, "race", 1.0),
+    DynoJob("eng_flat6_4000", "flat6_na", "4800 RPM OpenGrid engine-sim Porsche GT3 Flat-6 titanium howl loop", 4800, 3.0, 0.90, 0.92, "race", 1.8),
+    DynoJob("eng_flat6_7800", "flat6_na", "7800 RPM OpenGrid engine-sim Porsche GT3 Flat-6 redline scream loop", 7800, 3.0, 1.00, 1.00, "race", 2.2),
+    DynoJob("eng_flat6_decel", "flat6_na", "4800 RPM OpenGrid engine-sim Porsche GT3 Flat-6 off-throttle decel loop", 4800, 3.0, 0.04, 0.00, "race", 0.5),
 
-    # Ferrari 412 T2 V12 (engine-sim MIT)
-    DynoJob("eng_v12_1000", "v12", "1000 RPM AngeTheGreat engine-sim Ferrari V12 idle loop", 1000, 6.0, 0.06, 0.5),
-    DynoJob("eng_v12_low",  "v12", "2500 RPM AngeTheGreat engine-sim Ferrari V12 low-mid pull loop", 2500, 6.0, 0.52, 1.5),
-    DynoJob("eng_v12_5000", "v12", "5000 RPM AngeTheGreat engine-sim Ferrari V12 F1 soprano howl loop", 5000, 6.0, 0.85, 2.5),
-    DynoJob("eng_v12_8000", "v12", "8000 RPM AngeTheGreat engine-sim Ferrari V12 redline scream loop", 8000, 6.0, 1.00, 3.0),
+    # Ferrari 6.5L NA V12
+    DynoJob("eng_v12_1000", "v12_na", "1000 RPM OpenGrid engine-sim Ferrari V12 idle loop", 1000, 6.0, 0.08, 0.10, "sport", 0.0),
+    DynoJob("eng_v12_low",  "v12_na", "2500 RPM OpenGrid engine-sim Ferrari V12 low-mid pull loop", 2500, 6.0, 0.60, 0.65, "race", 1.0),
+    DynoJob("eng_v12_5000", "v12_na", "5000 RPM OpenGrid engine-sim Ferrari V12 F1 soprano howl loop", 5000, 6.0, 0.90, 0.92, "race", 1.8),
+    DynoJob("eng_v12_8000", "v12_na", "8000 RPM OpenGrid engine-sim Ferrari V12 redline scream loop", 8000, 6.0, 1.00, 1.00, "race", 2.2),
+    DynoJob("eng_v12_decel", "v12_na", "5200 RPM OpenGrid engine-sim Ferrari V12 off-throttle decel loop", 5200, 6.0, 0.04, 0.00, "race", 0.5),
 
-    # Lexus LFA / Exotic 72° V10 Screamer (engine-sim MIT)
-    DynoJob("eng_v10_1000", "v10", "1000 RPM AngeTheGreat engine-sim Lexus LFA V10 idle loop", 1000, 5.0, 0.06, 0.5),
-    DynoJob("eng_v10_low",  "v10", "2400 RPM AngeTheGreat engine-sim Lexus LFA V10 low-mid pull loop", 2400, 5.0, 0.52, 1.8),
-    DynoJob("eng_v10_5500", "v10", "5200 RPM AngeTheGreat engine-sim Lexus LFA V10 angel howl loop", 5200, 5.0, 0.85, 2.8),
-    DynoJob("eng_v10_7800", "v10", "7800 RPM AngeTheGreat engine-sim Lexus LFA V10 redline scream loop", 7800, 5.0, 1.00, 3.2),
+    # Lexus LFA / Huracan 72deg Odd-Fire V10
+    DynoJob("eng_v10_1000", "v10_screamer", "1000 RPM OpenGrid engine-sim V10 idle loop", 1000, 5.0, 0.08, 0.10, "sport", 0.0),
+    DynoJob("eng_v10_low",  "v10_screamer", "2400 RPM OpenGrid engine-sim V10 low-mid pull loop", 2400, 5.0, 0.60, 0.65, "race", 1.2),
+    DynoJob("eng_v10_5500", "v10_screamer", "5200 RPM OpenGrid engine-sim V10 angel howl loop", 5200, 5.0, 0.90, 0.92, "race", 2.0),
+    DynoJob("eng_v10_7800", "v10_screamer", "7800 RPM OpenGrid engine-sim V10 redline scream loop", 7800, 5.0, 1.00, 1.00, "race", 2.4),
+    DynoJob("eng_v10_decel", "v10_screamer", "5200 RPM OpenGrid engine-sim V10 off-throttle decel loop", 5200, 5.0, 0.04, 0.00, "race", 0.5),
 
-    # Toyota 2JZ Inline-6 (engine-sim MIT)
-    DynoJob("eng_tt_i6_1000", "i6", "1000 RPM AngeTheGreat engine-sim Toyota 2JZ Inline-6 idle loop", 1000, 3.0, 0.06, 0.0),
-    DynoJob("eng_tt_i6_low",  "i6", "2400 RPM AngeTheGreat engine-sim Toyota 2JZ Inline-6 baritone pull loop", 2400, 3.0, 0.55, 1.5),
-    DynoJob("eng_tt_i6_4000", "i6", "4500 RPM AngeTheGreat engine-sim Toyota 2JZ Inline-6 boost roar loop", 4500, 3.0, 0.85, 2.2),
-    DynoJob("eng_tt_i6_7000", "i6", "7000 RPM AngeTheGreat engine-sim Toyota 2JZ Inline-6 redline wail loop", 7000, 3.0, 1.00, 2.8),
+    # Toyota 2JZ / RB26 Forged TT Inline-6
+    DynoJob("eng_tt_i6_1000", "i6_forged", "1000 RPM OpenGrid engine-sim Forged I6 idle loop", 1000, 3.0, 0.08, 0.10, "sport", 0.0),
+    DynoJob("eng_tt_i6_low",  "i6_forged", "2400 RPM OpenGrid engine-sim Forged I6 baritone pull loop", 2400, 3.0, 0.62, 0.68, "race", 1.0),
+    DynoJob("eng_tt_i6_4000", "i6_forged", "4500 RPM OpenGrid engine-sim Forged I6 boost roar loop", 4500, 3.0, 0.90, 0.92, "race", 1.5),
+    DynoJob("eng_tt_i6_7000", "i6_forged", "7000 RPM OpenGrid engine-sim Forged I6 redline wail loop", 7000, 3.0, 1.00, 1.00, "race", 2.0),
+    DynoJob("eng_tt_i6_decel", "i6_forged", "4600 RPM OpenGrid engine-sim Forged I6 off-throttle decel loop", 4600, 3.0, 0.04, 0.00, "race", 0.4),
 
-    # GM LS Cross-Plane V8 (engine-sim MIT)
-    DynoJob("eng_v8_cross_900",  "v8_cross", "900 RPM AngeTheGreat engine-sim GM LS Cross-Plane V8 lope idle loop", 900, 4.0, 0.06, 0.0),
-    DynoJob("eng_v8_cross_low",  "v8_cross", "2100 RPM AngeTheGreat engine-sim GM LS Cross-Plane V8 muscle pull loop", 2100, 4.0, 0.55, 1.2),
-    DynoJob("eng_v8_cross_4200", "v8_cross", "4200 RPM AngeTheGreat engine-sim GM LS Cross-Plane V8 thunder roar loop", 4200, 4.0, 0.88, 2.0),
-    DynoJob("eng_v8_cross_6800", "v8_cross", "6800 RPM AngeTheGreat engine-sim GM LS Cross-Plane V8 redline roar loop", 6800, 4.0, 1.00, 2.6),
+    # Dedicated 3.5L 60deg Twin-Turbo V6 (NSX / Group-B)
+    DynoJob("eng_v6_tt_1000", "v6_tt", "1000 RPM OpenGrid engine-sim 60deg TT V6 idle loop", 1000, 3.0, 0.08, 0.10, "sport", 0.0),
+    DynoJob("eng_v6_tt_low",  "v6_tt", "2400 RPM OpenGrid engine-sim 60deg TT V6 pull loop", 2400, 3.0, 0.62, 0.68, "race", 1.0),
+    DynoJob("eng_v6_tt_4500", "v6_tt", "4500 RPM OpenGrid engine-sim 60deg TT V6 roar loop", 4500, 3.0, 0.90, 0.92, "race", 1.6),
+    DynoJob("eng_v6_tt_7200", "v6_tt", "7200 RPM OpenGrid engine-sim 60deg TT V6 redline scream loop", 7200, 3.0, 1.00, 1.00, "race", 2.0),
+    DynoJob("eng_v6_tt_decel", "v6_tt", "4600 RPM OpenGrid engine-sim 60deg TT V6 off-throttle decel loop", 4600, 3.0, 0.04, 0.00, "race", 0.4),
 
-    # Ferrari F136 Flat-Plane V8 (engine-sim MIT)
-    DynoJob("eng_v8_flat_1100", "v8_flat", "1100 RPM AngeTheGreat engine-sim Ferrari F136 Flat-Plane V8 idle loop", 1100, 4.0, 0.06, 0.5),
-    DynoJob("eng_v8_flat_low",  "v8_flat", "2600 RPM AngeTheGreat engine-sim Ferrari F136 Flat-Plane V8 pull loop", 2600, 4.0, 0.55, 1.8),
-    DynoJob("eng_v8_flat_5500", "v8_flat", "5200 RPM AngeTheGreat engine-sim Ferrari F136 Flat-Plane V8 wail loop", 5200, 4.0, 0.88, 2.6),
-    DynoJob("eng_v8_flat_8000", "v8_flat", "8000 RPM AngeTheGreat engine-sim Ferrari F136 Flat-Plane V8 redline scream loop", 8000, 4.0, 1.00, 3.2),
+    # GM LS / Hellhound 6.2L Cross-Plane V8
+    DynoJob("eng_v8_cross_900",  "v8_crossplane", "900 RPM OpenGrid engine-sim Cross-Plane V8 lope idle loop", 900, 4.0, 0.08, 0.10, "sport", 0.0),
+    DynoJob("eng_v8_cross_low",  "v8_crossplane", "2100 RPM OpenGrid engine-sim Cross-Plane V8 muscle pull loop", 2100, 4.0, 0.65, 0.70, "race", 0.8),
+    DynoJob("eng_v8_cross_4200", "v8_crossplane", "4200 RPM OpenGrid engine-sim Cross-Plane V8 thunder roar loop", 4200, 4.0, 0.92, 0.95, "race", 1.4),
+    DynoJob("eng_v8_cross_6800", "v8_crossplane", "6800 RPM OpenGrid engine-sim Cross-Plane V8 redline roar loop", 6800, 4.0, 1.00, 1.00, "race", 1.8),
+    DynoJob("eng_v8_cross_decel", "v8_crossplane", "4200 RPM OpenGrid engine-sim Cross-Plane V8 off-throttle decel loop", 4200, 4.0, 0.04, 0.00, "race", 0.4),
 
-    # Supercharged GM LS Cross-Plane V8 (engine-sim MIT + Roots blower)
-    DynoJob("eng_sc_v8_whine", "v8_sc", "4200 RPM AngeTheGreat engine-sim Supercharged LS V8 + Roots blower loop", 4200, 4.0, 0.88, 2.0, 2380.0),
-    DynoJob("eng_sc_v8_6800",  "v8_sc", "6800 RPM AngeTheGreat engine-sim Supercharged LS V8 redline + blower loop", 6800, 4.0, 1.00, 2.6, 3850.0),
+    # Ferrari F136 Flat-Plane V8
+    DynoJob("eng_v8_flat_1100", "v8_flatplane", "1100 RPM OpenGrid engine-sim Flat-Plane V8 idle loop", 1100, 4.0, 0.08, 0.10, "sport", 0.0),
+    DynoJob("eng_v8_flat_low",  "v8_flatplane", "2600 RPM OpenGrid engine-sim Flat-Plane V8 pull loop", 2600, 4.0, 0.62, 0.68, "race", 1.2),
+    DynoJob("eng_v8_flat_5500", "v8_flatplane", "5200 RPM OpenGrid engine-sim Flat-Plane V8 wail loop", 5200, 4.0, 0.90, 0.92, "race", 1.8),
+    DynoJob("eng_v8_flat_8000", "v8_flatplane", "8000 RPM OpenGrid engine-sim Flat-Plane V8 redline scream loop", 8000, 4.0, 1.00, 1.00, "race", 2.2),
+    DynoJob("eng_v8_flat_decel", "v8_flatplane", "5200 RPM OpenGrid engine-sim Flat-Plane V8 off-throttle decel loop", 5200, 4.0, 0.04, 0.00, "race", 0.5),
+
+    # Supercharged 6.2L Cross-Plane V8 (built-in helical Roots blower in C++!)
+    DynoJob("eng_sc_v8_whine", "v8_supercharged", "4200 RPM OpenGrid engine-sim Supercharged V8 + helical blower loop", 4200, 4.0, 0.92, 0.95, "race", 1.4, 0.0),
+    DynoJob("eng_sc_v8_6800",  "v8_supercharged", "6800 RPM OpenGrid engine-sim Supercharged V8 redline + blower loop", 6800, 4.0, 1.00, 1.00, "race", 1.8, 0.0),
+
+    # Dedicated 26B 4-Rotor Peripheral-Port Wankel (from our C++ Rotary4Core!)
+    DynoJob("eng_rotary4_1100", "rotary_4", "1100 RPM OpenGrid 26B 4-Rotor peripheral-port BRAP idle loop", 1100, 4.0, 0.08, 0.10, "sport", 0.0),
+    DynoJob("eng_rotary4_low",  "rotary_4", "2600 RPM OpenGrid 26B 4-Rotor pull loop", 2600, 4.0, 0.65, 0.70, "race", 0.8),
+    DynoJob("eng_rotary4_6000", "rotary_4", "5500 RPM OpenGrid 26B 4-Rotor 787B howl loop", 5500, 4.0, 0.92, 0.95, "race", 1.2),
+    DynoJob("eng_rotary4_8500", "rotary_4", "8500 RPM OpenGrid 26B 4-Rotor redline razor shriek loop", 8500, 4.0, 1.00, 1.00, "race", 1.6),
+    DynoJob("eng_rotary4_decel", "rotary_4", "5400 RPM OpenGrid 26B 4-Rotor off-throttle decel loop", 5400, 4.0, 0.04, 0.00, "race", 0.4),
 ]
 
 
@@ -233,41 +255,34 @@ def synth_deep_antilag_pop(rng: np.random.Generator, pitch_scale: float = 1.0, d
     return synth_mod._finalize_oneshot(y, target_rms_dbfs=-11.5, fade_in_ms=1.5, fade_out_ms=70.0)
 
 
-def run_dyno_job(job: DynoJob, dyno_bin: Path, ir_dir: Path, tmp_dir: Path, audio_dir: Path, web_ogg_dir: Path) -> tuple[str, dict]:
-    raw_wav = tmp_dir / f"{job.stem_id}_raw44.wav"
+def run_dyno_job(job: DynoJob, dyno_bin: Path, tmp_dir: Path, audio_dir: Path, web_ogg_dir: Path) -> tuple[str, dict]:
+    raw_wav = tmp_dir / f"{job.stem_id}_raw48.wav"
     cmd = [
         str(dyno_bin),
+        "hold",
         job.engine_id,
         str(job.ref_rpm),
         f"{job.throttle:.2f}",
-        "0.9",
-        "2.4",
-        str(ir_dir),
+        f"{job.load:.2f}",
+        "0.65",
+        "2.2",
+        job.stage,
         str(raw_wav),
+        "mono",
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    subprocess.run(cmd, capture_output=True, text=True, check=True)
     x48 = real_mod.load_opus_mono(raw_wav, max_s=5.0)
     f_fire = (job.ref_rpm / 60.0) * job.firings_per_rev
-    x_steady = x48[int(0.25 * SAMPLE_RATE) :]
+    x_steady = x48[int(0.22 * SAMPLE_RATE) :]
     looped, corr = make_full_length_seamless_loop(x_steady, f_fire, LOOP_SAMPLES)
-
-    if job.add_sc_whine_hz > 0.0:
-        t = np.arange(LOOP_SAMPLES, dtype=np.float64) / SAMPLE_RATE
-        f_sc = synth_mod._exact_cycle_freq(job.add_sc_whine_hz, LOOP_DURATION_S)
-        f_sc2 = synth_mod._exact_cycle_freq(job.add_sc_whine_hz * 2.0, LOOP_DURATION_S)
-        rms_eng = float(np.sqrt(np.mean(looped * looped))) + 1e-9
-        fm = 0.20 * np.sin(2.0 * math.pi * (2.0 / LOOP_DURATION_S) * t)
-        whine = 0.80 * np.sin(2.0 * math.pi * f_sc * t + fm) + 0.20 * np.sin(2.0 * math.pi * f_sc2 * t + 2.0 * fm)
-        whine = np.tanh(whine * 1.12)
-        whine /= float(np.sqrt(np.mean(whine * whine))) + 1e-9
-        looped = looped + whine * (rms_eng * 0.22)
 
     shaped = real_mod.fft_filter(
         looped,
-        lambda f: real_mod.butter_bp(f, 30.0, 14500.0, order=2.5)
+        lambda f: real_mod.butter_bp(f, 28.0, 14500.0, order=2.5)
         * presence_shelf(f, job.presence_db),
     )
-    final = synth_mod._finalize_loop(shaped, target_rms_dbfs=-12.5)
+    target_db = -14.0 if job.load <= 0.05 else -12.2
+    final = synth_mod._finalize_loop(shaped, target_rms_dbfs=target_db)
 
     wav_path = audio_dir / f"{job.stem_id}.wav"
     ogg_path = web_ogg_dir / f"{job.stem_id}.ogg"
@@ -295,10 +310,12 @@ def run_dyno_job(job: DynoJob, dyno_bin: Path, ir_dir: Path, tmp_dir: Path, audi
         "rms_dbfs": stats["rms_dbfs"],
         "peak_linear": stats["peak_linear"],
         "boundary_delta": stats["boundary_delta"],
-        "license": "MIT (AngeTheGreat engine-sim)",
+        "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
         "engine_sim": {
             "preset": job.engine_id,
             "throttle": job.throttle,
+            "load": job.load,
+            "stage": job.stage,
             "loop_corr": round(corr, 3),
         },
     }
@@ -306,10 +323,10 @@ def run_dyno_job(job: DynoJob, dyno_bin: Path, ir_dir: Path, tmp_dir: Path, audi
 
 
 def main() -> None:
-    es_dir = Path("assets_source/downloads/engine-sim")
-    dyno_bin = es_dir / "build_headless/engine_sim_dyno"
-    ir_dir = es_dir / "es/sound-library"
-    tmp_dir = es_dir / "build_headless/dyno_raw"
+    dyno_bin = Path("core/build/opengrid_engine_dyno")
+    if not dyno_bin.is_file():
+        raise FileNotFoundError(f"Build {dyno_bin} first: cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Release && cmake --build core/build -j")
+    tmp_dir = Path("/tmp/og_engine_dyno_raw")
     tmp_dir.mkdir(parents=True, exist_ok=True)
     audio_dir = Path("ue5/Import/Audio")
     web_ogg_dir = Path("web/public/assets/audio")
@@ -321,15 +338,15 @@ def main() -> None:
 
     by_id: dict[str, dict] = {}
 
-    # 1) All 26 AngeTheGreat engine-sim piston stems (full 1.50 s non-tiled loops!)
+    # 1) All 42 vendored & enhanced OpenGrid engine-sim stems (ON-LOAD WOT + OFF-LOAD DECEL + V6 TT + 26B 4-Rotor!)
     with ThreadPoolExecutor(max_workers=6) as ex:
-        futs = [ex.submit(run_dyno_job, j, dyno_bin, ir_dir, tmp_dir, audio_dir, web_ogg_dir) for j in DYNO_JOBS]
+        futs = [ex.submit(run_dyno_job, j, dyno_bin, tmp_dir, audio_dir, web_ogg_dir) for j in DYNO_JOBS]
         for fut in futs:
             sid, entry = fut.result()
             by_id[sid] = entry
             print(
-                f"Wrote {sid:22s} ({entry['reference_rpm']:4d}RPM, rms={entry['rms_dbfs']:6.2f}dBFS, "
-                f"pk={entry['peak_linear']:.3f}, seam={entry['boundary_delta']:.4f}, "
+                f"Wrote {sid:22s} ({entry['reference_rpm']:4d}RPM, load={entry['engine_sim']['load']:.1f}, "
+                f"rms={entry['rms_dbfs']:6.2f}dBFS, pk={entry['peak_linear']:.3f}, seam={entry['boundary_delta']:.4f}, "
                 f"corr={entry['engine_sim']['loop_corr']:.3f}, ogg={entry['ogg_bytes']/1024:4.1f}KB)"
             )
 
@@ -363,16 +380,7 @@ def main() -> None:
         }
         print(f"Wrote {sid:22s} (clean DSP, rms={stats['rms_dbfs']:6.2f}dBFS, pk={stats['peak_linear']:.3f}, seam={stats['boundary_delta']:.4f}, ogg={ogg_bytes/1024:4.1f}KB)")
 
-    # 2) Clean zero-voice 4-Rotor Bridge-Port / 787B Rotary stems (replaces buzzy YouTube RX-7 clip)
-    for idx, (sid, rpm, f0, desc, fn) in enumerate([
-        ("eng_rotary4_1100", 1100, 74.7,  "1100 RPM 4-Rotor bridge-port BRAP idle loop", synth_mod.synth_eng_rotary4_1100),
-        ("eng_rotary4_low",  2600, 173.3, "2600 RPM 4-Rotor bridge-port pull loop", synth_mod.synth_eng_rotary4_low),
-        ("eng_rotary4_6000", 5500, 366.7, "5500 RPM 4-Rotor 787B peripheral-port howl loop", synth_mod.synth_eng_rotary4_6000),
-        ("eng_rotary4_8500", 8500, 566.7, "8500 RPM 4-Rotor 787B redline razor shriek loop", synth_mod.synth_eng_rotary4_8500),
-    ]):
-        write_custom_stem(sid, "engine", desc, True, rpm, f0, fn(np.random.default_rng(20261122 + idx * 7919)), "CC-BY-NC-4.0")
-
-    # 3) Clean zero-voice Turbo Spool, Turbo BOV Flutter, and 2x Deep Anti-Lag Bangs
+    # 2) Clean zero-voice Turbo Spool, Turbo BOV Flutter, and 2x Deep Anti-Lag Bangs
     write_custom_stem("turbo_spool_loop", "drivetrain_induction",
                       "Warm Garrett/BorgWarner turbocharger compressor spool + pressurized charge-pipe rush loop",
                       True, None, 2400.0, synth_clean_warm_turbo_spool(np.random.default_rng(20261191)), "CC-BY-NC-4.0")
@@ -386,25 +394,28 @@ def main() -> None:
                       "Deep low-pitched anti-lag overrun double-pop bang",
                       False, None, 92.0, synth_deep_antilag_pop(np.random.default_rng(20261194), 0.86, True), "CC-BY-NC-4.0")
 
-    # 4) Keep verified speech-free CC-BY-3.0 real stems (Aventador SVJ bang + BMW M3 GTR gearbox whine) + surface loops
+    # 3) Keep verified speech-free CC-BY-3.0 real stems (Aventador SVJ bang + BMW M3 GTR gearbox whine) + surface loops
     for keep_id in ["exhaust_antilag_pop3", "gear_whine_straightcut", "tyre_scrub_dry", "tyre_spray_wet", "kerb_rumble_strip"]:
         by_id[keep_id] = old_by_id[keep_id]
 
-    ordered_ids = [s["id"] for s in old_manifest["stems"]]
+    ordered_ids = [j.stem_id for j in DYNO_JOBS] + [
+        "turbo_spool_loop", "turbo_flutter_bov", "exhaust_backfire_pop", "exhaust_antilag_pop2",
+        "exhaust_antilag_pop3", "gear_whine_straightcut", "tyre_scrub_dry", "tyre_spray_wet", "kerb_rumble_strip",
+    ]
     new_stems = [by_id[sid] for sid in ordered_ids]
     total_ogg = sum(int(s["ogg_bytes"]) for s in new_stems)
 
-    # Only credit the 2 Wikimedia Commons CC-BY-3.0 recordings actually shipped (Aventador SVJ + BMW M3 GTR)
     used_cc_keys = ["v12_svj_fi", "fx_m3_gtr"]
     manifest = {
-        "schema_version": 6,
-        "generator": "tools/ue5/render_engine_sim_stems.py (AngeTheGreat engine-sim MIT) + verified speech-free CC-BY-3.0 FX",
-        "license": "MIT (AngeTheGreat engine-sim); CC-BY-3.0 (Aventador SVJ bang & BMW M3 GTR gear whine); CC-BY-NC-4.0 (OpenGrid rotary/turbo/tyre DSP)",
+        "schema_version": 7,
+        "generator": "tools/ue5/render_engine_sim_stems.py via core/build/opengrid_engine_dyno (vendored MIT engine-sim + OpenGrid Forza dual-mic DSP)",
+        "license": "MIT (AngeTheGreat engine-sim vendored in core/third_party/engine_sim/); CC-BY-3.0 (Aventador SVJ bang & BMW M3 GTR gear whine); CC-BY-NC-4.0 (OpenGrid FX/DSP)",
         "provenance": (
-            "26 piston engine RPM loops rendered via AngeTheGreat's MIT-licensed thermodynamic engine-sim "
-            "(https://github.com/ange-yaghi/engine-sim) headless dynamometer (full 1.50 s non-tiled loops); "
-            "2 verified speech-free CC-BY-3.0 real FX stems (Lamborghini Aventador SVJ bang, BMW M3 GTR gearbox whine); "
-            "11 zero-voice procedural stems (4-rotor rotary, turbo spool/BOV flutter, 2 anti-lag bangs, 3 tyre/kerb loops)."
+            "42 dual-load (ON-LOAD WOT + OFF-LOAD DECEL) engine RPM loops across 9 architectures "
+            "(Flat-6 GT3, Ferrari V12, Odd-Fire V10, 2JZ TT I6, 60deg TT V6, Cross-Plane V8, Flat-Plane V8, "
+            "Supercharged LS V8, 26B 4-Rotor Wankel) rendered by OpenGrid's vendored & improved MIT engine-sim "
+            "C++ engine (core/src/engine_audio.cpp + core/third_party/engine_sim/); 2 verified speech-free CC-BY-3.0 "
+            "real FX stems (Lamborghini Aventador SVJ bang, BMW M3 GTR gearbox whine); 7 zero-voice procedural FX stems."
         ),
         "sample_rate_hz": SAMPLE_RATE,
         "bit_depth": 24,
@@ -427,7 +438,7 @@ def main() -> None:
         "stems": new_stems,
     }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(f"\nDONE: All 39 speech-free stems built! Total WebGPU .ogg pack = {total_ogg/1024:.1f} KB ({total_ogg/(1024*1024):.3f} MB)")
+    print(f"\nDONE: All {len(new_stems)} Forza dual-load stems built! Total WebGPU .ogg pack = {total_ogg/1024:.1f} KB ({total_ogg/(1024*1024):.3f} MB)")
 
 
 if __name__ == "__main__":

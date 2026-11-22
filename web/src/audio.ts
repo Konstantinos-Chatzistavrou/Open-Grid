@@ -149,12 +149,27 @@ const ENGINE_STEM_ZONES: Record<EngineVoiceId, readonly [EngineStemZone, EngineS
   v10_screamer:    [{ id: 'eng_v10_1000', refRpm: 1000 },     { id: 'eng_v10_low', refRpm: 2400 },     { id: 'eng_v10_5500', refRpm: 5200 },     { id: 'eng_v10_7800', refRpm: 7800 }],
   rotary_4:        [{ id: 'eng_rotary4_1100', refRpm: 1100 }, { id: 'eng_rotary4_low', refRpm: 2600 }, { id: 'eng_rotary4_6000', refRpm: 5500 }, { id: 'eng_rotary4_8500', refRpm: 8500 }],
   i6_forged:       [{ id: 'eng_tt_i6_1000', refRpm: 1000 },   { id: 'eng_tt_i6_low', refRpm: 2400 },   { id: 'eng_tt_i6_4000', refRpm: 4500 },   { id: 'eng_tt_i6_7000', refRpm: 7000 }],
-  v6_tt:           [{ id: 'eng_tt_i6_1000', refRpm: 1000 },   { id: 'eng_tt_i6_low', refRpm: 2400 },   { id: 'eng_tt_i6_4000', refRpm: 4500 },   { id: 'eng_tt_i6_7000', refRpm: 7000 }],
+  v6_tt:           [{ id: 'eng_v6_tt_1000', refRpm: 1000 },   { id: 'eng_v6_tt_low', refRpm: 2400 },   { id: 'eng_v6_tt_4500', refRpm: 4500 },   { id: 'eng_v6_tt_7200', refRpm: 7200 }],
   v8_crossplane:   [{ id: 'eng_v8_cross_900', refRpm: 900 },  { id: 'eng_v8_cross_low', refRpm: 2100 },{ id: 'eng_v8_cross_4200', refRpm: 4200 },{ id: 'eng_v8_cross_6800', refRpm: 6800 }],
   v8_twin_turbo:   [{ id: 'eng_v8_cross_900', refRpm: 900 },  { id: 'eng_v8_cross_low', refRpm: 2100 },{ id: 'eng_v8_cross_4200', refRpm: 4200 },{ id: 'eng_v8_cross_6800', refRpm: 6800 }],
   v8_flatplane:    [{ id: 'eng_v8_flat_1100', refRpm: 1100 }, { id: 'eng_v8_flat_low', refRpm: 2600 }, { id: 'eng_v8_flat_5500', refRpm: 5200 }, { id: 'eng_v8_flat_8000', refRpm: 8000 }],
   flat8_na:        [{ id: 'eng_v8_flat_1100', refRpm: 1100 }, { id: 'eng_v8_flat_low', refRpm: 2600 }, { id: 'eng_v8_flat_5500', refRpm: 5200 }, { id: 'eng_v8_flat_8000', refRpm: 8000 }],
   v8_supercharged: [{ id: 'eng_v8_cross_900', refRpm: 900 },  { id: 'eng_v8_cross_low', refRpm: 2100 },{ id: 'eng_sc_v8_whine', refRpm: 4200 },  { id: 'eng_sc_v8_6800', refRpm: 6800 }],
+};
+
+/** Dedicated off-throttle engine-braking decel stems rendered at closed throttle (Forza Horizon ON-LOAD <-> OFF-LOAD crossfade). */
+const ENGINE_DECEL_STEM: Record<EngineVoiceId, EngineStemZone> = {
+  flat6_na:        { id: 'eng_flat6_decel',    refRpm: 4800 },
+  v12_na:          { id: 'eng_v12_decel',      refRpm: 5200 },
+  v10_screamer:    { id: 'eng_v10_decel',      refRpm: 5200 },
+  rotary_4:        { id: 'eng_rotary4_decel',  refRpm: 5400 },
+  i6_forged:       { id: 'eng_tt_i6_decel',    refRpm: 4600 },
+  v6_tt:           { id: 'eng_v6_tt_decel',    refRpm: 4600 },
+  v8_crossplane:   { id: 'eng_v8_cross_decel', refRpm: 4200 },
+  v8_twin_turbo:   { id: 'eng_v8_cross_decel', refRpm: 4200 },
+  v8_flatplane:    { id: 'eng_v8_flat_decel',  refRpm: 5200 },
+  flat8_na:        { id: 'eng_v8_flat_decel',  refRpm: 5200 },
+  v8_supercharged: { id: 'eng_v8_cross_decel', refRpm: 4200 },
 };
 
 const FX_LOOP_STEMS = [
@@ -283,6 +298,9 @@ export class GameAudio {
   private stemZoneSrcs: (AudioBufferSourceNode | null)[] = [null, null, null, null];
   private stemZoneIds: (string | null)[] = [null, null, null, null];
   private stemZoneGains: (GainNode | null)[] = [null, null, null, null];
+  private stemDecelSrc: AudioBufferSourceNode | null = null;
+  private stemDecelId: string | null = null;
+  private stemDecelGain: GainNode | null = null;
   private stemF1: BiquadFilterNode | null = null;
   private stemF2: BiquadFilterNode | null = null;
   private stemF3: BiquadFilterNode | null = null;
@@ -348,6 +366,7 @@ export class GameAudio {
     zero(this.reverbSend);
     zero(this.srn?.g);
     for (let i = 0; i < 4; i++) zero(this.stemZoneGains[i]);
+    zero(this.stemDecelGain);
     zero(this.stemEngMaster);
     zero(this.stemTurboGain);
     zero(this.stemGearGain);
@@ -556,6 +575,7 @@ export class GameAudio {
         const zg = this.stemZoneGains[i];
         if (zg) zg.gain.setTargetAtTime(0, t, 0.02);
       }
+      if (this.stemDecelGain) this.stemDecelGain.gain.setTargetAtTime(0, t, 0.02);
       if (this.stemTurboGain) this.stemTurboGain.gain.setTargetAtTime(0, t, 0.02);
       if (this.reverbSend) this.reverbSend.gain.setTargetAtTime(0, t, 0.03);
     }
@@ -1178,6 +1198,10 @@ export class GameAudio {
       zg.connect(stemF1);
       this.stemZoneGains[i] = zg;
     }
+    const stemDecelGain = ctx.createGain();
+    stemDecelGain.gain.value = 0;
+    stemDecelGain.connect(stemF1);
+    this.stemDecelGain = stemDecelGain;
 
     stemF1.connect(stemF2).connect(stemF3).connect(stemToneFilter).connect(stemShaper);
     stemMerger.connect(stemEngMaster).connect(this.out);
@@ -1207,7 +1231,9 @@ export class GameAudio {
 
   private preloadVoiceStems(voice: EngineVoiceId) {
     const zones = ENGINE_STEM_ZONES[voice] ?? ENGINE_STEM_ZONES.v8_crossplane;
-    // Active engine voice stems jump to the front of the serial decode queue (zero main-thread decode storm!)
+    const decel = ENGINE_DECEL_STEM[voice] ?? ENGINE_DECEL_STEM.v8_crossplane;
+    // Queue decel right behind the 4 primary zones so active ON-LOAD stems unlock first, then OFF-LOAD decel immediately after
+    this.enqueueStem(decel.id, true);
     for (let i = zones.length - 1; i >= 0; i--) this.enqueueStem(zones[i].id, true);
   }
 
@@ -1266,7 +1292,8 @@ export class GameAudio {
 
   private onStemDecoded(id: string, buf: AudioBuffer) {
     const zones = ENGINE_STEM_ZONES[this.voiceId] ?? ENGINE_STEM_ZONES.v8_crossplane;
-    if (zones.some((z) => z.id === id)) {
+    const decel = ENGINE_DECEL_STEM[this.voiceId] ?? ENGINE_DECEL_STEM.v8_crossplane;
+    if (zones.some((z) => z.id === id) || decel.id === id) {
       this.syncEngineStemSources();
     }
     if (id === 'turbo_spool_loop') this.attachFxLoop('turbo', buf);
@@ -1325,6 +1352,26 @@ export class GameAudio {
         }
       }
     }
+
+    const decel = ENGINE_DECEL_STEM[this.voiceId] ?? ENGINE_DECEL_STEM.v8_crossplane;
+    if (this.stemDecelGain && (this.stemDecelId !== decel.id || (!this.stemDecelSrc && this.stemBuffers.has(decel.id)))) {
+      if (this.stemDecelSrc) {
+        try { this.stemDecelSrc.stop(); this.stemDecelSrc.disconnect(); } catch {}
+        this.stemDecelSrc = null;
+        this.stemDecelId = null;
+      }
+      const dBuf = this.stemBuffers.get(decel.id);
+      if (dBuf) {
+        const src = ctx.createBufferSource();
+        src.buffer = dBuf;
+        src.loop = true;
+        src.playbackRate.value = clamp(curRpm / decel.refRpm, 0.42, 1.65);
+        src.connect(this.stemDecelGain);
+        src.start();
+        this.stemDecelSrc = src;
+        this.stemDecelId = decel.id;
+      }
+    }
   }
 
   private hasAllEngineStems(): boolean {
@@ -1358,6 +1405,7 @@ export class GameAudio {
       return false;
     }
     const zones = ENGINE_STEM_ZONES[this.voiceId] ?? ENGINE_STEM_ZONES.v8_crossplane;
+    const decelZone = ENGINE_DECEL_STEM[this.voiceId] ?? ENGINE_DECEL_STEM.v8_crossplane;
     const vSpec = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
 
     // Strictly bounded playbackRate [0.68, 1.42] per zone (gentle idle lope ONLY on z0 below 1250 RPM at closed throttle)
@@ -1367,6 +1415,19 @@ export class GameAudio {
       const rate = clamp((rpm / zones[i].refRpm) * lopeScale, 0.68, 1.42);
       src.playbackRate.setTargetAtTime(rate, t, tc);
     }
+
+    // Forza-grade ON-LOAD <-> OFF-LOAD DECEL dynamic crossfade (closed-throttle vacuum engine braking)
+    const hasDecel = this.stemDecelSrc !== null && this.stemDecelId === decelZone.id && this.stemDecelGain !== null;
+    let decelBlend = 0;
+    if (hasDecel) {
+      const decelRate = clamp(rpm / decelZone.refRpm, 0.42, 1.65);
+      this.stemDecelSrc!.playbackRate.setTargetAtTime(decelRate, t, tc);
+      const decelRpmEnv = clamp((rpm - 1750) / 1400, 0, 1);
+      const decelThrEnv = clamp((0.22 - thr) / 0.22, 0, 1);
+      decelBlend = decelRpmEnv * decelThrEnv * (isDecel ? 0.82 : 0.48);
+    }
+    const onLoadScale = Math.cos(decelBlend * Math.PI * 0.5);
+    const offLoadScale = Math.sin(decelBlend * Math.PI * 0.5);
 
     // Piecewise equal-power cos/sin crossfade across adjacent zones (at most 2 zones active at any RPM)
     const r0 = zones[0].refRpm;
@@ -1400,10 +1461,13 @@ export class GameAudio {
     } else {
       w3 = 1;
     }
-    this.stemZoneGains[0]!.gain.setTargetAtTime(w0, t, tc);
-    this.stemZoneGains[1]!.gain.setTargetAtTime(w1, t, tc);
-    this.stemZoneGains[2]!.gain.setTargetAtTime(w2, t, tc);
-    this.stemZoneGains[3]!.gain.setTargetAtTime(w3, t, tc);
+    this.stemZoneGains[0]!.gain.setTargetAtTime(w0 * onLoadScale, t, tc);
+    this.stemZoneGains[1]!.gain.setTargetAtTime(w1 * onLoadScale, t, tc);
+    this.stemZoneGains[2]!.gain.setTargetAtTime(w2 * onLoadScale, t, tc);
+    this.stemZoneGains[3]!.gain.setTargetAtTime(w3 * onLoadScale, t, tc);
+    if (this.stemDecelGain) {
+      this.stemDecelGain.gain.setTargetAtTime(offLoadScale * 1.15, t, tc);
+    }
 
     // Load-responsive warm exhaust filter (1450 Hz closed-throttle cruise -> 13800 Hz WOT redline)
     const baseOpen = 1450 + rpmNorm * 1450;
