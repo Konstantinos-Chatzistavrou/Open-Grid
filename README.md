@@ -1,18 +1,65 @@
 # Open Grid
 
 Realistic-handling street racing sim: an illegal night race through a city, with crash damage and
-AI rivals. The game runs in the browser on **WebGPU** (three.js r186). Its vehicle physics is an
-engine-independent C++ core compiled to WebAssembly.
+AI rivals. It runs in the browser, and its vehicle physics is an engine-independent C++ core compiled to WebAssembly.
+Open source and non-profit.
+
+**[Play the live demo](https://racing-game-brown-six.vercel.app/)** (desktop Chrome or Edge recommended; keyboard,
+controller or wheel)
+
+<!-- Media: drop the files into docs/media/ (shot list: docs/media/SHOTLIST.md), then delete this comment's markers.
+[![30-second gameplay video](docs/media/trailer_poster.jpg)](docs/media/trailer.mp4)
+
+| | |
+|---|---|
+| ![Night race through the city](docs/media/shot_city_night.jpg) | ![Cockpit view at speed](docs/media/shot_cockpit.jpg) |
+| ![Crash damage](docs/media/shot_damage.jpg) | ![Telemetry and tyre temperatures](docs/media/shot_telemetry.jpg) |
+-->
+
+What is in here:
+
+- **The game**: three.js r186 renderer (WebGPU, with an automatic WebGL 2 fallback), Rapier rigid bodies, parties of
+  up to 6 over WebRTC, wheels with force feedback, phones with tilt steering.
+- **The physics core** (`core/`): Pacejka tyres fitted to real tyre data, suspension kinematics, a full drivetrain,
+  assists, aero, fuel, wet roads, damage. Checked against a real car on every push: see
+  **[the validation page](docs/validation.md)**.
+- **[open-grid-physics](packages/vehicle-physics/)**: the same core as a drop-in package for any web game (Rapier,
+  cannon-es, your own engine), with a three.js + Rapier example.
+- **[A bot API](docs/bots.md)**: write a driver in plain JS, race it headless at 100x real time, get on the
+  leaderboard.
+- **UE5 plugin** (`ue5_plugin/`): the same core inside Unreal Engine 5.
+
+Help wanted: drivers on wheels to judge the handling ([testing program](docs/testing_program.md)), 3D artists,
+and bot writers. Start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## System Requirements
 
-> **Requires Chrome 124+ with `--enable-unsafe-webgpu` flag for web, or a PC with a 64-bit CPU, 8 GB RAM, and a Vulkan / DirectX 12 GPU for native.**
-
-- **Web (Lite / Demo build)**: Node 20+ (dev), Chrome / Edge 124+ with WebGPU enabled. On Linux Chrome, launch with `--enable-unsafe-webgpu` or enable `chrome://flags` → **Unsafe WebGPU Support** + **Vulkan** (verify in `chrome://gpu` → `WebGPU: Hardware accelerated`).
+- **Browser**: WebGPU where the browser has it on by default: Chrome and Edge 113+ on Windows, macOS and ChromeOS,
+  Chrome 121+ on Android 12+ (Qualcomm and ARM GPUs), Safari 26 (macOS, iOS, iPadOS), Firefox 141+ on Windows
+  ([support table](https://web.dev/blog/webgpu-supported-major-browsers)). Everywhere else, including Chrome on Linux,
+  the game falls back to WebGL 2 by itself; on Linux you can turn WebGPU on with `chrome://flags` → **Unsafe WebGPU
+  Support** (check `chrome://gpu`). `?webgl=1` forces WebGL 2.
+- **Development**: Node 20+.
 - **Native (`core/` C++17 & UE5 plugin target)**: 64-bit x86_64/ARM64 CPU, 8 GB+ RAM, Vulkan 1.2 / DirectX 12 GPU, CMake 3.16+ & C++17 compiler (GCC/Clang/MSVC).
 - **SimHub Telemetry (optional)**: Run `node tools/simhub_udp_bridge.mjs` to stream 60 Hz 311-byte Forza/SimHub Dash V2 UDP packets on `127.0.0.1:20777`, or export MoTeC i2 Pro `.ld` / `.ldx` logs directly from the Pause / Results menu.
 
 See [`docs/DESIGN.md`](docs/DESIGN.md) for the full Master Design & Architecture Blueprint and [`docs/MODDING.md`](docs/MODDING.md) for the open-source Car Modding Pipeline.
+
+## Get the code
+
+The repository's history carries the city and car assets (about 1.4 GB). For code work you do not need all of it:
+
+```bash
+# everything at the latest commit, older file versions fetched only if you ask for them (fast, recommended)
+git clone --filter=blob:none https://github.com/Konstantinos-Chatzistavrou/Open-Grid.git
+
+# just the latest snapshot, no history
+git clone --depth 1 https://github.com/Konstantinos-Chatzistavrou/Open-Grid.git
+
+# only the physics: core, the package and the car data
+git clone --filter=blob:none --sparse https://github.com/Konstantinos-Chatzistavrou/Open-Grid.git
+cd Open-Grid && git sparse-checkout set core packages data/cars data/tires web/wasm web/src/physics
+```
 
 ## Run the web build
 
@@ -154,6 +201,7 @@ the start (free roam). The results screen has **Spectate** while others are stil
 | `core/` | C++17 physics + game logic (tyres, drivetrain, assists, damage, AI, race rules), no engine deps, with tests |
 | `server/` | Optional self-hosted PeerJS matchmaking for parties (the game defaults to the public broker) |
 | `web/` | Browser game: three.js WebGPU renderer, Rapier rigid bodies, WASM bridge (`web/wasm/bridge.cpp`) |
+| `packages/vehicle-physics/` | `open-grid-physics`: the core as a standalone WebAssembly package, bot API, examples |
 | `data/` | Car and track data (JSON, engine-neutral) |
 | `assets_source/` | Blender sources and full-resolution textures |
 | `docs/` | Master design blueprint (`DESIGN.md`), car modding pipeline (`MODDING.md`), physics & porting notes |
@@ -168,9 +216,10 @@ cmake -S core -B core/build && cmake --build core/build -j && ./core/build/rs_te
 
 ## Validation
 
-Handling is matched to a Corvette C7 Z51: 60-0 mph 31.7 m (real 31.7-32.6 m), skidpad 1.04 g,
-0-60 mph 3.92 s. The WebAssembly build reproduces the native results exactly. Details in
-`docs/handling_reference.md` and `docs/web_port.md`.
+Handling is matched to a Corvette C7 Z51 and checked on every push: 0-60 mph 3.95 s (real 3.8-3.9 s), 60-0 mph
+32.5 m (real 31.7-32.6 m), skidpad 1.00 g (real 1.03-1.11 g), top speed 291 km/h (real ~290). The WebAssembly build
+reproduces the native results. Method, all results and what is not validated yet: [docs/validation.md](docs/validation.md);
+history in `docs/handling_reference.md` and `docs/web_port.md`.
 
 ## Licence
 
