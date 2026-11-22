@@ -82,6 +82,11 @@
       "properties": {
         "vertical_stiffness_n_per_m": { "type": "number", "exclusiveMinimum": 0 },
         "rolling_resistance_v2": { "type": "number", "minimum": 0 },
+        "compound": { "enum": ["road", "semi_slick", "slick"], "description": "thermal window, reset temperature and tread wear rate (core/src/config.cpp apply_compound)" },
+        "temp_optimal_c": { "type": "number" },
+        "temp_window_c": { "type": "number", "exclusiveMinimum": 0 },
+        "start_temp_c": { "type": "number" },
+        "wear_per_mj": { "type": "number", "minimum": 0 },
         "aligning": { "type": "object", "additionalProperties": { "type": "number" } }
       },
       "required": ["radius_m", "inertia_kgm2", "fz0_n", "longitudinal", "lateral", "combined", "relaxation_length_long_m", "relaxation_length_lat_m", "rolling_resistance"]

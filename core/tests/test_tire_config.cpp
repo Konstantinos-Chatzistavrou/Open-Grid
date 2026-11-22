@@ -61,14 +61,17 @@ RS_TEST(tire) {
     relaxation_lengths(p, 5000, 0.0, sx_hi, sy_hi);
     test::check("relaxation length grows with load (sigma = K / C_F)", sy_hi > sy_lo && sx_hi > sx_lo);
 
-    // Tyre thermodynamics (two layers) & wear: 10 s of hard sliding (25 kW) on a cold tyre
+    // Tyre thermodynamics (two layers) & wear: 10 s of hard sliding (25 kW) on a cold tyre (a slick: 30 C is
+    // cold for it; a road compound already has full grip at 30 C)
+    apply_compound(p, "slick");
     TireCondition cond;
     cond.temperature_c = cond.surface_c = 30.0;
     double cold_grip = cond.grip_factor(&p);
     for (int i = 0; i < 100; ++i) cond.update(25000.0, 4000.0, 25.0, 0.1, &p);
     std::printf("         10 s at 25 kW sliding from 30 C: surface %.0f C, core %.0f C, grip %.3f -> %.3f\n", cond.surface_c, cond.temperature_c, cold_grip, cond.grip_factor(&p));
     test::check("sliding heats the surface fast", cond.surface_c > 70.0);
-    test::check("the core follows slowly", cond.temperature_c > 40.0 && cond.temperature_c < cond.surface_c);
+    // the carcass gains heat by conduction from the tread but stays below it (no pull toward a set running temperature)
+    test::check("the core follows slowly", cond.temperature_c > 34.0 && cond.temperature_c < cond.surface_c);
     test::check("warmer tyre grips better", cond.grip_factor(&p) > cold_grip);
     for (int i = 0; i < 100; ++i) cond.update(0.0, 4000.0, 25.0, 0.1, &p);
     test::check("the surface spike fades in seconds once the slide stops", cond.surface_c - cond.temperature_c < 8.0);

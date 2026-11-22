@@ -231,7 +231,7 @@ public:
 
     /** Enable 15 Hz 2-DOF unsprung wheel-hop & radial tyre carcass vertical dynamics, 3-zone I/M/O tread thermals, and 4x4 contact patch grid. */
     bool unsprung_dynamics_enabled = false;
-    bool tire_zones_enabled = false;
+    bool tire_zones_enabled = true;
     bool tire_patch_grid_enabled = true;
 
     std::array<WheelRay, 4> wheel_rays(const ChassisState& s) const;
@@ -283,6 +283,9 @@ public:
     /** Tests / tooling: every tyre soaked at temp_c (tread, ribs, carcass; cavity air at the model's running share,
      *  never above temp_c) with wear 0..1, pressure from the ideal gas law. Call after reset (reset makes them new). */
     void set_tyres(double temp_c, double wear);
+private:
+    void soak_tyre(int w, double temp_c, double wear);
+public:
 private:
     bool disc_init_ = false;
     std::array<double, 4> fluid_temp_{45.0, 45.0, 45.0, 45.0}; // caliper DOT 4 brake fluid temperature, C

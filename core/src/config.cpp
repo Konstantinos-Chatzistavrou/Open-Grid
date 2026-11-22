@@ -6,6 +6,22 @@
 #include "nlohmann/json.hpp"
 
 namespace rs {
+
+// Tyre compound classes (thermal window, reset temperature, tread wear per MJ of friction work). Sources and the
+// reasoning behind every number: docs/physics.md, "Tyre compounds".
+//   road        summer UHP street tyre: full grip from ~10 C (makers: summer compounds harden below ~7 C) to ~90 C
+//   semi_slick  road-legal track tyre (Cup 2 / Trofeo R class): needs some heat, ~50-100 C
+//   slick       racing slick: a ~30 C wide window (Pirelli: "a working range of about 30 degrees"), 75-105 C
+// Wear rates: ~0.15 MJ/km of friction work on the most-loaded tyre at race pace (measured, AI laps), for ~1000 /
+// 600 / 350 km of track driving to a worn-out tread (slick: GT3 sets are built for double stints; Spa 24 h allows
+// 30 dry sets for a weekend of several thousand km).
+void apply_compound(TireParams& t, const std::string& c, const std::string& ctx) {
+    if (c == "road") { t.temp_optimal_c = 50; t.temp_window_c = 40; t.start_c = 45; t.wear_per_mj = 1.0 / 150.0; }
+    else if (c == "semi_slick") { t.temp_optimal_c = 75; t.temp_window_c = 25; t.start_c = 70; t.wear_per_mj = 1.0 / 90.0; }
+    else if (c == "slick") { t.temp_optimal_c = 90; t.temp_window_c = 15; t.start_c = 85; t.wear_per_mj = 1.0 / 52.5; }
+    else throw std::runtime_error("car config: '" + ctx + ".compound' must be road, semi_slick or slick (got '" + c + "')");
+}
+
 using nlohmann::json;
 
 namespace {
@@ -87,6 +103,7 @@ AxleParams parse_axle(const json& j, const std::string& ctx) {
 
 TireParams parse_tire(const json& j, const std::string& ctx) {
     TireParams t;
+    if (j.contains("compound")) apply_compound(t, j.at("compound").get<std::string>(), ctx);
     t.radius = num(j, "radius_m", ctx);
     t.inertia = num(j, "inertia_kgm2", ctx);
     t.fz0 = num(j, "fz0_n", ctx);
@@ -96,6 +113,8 @@ TireParams parse_tire(const json& j, const std::string& ctx) {
     t.p_cold_kpa = num_or(j, "pressure_cold_kpa", t.p_cold_kpa);
     t.temp_optimal_c = num_or(j, "temp_optimal_c", t.temp_optimal_c);
     t.temp_window_c = num_or(j, "temp_window_c", t.temp_window_c);
+    t.start_c = num_or(j, "start_temp_c", t.start_c);
+    t.wear_per_mj = num_or(j, "wear_per_mj", t.wear_per_mj);
     const json& lo = j.at("longitudinal");
     t.cx = num(lo, "C", ctx + ".longitudinal");
     t.mu_x = num(lo, "mu", ctx + ".longitudinal");

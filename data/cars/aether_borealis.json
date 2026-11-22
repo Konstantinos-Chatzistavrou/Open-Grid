@@ -166,6 +166,7 @@
     }
   },
   "tire_front": {
+    "compound": "road",
     "size": "245/35 R19",
     "radius_m": 0.338,
     "inertia_kgm2": 1.2,
@@ -280,6 +281,7 @@
     "mbelt_kg": 5.8013
   },
   "tire_rear": {
+    "compound": "road",
     "size": "285/30 R19",
     "radius_m": 0.362,
     "inertia_kgm2": 1.35,

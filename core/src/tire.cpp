@@ -273,11 +273,19 @@ double TireCondition::ideal_gas_pressure_kpa(const TireParams* p) const {
     return (p_cold + kPAtmKpa) * (t_air_k / kTColdK) - kPAtmKpa;
 }
 
+namespace {
+// Sidewall cooling of the carcass (~0.32 m^2 both sides of a 245-285 section, 19-20 inch tyre): ~2.5 mm of rubber
+// (tread/sidewall compounds conduct k = 0.30-0.54 W/(m K), patent measurements; 0.35 * 0.32 / 0.0025 ~ 45 W/K) in
+// series with its air film, which has the tread's film coefficient per m^2 (area ratio ~0.52).
+constexpr double kSidewallConductionWK = 45.0;
+constexpr double kSidewallAreaRatio = 0.52;
+}  // namespace
+
 void TireCondition::update(double slip_power_w, double load_n, double speed_mps, double dt, const TireParams* p) {
     if (dt <= 0) return;
     // Explicit 3-node lumped-capacitance thermal network (Kelly & Sharp 2010; Farroni et al. 2014):
     //   Node 1 (Surface, Ts):   C_s dTs/dt = P_slip - G_sc (Ts - Tc) - h_a(v) (Ts - T_air) - g_road (Ts - T_track)
-    //   Node 2 (Carcass, Tc):   C_c dTc/dt = G_sc (Ts - Tc) + P_hyst(p, Fz, v) - G_cg (Tc - Tg) - k_c(v) C_c (Tc - T_eq)
+    //   Node 2 (Carcass, Tc):   C_c dTc/dt = G_sc (Ts - Tc) + P_hyst(p, Fz, v) - G_cg (Tc - Tg) - G_sw(v) (Tc - T_air)
     //   Node 3 (Inner Air, Tg): C_g dTg/dt = G_cg (Tc - Tg) - G_rim(v) (Tg - T_air)
     // Frictional slip work heats the outer 2-3 mm tread surface immediately; rolling hysteresis flexing (which rises
     // when under-inflated) heats the carcass; heat conducts Surface <-> Carcass <-> Inner Air; Inner Air sets inflation
@@ -296,14 +304,16 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
 
     const double Tair = ambient_air_c;
     const double Ttrack = track_surface_c;
-    const double Teq = 78.0 + 0.35 * (0.5 * (Tair + Ttrack) - 30.0);
     const double v = std::abs(speed_mps);
     const double ha_total = 20.0 + 2.5 * v;                 // W/K, surface convective air cooling
     // Solid-to-solid conductive heat transfer between loaded contact patch and asphalt road surface
     const double g_road = (std::abs(Ttrack - Tair) > 1e-4 && load_n > 50.0)
                         ? 38.0 * clamp(load_n / 4000.0, 0.0, 1.6) : 0.0;
     const double ha = std::max(5.0, ha_total - g_road * 0.45);
-    const double kc = 0.012 + 0.0012 * v;                   // 1/s, sidewall convective relaxation toward rolling equilibrium
+    // Sidewall: carcass -> sidewall rubber -> air film, toward the AMBIENT air (no pull toward a set running
+    // temperature: the carcass settles where rolling hysteresis, slip work and cooling balance).
+    const double G_film_sw = kSidewallAreaRatio * ha_total;
+    const double G_sw = kSidewallConductionWK * G_film_sw / (kSidewallConductionWK + G_film_sw);
     const double G_rim = 18.0 + 0.65 * v;                   // W/K, Inner Air <-> wheel rim / ambient airflow exchange
 
     // Pressure-coupled rolling hysteresis power: under-inflated tyres flex more and generate more carcass heat
@@ -320,7 +330,7 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
         const double q_sc = G_sc * (ts - tc);
         const double q_cg = G_cg * (tc - tg);
         const double dts = (slip_power_w - q_sc - ha * (ts - Tair) - g_road * (ts - Ttrack)) / Cs;
-        const double dtc = (q_sc + hyst - q_cg) / Cc - kc * (tc - Teq);
+        const double dtc = (q_sc + hyst - q_cg - G_sw * (tc - Tair)) / Cc;
         const double dtg = (q_cg - G_rim * (tg - Tair)) / Cg;
         surface_c = clamp(ts + dts * h, -15.0, 260.0);
         temperature_c = clamp(tc + dtc * h, -15.0, 180.0);
@@ -333,8 +343,13 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
         contact_patch_length_m = 2.0 * contact_patch_half_length(*p, load_n, dpi(*p));
     }
 
-    // Wear: sliding work above normal cornering
-    if (slip_power_w > 18000.0) wear = clamp(wear + (slip_power_w - 18000.0) * 1.2e-9 * dt, 0.0, 1.0);
+    // Wear: tread abrasion in proportion to friction work (Reye 1860; Schallamach & Turner), from every slip,
+    // not only slides: grip-limited cornering wears the tread too. Rate per compound (TireParams::wear_per_mj).
+    if (slip_power_w > 0.0) {
+        static const TireParams kDefaultTyre{};
+        const double per_mj = (p ? p : &kDefaultTyre)->wear_per_mj;
+        wear = clamp(wear + slip_power_w * dt * 1e-6 * per_mj, 0.0, 1.0);
+    }
     // Keep 3-zone surface temperatures synchronized toward surface_c when update() is called directly
     if (imo_spread_c() < 1e-9) {
         inner_c = middle_c = outer_c = surface_c;

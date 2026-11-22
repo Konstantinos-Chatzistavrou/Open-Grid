@@ -208,14 +208,16 @@ RS_TEST(tire_patch) {
                     tc.surface_c, tc.carcass_c(), tc.inner_air_c, p_cold, tc.pressure_kpa,
                     len_cold * 1000.0, len_hot * 1000.0, crr_cold, crr_hot);
 
+        // Heat flows surface -> carcass -> inner air -> ambient (20 C); the air warms only through the carcass, so after
+        // 25 s it has risen ~10 C (the carcass ~20 C: energy balance, no pull toward a set running temperature).
         test::check("3-node thermal gradient: surface > carcass > inner air > ambient",
-                    tc.surface_c > tc.carcass_c() + 5.0 && tc.carcass_c() > tc.inner_air_c + 3.0 && tc.inner_air_c > 40.0);
+                    tc.surface_c > tc.carcass_c() + 5.0 && tc.carcass_c() > tc.inner_air_c + 3.0 && tc.inner_air_c > 25.0);
         test::check("inflation pressure obeys ideal gas law directly from inner_air_c",
-                    std::abs(tc.pressure_kpa - expected_p_gas) < 1e-6 && tc.pressure_kpa > p_cold + 20.0);
+                    std::abs(tc.pressure_kpa - expected_p_gas) < 1e-6 && tc.pressure_kpa > p_cold + 5.0);
         test::check("higher inflation pressure shortens contact patch length 2a",
                     len_hot < len_cold - 0.003);
         test::check("higher inflation pressure lowers rolling resistance C_rr",
-                    crr_hot < crr_cold * 0.97);
+                    crr_hot < crr_cold && rolling_resistance_coeff(p, 30.0, 0.10) < rolling_resistance_coeff(p, 30.0, 0.0) * 0.97);
 
         // Immediate surface overheating grip loss (greasy rubber) with carcass unchanged
         TireCondition cool_surf, hot_surf;
@@ -387,9 +389,12 @@ RS_TEST(tire_patch) {
 
         // Verify TelemetrySample exposes all 3 thermal nodes + pressure + patch length
         const TelemetrySample tel = make_telemetry_sample(sim.last, sim.body.state, sim.vehicle.input(), cfg, 5.2);
+        // the drifting rear tyre's own state, passed through unchanged (and plausibly heated)
         test::check("TelemetrySample exposes surface, carcass, inner-air temps, pressure & patch length",
-                    tel.tire_temp_c[RL] > 95.0 && tel.tire_carcass_temp_c[RL] > 75.0 &&
-                    tel.tire_inner_air_temp_c[RL] > 45.0 && tel.tire_pressure_kpa[RL] > 200.0 &&
+                    tel.tire_temp_c[RL] == rl_end.surface_c && tel.tire_carcass_temp_c[RL] == rl_end.temperature_c &&
+                    tel.tire_inner_air_temp_c[RL] == rl_end.inner_air_c && tel.tire_pressure_kpa[RL] == rl_end.pressure_kpa &&
+                    tel.tire_patch_length_m[RL] == rl_end.contact_patch_length_m &&
+                    tel.tire_temp_c[RL] > tel.tire_carcass_temp_c[RL] && tel.tire_pressure_kpa[RL] > cfg.tire_rear.p_cold_kpa &&
                     tel.tire_patch_length_m[RL] > 0.10);
     }
 }

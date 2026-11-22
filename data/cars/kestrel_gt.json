@@ -166,6 +166,7 @@
     }
   },
   "tire_front": {
+    "compound": "semi_slick",
     "size": "265/35 R19",
     "radius_m": 0.327,
     "inertia_kgm2": 1.2,
@@ -280,6 +281,7 @@
     "mbelt_kg": 5.6865
   },
   "tire_rear": {
+    "compound": "semi_slick",
     "size": "305/30 R19",
     "radius_m": 0.328,
     "inertia_kgm2": 1.35,

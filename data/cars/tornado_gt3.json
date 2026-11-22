@@ -166,6 +166,7 @@
     }
   },
   "tire_front": {
+    "compound": "slick",
     "size": "245/35 R19",
     "radius_m": 0.334,
     "inertia_kgm2": 1.2,
@@ -280,6 +281,7 @@
     "mbelt_kg": 6.1949
   },
   "tire_rear": {
+    "compound": "slick",
     "size": "285/30 R19",
     "radius_m": 0.348,
     "inertia_kgm2": 1.35,

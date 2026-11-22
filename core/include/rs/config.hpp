@@ -80,6 +80,10 @@ struct TireParams {
     double pdyp1 = 0.4, pdyp2 = 0.0, pdyp3 = 0.0, pdyp4 = 0.0, pkyp1 = 1.0;
     // Thermal window: core/surface blend temperature with full grip (C), and the half-width of the window.
     double temp_optimal_c = 90, temp_window_c = 25;
+    // Tyre temperature at reset (C, carcass and tread: warmed, like the brakes) and tread wear per MJ of friction
+    // work (wear 1 = tread gone). Set together by the car file's "compound" (road / semi_slick / slick).
+    double start_c = 80;
+    double wear_per_mj = 1.0 / 90.0;
     // PAC2002 / MF 6.2 / Siemens Simcenter Tire 2606 physical carcass, belt & non-linear rolling radius parameters
     // (defaults from measured Audi 245/40 R18 PAC2002 lab dataset, data/tires/audi_245_40R18_pac2002.tir):
     double vertical_damping = 2000.0; // N s/m, radial tire carcass damping (VERTICAL_DAMPING)
@@ -251,6 +255,10 @@ struct CarConfig {
 };
 
 // Throws std::runtime_error with a readable message on missing/invalid fields.
+/** Tyre compound presets ("road", "semi_slick", "slick"): thermal window, reset temperature, tread wear rate.
+ *  Throws on an unknown name. Car files set it per tyre with "compound"; explicit keys still override it. */
+void apply_compound(TireParams& t, const std::string& compound, const std::string& ctx = "tyre");
+
 CarConfig load_car_config(const std::string& path);
 CarConfig parse_car_config(const std::string& json_text);
 

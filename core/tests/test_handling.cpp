@@ -101,80 +101,86 @@ std::unique_ptr<Simulation> circle_run(const CarConfig& cfg, double R, double v,
 
 // ---------------------------------------------------------------- tyre temperature, wear, pressure
 RS_TEST(tyre_thermal) {
-    const CarConfig cfg = test::car();
-    const TireParams& tp = cfg.tire_front;
+    const CarConfig road = test::car();                   // Vela GT: road compound (its reference car runs road tyres)
+    CarConfig slick = road;
+    apply_compound(slick.tire_front, "slick");
+    apply_compound(slick.tire_rear, "slick");
+    auto factor = [](const TireParams& tp, double t) {
+        TireCondition c;
+        c.temperature_c = c.surface_c = c.flash_c = c.inner_c = c.middle_c = c.outer_c = t;
+        return c.grip_factor(&tp);
+    };
     {
-        auto factor = [&](double t) {
-            TireCondition c;
-            c.temperature_c = c.surface_c = c.flash_c = c.inner_c = c.middle_c = c.outer_c = t;
-            return c.grip_factor(&tp);
-        };
-        double f_opt = factor(tp.temp_optimal_c), f_cold = factor(20), f_hot = factor(160);
-        std::printf("         grip factor: %.3f at 20 C, %.3f at the optimum (%.0f C), %.3f at 160 C\n", f_cold, f_opt, tp.temp_optimal_c, f_hot);
-        test::check_range("grip factor inside the working window", f_opt, 0.999, 1.001, "-");
-        test::check("cold tread grips less than the working window", f_cold < f_opt - 0.01);
-        test::check("cooked tread grips less than the working window", f_hot < f_opt - 0.01);
-    }
-    // Cruise: printed only (cooling vs rolling hysteresis at speed is tuning, not a law).
-    {
-        const double speeds[3] = {10, 30, 55};
-        double end_t[3];
+        TireParams semi = road.tire_front;
+        apply_compound(semi, "semi_slick");
+        const TireParams* tps[3] = {&road.tire_front, &semi, &slick.tire_front};
+        const char* names[3] = {"road", "semi-slick", "slick"};
         for (int i = 0; i < 3; ++i) {
-            auto s = test::make_sim(cfg);
-            s->reset({}, 0, speeds[i], 5);
-            test::SpeedController sc;
-            while (s->time < 90) {
-                DriverInput in;
-                in.gear = 5;
-                sc.apply(*s, speeds[i], in);
-                s->step(in);
-            }
-            end_t[i] = s->last.wheels[RL].condition.temperature_c;
+            const TireParams& tp = *tps[i];
+            std::printf("         %-10s grip factor: %.3f at 0 C, %.3f at 20 C, 1 at %.0f +/- %.0f C, %.3f at 160 C\n", names[i],
+                        factor(tp, 0), factor(tp, 20), tp.temp_optimal_c, tp.temp_window_c, factor(tp, 160));
+            test::check_range("grip factor inside the working window", factor(tp, tp.temp_optimal_c), 0.999, 1.001, "-");
+            test::check("cooked tread grips less than the working window", factor(tp, 160) < 0.99);
         }
-        std::printf("         carcass after 90 s cruise from 80 C: 10 m/s %.1f, 30 m/s %.1f, 55 m/s %.1f C\n", end_t[0], end_t[1], end_t[2]);
-        test::check("cruise temperatures are finite", std::isfinite(end_t[0] + end_t[1] + end_t[2]));
+        // summer compounds harden below ~7 C (Continental, Uniroyal, Pirelli) and work above it
+        test::check("road tyre: full grip at 10 C, less at 0 C", factor(road.tire_front, 10) > 0.999 && factor(road.tire_front, 0) < 1.0);
+        test::check("slick: a cold (20 C) slick has lost grip", factor(slick.tire_front, 20) < 0.97);
     }
-    // Cornering heats, and the loaded outer tyre most (left-hand circle: the right-hand tyres are outside).
+    // No set running temperature: cruising, hot tyres cool toward the air and cold ones warm only a little above it.
     {
-        auto s = circle_run(cfg, 45.72, 19.0, 60, 45.0);
+        auto cruise_from = [&](double t0) {
+            auto s = test::make_sim(road);
+            s->reset({}, 0, 25, 6);
+            s->vehicle.set_tyres(t0, 0);
+            test::SpeedController sc;
+            while (s->time < 300) { DriverInput in; in.gear = 6; sc.apply(*s, 25, in); s->step(in); }
+            return s->last.wheels[RL].condition;
+        };
+        const TireCondition hot = cruise_from(90), cold = cruise_from(20);
+        const double air = hot.ambient_air_c;
+        std::printf("         5 min at 90 km/h, air %.0f C: from 90 C -> carcass %.1f C; from 20 C -> carcass %.1f C, cavity air %.1f C, %.0f kPa\n",
+                    air, hot.temperature_c, cold.temperature_c, cold.inner_air_c, cold.pressure_kpa);
+        test::check("cruising cools hot tyres toward the air", hot.temperature_c < 60);
+        test::check("rolling hysteresis warms cold tyres above the air, not to a set point", cold.temperature_c > air && cold.temperature_c < air + 20);
+    }
+    // Cornering heats, the loaded outer tyre most (left-hand circle: the right-hand tyres are outside), and wears.
+    {
+        auto s = circle_run(road, 45.72, 19.0, 60, 45.0);
         const TireCondition& in_c = s->last.wheels[FL].condition;
         const TireCondition& out_c = s->last.wheels[FR].condition;
-        std::printf("         ~0.8 g left circle 60 s from 45 C: outer FR %.1f C, inner FL %.1f C, wear FR %.5f\n",
-                    out_c.temperature_c, in_c.temperature_c, out_c.wear);
+        const double km = 19.0 * 60 / 1000;
+        std::printf("         ~0.8 g left circle 60 s from 45 C: outer FR %.1f C, inner FL %.1f C, wear FR %.5f (%.0f km of this to a worn tread)\n",
+                    out_c.temperature_c, in_c.temperature_c, out_c.wear, km / std::max(out_c.wear, 1e-9));
         test::check("cornering heats the tyres", out_c.temperature_c > 50);
         test::check("the loaded outer tyre runs hotter than the inner one", out_c.temperature_c > in_c.temperature_c);
-        // Printed, not asserted: by design (tire.cpp, 2026-11-05) tread wear only accrues while a tyre slides
-        // (> 18 kW of slip power), so grip-limited cornering does not wear it. Real treads abrade in proportion
-        // to friction work with no such threshold; whether to change that is an open design question.
+        test::check("grip-limited cornering wears the tread (friction work, no sliding threshold)", out_c.wear > 0 && out_c.wear > in_c.wear);
         test::check("hot tyres carry more pressure than cold ones (ideal gas)",
-                    out_c.pressure_kpa > in_c.pressure_kpa && out_c.pressure_kpa > tp.p_cold_kpa);
+                    out_c.pressure_kpa > in_c.pressure_kpa && out_c.pressure_kpa > road.tire_front.p_cold_kpa);
     }
-    // Grip vs temperature: a fast ramp from near the limit, so the tyres are still at their set temperature
-    // (on the slow ramp, cold tyres are warm before the car reaches the limit; printed for comparison).
+    // Grip vs temperature, fast ramp from near the limit so the tyres are still at their set temperature.
     {
-        const double g_cold = skid_g(cfg, 20, 0, 0.8, 18, 1.5), g_ok = skid_g(cfg, tp.temp_optimal_c, 0, 0.8, 18, 1.5);
-        const double g_hot = skid_g(cfg, 150, 0, 0.8, 18, 1.5);
-        std::printf("         skidpad, fast ramp: cold (20 C) %.3f g, warm (%.0f C) %.3f g, cooked (150 C) %.3f g\n", g_cold, tp.temp_optimal_c, g_ok, g_hot);
-        // Printed, not asserted (open finding, 2026-11-22): the compound alone loses ~9 % at 20 C (grip factor
-        // above), yet the car grips about the same, so another term (cold pressure via the MF 6.1 pressure
-        // coefficients, or the rib WLF grip) cancels it. Real cold tyres grip noticeably less.
-        test::check("overheated tyres: less grip than warm ones", g_hot < g_ok);
+        const double sl_cold = skid_g(slick, 20, 0, 0.8, 18, 1.5), sl_ok = skid_g(slick, 90, 0, 0.8, 18, 1.5);
+        const double rd_cold = skid_g(road, 15, 0, 0.8, 18, 1.5), rd_ok = skid_g(road, 50, 0, 0.8, 18, 1.5);
+        const double rd_hot = skid_g(road, 150, 0, 0.8, 18, 1.5);
+        std::printf("         fast skidpad: slick cold (20 C) %.3f g vs warm (90 C) %.3f g; road cold (15 C) %.3f g vs warm (50 C) %.3f g, cooked (150 C) %.3f g\n",
+                    sl_cold, sl_ok, rd_cold, rd_ok, rd_hot);
+        test::check("cold slicks grip less than warm ones", sl_cold < 0.97 * sl_ok);
+        test::check("road tyres grip at 15 C (summer compound works above ~7 C)", rd_cold > 0.97 * rd_ok);
+        test::check("cooked road tyres grip less", rd_hot < rd_ok);
     }
-    const double g_warm = skid_g(cfg, tp.temp_optimal_c, 0);
-    std::printf("         skidpad, slow ramp: cold start (20 C) %.3f g, warm %.3f g\n", skid_g(cfg, 20, 0), g_warm);
     // Wear.
-    const double g_w50 = skid_g(cfg, tp.temp_optimal_c, 0.5), g_w100 = skid_g(cfg, tp.temp_optimal_c, 1.0);
-    std::printf("         skidpad vs wear: new %.3f g, 50 %% %.3f g, 100 %% %.3f g\n", g_warm, g_w50, g_w100);
-    test::check("worn tyres grip less, and less the more worn", g_w100 < g_w50 && g_w50 < g_warm);
+    const double g_new = skid_g(road, 50, 0), g_w50 = skid_g(road, 50, 0.5), g_w100 = skid_g(road, 50, 1.0);
+    std::printf("         skidpad vs wear: new %.3f g, 50 %% %.3f g, 100 %% %.3f g\n", g_new, g_w50, g_w100);
+    test::check("worn tyres grip less, and less the more worn", g_w100 < g_w50 && g_w50 < g_new);
     // Cold pressure, printed: in Magic Formula 6.1 data the peak friction falls as inflation rises (smaller
     // patch) while cornering stiffness peaks near nominal, so 'the set pressure grips best' is not a law.
     {
         auto with_cold = [&](double kpa) {
-            CarConfig c = cfg;
+            CarConfig c = road;
             c.tire_front.p_cold_kpa = c.tire_rear.p_cold_kpa = kpa;
-            return skid_g(c, tp.temp_optimal_c, 0);
+            return skid_g(c, 50, 0);
         };
-        const double set = cfg.tire_front.p_cold_kpa;
+        const double set = road.tire_front.p_cold_kpa;
         const double g_low = with_cold(set - 50), g_ok = with_cold(set), g_high = with_cold(set + 70);
         std::printf("         skidpad vs cold pressure: %.0f kPa %.3f g, %.0f kPa %.3f g, %.0f kPa %.3f g\n",
                     set - 50, g_low, set, g_ok, set + 70, g_high);
