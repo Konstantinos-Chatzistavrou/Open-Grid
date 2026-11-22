@@ -69,7 +69,7 @@ export interface AssistToggles {
 
 export interface CarInfo {
   mass: number; inertia: [number, number, number]; cgHeight: number;
-  redline: number; idle: number; surfaces: { asphalt: number; pavement: number; wall: number };
+  redline: number; idle: number; surfaces: { asphalt: number; pavement: number; wall: number }; driven: { front: boolean; rear: boolean };
 }
 
 export class CoreCar {
@@ -92,6 +92,7 @@ export class CoreCar {
     this.info = {
       mass: b[0], inertia: [b[1], b[2], b[3]], cgHeight: b[4], redline: b[7], idle: b[8],
       surfaces: { asphalt: b[9], pavement: b[10], wall: b[11] },
+      driven: { front: b[12] > 0.5, rear: b[13] > 0.5 },
     };
   }
 

@@ -136,6 +136,8 @@ EMSCRIPTEN_KEEPALIVE void rs_info(int id) {
     b[9] = c.cfg.surface_index("asphalt");
     b[10] = c.cfg.surface_index("pavement");
     b[11] = c.cfg.surface_index("wall");
+    b[12] = c.cfg.front.driven ? 1 : 0;   // driven axles (garage dyno drums)
+    b[13] = c.cfg.rear.driven ? 1 : 0;
 }
 
 // Start rolling at speed (m/s) in a gear (-1 = keep), clearing slips.
