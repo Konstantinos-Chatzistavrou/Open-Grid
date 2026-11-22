@@ -1,37 +1,21 @@
 {
-  "schema_version": 5,
-  "generator": "tools/ue5/render_engine_sim_stems.py (AngeTheGreat engine-sim MIT) + tools/ue5/extract_real_audio_stems.py (CC-BY-3.0)",
-  "license": "MIT (AngeTheGreat engine-sim rendered piston stems); CC-BY-3.0 (Wikimedia Commons real RX-7 rotary, turbo BOV/spool, anti-lag bangs, BMW M3 GTR gear whine); CC-BY-NC-4.0 (tyre/surface stems)",
-  "provenance": "26 piston engine RPM loops rendered via AngeTheGreat's MIT-licensed thermodynamic engine-sim (https://github.com/ange-yaghi/engine-sim) headless dynamometer; 4 RX-7 rotary loops and 6 turbo/exhaust/gearbox FX stems extracted from real CC-BY-3.0 Wikimedia Commons recordings; 3 tyre/kerb loops procedural.",
+  "schema_version": 6,
+  "generator": "tools/ue5/render_engine_sim_stems.py (AngeTheGreat engine-sim MIT) + verified speech-free CC-BY-3.0 FX",
+  "license": "MIT (AngeTheGreat engine-sim); CC-BY-3.0 (Aventador SVJ bang & BMW M3 GTR gear whine); CC-BY-NC-4.0 (OpenGrid rotary/turbo/tyre DSP)",
+  "provenance": "26 piston engine RPM loops rendered via AngeTheGreat's MIT-licensed thermodynamic engine-sim (https://github.com/ange-yaghi/engine-sim) headless dynamometer (full 1.50 s non-tiled loops); 2 verified speech-free CC-BY-3.0 real FX stems (Lamborghini Aventador SVJ bang, BMW M3 GTR gearbox whine); 11 zero-voice procedural stems (4-rotor rotary, turbo spool/BOV flutter, 2 anti-lag bangs, 3 tyre/kerb loops).",
   "sample_rate_hz": 48000,
   "bit_depth": 24,
   "channels": 1,
   "output_dir": "ue5/Import/Audio",
   "web_ogg_dir": "web/public/assets/audio",
-  "web_ogg_total_bytes": 644542,
+  "web_ogg_total_bytes": 652720,
   "stem_count": 39,
   "sources_used": [
     {
-      "key": "flat6_gt3_992_fi",
-      "wikimedia_title": "File:Porsche 911 GT3 (992) with Fi Exhaust - engine and exhaust sound (YouTube -ZK8A1PT-4k).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Porsche_911_GT3_(992)_with_Fi_Exhaust_-_engine_and_exhaust_sound_(YouTube_-ZK8A1PT-4k).opus",
-      "author": "CARSMANIA (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "flat6_gt3_997",
-      "wikimedia_title": "File:Porsche 911 GT3 (997) - engine and exhaust sound (YouTube Eh89UkPfUfA).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Porsche_911_GT3_(997)_-_engine_and_exhaust_sound_(YouTube_Eh89UkPfUfA).opus",
-      "author": "CARSMANIA (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "flat6_gt3rs_991",
-      "wikimedia_title": "File:Porsche 911 GT3 RS (991) - engine and exhaust sound (YouTube otznJ2rBoks).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Porsche_911_GT3_RS_(991)_-_engine_and_exhaust_sound_(YouTube_otznJ2rBoks).opus",
-      "author": "Automotion Media (YouTube)",
+      "key": "v12_svj_fi",
+      "wikimedia_title": "File:Lamborghini Aventador SVJ with Fi Exhaust - engine and exhaust sound (YouTube NCbywZoYDKE).opus",
+      "commons_url": "https://commons.wikimedia.org/wiki/File:Lamborghini_Aventador_SVJ_with_Fi_Exhaust_-_engine_and_exhaust_sound_(YouTube_NCbywZoYDKE).opus",
+      "author": "FiExhaust (YouTube)",
       "licence": "CC-BY-3.0",
       "licence_url": "https://creativecommons.org/licenses/by/3.0/"
     },
@@ -42,118 +26,6 @@
       "author": "Binar Yustanto (YouTube)",
       "licence": "CC-BY-3.0",
       "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "fx_wrx_tomei",
-      "wikimedia_title": "File:Subaru WRX STI with Tomei exhaust - engine and exhaust sound (YouTube t9X874j-g1E).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Subaru_WRX_STI_with_Tomei_exhaust_-_engine_and_exhaust_sound_(YouTube_t9X874j-g1E).opus",
-      "author": "Light Heart Media (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "i6_gtr_fi",
-      "wikimedia_title": "File:Nissan GT-R with Fi Exhaust - engine and exhaust sound (YouTube FC-YlgfD7sc).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Nissan_GT-R_with_Fi_Exhaust_-_engine_and_exhaust_sound_(YouTube_FC-YlgfD7sc).opus",
-      "author": "FiExhaust (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "i6_r34",
-      "wikimedia_title": "File:Nissan Skyline GT-R R34 - engine and exhaust sound (YouTube GWgYGT9IM4E).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Nissan_Skyline_GT-R_R34_-_engine_and_exhaust_sound_(YouTube_GWgYGT9IM4E).opus",
-      "author": "Matteo Torrisi Officina Del Pilota (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "i6_supra_a80",
-      "wikimedia_title": "File:Toyota Supra (A80) - engine and exhaust sound (YouTube YlRjnMnHRO4).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Toyota_Supra_(A80)_-_engine_and_exhaust_sound_(YouTube_YlRjnMnHRO4).opus",
-      "author": "Fabio Rojas Pichardo (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "rotary_rx7",
-      "wikimedia_title": "File:Mazda RX-7 - engine and exhaust sound (YouTube 4z0y1H2REvE).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Mazda_RX-7_-_engine_and_exhaust_sound_(YouTube_4z0y1H2REvE).opus",
-      "author": "Taz Ringer (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "v10_huracan",
-      "wikimedia_title": "File:Lamborghini Huracan Performante - engine and exhaust sound (YouTube QsDJ3Y7k4qg).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Lamborghini_Huracan_Performante_-_engine_and_exhaust_sound_(YouTube_QsDJ3Y7k4qg).opus",
-      "author": "NewsTechCars (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "v10_huracan_fi",
-      "wikimedia_title": "File:Lamborghini Hurac\u00e1n Performante with Fi Exhaust system - engine and exhaust sound (YouTube p4F3h9Q5Lpo).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Lamborghini_Hurac%C3%A1n_Performante_with_Fi_Exhaust_system_-_engine_and_exhaust_sound_(YouTube_p4F3h9Q5Lpo).opus",
-      "author": "FiExhaust (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "v12_812",
-      "wikimedia_title": "File:Ferrari 812 Superfast - engine and exhaust sound (YouTube UbQ5e4z5WXc).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Ferrari_812_Superfast_-_engine_and_exhaust_sound_(YouTube_UbQ5e4z5WXc).opus",
-      "author": "Hungarian Supercar Spotters (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "v12_f12_novitec",
-      "wikimedia_title": "File:Ferrari F12 with Novitec exhaust - engine and exhaust sound (YouTube tsqLnXjDGW4).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Ferrari_F12_with_Novitec_exhaust_-_engine_and_exhaust_sound_(YouTube_tsqLnXjDGW4).opus",
-      "author": "NOVITEC (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "v12_svj_fi",
-      "wikimedia_title": "File:Lamborghini Aventador SVJ with Fi Exhaust - engine and exhaust sound (YouTube NCbywZoYDKE).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Lamborghini_Aventador_SVJ_with_Fi_Exhaust_-_engine_and_exhaust_sound_(YouTube_NCbywZoYDKE).opus",
-      "author": "FiExhaust (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "v8c_mustang",
-      "wikimedia_title": "File:Ford Mustang GT (S550) - engine and exhaust sound (YouTube 2ceiDjGgpI8).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Ford_Mustang_GT_(S550)_-_engine_and_exhaust_sound_(YouTube_2ceiDjGgpI8).opus",
-      "author": "Cestni dirka\u010d (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "v8c_z06",
-      "wikimedia_title": "File:Chevrolet Corvette C6 Z06 - engine and exhaust sound (YouTube N3I-54kjT7I).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Chevrolet_Corvette_C6_Z06_-_engine_and_exhaust_sound_(YouTube_N3I-54kjT7I).opus",
-      "author": "Neighborhood Car Reviews (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "v8f_458_capristo",
-      "wikimedia_title": "File:Ferrari 458 Spider with Capristo exhaust - engine and exhaust sound (YouTube JktJe pzQNU).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Ferrari_458_Spider_with_Capristo_exhaust_-_engine_and_exhaust_sound_(YouTube_JktJe_pzQNU).opus",
-      "author": "RichReviews (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
-    },
-    {
-      "key": "v8f_458_novitec",
-      "wikimedia_title": "File:Ferrari 458 Speciale with Novitec exhaust - engine and exhaust sound (YouTube qlNhpCLAJR4).opus",
-      "commons_url": "https://commons.wikimedia.org/wiki/File:Ferrari_458_Speciale_with_Novitec_exhaust_-_engine_and_exhaust_sound_(YouTube_qlNhpCLAJR4).opus",
-      "author": "Supercars67 (YouTube)",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/"
     }
   ],
   "stems": [
@@ -162,7 +34,7 @@
       "filename": "eng_flat6_1000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_flat6_1000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_flat6_1000.ogg",
-      "ogg_bytes": 16014,
+      "ogg_bytes": 16485,
       "category": "engine",
       "description": "1000 RPM AngeTheGreat engine-sim Porsche 911 GT3 Flat-6 idle loop",
       "loop": true,
@@ -174,14 +46,13 @@
       "reference_rpm": 1000,
       "fundamental_hz": 50.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.56839,
-      "boundary_delta": 0.000399,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.57427,
+      "boundary_delta": 0.00035,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "flat6",
         "throttle": 0.06,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim flat6 target=1000 actual_avg_rpm=1000 thr=0.06 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_flat6_1000_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -189,7 +60,7 @@
       "filename": "eng_flat6_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_flat6_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_flat6_low.ogg",
-      "ogg_bytes": 16120,
+      "ogg_bytes": 15375,
       "category": "engine",
       "description": "2400 RPM AngeTheGreat engine-sim Porsche 911 GT3 Flat-6 low-mid pull loop",
       "loop": true,
@@ -201,14 +72,13 @@
       "reference_rpm": 2400,
       "fundamental_hz": 120.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.45564,
-      "boundary_delta": 0.004983,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.46344,
+      "boundary_delta": 0.00412,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "flat6",
         "throttle": 0.52,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim flat6 target=2400 actual_avg_rpm=2400 thr=0.52 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_flat6_low_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -216,7 +86,7 @@
       "filename": "eng_flat6_4000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_flat6_4000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_flat6_4000.ogg",
-      "ogg_bytes": 16993,
+      "ogg_bytes": 16889,
       "category": "engine",
       "description": "4800 RPM AngeTheGreat engine-sim Porsche 911 GT3 Flat-6 titanium howl loop",
       "loop": true,
@@ -228,14 +98,13 @@
       "reference_rpm": 4800,
       "fundamental_hz": 240.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.61712,
-      "boundary_delta": 0.001525,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.62111,
+      "boundary_delta": 0.001633,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "flat6",
         "throttle": 0.85,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim flat6 target=4800 actual_avg_rpm=4800 thr=0.85 samples=111183 (2.52116s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_flat6_4000_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -243,7 +112,7 @@
       "filename": "eng_flat6_7800.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_flat6_7800.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_flat6_7800.ogg",
-      "ogg_bytes": 17069,
+      "ogg_bytes": 17134,
       "category": "engine",
       "description": "7800 RPM AngeTheGreat engine-sim Porsche 911 GT3 Flat-6 redline scream loop",
       "loop": true,
@@ -255,14 +124,13 @@
       "reference_rpm": 7800,
       "fundamental_hz": 390.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.78886,
-      "boundary_delta": 0.002547,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.80283,
+      "boundary_delta": 0.001378,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "flat6",
         "throttle": 1.0,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim flat6 target=7800 actual_avg_rpm=7800 thr=1 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_flat6_7800_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -270,7 +138,7 @@
       "filename": "eng_v12_1000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v12_1000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v12_1000.ogg",
-      "ogg_bytes": 17767,
+      "ogg_bytes": 17867,
       "category": "engine",
       "description": "1000 RPM AngeTheGreat engine-sim Ferrari V12 idle loop",
       "loop": true,
@@ -282,14 +150,13 @@
       "reference_rpm": 1000,
       "fundamental_hz": 100.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.85102,
-      "boundary_delta": 0.000601,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.8986,
+      "boundary_delta": 0.000155,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v12",
         "throttle": 0.06,
-        "loop_corr": 0.907,
-        "stdout": "OK engine-sim v12 target=1000 actual_avg_rpm=1000 thr=0.06 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v12_1000_raw44.wav"
+        "loop_corr": 0.49
       }
     },
     {
@@ -297,7 +164,7 @@
       "filename": "eng_v12_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v12_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v12_low.ogg",
-      "ogg_bytes": 17440,
+      "ogg_bytes": 17288,
       "category": "engine",
       "description": "2500 RPM AngeTheGreat engine-sim Ferrari V12 low-mid pull loop",
       "loop": true,
@@ -309,14 +176,13 @@
       "reference_rpm": 2500,
       "fundamental_hz": 250.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.8129,
-      "boundary_delta": 8.4e-05,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.8056,
+      "boundary_delta": 6.2e-05,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v12",
         "throttle": 0.52,
-        "loop_corr": 0.995,
-        "stdout": "OK engine-sim v12 target=2500 actual_avg_rpm=2500 thr=0.52 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v12_low_raw44.wav"
+        "loop_corr": 0.995
       }
     },
     {
@@ -324,7 +190,7 @@
       "filename": "eng_v12_5000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v12_5000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v12_5000.ogg",
-      "ogg_bytes": 17316,
+      "ogg_bytes": 17216,
       "category": "engine",
       "description": "5000 RPM AngeTheGreat engine-sim Ferrari V12 F1 soprano howl loop",
       "loop": true,
@@ -336,14 +202,13 @@
       "reference_rpm": 5000,
       "fundamental_hz": 500.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.83478,
-      "boundary_delta": 3.1e-05,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.73246,
+      "boundary_delta": 0.000208,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v12",
         "throttle": 0.85,
-        "loop_corr": 0.992,
-        "stdout": "OK engine-sim v12 target=5000 actual_avg_rpm=5000 thr=0.85 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v12_5000_raw44.wav"
+        "loop_corr": 0.992
       }
     },
     {
@@ -351,7 +216,7 @@
       "filename": "eng_v12_8000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v12_8000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v12_8000.ogg",
-      "ogg_bytes": 16873,
+      "ogg_bytes": 16865,
       "category": "engine",
       "description": "8000 RPM AngeTheGreat engine-sim Ferrari V12 redline scream loop",
       "loop": true,
@@ -363,14 +228,13 @@
       "reference_rpm": 8000,
       "fundamental_hz": 800.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.52938,
-      "boundary_delta": 0.000489,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.54155,
+      "boundary_delta": 0.000747,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v12",
         "throttle": 1.0,
-        "loop_corr": 0.999,
-        "stdout": "OK engine-sim v12 target=8000 actual_avg_rpm=8000 thr=1 samples=112554 (2.55224s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v12_8000_raw44.wav"
+        "loop_corr": 0.999
       }
     },
     {
@@ -378,7 +242,7 @@
       "filename": "eng_v10_1000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v10_1000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v10_1000.ogg",
-      "ogg_bytes": 16328,
+      "ogg_bytes": 16405,
       "category": "engine",
       "description": "1000 RPM AngeTheGreat engine-sim Lexus LFA V10 idle loop",
       "loop": true,
@@ -390,14 +254,13 @@
       "reference_rpm": 1000,
       "fundamental_hz": 83.3,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.84988,
-      "boundary_delta": 6.2e-05,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.635,
+      "boundary_delta": 0.000101,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v10",
         "throttle": 0.06,
-        "loop_corr": 0.999,
-        "stdout": "OK engine-sim v10 target=1000 actual_avg_rpm=1000 thr=0.06 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v10_1000_raw44.wav"
+        "loop_corr": 0.994
       }
     },
     {
@@ -405,7 +268,7 @@
       "filename": "eng_v10_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v10_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v10_low.ogg",
-      "ogg_bytes": 16659,
+      "ogg_bytes": 16986,
       "category": "engine",
       "description": "2400 RPM AngeTheGreat engine-sim Lexus LFA V10 low-mid pull loop",
       "loop": true,
@@ -417,14 +280,13 @@
       "reference_rpm": 2400,
       "fundamental_hz": 200.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.8738,
-      "boundary_delta": 6.6e-05,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.68089,
+      "boundary_delta": 7e-06,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v10",
         "throttle": 0.52,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim v10 target=2400 actual_avg_rpm=2400 thr=0.52 samples=111985 (2.53934s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v10_low_raw44.wav"
+        "loop_corr": 0.999
       }
     },
     {
@@ -432,7 +294,7 @@
       "filename": "eng_v10_5500.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v10_5500.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v10_5500.ogg",
-      "ogg_bytes": 15423,
+      "ogg_bytes": 16712,
       "category": "engine",
       "description": "5200 RPM AngeTheGreat engine-sim Lexus LFA V10 angel howl loop",
       "loop": true,
@@ -444,14 +306,13 @@
       "reference_rpm": 5200,
       "fundamental_hz": 433.3,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.7516,
-      "boundary_delta": 0.000111,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.67406,
+      "boundary_delta": 9.2e-05,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v10",
         "throttle": 0.85,
-        "loop_corr": 0.999,
-        "stdout": "OK engine-sim v10 target=5200 actual_avg_rpm=5200 thr=0.85 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v10_5500_raw44.wav"
+        "loop_corr": 0.979
       }
     },
     {
@@ -459,7 +320,7 @@
       "filename": "eng_v10_7800.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v10_7800.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v10_7800.ogg",
-      "ogg_bytes": 17004,
+      "ogg_bytes": 16721,
       "category": "engine",
       "description": "7800 RPM AngeTheGreat engine-sim Lexus LFA V10 redline scream loop",
       "loop": true,
@@ -471,14 +332,13 @@
       "reference_rpm": 7800,
       "fundamental_hz": 650.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.62519,
-      "boundary_delta": 1.6e-05,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.55133,
+      "boundary_delta": 9.9e-05,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v10",
         "throttle": 1.0,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim v10 target=7800 actual_avg_rpm=7800 thr=1 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v10_7800_raw44.wav"
+        "loop_corr": 0.998
       }
     },
     {
@@ -486,9 +346,9 @@
       "filename": "eng_rotary4_1100.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_rotary4_1100.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_rotary4_1100.ogg",
-      "ogg_bytes": 18105,
+      "ogg_bytes": 21699,
       "category": "engine",
-      "description": "1100 RPM Real Mazda RX-7 Rotary brap idle loop",
+      "description": "1100 RPM 4-Rotor bridge-port BRAP idle loop",
       "loop": true,
       "sample_rate_hz": 48000,
       "bit_depth": 24,
@@ -496,43 +356,20 @@
       "duration_s": 1.5,
       "num_frames": 72000,
       "reference_rpm": 1100,
-      "fundamental_hz": 55.0,
-      "rms_dbfs": -12.5,
-      "peak_linear": 0.8252,
-      "boundary_delta": 0.000304,
-      "license": "CC-BY-3.0",
-      "source": {
-        "wikimedia_title": "File:Mazda RX-7 - engine and exhaust sound (YouTube 4z0y1H2REvE).opus",
-        "commons_url": "https://commons.wikimedia.org/wiki/File:Mazda_RX-7_-_engine_and_exhaust_sound_(YouTube_4z0y1H2REvE).opus",
-        "author": "Taz Ringer (YouTube)",
-        "licence": "CC-BY-3.0",
-        "licence_url": "https://creativecommons.org/licenses/by/3.0/",
-        "extract_window_s": [
-          216.05,
-          216.76
-        ]
-      },
-      "extraction": {
-        "source_key": "rotary_rx7",
-        "start_s": 216.05,
-        "end_s": 216.76,
-        "detected_f0_hz": 51.9,
-        "target_f0_hz": 55.0,
-        "pitch_lock_ratio": 1.059,
-        "confidence": 0.77,
-        "loop_corr": 0.64,
-        "n_harmonics": 5.0,
-        "warm_body": 0.89
-      }
+      "fundamental_hz": 74.7,
+      "rms_dbfs": -13.036,
+      "peak_linear": 0.93787,
+      "boundary_delta": 0.000235,
+      "license": "CC-BY-NC-4.0"
     },
     {
       "id": "eng_rotary4_low",
       "filename": "eng_rotary4_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_rotary4_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_rotary4_low.ogg",
-      "ogg_bytes": 17861,
+      "ogg_bytes": 19432,
       "category": "engine",
-      "description": "2600 RPM Real Mazda RX-7 Rotary low-mid pull loop",
+      "description": "2600 RPM 4-Rotor bridge-port pull loop",
       "loop": true,
       "sample_rate_hz": 48000,
       "bit_depth": 24,
@@ -540,43 +377,20 @@
       "duration_s": 1.5,
       "num_frames": 72000,
       "reference_rpm": 2600,
-      "fundamental_hz": 110.0,
-      "rms_dbfs": -12.5,
-      "peak_linear": 0.58532,
-      "boundary_delta": 0.000111,
-      "license": "CC-BY-3.0",
-      "source": {
-        "wikimedia_title": "File:Mazda RX-7 - engine and exhaust sound (YouTube 4z0y1H2REvE).opus",
-        "commons_url": "https://commons.wikimedia.org/wiki/File:Mazda_RX-7_-_engine_and_exhaust_sound_(YouTube_4z0y1H2REvE).opus",
-        "author": "Taz Ringer (YouTube)",
-        "licence": "CC-BY-3.0",
-        "licence_url": "https://creativecommons.org/licenses/by/3.0/",
-        "extract_window_s": [
-          259.75,
-          260.26
-        ]
-      },
-      "extraction": {
-        "source_key": "rotary_rx7",
-        "start_s": 259.75,
-        "end_s": 260.26,
-        "detected_f0_hz": 73.3,
-        "target_f0_hz": 110.0,
-        "pitch_lock_ratio": 1.499,
-        "confidence": 0.81,
-        "loop_corr": 0.795,
-        "n_harmonics": 3.7,
-        "warm_body": 0.97
-      }
+      "fundamental_hz": 173.3,
+      "rms_dbfs": -13.0,
+      "peak_linear": 0.84207,
+      "boundary_delta": 0.000163,
+      "license": "CC-BY-NC-4.0"
     },
     {
       "id": "eng_rotary4_6000",
       "filename": "eng_rotary4_6000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_rotary4_6000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_rotary4_6000.ogg",
-      "ogg_bytes": 18207,
+      "ogg_bytes": 19942,
       "category": "engine",
-      "description": "5500 RPM Real Mazda RX-7 Rotary high-rev scream loop",
+      "description": "5500 RPM 4-Rotor 787B peripheral-port howl loop",
       "loop": true,
       "sample_rate_hz": 48000,
       "bit_depth": 24,
@@ -584,43 +398,20 @@
       "duration_s": 1.5,
       "num_frames": 72000,
       "reference_rpm": 5500,
-      "fundamental_hz": 183.3,
-      "rms_dbfs": -12.5,
-      "peak_linear": 0.62806,
-      "boundary_delta": 0.00024,
-      "license": "CC-BY-3.0",
-      "source": {
-        "wikimedia_title": "File:Mazda RX-7 - engine and exhaust sound (YouTube 4z0y1H2REvE).opus",
-        "commons_url": "https://commons.wikimedia.org/wiki/File:Mazda_RX-7_-_engine_and_exhaust_sound_(YouTube_4z0y1H2REvE).opus",
-        "author": "Taz Ringer (YouTube)",
-        "licence": "CC-BY-3.0",
-        "licence_url": "https://creativecommons.org/licenses/by/3.0/",
-        "extract_window_s": [
-          290.4,
-          290.81
-        ]
-      },
-      "extraction": {
-        "source_key": "rotary_rx7",
-        "start_s": 290.4,
-        "end_s": 290.81,
-        "detected_f0_hz": 129.4,
-        "target_f0_hz": 183.3,
-        "pitch_lock_ratio": 1.422,
-        "confidence": 0.63,
-        "loop_corr": 0.705,
-        "n_harmonics": 4.9,
-        "warm_body": 0.99
-      }
+      "fundamental_hz": 366.7,
+      "rms_dbfs": -13.0,
+      "peak_linear": 0.69706,
+      "boundary_delta": 8.8e-05,
+      "license": "CC-BY-NC-4.0"
     },
     {
       "id": "eng_rotary4_8500",
       "filename": "eng_rotary4_8500.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_rotary4_8500.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_rotary4_8500.ogg",
-      "ogg_bytes": 18747,
+      "ogg_bytes": 20525,
       "category": "engine",
-      "description": "8500 RPM Real Mazda RX-7 Rotary redline shriek loop",
+      "description": "8500 RPM 4-Rotor 787B redline razor shriek loop",
       "loop": true,
       "sample_rate_hz": 48000,
       "bit_depth": 24,
@@ -628,41 +419,18 @@
       "duration_s": 1.5,
       "num_frames": 72000,
       "reference_rpm": 8500,
-      "fundamental_hz": 283.3,
-      "rms_dbfs": -12.5,
-      "peak_linear": 0.71397,
-      "boundary_delta": 6.1e-05,
-      "license": "CC-BY-3.0",
-      "source": {
-        "wikimedia_title": "File:Mazda RX-7 - engine and exhaust sound (YouTube 4z0y1H2REvE).opus",
-        "commons_url": "https://commons.wikimedia.org/wiki/File:Mazda_RX-7_-_engine_and_exhaust_sound_(YouTube_4z0y1H2REvE).opus",
-        "author": "Taz Ringer (YouTube)",
-        "licence": "CC-BY-3.0",
-        "licence_url": "https://creativecommons.org/licenses/by/3.0/",
-        "extract_window_s": [
-          290.4,
-          290.81
-        ]
-      },
-      "extraction": {
-        "source_key": "rotary_rx7",
-        "start_s": 290.4,
-        "end_s": 290.81,
-        "detected_f0_hz": 129.4,
-        "target_f0_hz": 283.3,
-        "pitch_lock_ratio": 2.0,
-        "confidence": 0.63,
-        "loop_corr": 0.62,
-        "n_harmonics": 4.9,
-        "warm_body": 0.99
-      }
+      "fundamental_hz": 566.7,
+      "rms_dbfs": -13.0,
+      "peak_linear": 0.70807,
+      "boundary_delta": 0.000205,
+      "license": "CC-BY-NC-4.0"
     },
     {
       "id": "eng_tt_i6_1000",
       "filename": "eng_tt_i6_1000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_tt_i6_1000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_tt_i6_1000.ogg",
-      "ogg_bytes": 18637,
+      "ogg_bytes": 16992,
       "category": "engine",
       "description": "1000 RPM AngeTheGreat engine-sim Toyota 2JZ Inline-6 idle loop",
       "loop": true,
@@ -674,14 +442,13 @@
       "reference_rpm": 1000,
       "fundamental_hz": 50.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.54305,
-      "boundary_delta": 0.000641,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.56455,
+      "boundary_delta": 0.000128,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "i6",
         "throttle": 0.06,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim i6 target=1000 actual_avg_rpm=1000 thr=0.06 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_tt_i6_1000_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -689,7 +456,7 @@
       "filename": "eng_tt_i6_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_tt_i6_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_tt_i6_low.ogg",
-      "ogg_bytes": 16552,
+      "ogg_bytes": 15362,
       "category": "engine",
       "description": "2400 RPM AngeTheGreat engine-sim Toyota 2JZ Inline-6 baritone pull loop",
       "loop": true,
@@ -701,14 +468,13 @@
       "reference_rpm": 2400,
       "fundamental_hz": 120.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.46102,
-      "boundary_delta": 0.006295,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.46538,
+      "boundary_delta": 0.004322,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "i6",
         "throttle": 0.55,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim i6 target=2400 actual_avg_rpm=2400 thr=0.55 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_tt_i6_low_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -716,7 +482,7 @@
       "filename": "eng_tt_i6_4000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_tt_i6_4000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_tt_i6_4000.ogg",
-      "ogg_bytes": 17313,
+      "ogg_bytes": 17190,
       "category": "engine",
       "description": "4500 RPM AngeTheGreat engine-sim Toyota 2JZ Inline-6 boost roar loop",
       "loop": true,
@@ -728,14 +494,13 @@
       "reference_rpm": 4500,
       "fundamental_hz": 225.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.75309,
-      "boundary_delta": 1.6e-05,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.84392,
+      "boundary_delta": 1.5e-05,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "i6",
         "throttle": 0.85,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim i6 target=4500 actual_avg_rpm=4500 thr=0.85 samples=111168 (2.52082s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_tt_i6_4000_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -743,7 +508,7 @@
       "filename": "eng_tt_i6_7000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_tt_i6_7000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_tt_i6_7000.ogg",
-      "ogg_bytes": 18033,
+      "ogg_bytes": 16919,
       "category": "engine",
       "description": "7000 RPM AngeTheGreat engine-sim Toyota 2JZ Inline-6 redline wail loop",
       "loop": true,
@@ -755,14 +520,13 @@
       "reference_rpm": 7000,
       "fundamental_hz": 350.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.71615,
-      "boundary_delta": 0.000251,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.58254,
+      "boundary_delta": 0.000244,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "i6",
         "throttle": 1.0,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim i6 target=7000 actual_avg_rpm=7000 thr=1 samples=112529 (2.55168s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_tt_i6_7000_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -770,7 +534,7 @@
       "filename": "eng_v8_cross_900.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_cross_900.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_cross_900.ogg",
-      "ogg_bytes": 17469,
+      "ogg_bytes": 16989,
       "category": "engine",
       "description": "900 RPM AngeTheGreat engine-sim GM LS Cross-Plane V8 lope idle loop",
       "loop": true,
@@ -782,14 +546,13 @@
       "reference_rpm": 900,
       "fundamental_hz": 60.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.55306,
-      "boundary_delta": 0.000396,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.56382,
+      "boundary_delta": 2.1e-05,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v8_cross",
         "throttle": 0.06,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim v8_cross target=900 actual_avg_rpm=900 thr=0.06 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v8_cross_900_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -797,7 +560,7 @@
       "filename": "eng_v8_cross_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_cross_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_cross_low.ogg",
-      "ogg_bytes": 16875,
+      "ogg_bytes": 16508,
       "category": "engine",
       "description": "2100 RPM AngeTheGreat engine-sim GM LS Cross-Plane V8 muscle pull loop",
       "loop": true,
@@ -809,14 +572,13 @@
       "reference_rpm": 2100,
       "fundamental_hz": 140.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.68826,
-      "boundary_delta": 3.5e-05,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.59994,
+      "boundary_delta": 0.000652,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v8_cross",
         "throttle": 0.55,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim v8_cross target=2100 actual_avg_rpm=2100 thr=0.55 samples=111322 (2.52431s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v8_cross_low_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -824,7 +586,7 @@
       "filename": "eng_v8_cross_4200.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_cross_4200.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_cross_4200.ogg",
-      "ogg_bytes": 15865,
+      "ogg_bytes": 16258,
       "category": "engine",
       "description": "4200 RPM AngeTheGreat engine-sim GM LS Cross-Plane V8 thunder roar loop",
       "loop": true,
@@ -836,14 +598,13 @@
       "reference_rpm": 4200,
       "fundamental_hz": 280.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.61909,
-      "boundary_delta": 6.5e-05,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.64791,
+      "boundary_delta": 5.4e-05,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v8_cross",
         "throttle": 0.88,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim v8_cross target=4200 actual_avg_rpm=4200 thr=0.88 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v8_cross_4200_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -851,7 +612,7 @@
       "filename": "eng_v8_cross_6800.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_cross_6800.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_cross_6800.ogg",
-      "ogg_bytes": 14774,
+      "ogg_bytes": 16189,
       "category": "engine",
       "description": "6800 RPM AngeTheGreat engine-sim GM LS Cross-Plane V8 redline roar loop",
       "loop": true,
@@ -863,14 +624,13 @@
       "reference_rpm": 6800,
       "fundamental_hz": 453.3,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.50171,
-      "boundary_delta": 0.004539,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.46292,
+      "boundary_delta": 0.005895,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v8_cross",
         "throttle": 1.0,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim v8_cross target=6800 actual_avg_rpm=6800 thr=1 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v8_cross_6800_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -878,7 +638,7 @@
       "filename": "eng_v8_flat_1100.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_flat_1100.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_flat_1100.ogg",
-      "ogg_bytes": 14969,
+      "ogg_bytes": 16251,
       "category": "engine",
       "description": "1100 RPM AngeTheGreat engine-sim Ferrari F136 Flat-Plane V8 idle loop",
       "loop": true,
@@ -890,14 +650,13 @@
       "reference_rpm": 1100,
       "fundamental_hz": 73.3,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.50472,
-      "boundary_delta": 0.001909,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.50781,
+      "boundary_delta": 0.002283,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v8_flat",
         "throttle": 0.06,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim v8_flat target=1100 actual_avg_rpm=1100 thr=0.06 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v8_flat_1100_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -905,7 +664,7 @@
       "filename": "eng_v8_flat_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_flat_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_flat_low.ogg",
-      "ogg_bytes": 14705,
+      "ogg_bytes": 15656,
       "category": "engine",
       "description": "2600 RPM AngeTheGreat engine-sim Ferrari F136 Flat-Plane V8 pull loop",
       "loop": true,
@@ -917,14 +676,13 @@
       "reference_rpm": 2600,
       "fundamental_hz": 173.3,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.50427,
-      "boundary_delta": 0.002923,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.50873,
+      "boundary_delta": 0.003742,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v8_flat",
         "throttle": 0.55,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim v8_flat target=2600 actual_avg_rpm=2600 thr=0.55 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v8_flat_low_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -932,7 +690,7 @@
       "filename": "eng_v8_flat_5500.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_flat_5500.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_flat_5500.ogg",
-      "ogg_bytes": 17581,
+      "ogg_bytes": 16730,
       "category": "engine",
       "description": "5200 RPM AngeTheGreat engine-sim Ferrari F136 Flat-Plane V8 wail loop",
       "loop": true,
@@ -944,14 +702,13 @@
       "reference_rpm": 5200,
       "fundamental_hz": 346.7,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.63642,
-      "boundary_delta": 0.000151,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.66621,
+      "boundary_delta": 2.3e-05,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v8_flat",
         "throttle": 0.88,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim v8_flat target=5200 actual_avg_rpm=5200 thr=0.88 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v8_flat_5500_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -959,7 +716,7 @@
       "filename": "eng_v8_flat_8000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_flat_8000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_flat_8000.ogg",
-      "ogg_bytes": 16787,
+      "ogg_bytes": 16672,
       "category": "engine",
       "description": "8000 RPM AngeTheGreat engine-sim Ferrari F136 Flat-Plane V8 redline scream loop",
       "loop": true,
@@ -971,14 +728,13 @@
       "reference_rpm": 8000,
       "fundamental_hz": 533.3,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.67999,
-      "boundary_delta": 4.2e-05,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.6742,
+      "boundary_delta": 3e-05,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v8_flat",
         "throttle": 1.0,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim v8_flat target=8000 actual_avg_rpm=8000 thr=1 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_v8_flat_8000_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -986,7 +742,7 @@
       "filename": "eng_sc_v8_whine.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_sc_v8_whine.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_sc_v8_whine.ogg",
-      "ogg_bytes": 18576,
+      "ogg_bytes": 17506,
       "category": "engine",
       "description": "4200 RPM AngeTheGreat engine-sim Supercharged LS V8 + Roots blower loop",
       "loop": true,
@@ -998,14 +754,13 @@
       "reference_rpm": 4200,
       "fundamental_hz": 280.0,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.68862,
-      "boundary_delta": 0.000126,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.6985,
+      "boundary_delta": 0.000193,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v8_sc",
         "throttle": 0.88,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim v8_sc target=4200 actual_avg_rpm=4200 thr=0.88 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_sc_v8_whine_raw44.wav"
+        "loop_corr": 0.999
       }
     },
     {
@@ -1013,7 +768,7 @@
       "filename": "eng_sc_v8_6800.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_sc_v8_6800.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_sc_v8_6800.ogg",
-      "ogg_bytes": 15391,
+      "ogg_bytes": 15134,
       "category": "engine",
       "description": "6800 RPM AngeTheGreat engine-sim Supercharged LS V8 redline + blower loop",
       "loop": true,
@@ -1025,14 +780,13 @@
       "reference_rpm": 6800,
       "fundamental_hz": 453.3,
       "rms_dbfs": -12.5,
-      "peak_linear": 0.5552,
-      "boundary_delta": 0.000106,
-      "license": "MIT (AngeTheGreat engine-sim) / CC-BY-NC-4.0 (OpenGrid mastered stem)",
+      "peak_linear": 0.51083,
+      "boundary_delta": 0.000597,
+      "license": "MIT (AngeTheGreat engine-sim)",
       "engine_sim": {
         "preset": "v8_sc",
         "throttle": 1.0,
-        "loop_corr": 1.0,
-        "stdout": "OK engine-sim v8_sc target=6800 actual_avg_rpm=6800 thr=1 samples=111979 (2.53921s) -> assets_source/downloads/engine-sim/build_headless/dyno_raw/eng_sc_v8_6800_raw44.wav"
+        "loop_corr": 1.0
       }
     },
     {
@@ -1040,9 +794,9 @@
       "filename": "turbo_spool_loop.wav",
       "relative_wav_path": "ue5/Import/Audio/turbo_spool_loop.wav",
       "relative_ogg_path": "web/public/assets/audio/turbo_spool_loop.ogg",
-      "ogg_bytes": 17560,
+      "ogg_bytes": 19401,
       "category": "drivetrain_induction",
-      "description": "Real Nissan GT-R pressurized turbo charge-pipe air rush + warm Garrett turbine spool loop",
+      "description": "Warm Garrett/BorgWarner turbocharger compressor spool + pressurized charge-pipe rush loop",
       "loop": true,
       "sample_rate_hz": 48000,
       "bit_depth": 24,
@@ -1052,35 +806,18 @@
       "reference_rpm": null,
       "fundamental_hz": 2400.0,
       "rms_dbfs": -13.0,
-      "peak_linear": 0.91737,
-      "boundary_delta": 0.000323,
-      "license": "CC-BY-3.0",
-      "source": {
-        "wikimedia_title": "File:Nissan GT-R with Fi Exhaust - engine and exhaust sound (YouTube FC-YlgfD7sc).opus",
-        "commons_url": "https://commons.wikimedia.org/wiki/File:Nissan_GT-R_with_Fi_Exhaust_-_engine_and_exhaust_sound_(YouTube_FC-YlgfD7sc).opus",
-        "author": "FiExhaust (YouTube)",
-        "licence": "CC-BY-3.0",
-        "licence_url": "https://creativecommons.org/licenses/by/3.0/",
-        "extract_window_s": [
-          199.5,
-          201.0
-        ]
-      },
-      "extraction": {
-        "source_key": "i6_gtr_fi",
-        "start_s": 199.5,
-        "end_s": 201.0,
-        "loop_corr": 0.436
-      }
+      "peak_linear": 0.84628,
+      "boundary_delta": 8.4e-05,
+      "license": "CC-BY-NC-4.0"
     },
     {
       "id": "turbo_flutter_bov",
       "filename": "turbo_flutter_bov.wav",
       "relative_wav_path": "ue5/Import/Audio/turbo_flutter_bov.wav",
       "relative_ogg_path": "web/public/assets/audio/turbo_flutter_bov.ogg",
-      "ogg_bytes": 16086,
+      "ogg_bytes": 15519,
       "category": "drivetrain_induction",
-      "description": "Real Toyota Supra A80 2JZ compressor surge flutter (stu-tu-tu-tu) one-shot",
+      "description": "Crisp 6-pulse turbo compressor-surge flutter (stu-tu-tu-tu-tu-tu) + aluminum charge-pipe ring",
       "loop": false,
       "sample_rate_hz": 48000,
       "bit_depth": 24,
@@ -1088,36 +825,20 @@
       "duration_s": 1.1,
       "num_frames": 52800,
       "reference_rpm": null,
-      "fundamental_hz": 1800.0,
-      "rms_dbfs": -13.276,
-      "peak_linear": 0.95,
+      "fundamental_hz": 1870.0,
+      "rms_dbfs": -12.312,
+      "peak_linear": 0.94997,
       "boundary_delta": 0.0,
-      "license": "CC-BY-3.0",
-      "source": {
-        "wikimedia_title": "File:Toyota Supra (A80) - engine and exhaust sound (YouTube YlRjnMnHRO4).opus",
-        "commons_url": "https://commons.wikimedia.org/wiki/File:Toyota_Supra_(A80)_-_engine_and_exhaust_sound_(YouTube_YlRjnMnHRO4).opus",
-        "author": "Fabio Rojas Pichardo (YouTube)",
-        "licence": "CC-BY-3.0",
-        "licence_url": "https://creativecommons.org/licenses/by/3.0/",
-        "extract_window_s": [
-          23.6,
-          24.7
-        ]
-      },
-      "extraction": {
-        "source_key": "i6_supra_a80",
-        "start_s": 23.6,
-        "end_s": 24.7
-      }
+      "license": "CC-BY-NC-4.0"
     },
     {
       "id": "exhaust_backfire_pop",
       "filename": "exhaust_backfire_pop.wav",
       "relative_wav_path": "ue5/Import/Audio/exhaust_backfire_pop.wav",
       "relative_ogg_path": "web/public/assets/audio/exhaust_backfire_pop.ogg",
-      "ogg_bytes": 9003,
+      "ogg_bytes": 9588,
       "category": "drivetrain_induction",
-      "description": "Real Lamborghini Huracan Performante Fi Exhaust gunshot anti-lag bang one-shot",
+      "description": "Deep anti-lag exhaust shotgun bang + chest-punch sub-bass shockwave",
       "loop": false,
       "sample_rate_hz": 48000,
       "bit_depth": 24,
@@ -1126,35 +847,19 @@
       "num_frames": 26400,
       "reference_rpm": null,
       "fundamental_hz": 110.0,
-      "rms_dbfs": -12.078,
-      "peak_linear": 0.9499,
+      "rms_dbfs": -12.015,
+      "peak_linear": 0.94983,
       "boundary_delta": 0.0,
-      "license": "CC-BY-3.0",
-      "source": {
-        "wikimedia_title": "File:Lamborghini Hurac\u00e1n Performante with Fi Exhaust system - engine and exhaust sound (YouTube p4F3h9Q5Lpo).opus",
-        "commons_url": "https://commons.wikimedia.org/wiki/File:Lamborghini_Hurac%C3%A1n_Performante_with_Fi_Exhaust_system_-_engine_and_exhaust_sound_(YouTube_p4F3h9Q5Lpo).opus",
-        "author": "FiExhaust (YouTube)",
-        "licence": "CC-BY-3.0",
-        "licence_url": "https://creativecommons.org/licenses/by/3.0/",
-        "extract_window_s": [
-          117.95,
-          118.5
-        ]
-      },
-      "extraction": {
-        "source_key": "v10_huracan_fi",
-        "start_s": 117.95,
-        "end_s": 118.5
-      }
+      "license": "CC-BY-NC-4.0"
     },
     {
       "id": "exhaust_antilag_pop2",
       "filename": "exhaust_antilag_pop2.wav",
       "relative_wav_path": "ue5/Import/Audio/exhaust_antilag_pop2.wav",
       "relative_ogg_path": "web/public/assets/audio/exhaust_antilag_pop2.ogg",
-      "ogg_bytes": 9703,
+      "ogg_bytes": 9578,
       "category": "drivetrain_induction",
-      "description": "Real Subaru WRX STI Tomei deep anti-lag exhaust bang one-shot",
+      "description": "Deep low-pitched anti-lag overrun double-pop bang",
       "loop": false,
       "sample_rate_hz": 48000,
       "bit_depth": 24,
@@ -1162,27 +867,11 @@
       "duration_s": 0.55,
       "num_frames": 26400,
       "reference_rpm": null,
-      "fundamental_hz": 95.0,
-      "rms_dbfs": -11.767,
-      "peak_linear": 0.95,
+      "fundamental_hz": 92.0,
+      "rms_dbfs": -11.563,
+      "peak_linear": 0.94012,
       "boundary_delta": 0.0,
-      "license": "CC-BY-3.0",
-      "source": {
-        "wikimedia_title": "File:Subaru WRX STI with Tomei exhaust - engine and exhaust sound (YouTube t9X874j-g1E).opus",
-        "commons_url": "https://commons.wikimedia.org/wiki/File:Subaru_WRX_STI_with_Tomei_exhaust_-_engine_and_exhaust_sound_(YouTube_t9X874j-g1E).opus",
-        "author": "Light Heart Media (YouTube)",
-        "licence": "CC-BY-3.0",
-        "licence_url": "https://creativecommons.org/licenses/by/3.0/",
-        "extract_window_s": [
-          13.08,
-          13.63
-        ]
-      },
-      "extraction": {
-        "source_key": "fx_wrx_tomei",
-        "start_s": 13.08,
-        "end_s": 13.63
-      }
+      "license": "CC-BY-NC-4.0"
     },
     {
       "id": "exhaust_antilag_pop3",

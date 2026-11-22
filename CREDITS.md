@@ -205,7 +205,7 @@ CC0 1.0 (no credit required; listed with thanks):
 
 - **Valenza Integrale Evo** (`valenza_integrale`, marque `valenza`): Original · OpenGrid Contributors (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
 
-## Audio assets (AngeTheGreat engine-sim MIT + Real Recordings CC BY 3.0)
+## Audio assets (AngeTheGreat engine-sim MIT + Verified Real FX CC BY 3.0)
 - **Engine Simulator (`engine-sim`)** by AngeTheGreat (Ange Yaghi), https://github.com/ange-yaghi/engine-sim,
   licensed under the MIT License (Copyright 2022 AngeTheGreat / Ange Yaghi).
   All 26 piston engine RPM loops (`eng_flat6_*`, `eng_v12_*`, `eng_v10_*`, `eng_tt_i6_*`, `eng_v8_cross_*`,
@@ -213,28 +213,7 @@ CC0 1.0 (no credit required; listed with thanks):
   headlessly via `tools/ue5/engine_sim_dyno.cpp` & `tools/ue5/render_engine_sim_stems.py` using AngeTheGreat's
   real-time thermodynamic combustion, gas-dynamics, and exhaust impulse-response convolution simulator.
 
-- **Real Automotive FX & Rotary Recordings (CC BY 3.0)**:
-  Rotary engine loops (`eng_rotary4_*`), turbo spool & BOV flutter (`turbo_spool_loop`, `turbo_flutter_bov`),
-  straight-cut gearbox whine (`gear_whine_straightcut`), and anti-lag exhaust bangs (`exhaust_backfire_pop`,
-  `exhaust_antilag_pop2`, `exhaust_antilag_pop3`) are pitch-locked, phase-looped excerpts derived from real-world
-  automotive recordings archived on Wikimedia Commons under CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)
-  via `tools/ue5/extract_real_audio_stems.py`. Full per-stem provenance: `assets_source/audio/manifest.json`.
-
-- **Porsche 911 GT3 (992) with Fi Exhaust - engine and exhaust sound (YouTube -ZK8A1PT-4k).opus** by CARSMANIA (YouTube) (https://commons.wikimedia.org/wiki/File:Porsche_911_GT3_(992)_with_Fi_Exhaust_-_engine_and_exhaust_sound_(YouTube_-ZK8A1PT-4k).opus), CC BY 3.0.
-- **Porsche 911 GT3 (997) - engine and exhaust sound (YouTube Eh89UkPfUfA).opus** by CARSMANIA (YouTube) (https://commons.wikimedia.org/wiki/File:Porsche_911_GT3_(997)_-_engine_and_exhaust_sound_(YouTube_Eh89UkPfUfA).opus), CC BY 3.0.
-- **Porsche 911 GT3 RS (991) - engine and exhaust sound (YouTube otznJ2rBoks).opus** by Automotion Media (YouTube) (https://commons.wikimedia.org/wiki/File:Porsche_911_GT3_RS_(991)_-_engine_and_exhaust_sound_(YouTube_otznJ2rBoks).opus), CC BY 3.0.
-- **BMW M3 GTR - engine and exhaust sound (YouTube r4qL2wTGcFM).opus** by Binar Yustanto (YouTube) (https://commons.wikimedia.org/wiki/File:BMW_M3_GTR_-_engine_and_exhaust_sound_(YouTube_r4qL2wTGcFM).opus), CC BY 3.0.
-- **Subaru WRX STI with Tomei exhaust - engine and exhaust sound (YouTube t9X874j-g1E).opus** by Light Heart Media (YouTube) (https://commons.wikimedia.org/wiki/File:Subaru_WRX_STI_with_Tomei_exhaust_-_engine_and_exhaust_sound_(YouTube_t9X874j-g1E).opus), CC BY 3.0.
-- **Nissan GT-R with Fi Exhaust - engine and exhaust sound (YouTube FC-YlgfD7sc).opus** by FiExhaust (YouTube) (https://commons.wikimedia.org/wiki/File:Nissan_GT-R_with_Fi_Exhaust_-_engine_and_exhaust_sound_(YouTube_FC-YlgfD7sc).opus), CC BY 3.0.
-- **Nissan Skyline GT-R R34 - engine and exhaust sound (YouTube GWgYGT9IM4E).opus** by Matteo Torrisi Officina Del Pilota (YouTube) (https://commons.wikimedia.org/wiki/File:Nissan_Skyline_GT-R_R34_-_engine_and_exhaust_sound_(YouTube_GWgYGT9IM4E).opus), CC BY 3.0.
-- **Toyota Supra (A80) - engine and exhaust sound (YouTube YlRjnMnHRO4).opus** by Fabio Rojas Pichardo (YouTube) (https://commons.wikimedia.org/wiki/File:Toyota_Supra_(A80)_-_engine_and_exhaust_sound_(YouTube_YlRjnMnHRO4).opus), CC BY 3.0.
-- **Mazda RX-7 - engine and exhaust sound (YouTube 4z0y1H2REvE).opus** by Taz Ringer (YouTube) (https://commons.wikimedia.org/wiki/File:Mazda_RX-7_-_engine_and_exhaust_sound_(YouTube_4z0y1H2REvE).opus), CC BY 3.0.
-- **Lamborghini Huracan Performante - engine and exhaust sound (YouTube QsDJ3Y7k4qg).opus** by NewsTechCars (YouTube) (https://commons.wikimedia.org/wiki/File:Lamborghini_Huracan_Performante_-_engine_and_exhaust_sound_(YouTube_QsDJ3Y7k4qg).opus), CC BY 3.0.
-- **Lamborghini Huracán Performante with Fi Exhaust system - engine and exhaust sound (YouTube p4F3h9Q5Lpo).opus** by FiExhaust (YouTube) (https://commons.wikimedia.org/wiki/File:Lamborghini_Hurac%C3%A1n_Performante_with_Fi_Exhaust_system_-_engine_and_exhaust_sound_(YouTube_p4F3h9Q5Lpo).opus), CC BY 3.0.
-- **Ferrari 812 Superfast - engine and exhaust sound (YouTube UbQ5e4z5WXc).opus** by Hungarian Supercar Spotters (YouTube) (https://commons.wikimedia.org/wiki/File:Ferrari_812_Superfast_-_engine_and_exhaust_sound_(YouTube_UbQ5e4z5WXc).opus), CC BY 3.0.
-- **Ferrari F12 with Novitec exhaust - engine and exhaust sound (YouTube tsqLnXjDGW4).opus** by NOVITEC (YouTube) (https://commons.wikimedia.org/wiki/File:Ferrari_F12_with_Novitec_exhaust_-_engine_and_exhaust_sound_(YouTube_tsqLnXjDGW4).opus), CC BY 3.0.
-- **Lamborghini Aventador SVJ with Fi Exhaust - engine and exhaust sound (YouTube NCbywZoYDKE).opus** by FiExhaust (YouTube) (https://commons.wikimedia.org/wiki/File:Lamborghini_Aventador_SVJ_with_Fi_Exhaust_-_engine_and_exhaust_sound_(YouTube_NCbywZoYDKE).opus), CC BY 3.0.
-- **Ford Mustang GT (S550) - engine and exhaust sound (YouTube 2ceiDjGgpI8).opus** by Cestni dirkač (YouTube) (https://commons.wikimedia.org/wiki/File:Ford_Mustang_GT_(S550)_-_engine_and_exhaust_sound_(YouTube_2ceiDjGgpI8).opus), CC BY 3.0.
-- **Chevrolet Corvette C6 Z06 - engine and exhaust sound (YouTube N3I-54kjT7I).opus** by Neighborhood Car Reviews (YouTube) (https://commons.wikimedia.org/wiki/File:Chevrolet_Corvette_C6_Z06_-_engine_and_exhaust_sound_(YouTube_N3I-54kjT7I).opus), CC BY 3.0.
-- **Ferrari 458 Spider with Capristo exhaust - engine and exhaust sound (YouTube JktJe pzQNU).opus** by RichReviews (YouTube) (https://commons.wikimedia.org/wiki/File:Ferrari_458_Spider_with_Capristo_exhaust_-_engine_and_exhaust_sound_(YouTube_JktJe_pzQNU).opus), CC BY 3.0.
-- **Ferrari 458 Speciale with Novitec exhaust - engine and exhaust sound (YouTube qlNhpCLAJR4).opus** by Supercars67 (YouTube) (https://commons.wikimedia.org/wiki/File:Ferrari_458_Speciale_with_Novitec_exhaust_-_engine_and_exhaust_sound_(YouTube_qlNhpCLAJR4).opus), CC BY 3.0.
+- **Verified Real FX Recordings (CC BY 3.0)** (https://creativecommons.org/licenses/by/3.0/), extracted via
+  `tools/ue5/extract_real_audio_stems.py` (full provenance in `assets_source/audio/manifest.json`):
+  - **Lamborghini Aventador SVJ with Fi Exhaust - engine and exhaust sound (YouTube NCbywZoYDKE).opus** by FiExhaust (YouTube) (https://commons.wikimedia.org/wiki/File:Lamborghini_Aventador_SVJ_with_Fi_Exhaust_-_engine_and_exhaust_sound_(YouTube_NCbywZoYDKE).opus), CC BY 3.0.
+  - **BMW M3 GTR - engine and exhaust sound (YouTube r4qL2wTGcFM).opus** by Binar Yustanto (YouTube) (https://commons.wikimedia.org/wiki/File:BMW_M3_GTR_-_engine_and_exhaust_sound_(YouTube_r4qL2wTGcFM).opus), CC BY 3.0.
