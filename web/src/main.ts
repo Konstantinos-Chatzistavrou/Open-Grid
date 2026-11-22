@@ -851,8 +851,10 @@ async function main() {
   const driving = () => state === 'race' || state === 'countdown' || state === 'paused' || state === 'spectate' || state === 'results';
   const screenAwake = new ScreenAwake();
   const setState = (st: State) => {
+    const wasDriving = driving();
     state = st;
     const inDriving = driving();
+    if (inDriving && !wasDriving) core.clusterSweep();   // key on: the dash needles sweep to full scale and back
     screenAwake.set(st === 'race' || st === 'countdown' || st === 'spectate');
     const overlayOpen = st === 'paused' || st === 'results';
     if (!inDriving) settledShowroom = 0;
