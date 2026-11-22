@@ -13,7 +13,7 @@
   "cg_in_model_m": [
     0.0,
     0.414,
-    -0.15
+    -0.221
   ],
   "wheel_nodes": {
     "fl": "wheel_FL",
@@ -21,31 +21,32 @@
     "rl": "wheel_RL",
     "rr": "wheel_RR"
   },
-  "wheel_visual_offset_m": 0,
+  "wheel_visual_offset_m": 0.0,
   "collision_box": {
     "size_m": [
-      2.024,
-      0.737,
-      4.5
+      2.066,
+      0.66,
+      4.552
     ],
     "centre_in_model_m": [
       0.0,
-      0.576,
+      0.54,
       0.0
     ],
     "end_lift_m": 0.12,
-    "end_lift_start_m": 1.71
+    "end_lift_start_m": 1.714,
+    "note": "body 2.17 x 1.06 x 4.63 m; wheels are raycasts"
   },
   "headlights": [
     [
-      -0.688,
-      0.506,
-      2.07
+      -0.715,
+      0.49,
+      2.192
     ],
     [
-      0.688,
-      0.506,
-      2.07
+      0.715,
+      0.49,
+      2.192
     ]
   ],
   "driver_seat_m": [
@@ -55,71 +56,25 @@
   ],
   "driver_scale": 0.92,
   "panels": {
-    "front": [
-      "bumper_front",
-      "hood",
-      "grille",
-      "drl_L",
-      "drl_R"
-    ],
-    "rear": [
-      "bumper_rear",
-      "diffuser"
-    ],
-    "left": [
-      "door_L",
-      "fender_L",
-      "quarter_L",
-      "mirror_L"
-    ],
-    "right": [
-      "door_R",
-      "fender_R",
-      "quarter_R",
-      "mirror_R"
-    ]
+    "front": [],
+    "rear": [],
+    "left": [],
+    "right": []
   },
-  "detachable": {
-    "bumper_front": [
-      "front",
-      0.7
-    ],
-    "bumper_rear": [
-      "rear",
-      0.7
-    ],
-    "mirror_L": [
-      "left",
-      0.45
-    ],
-    "mirror_R": [
-      "right",
-      0.45
-    ]
-  },
-  "front_lights": [
-    "beam_L_0",
-    "beam_R_0",
-    "drl_L",
-    "drl_R"
-  ],
-  "rear_lights": [
-    "taillight_L_0",
-    "taillight_L_1",
-    "taillight_R_0",
-    "taillight_R_1"
-  ],
+  "detachable": {},
+  "front_lights": [],
+  "rear_lights": [],
   "exhaust_nozzles": [
     {
-      "x": -0.308,
-      "y": 0.236,
-      "z": -2.173,
+      "x": -0.28,
+      "y": 0.429,
+      "z": -2.24,
       "r": 0.055
     },
     {
-      "x": 0.308,
-      "y": 0.236,
-      "z": -2.173,
+      "x": 0.28,
+      "y": 0.429,
+      "z": -2.24,
       "r": 0.055
     }
   ],
@@ -128,5 +83,6 @@
     0.73,
     -0.94
   ],
-  "lod_distance_m": 32
+  "lod_distance_m": 32,
+  "notes": "GTA 6-style subtly restyled (~2.5%) build derived from 'Ferrari 488 Pista Widebody' by Dev365TH (CC-BY-4.0, CREDITS.md): OEM badges/plates stripped, 3D OpenGrid crests added, unified clearcoat paint & 4 axle-centered spinning wheels. Front axle z 1.075, rear -1.477 (wheelbase 2.552), hub y 0.340."
 }

@@ -13,7 +13,7 @@
   "cg_in_model_m": [
     0.0,
     0.431,
-    -0.15
+    -0.117
   ],
   "wheel_nodes": {
     "fl": "wheel_FL",
@@ -21,31 +21,32 @@
     "rl": "wheel_RL",
     "rr": "wheel_RR"
   },
-  "wheel_visual_offset_m": 0,
+  "wheel_visual_offset_m": 0.0,
   "collision_box": {
     "size_m": [
-      2.098,
-      0.767,
-      4.554
+      1.846,
+      0.703,
+      4.002
     ],
     "centre_in_model_m": [
       0.0,
-      0.599,
+      0.544,
       0.0
     ],
     "end_lift_m": 0.12,
-    "end_lift_start_m": 1.731
+    "end_lift_start_m": 1.51,
+    "note": "body 1.95 x 1.13 x 4.08 m; wheels are raycasts"
   },
   "headlights": [
     [
-      -0.713,
-      0.527,
-      2.097
+      -0.642,
+      0.522,
+      1.917
     ],
     [
-      0.713,
-      0.527,
-      2.097
+      0.642,
+      0.522,
+      1.917
     ]
   ],
   "engine_smoke_in_model_m": [
@@ -61,86 +62,27 @@
   ],
   "driver_scale": 0.92,
   "panels": {
-    "front": [
-      "bumper_front",
-      "hood",
-      "grille",
-      "drl_L",
-      "drl_R"
-    ],
-    "rear": [
-      "bumper_rear",
-      "diffuser"
-    ],
-    "left": [
-      "door_L",
-      "fender_L",
-      "quarter_L",
-      "mirror_L"
-    ],
-    "right": [
-      "door_R",
-      "fender_R",
-      "quarter_R",
-      "mirror_R"
-    ]
+    "front": [],
+    "rear": [],
+    "left": [],
+    "right": []
   },
-  "detachable": {
-    "bumper_front": [
-      "front",
-      0.7
-    ],
-    "bumper_rear": [
-      "rear",
-      0.7
-    ],
-    "mirror_L": [
-      "left",
-      0.45
-    ],
-    "mirror_R": [
-      "right",
-      0.45
-    ]
-  },
-  "front_lights": [
-    "beam_L_0",
-    "beam_L_1",
-    "beam_R_0",
-    "beam_R_1",
-    "drl_L",
-    "drl_R"
-  ],
-  "rear_lights": [
-    "taillight_L_0",
-    "taillight_L_1",
-    "taillight_R_0",
-    "taillight_R_1"
-  ],
+  "detachable": {},
+  "front_lights": [],
+  "rear_lights": [],
   "exhaust_nozzles": [
     {
-      "x": -0.116,
-      "y": 0.226,
-      "z": -2.198,
+      "x": -0.28,
+      "y": 0.439,
+      "z": -1.965,
       "r": 0.055
     },
     {
-      "x": -0.056,
-      "y": 0.224,
-      "z": -2.198,
-      "r": 0.055
-    },
-    {
-      "x": 0.116,
-      "y": 0.226,
-      "z": -2.198,
-      "r": 0.055
-    },
-    {
-      "x": 0.056,
-      "y": 0.224,
-      "z": -2.198,
+      "x": 0.28,
+      "y": 0.439,
+      "z": -1.965,
       "r": 0.055
     }
-  ]
+  ],
+  "notes": "GTA 6-style subtly restyled (~2.5%) build derived from 'Lancia 037 Stradale 1978' by vecarz (CC-BY-4.0, CREDITS.md): OEM badges/plates stripped, 3D OpenGrid crests added, unified clearcoat paint & 4 axle-centered spinning wheels. Front axle z 1.167, rear -1.360 (wheelbase 2.527), hub y 0.306."
 }

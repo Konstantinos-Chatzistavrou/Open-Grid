@@ -13,7 +13,7 @@
   "cg_in_model_m": [
     0.0,
     0.483,
-    -0.15
+    0.05
   ],
   "wheel_nodes": {
     "fl": "wheel_FL",
@@ -21,31 +21,32 @@
     "rl": "wheel_RL",
     "rr": "wheel_RR"
   },
-  "wheel_visual_offset_m": 0,
+  "wheel_visual_offset_m": 0.0,
   "collision_box": {
     "size_m": [
-      2.134,
-      0.859,
-      4.88
+      2.042,
+      0.872,
+      4.971
     ],
     "centre_in_model_m": [
       0.0,
-      0.671,
+      0.675,
       0.0
     ],
     "end_lift_m": 0.12,
-    "end_lift_start_m": 1.854
+    "end_lift_start_m": 1.869,
+    "note": "body 2.14 x 1.41 x 5.05 m; wheels are raycasts"
   },
   "headlights": [
     [
-      -0.726,
-      0.59,
-      2.26
+      -0.707,
+      0.647,
+      2.402
     ],
     [
-      0.726,
-      0.59,
-      2.26
+      0.707,
+      0.647,
+      2.402
     ]
   ],
   "driver_seat_m": [
@@ -55,83 +56,25 @@
   ],
   "driver_scale": 0.92,
   "panels": {
-    "front": [
-      "bumper_front",
-      "hood",
-      "grille",
-      "drl_L",
-      "drl_R"
-    ],
-    "rear": [
-      "bumper_rear",
-      "taillight_bar",
-      "diffuser"
-    ],
-    "left": [
-      "door_L",
-      "fender_L",
-      "quarter_L",
-      "mirror_L"
-    ],
-    "right": [
-      "door_R",
-      "fender_R",
-      "quarter_R",
-      "mirror_R"
-    ]
+    "front": [],
+    "rear": [],
+    "left": [],
+    "right": []
   },
-  "detachable": {
-    "bumper_front": [
-      "front",
-      0.7
-    ],
-    "bumper_rear": [
-      "rear",
-      0.7
-    ],
-    "mirror_L": [
-      "left",
-      0.45
-    ],
-    "mirror_R": [
-      "right",
-      0.45
-    ]
-  },
-  "front_lights": [
-    "beam_L_0",
-    "beam_L_1",
-    "beam_R_0",
-    "beam_R_1",
-    "drl_L",
-    "drl_R"
-  ],
-  "rear_lights": [
-    "taillight_bar"
-  ],
+  "detachable": {},
+  "front_lights": [],
+  "rear_lights": [],
   "exhaust_nozzles": [
     {
-      "x": -0.56,
-      "y": 0.217,
-      "z": -2.363,
+      "x": -0.28,
+      "y": 0.477,
+      "z": -2.449,
       "r": 0.055
     },
     {
-      "x": -0.454,
-      "y": 0.217,
-      "z": -2.363,
-      "r": 0.055
-    },
-    {
-      "x": 0.454,
-      "y": 0.217,
-      "z": -2.363,
-      "r": 0.055
-    },
-    {
-      "x": 0.56,
-      "y": 0.217,
-      "z": -2.363,
+      "x": 0.28,
+      "y": 0.477,
+      "z": -2.449,
       "r": 0.055
     }
   ],
@@ -140,5 +83,6 @@
     0.82,
     1.61
   ],
-  "lod_distance_m": 32
+  "lod_distance_m": 32,
+  "notes": "GTA 6-style subtly restyled (~2.5%) build derived from '( FREE ) Dodge Challenger SRT' by SDC PERFORMANCE\u2122\ufe0f (CC-BY-4.0, CREDITS.md): OEM badges/plates stripped, 3D OpenGrid crests added, unified clearcoat paint & 4 axle-centered spinning wheels. Front axle z 1.551, rear -1.412 (wheelbase 2.963), hub y 0.365."
 }

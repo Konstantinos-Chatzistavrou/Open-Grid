@@ -13,7 +13,7 @@
   "cg_in_model_m": [
     0.0,
     0.491,
-    -0.15
+    -0.007
   ],
   "wheel_nodes": {
     "fl": "wheel_FL",
@@ -21,31 +21,32 @@
     "rl": "wheel_RL",
     "rr": "wheel_RR"
   },
-  "wheel_visual_offset_m": 0,
+  "wheel_visual_offset_m": 0.0,
   "collision_box": {
     "size_m": [
-      2.138,
+      1.934,
       0.872,
-      4.79
+      4.528
     ],
     "centre_in_model_m": [
       0.0,
-      0.681,
+      0.675,
       0.0
     ],
     "end_lift_m": 0.12,
-    "end_lift_start_m": 1.82
+    "end_lift_start_m": 1.705,
+    "note": "body 2.03 x 1.41 x 4.61 m; wheels are raycasts"
   },
   "headlights": [
     [
-      -0.727,
-      0.6,
-      2.215
+      -0.671,
+      0.647,
+      2.18
     ],
     [
-      0.727,
-      0.6,
-      2.215
+      0.671,
+      0.647,
+      2.18
     ]
   ],
   "engine_smoke_in_model_m": [
@@ -61,94 +62,57 @@
   ],
   "driver_scale": 0.92,
   "panels": {
-    "front": [
-      "bumper_front",
-      "hood",
-      "grille",
-      "drl_L",
-      "drl_R"
-    ],
+    "front": [],
     "rear": [
-      "bumper_rear",
-      "taillight_bar",
-      "diffuser"
+      "wing"
     ],
-    "left": [
-      "door_L",
-      "fender_L",
-      "quarter_L",
-      "mirror_L"
-    ],
-    "right": [
-      "door_R",
-      "fender_R",
-      "quarter_R",
-      "mirror_R"
-    ]
+    "left": [],
+    "right": []
   },
-  "detachable": {
-    "bumper_front": [
-      "front",
-      0.7
-    ],
-    "bumper_rear": [
-      "rear",
-      0.7
-    ],
-    "mirror_L": [
-      "left",
-      0.45
-    ],
-    "mirror_R": [
-      "right",
-      0.45
-    ]
-  },
+  "detachable": {},
   "front_lights": [
-    "beam_L_0",
-    "beam_R_0",
-    "drl_L",
-    "drl_R"
+    "light_front_0",
+    "light_front_1",
+    "light_front_2",
+    "light_front_3",
+    "light_front_4",
+    "light_front_5",
+    "light_front_6",
+    "light_front_7",
+    "light_front_8",
+    "light_front_9",
+    "light_front_10",
+    "light_front_11",
+    "light_front_12"
   ],
   "rear_lights": [
-    "taillight_bar"
+    "light_rear_0"
   ],
   "exhaust_nozzles": [
     {
-      "x": -0.116,
-      "y": 0.226,
-      "z": -2.28,
+      "x": 0.0,
+      "y": 0.368,
+      "z": -2.277,
       "r": 0.055
     },
     {
-      "x": -0.056,
-      "y": 0.224,
-      "z": -2.28,
+      "x": 0.091,
+      "y": 0.368,
+      "z": -2.273,
       "r": 0.055
     },
     {
-      "x": 0.116,
-      "y": 0.226,
-      "z": -2.28,
+      "x": -0.091,
+      "y": 0.368,
+      "z": -2.273,
       "r": 0.055
     },
     {
-      "x": 0.056,
-      "y": 0.224,
-      "z": -2.28,
-      "r": 0.055
-    },
-    {
-      "x": 0.24,
-      "y": 0.194,
-      "z": 2.29,
-      "r": 0.055
-    },
-    {
-      "x": -0.24,
-      "y": 0.194,
-      "z": 2.29,
+      "x": 0.356,
+      "y": 0.349,
+      "z": -1.979,
       "r": 0.055
     }
-  ]
+  ],
+  "notes": "GTA 6-style subtly restyled (~2.5%) build derived from 'Porsche GT3 RS' by Black Snow (CC-BY-4.0, CREDITS.md): OEM badges/plates stripped, 3D OpenGrid crests added, unified clearcoat paint & 4 axle-centered spinning wheels. Front axle z 1.243, rear -1.217 (wheelbase 2.460), hub y 0.389."
 }

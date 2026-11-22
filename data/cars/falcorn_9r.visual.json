@@ -13,7 +13,7 @@
   "cg_in_model_m": [
     0.0,
     0.439,
-    -0.15
+    -0.019
   ],
   "wheel_nodes": {
     "fl": "wheel_FL",
@@ -21,31 +21,32 @@
     "rl": "wheel_RL",
     "rr": "wheel_RR"
   },
-  "wheel_visual_offset_m": 0,
+  "wheel_visual_offset_m": 0.0,
   "collision_box": {
     "size_m": [
-      2.002,
-      0.781,
-      4.52
+      1.888,
+      0.799,
+      4.521
     ],
     "centre_in_model_m": [
       0.0,
-      0.61,
+      0.619,
       0.0
     ],
     "end_lift_m": 0.12,
-    "end_lift_start_m": 1.718
+    "end_lift_start_m": 1.702,
+    "note": "body 1.99 x 1.29 x 4.60 m; wheels are raycasts"
   },
   "headlights": [
     [
-      -0.681,
-      0.537,
-      2.08
+      -0.656,
+      0.593,
+      2.176
     ],
     [
-      0.681,
-      0.537,
-      2.08
+      0.656,
+      0.593,
+      2.176
     ]
   ],
   "driver_seat_m": [
@@ -55,81 +56,25 @@
   ],
   "driver_scale": 0.92,
   "panels": {
-    "front": [
-      "bumper_front",
-      "hood",
-      "grille",
-      "drl_L",
-      "drl_R"
-    ],
-    "rear": [
-      "bumper_rear",
-      "taillight_bar",
-      "diffuser"
-    ],
-    "left": [
-      "door_L",
-      "fender_L",
-      "quarter_L",
-      "mirror_L"
-    ],
-    "right": [
-      "door_R",
-      "fender_R",
-      "quarter_R",
-      "mirror_R"
-    ]
+    "front": [],
+    "rear": [],
+    "left": [],
+    "right": []
   },
-  "detachable": {
-    "bumper_front": [
-      "front",
-      0.7
-    ],
-    "bumper_rear": [
-      "rear",
-      0.7
-    ],
-    "mirror_L": [
-      "left",
-      0.45
-    ],
-    "mirror_R": [
-      "right",
-      0.45
-    ]
-  },
-  "front_lights": [
-    "beam_L_0",
-    "beam_R_0",
-    "drl_L",
-    "drl_R"
-  ],
-  "rear_lights": [
-    "taillight_bar"
-  ],
+  "detachable": {},
+  "front_lights": [],
+  "rear_lights": [],
   "exhaust_nozzles": [
     {
-      "x": -0.112,
-      "y": 0.218,
-      "z": -2.183,
+      "x": -0.28,
+      "y": 0.46,
+      "z": -2.225,
       "r": 0.055
     },
     {
-      "x": -0.054,
-      "y": 0.216,
-      "z": -2.183,
-      "r": 0.055
-    },
-    {
-      "x": 0.112,
-      "y": 0.218,
-      "z": -2.183,
-      "r": 0.055
-    },
-    {
-      "x": 0.054,
-      "y": 0.216,
-      "z": -2.183,
+      "x": 0.28,
+      "y": 0.46,
+      "z": -2.225,
       "r": 0.055
     }
   ],
@@ -138,5 +83,6 @@
     0.76,
     -1.81
   ],
-  "lod_distance_m": 32
+  "lod_distance_m": 32,
+  "notes": "GTA 6-style subtly restyled (~2.5%) build derived from 'Porsche 911 GT3' by ChevroletSS (CC-BY-4.0, CREDITS.md): OEM badges/plates stripped, 3D OpenGrid crests added, unified clearcoat paint & 4 axle-centered spinning wheels. Front axle z 1.232, rear -1.230 (wheelbase 2.462), hub y 0.348."
 }

@@ -24,7 +24,7 @@
       "author": "Jumping Jax",
       "viewer_url": "https://sketchfab.com/3d-models/cebbf16094464063a9b6e5e882bb4600",
       "length_m": 4.69,
-      "paint_match": "",
+      "paint_match": "Paint_Material",
       "filename_hints": ["812", "f12", "sf90", "valenza_corsa", "cebbf160"]
     },
     {
@@ -37,6 +37,7 @@
       "author": "Dev365TH",
       "viewer_url": "https://sketchfab.com/3d-models/16c28f5b3ed24991ac3d1208f4a8bc1f",
       "length_m": 4.60,
+      "flip_180": true,
       "paint_match": "",
       "filename_hints": ["488", "pista", "valenza_fiamma", "16c28f5b"]
     },
@@ -50,7 +51,7 @@
       "author": "SRUSH651 2th surreal rush",
       "viewer_url": "https://sketchfab.com/3d-models/d2b6b141c525428ea548cb1b79050d83",
       "length_m": 4.68,
-      "paint_match": "",
+      "paint_match": "Paint_Material",
       "filename_hints": ["daytona", "sp3", "laferrari", "valenza_sp3", "d2b6b141"]
     },
     {
@@ -62,7 +63,7 @@
       "author": "vecarz",
       "viewer_url": "https://sketchfab.com/3d-models/36f1c5964de14e0088d828e88a3749b9",
       "length_m": 4.05,
-      "paint_match": "",
+      "paint_match": "^Meshpart3Mtl$",
       "filename_hints": ["037", "stradale", "valenza_evo37", "36f1c596"]
     },
     {
@@ -75,6 +76,7 @@
       "author": "DisneyCars",
       "viewer_url": "https://sketchfab.com/3d-models/7646bb58555a4b0896b64b34312ea901",
       "length_m": 3.90,
+      "flip_180": true,
       "paint_match": "",
       "filename_hints": ["delta", "integrale", "valenza_integrale", "7646bb58"]
     },
@@ -88,7 +90,7 @@
       "author": "SDC PERFORMANCE",
       "viewer_url": "https://sketchfab.com/3d-models/d679af35b5694301a185c7454a700c73",
       "length_m": 4.92,
-      "paint_match": "",
+      "paint_match": "^Carbon_R$",
       "filename_hints": ["centenario", "aventador", "kronos_taurus", "d679af35"]
     },
     {
@@ -159,14 +161,14 @@
       "id": "kaze_ryujin",
       "name": "Kaze Ryujin Z-Spec",
       "brand": "kaze",
-      "uid": "ff8fb2251dfa4bb9979e7022c5a6666c",
+      "uid": "6df98cc48f5a4c3192950e5a91e74b96",
       "fallback_uid": "7b142ea3376e4811a326256c59bbc7a2",
-      "source_title": "Nissan Skyline R34 GT-R",
-      "author": "Lexyc16",
-      "viewer_url": "https://sketchfab.com/3d-models/ff8fb2251dfa4bb9979e7022c5a6666c",
-      "length_m": 4.60,
-      "paint_match": "",
-      "filename_hints": ["skyline", "r34", "r35", "gtr", "kaze_ryujin", "ff8fb225"]
+      "source_title": "Nissan Skyline GTR r33",
+      "author": "Black Snow",
+      "viewer_url": "https://sketchfab.com/3d-models/6df98cc48f5a4c3192950e5a91e74b96",
+      "length_m": 4.68,
+      "paint_match": "^body",
+      "filename_hints": ["skyline", "r33", "r35", "gtr", "kaze_ryujin", "6df98cc4"]
     },
     {
       "id": "kaze_kurogane",
@@ -178,6 +180,7 @@
       "author": "wallon",
       "viewer_url": "https://sketchfab.com/3d-models/45cb02e634ed477a9a04bb19813443f2",
       "length_m": 4.29,
+      "flip_180": true,
       "paint_match": "",
       "filename_hints": ["rx7", "rx-7", "rx_7", "kaze_kurogane", "45cb02e6"]
     },
@@ -204,7 +207,7 @@
       "author": "Maroi Mister Let Me Think Official 3D Studio",
       "viewer_url": "https://sketchfab.com/3d-models/3d3d1449aba7481788515d31df448bea",
       "length_m": 4.53,
-      "paint_match": "",
+      "paint_match": "Paint_Material",
       "filename_hints": ["nsx", "supra", "kaze_senkou_tr", "3d3d1449"]
     }
   ]

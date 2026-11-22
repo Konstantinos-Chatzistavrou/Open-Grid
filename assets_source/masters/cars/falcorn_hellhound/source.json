@@ -1,13 +1,13 @@
 {
-  "name": "Falcorn Hellhound SC",
-  "url": "tools/pipeline/sculpt_fleet.py",
-  "author": "OpenGrid contributors",
-  "licence": "CC-BY-NC-4.0",
-  "licence_url": "https://creativecommons.org/licenses/by-nc/4.0/",
-  "downloaded": "2026-11-20",
+  "name": "( FREE ) Dodge Challenger SRT",
+  "url": "https://sketchfab.com/3d-models/free-dodge-challenger-srt-38a1fd572beb433fa2d26d8c1070c8fa",
+  "author": "SDC PERFORMANCE\u2122\ufe0f",
+  "licence": "CC-BY-4.0",
+  "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+  "downloaded": "2026-11-22",
   "files": [],
   "shipped": [
     "web/public/assets/cars/v5/falcorn_hellhound_hero.glb"
   ],
-  "notes": "Our own parametric sculpt (tools/pipeline/sculpt_fleet.py, ingested by tools/pipeline/ingest_car.py); no third-party mesh. 'downloaded' = the date the file first entered the repository (git)."
+  "notes": "Licence verified 2026-11-22 from the official Sketchfab API (https://api.sketchfab.com/v3/models/38a1fd572beb433fa2d26d8c1070c8fa: license 'CC Attribution'); evidence archived in assets_source/licenses/downloaded_cars_2026-11-22/falcorn_hellhound.json. OEM badges/plates/wordmarks stripped, subtle ~2.5% GTA 6-style proportional restyle applied, 3D OpenGrid brand crests stamped, 4 axle-centered spinning wheels and unified clearcoat paint built via tools/pipeline/sketchfab_gta6_blender.py. Provenance caution: third-party Sketchfab upload; independent authorship by the uploader cannot be guaranteed."
 }

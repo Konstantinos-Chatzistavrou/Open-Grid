@@ -13,7 +13,7 @@
   "cg_in_model_m": [
     0.0,
     0.396,
-    -0.15
+    -0.131
   ],
   "wheel_nodes": {
     "fl": "wheel_FL",
@@ -21,31 +21,32 @@
     "rl": "wheel_RL",
     "rr": "wheel_RR"
   },
-  "wheel_visual_offset_m": 0,
+  "wheel_visual_offset_m": 0.0,
   "collision_box": {
     "size_m": [
-      2.154,
-      0.704,
-      4.76
+      2.144,
+      0.701,
+      4.872
     ],
     "centre_in_model_m": [
       0.0,
-      0.55,
+      0.542,
       0.0
     ],
     "end_lift_m": 0.12,
-    "end_lift_start_m": 1.809
+    "end_lift_start_m": 1.832,
+    "note": "body 2.24 x 1.13 x 4.95 m; wheels are raycasts"
   },
   "headlights": [
     [
-      -0.732,
-      0.484,
-      2.2
+      -0.741,
+      0.52,
+      2.352
     ],
     [
-      0.732,
-      0.484,
-      2.2
+      0.741,
+      0.52,
+      2.352
     ]
   ],
   "driver_seat_m": [
@@ -55,83 +56,25 @@
   ],
   "driver_scale": 0.92,
   "panels": {
-    "front": [
-      "bumper_front",
-      "hood",
-      "grille",
-      "drl_L",
-      "drl_R"
-    ],
-    "rear": [
-      "bumper_rear",
-      "taillight_L",
-      "taillight_R",
-      "diffuser"
-    ],
-    "left": [
-      "door_L",
-      "fender_L",
-      "quarter_L",
-      "mirror_L"
-    ],
-    "right": [
-      "door_R",
-      "fender_R",
-      "quarter_R",
-      "mirror_R"
-    ]
+    "front": [],
+    "rear": [],
+    "left": [],
+    "right": []
   },
-  "detachable": {
-    "bumper_front": [
-      "front",
-      0.7
-    ],
-    "bumper_rear": [
-      "rear",
-      0.7
-    ],
-    "mirror_L": [
-      "left",
-      0.45
-    ],
-    "mirror_R": [
-      "right",
-      0.45
-    ]
-  },
-  "front_lights": [
-    "beam_L_0",
-    "beam_R_0",
-    "drl_L",
-    "drl_R"
-  ],
-  "rear_lights": [
-    "taillight_L",
-    "taillight_R"
-  ],
+  "detachable": {},
+  "front_lights": [],
+  "rear_lights": [],
   "exhaust_nozzles": [
     {
-      "x": -0.114,
-      "y": 0.245,
-      "z": -2.303,
+      "x": -0.28,
+      "y": 0.438,
+      "z": -2.4,
       "r": 0.055
     },
     {
-      "x": -0.049,
-      "y": 0.247,
-      "z": -2.303,
-      "r": 0.055
-    },
-    {
-      "x": 0.114,
-      "y": 0.245,
-      "z": -2.303,
-      "r": 0.055
-    },
-    {
-      "x": 0.049,
-      "y": 0.247,
-      "z": -2.303,
+      "x": 0.28,
+      "y": 0.438,
+      "z": -2.4,
       "r": 0.055
     }
   ],
@@ -140,5 +83,6 @@
     0.7,
     -1.0
   ],
-  "lod_distance_m": 32
+  "lod_distance_m": 32,
+  "notes": "GTA 6-style subtly restyled (~2.5%) build derived from 'Lamborghini Centenario LP-770 Interior SDC' by SDC PERFORMANCE\u2122\ufe0f (CC-BY-4.0, CREDITS.md): OEM badges/plates stripped, 3D OpenGrid crests added, unified clearcoat paint & 4 axle-centered spinning wheels. Front axle z 1.226, rear -1.447 (wheelbase 2.673), hub y 0.358."
 }

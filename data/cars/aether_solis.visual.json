@@ -13,7 +13,7 @@
   "cg_in_model_m": [
     0.0,
     0.451,
-    -0.15
+    -0.152
   ],
   "wheel_nodes": {
     "fl": "wheel_FL",
@@ -21,31 +21,32 @@
     "rl": "wheel_RL",
     "rr": "wheel_RR"
   },
-  "wheel_visual_offset_m": 0,
+  "wheel_visual_offset_m": 0.0,
   "collision_box": {
     "size_m": [
-      2.022,
-      0.801,
-      4.56
+      2.046,
+      0.727,
+      4.542
     ],
     "centre_in_model_m": [
       0.0,
-      0.626,
+      0.563,
       0.0
     ],
     "end_lift_m": 0.12,
-    "end_lift_start_m": 1.733
+    "end_lift_start_m": 1.71,
+    "note": "body 2.15 x 1.17 x 4.62 m; wheels are raycasts"
   },
   "headlights": [
     [
-      -0.687,
-      0.551,
-      2.1
+      -0.708,
+      0.539,
+      2.188
     ],
     [
-      0.687,
-      0.551,
-      2.1
+      0.708,
+      0.539,
+      2.188
     ]
   ],
   "driver_seat_m": [
@@ -55,93 +56,37 @@
   ],
   "driver_scale": 0.92,
   "panels": {
-    "front": [
-      "bumper_front",
-      "hood",
-      "grille",
-      "drl_L",
-      "drl_R"
-    ],
+    "front": [],
     "rear": [
-      "bumper_rear",
-      "taillight_bar",
-      "diffuser"
+      "wing"
     ],
-    "left": [
-      "door_L",
-      "fender_L",
-      "quarter_L",
-      "mirror_L"
-    ],
-    "right": [
-      "door_R",
-      "fender_R",
-      "quarter_R",
-      "mirror_R"
-    ]
+    "left": [],
+    "right": []
   },
-  "detachable": {
-    "bumper_front": [
-      "front",
-      0.7
-    ],
-    "bumper_rear": [
-      "rear",
-      0.7
-    ],
-    "mirror_L": [
-      "left",
-      0.45
-    ],
-    "mirror_R": [
-      "right",
-      0.45
-    ]
-  },
+  "detachable": {},
   "front_lights": [
-    "beam_L_0",
-    "beam_R_0",
-    "drl_L",
-    "drl_R"
+    "light_front_0",
+    "light_front_1"
   ],
   "rear_lights": [
-    "taillight_bar"
+    "light_rear_0",
+    "light_rear_1",
+    "light_rear_2",
+    "light_rear_3",
+    "light_rear_4",
+    "light_rear_5"
   ],
   "exhaust_nozzles": [
     {
-      "x": -0.212,
-      "y": 0.621,
-      "z": -2.203,
+      "x": -0.28,
+      "y": 0.444,
+      "z": -2.234,
       "r": 0.055
     },
     {
-      "x": -0.104,
-      "y": 0.62,
-      "z": -2.203,
-      "r": 0.055
-    },
-    {
-      "x": -0.056,
-      "y": 0.622,
-      "z": -2.203,
-      "r": 0.055
-    },
-    {
-      "x": 0.104,
-      "y": 0.62,
-      "z": -2.203,
-      "r": 0.055
-    },
-    {
-      "x": 0.056,
-      "y": 0.622,
-      "z": -2.203,
-      "r": 0.055
-    },
-    {
-      "x": 0.212,
-      "y": 0.621,
-      "z": -2.203,
+      "x": 0.28,
+      "y": 0.444,
+      "z": -2.234,
       "r": 0.055
     }
   ],
@@ -150,5 +95,6 @@
     0.78,
     -0.96
   ],
-  "lod_distance_m": 32
+  "lod_distance_m": 32,
+  "notes": "GTA 6-style subtly restyled (~2.5%) build derived from 'Mclaren P1 | www.vecarz.com' by vecarz (CC-BY-4.0, CREDITS.md): OEM badges/plates stripped, 3D OpenGrid crests added, unified clearcoat paint & 4 axle-centered spinning wheels. Front axle z 1.204, rear -1.467 (wheelbase 2.671), hub y 0.325."
 }

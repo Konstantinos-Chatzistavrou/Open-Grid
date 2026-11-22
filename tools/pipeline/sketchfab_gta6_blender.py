@@ -52,7 +52,7 @@ DROP_ENV_RE = re.compile(
 )
 
 WHEEL_RE = re.compile(
-    r"(wheel|tire|tyre|rim|alloy|spoke|hubcap|wheel_lip|tire_mat|tyre_mat|pneu|roue|ruota|cerchio|gomma|felge|reifen)",
+    r"(wheel|tire|tyre|rim|alloy|spoke|hubcap|wheel_lip|tire_mat|tyre_mat|pneu|roue|ruota|cerchio|gomma|felge|reifen|jante|ssrformula|bbs|enkei|te37)",
     re.IGNORECASE,
 )
 CALIPER_RE = re.compile(r"(caliper|calipper|pinza|brembo|brake_cal|bremssattel)", re.IGNORECASE)
@@ -228,7 +228,7 @@ def auto_orient_and_scale(target_len_m: float, extra_rot_z: float, flip_180: boo
         if HEADLIGHT_RE.search(tag):
             rear_score -= 1.5 * side
 
-    need_flip = flip_180 or (rear_score < -0.5)
+    need_flip = bool(flip_180) ^ (rear_score < -0.5)
     if need_flip:
         R180 = Matrix.Rotation(math.pi, 4, "Z")
         for o in objs:
@@ -237,7 +237,7 @@ def auto_orient_and_scale(target_len_m: float, extra_rot_z: float, flip_180: boo
 
     # 3. Scale to target_len_m, center X & Y, place tyres cleanly on Z = 0
     mn, mx = world_bbox(objs)
-    cur_len = max(0.5, mx.y - mn.y)
+    cur_len = max(1e-4, mx.y - mn.y)
     scale_f = target_len_m / cur_len if target_len_m > 0 else 1.0
     cx = 0.5 * (mn.x + mx.x)
     cy = 0.5 * (mn.y + mx.y)
@@ -614,6 +614,18 @@ def normalize_exhaust_nozzles(raw_nozzles, mn_g, mx_g):
     return picked
 
 
+def join_static_body_meshes():
+    """Collapse hundreds/thousands of static sub-meshes into a single multi-material `body` mesh for WebGPU FPS."""
+    keep_prefix = ("wheel_", "badge_", "wing", "light_front_", "light_rear_")
+    static_objs = [o for o in mesh_objs() if not o.name.startswith(keep_prefix)]
+    if len(static_objs) > 1:
+        n_before = len(static_objs)
+        merged = join_objects(static_objs, "body")
+        if merged and merged.data:
+            merged.data.name = "body"
+        print(f"[opt] Collapsed {n_before} static sub-meshes into 1 draw-call-optimized 'body' mesh")
+
+
 def main():
     args = parse_args()
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -640,6 +652,7 @@ def main():
     # Detect exhausts before sanitizing OEM mesh names
     raw_nozzles = detect_exhaust_nozzles_metadata()
     front_lights, rear_lights = sanitize_names_and_collect_lights()
+    join_static_body_meshes()
     place_3d_brand_badges(args.brand)
 
     os.makedirs(args.out_dir, exist_ok=True)
