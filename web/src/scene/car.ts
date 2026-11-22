@@ -17,10 +17,10 @@ import { Driver } from './driver';
 import { mergeStaticMeshes } from './merge';
 
 // Brake glow: nits per renderer emissive unit (see CarVisual.applyRotorTemp). The renderer is not calibrated in nits, so
-// this is the one look choice: 25 matched the old peak in LUMINANCE, 78 matches it in the red CHANNEL (deep red light
-// carries ~3.8x its luminance in red). ?glownits=x overrides it, ?brakeglowc=T forces every disc to T C (look tests).
+// this is the one look choice: 25 (chosen: the brighter, more cinematic option, a strong bloom from ~900 C), 78 would
+// match the old art peak in the red channel (deep red light carries ~3.8x its luminance in red). ?glownits=x overrides it, ?brakeglowc=T forces every disc to T C (look tests).
 const glowParam = (k: string) => { try { const v = new URLSearchParams(location.search).get(k); return v === null ? null : Number(v); } catch { return null; } };
-const GLOW_NITS_PER_UNIT = glowParam('glownits') ?? 78;
+const GLOW_NITS_PER_UNIT = glowParam('glownits') ?? 25;
 const GLOW_FORCE_C = glowParam('brakeglowc');
 
 /**
@@ -763,7 +763,7 @@ export class CarVisual {
   /**
    * Disc temperature (C) -> the glow ring's emission, from physics (core rs::incandescence, oxidised iron): nothing
    * below ~500 C, 1.1 nit at 700 C (dull red), 71 nit at 900 C. GLOW_NITS_PER_UNIT maps nits into this renderer's
-   * (uncalibrated) emissive units, anchored so 900 C matches the previous art peak in the red channel. Returns units.
+   * (uncalibrated) emissive units, 25 nit per unit (see GLOW_NITS_PER_UNIT). Returns units.
    */
   private applyRotorTemp(w: CarVisual['wheels'][number], tempC: number): number {
     const t = GLOW_FORCE_C ?? tempC;
