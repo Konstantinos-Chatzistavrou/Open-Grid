@@ -562,6 +562,19 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         }
     }
 
+    // ---- Engine coolant (water): a wax thermostat (opens ~87 C, fully ~97 C) holds it near 90 C; it climbs when the heat
+    // into the coolant (~0.7 x brake power + idle) outruns the radiator (airflow, the fan when stopped, damage) and falls
+    // in the cold. Estimates: 60 kJ/K (coolant + the metal it wets), radiator 1.0 + 0.045 v kW/K.
+    {
+        const double amb = in.atmosphere_enabled ? in.ambient_air_c : 25.0;
+        const double p_kw = std::max(0.0, t_engine * engine_omega) / 1000.0;
+        const double q_in = (stalled ? 0.0 : 2.5) + 0.7 * p_kw;
+        const double open = clamp((systems.coolant_temp_c - 87.0) / 10.0, 0.0, 1.0);
+        const double ua = (1.0 + 0.045 * std::max(0.0, in.airspeed_mps)) * clamp(in.radiator_cooling_scale, 0.1, 1.0);
+        const double q_out = (ua * open + 0.04) * (systems.coolant_temp_c - amb);
+        systems.coolant_temp_c = clamp(systems.coolant_temp_c + h * (q_in - q_out) / 60.0, amb - 1.0, 135.0);
+    }
+
     // ---- Physical Clutch Friction Disc (Karnopp stick/slip) & Gearbox Tooth Integrity
     // Reference: D. Karnopp (1985), "Computer Simulation of Stick-Slip Friction in Mechanical Dynamic Systems",
     // ASME J. Dyn. Syst. Meas. Control 107(1):100-103.

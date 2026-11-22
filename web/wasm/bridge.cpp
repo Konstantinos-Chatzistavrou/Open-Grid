@@ -255,14 +255,46 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     c.vehicle->set_input(di);
     c.out = c.vehicle->update(c.cs, contacts, dt);
 
-    // Dashboard: needles as a real cluster shows them (CAN 50 Hz + stepper), rev limiter state.
-    // [420] tach pointer rpm [421] speedo pointer km/h [422] limiter cut [423] tach dial max rpm [424] speedo dial max km/h
-    c.cluster.step(c.vehicle->engine_rpm(), std::abs(c.out.speed) * 3.6, dt);
+    // Dashboard (rs/cluster.hpp): needles as a real cluster shows them (CAN + stepper), lamps, indicated speed.
+    // [420] tach pointer rpm [421] speedo pointer km/h (indicated) [422] limiter cut [423] tach dial max rpm
+    // [424] speedo dial max km/h [425] water pointer C [426] oil pointer C [427] boost pointer bar [428] lamp bits
+    // (rs::ClusterLamp) [429] turbo fitted [430] indicated speed km/h (reads a few % high, as real speedometers do)
+    {
+        const rs::EngineSystemState& es = c.vehicle->engine_systems();
+        rs::ClusterInputs ci;
+        ci.rpm = c.vehicle->engine_rpm();
+        ci.speed_kmh = std::abs(c.out.speed) * 3.6;
+        ci.coolant_c = es.coolant_temp_c;
+        ci.oil_c = es.oil_temp_c;
+        ci.boost_bar = es.boost_bar;
+        ci.turbo = es.turbo_stage > 0;
+        ci.engine_running = !c.out.engine_stalled;
+        ci.abs_enabled = c.vehicle->assists().abs;
+        ci.esc_enabled = c.vehicle->assists().esc;
+        ci.esc_or_tc_active = c.out.assists.tc_cut > 0.02 || c.out.assists.esc_mode != 0;
+        ci.handbrake = c.vehicle->input().handbrake > 0.1;
+        ci.brake_fault = c.out.damage.brakes_failed;
+        ci.engine_health = es.engine_health;
+        ci.fuel_l = es.fuel_consumption_enabled ? es.fuel_liters : 50.0;
+        double pr = 2.0;
+        for (int w = 0; w < 4; ++w) {
+            const double p = c.out.wheels[w].condition.pressure_kpa, set = c.cfg.tire(w).p_cold_kpa;
+            if (p > 0 && set > 0) pr = std::min(pr, p / set);
+        }
+        ci.min_tyre_pressure_ratio = pr;
+        c.cluster.step(ci, dt);
+    }
     b[420] = c.cluster.tach.value();
     b[421] = c.cluster.speedo.value();
     b[422] = c.vehicle->engine_systems().limiter_cut ? 1 : 0;
     b[423] = c.cluster.tach_max_rpm();
     b[424] = c.cluster.speedo.params().full_scale;
+    b[425] = c.cluster.water.value() + rs::InstrumentCluster::kWaterMin;
+    b[426] = c.cluster.oil.value() + rs::InstrumentCluster::kOilMin;
+    b[427] = c.cluster.boost.value() + rs::InstrumentCluster::kBoostMin;
+    b[428] = double(c.cluster.lamps());
+    b[429] = c.vehicle->engine_systems().turbo_stage > 0 ? 1 : 0;
+    b[430] = c.cluster.indicated_speed_kmh();
     put(b + 96, c.out.force);
     put(b + 99, c.out.torque);
     b[102] = c.out.speed;

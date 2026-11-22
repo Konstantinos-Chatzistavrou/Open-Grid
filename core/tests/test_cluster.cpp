@@ -69,3 +69,60 @@ RS_TEST(cluster) {
         test::check_range("sweep and back to the idle reading", t, 1.0, 2.0, "s");
     }
 }
+
+RS_TEST(cluster_gauges) {
+    // Speedometer over-read inside UN R39: 0 <= indicated - true <= true / 10 + 4 km/h, at every speed.
+    {
+        InstrumentCluster cl;
+        cl.configure(7500);
+        bool ok = true;
+        for (double v = 0; v <= 330; v += 5) {
+            ClusterInputs in; in.speed_kmh = v;
+            cl.step(in, 1.0 / 240);
+            const double d = cl.indicated_speed_kmh() - v;
+            if (d < -1e-9 || d > v / 10 + 4 + 1e-9) ok = false;
+        }
+        ClusterInputs in; in.speed_kmh = 100; cl.step(in, 1.0 / 240);
+        std::printf("         speedometer: true 100 km/h reads %.1f km/h\n", cl.indicated_speed_kmh());
+        test::check("speedometer never reads low and stays inside UN R39 (0 .. +10 % + 4 km/h)", ok);
+    }
+    // Water gauge buffered across the normal band; outside it, it moves.
+    test::check("water needle mid-scale across 80-105 C", InstrumentCluster::buffered_coolant(82) == 90 && InstrumentCluster::buffered_coolant(104) == 90);
+    test::check("water needle moves when cold or overheating", InstrumentCluster::buffered_coolant(40) < 60 && InstrumentCluster::buffered_coolant(120) > 110);
+    // Lamps: the bulb check lights them all, then only what applies stays lit.
+    {
+        InstrumentCluster cl;
+        cl.configure(7500);
+        cl.ignition_sweep();
+        ClusterInputs in; in.rpm = 900; in.handbrake = true;
+        cl.step(in, 0.1);
+        const unsigned at_key = cl.lamps();
+        for (int i = 0; i < 30; ++i) cl.step(in, 0.1);
+        std::printf("         lamps at key-on 0x%03x, after 3 s 0x%03x (handbrake on)\n", at_key, cl.lamps());
+        test::check("key-on bulb check lights every lamp", at_key == 0x3FFu);
+        test::check("after it only the handbrake lamp stays (engine running)", cl.lamps() == LampBrake);
+        in.handbrake = false; in.esc_or_tc_active = true;
+        int on = 0, off = 0;
+        for (int i = 0; i < 240; ++i) { cl.step(in, 1.0 / 240); (cl.lamps() & LampEsc) ? ++on : ++off; }
+        test::check("the ESC lamp flashes while it intervenes", on > 60 && off > 60);
+        in.esc_or_tc_active = false; in.esc_enabled = false; in.min_tyre_pressure_ratio = 0.6;
+        cl.step(in, 0.1);
+        test::check("ESC OFF and TPMS lamps", (cl.lamps() & LampEscOff) && (cl.lamps() & LampTpms));
+    }
+    // Coolant: the thermostat holds ~90 C at idle and on a fast cruise; a holed radiator lets it boil over.
+    {
+        const CarConfig cfg = test::car();
+        auto idle = test::make_sim(cfg);
+        for (int i = 0; i < 240 * 120; ++i) { DriverInput in; in.gear = 1; idle->step(in); }
+        const double t_idle = idle->vehicle.engine_systems().coolant_temp_c;
+        auto cold = test::make_sim(cfg);
+        cold->vehicle.engine_systems().coolant_temp_c = 20;
+        cold->reset({}, 0, 25, 5);
+        test::SpeedController sc;
+        while (cold->time < 300) { DriverInput in; in.gear = 5; sc.apply(*cold, 25, in); cold->step(in); }
+        const double t_warm = cold->vehicle.engine_systems().coolant_temp_c;
+        std::printf("         coolant: idle 2 min %.1f C; from 20 C, 5 min at 90 km/h -> %.1f C\n", t_idle, t_warm);
+        test::check_range("thermostat holds idle near 90 C", t_idle, 86, 96, "C");
+        test::check("a cold engine warms up while driving", t_warm > 40);
+    }
+}

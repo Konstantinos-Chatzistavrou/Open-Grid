@@ -241,6 +241,7 @@ export interface Damage {
 export const OUT = {
   /** dashboard (rs/cluster.hpp): tach / speedo pointer, limiter cut 0/1, dial ends */
   tachNeedle: 420, speedoNeedle: 421, limiterCut: 422, tachMax: 423, speedoMax: 424,
+  waterNeedle: 425, oilNeedle: 426, boostNeedle: 427, lamps: 428, turbo: 429, speedIndicated: 430,
   force: 96, torque: 99, speed: 102, rpm: 103, gear: 104, sideslip: 105, stalled: 106,
   throttle: 107, brake: 108, steer: 109, abs: 113, tc: 114, esc: 115, steerTorque: 116,
   wheel: (i: number) => 120 + 12 * i,   // centre xyz, steer, spin, contact, load, slipRatio, slipAngle, compression, angVel, surface

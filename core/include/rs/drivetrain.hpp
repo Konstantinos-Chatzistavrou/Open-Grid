@@ -71,6 +71,7 @@ struct EngineSystemState {
     double nos_bottles_l = 4.5;     // remaining N2O liquid volume (liters)
     double nos_capacity_l = 4.5;    // full N2O bottle capacity (liters)
     double oil_temp_c = 85.0;       // engine oil temperature (C; optimal 80-115 C, overheats > 130 C)
+    double coolant_temp_c = 90.0;   // engine coolant (water) temperature (C; the thermostat holds ~90 C, boils ~125 C)
     double engine_health = 1.0;     // 0..1 mechanical health (degrades under severe overheat/redline abuse; < 0.65 causes misfires)
     bool wear_enabled = false;      // true to accumulate progressive redline/thermal wear during a session
     bool misfiring = false;         // true during an active ignition misfire dip
