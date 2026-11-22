@@ -172,6 +172,36 @@ function contactShadowTex() {
 }
 
 /**
+ * Soft radial wet-road / garage-floor exhaust flame bounce reflection texture (128x128 RGBA).
+ * Elongated rearward behind the tailpipes for realistic Forza wet-asphalt reflection without any PointLight.
+ */
+let bounceGlowTex: THREE.DataTexture | null = null;
+function exhaustBounceTex() {
+  if (bounceGlowTex) return bounceGlowTex;
+  const N = 128, px = new Uint8Array(N * N * 4);
+  for (let y = 0; y < N; y++) {
+    const v = (y / (N - 1)) * 2 - 1; // -1..+1 along car Z
+    for (let x = 0; x < N; x++) {
+      const u = (x / (N - 1)) * 2 - 1; // -1..+1 across car X
+      // Slightly concentrated hot pool near pipe exit, softer long wet-asphalt sheen trailing behind
+      const d = Math.hypot(u * 1.12, (v + 0.16) * 0.92);
+      const core = Math.max(0, 1 - d / 0.52);
+      const halo = Math.max(0, 1 - d / 1.0);
+      const val = Math.min(1, core * core * 0.72 + halo * halo * halo * 0.58);
+      const c = Math.round(val * 255);
+      const i = (y * N + x) * 4;
+      px[i] = c; px[i + 1] = c; px[i + 2] = c; px[i + 3] = c;
+    }
+  }
+  bounceGlowTex = new THREE.DataTexture(px, N, N, THREE.RGBAFormat);
+  bounceGlowTex.generateMipmaps = true;
+  bounceGlowTex.minFilter = THREE.LinearMipmapLinearFilter;
+  bounceGlowTex.magFilter = THREE.LinearFilter;
+  bounceGlowTex.needsUpdate = true;
+  return bounceGlowTex;
+}
+
+/**
  * Radial motion-blurred forged-alloy spoke texture (256x256 RGBA) for high-speed wheels.
  * Keeps semi-transparent swept gaps between blurred spoke arcs so brake calipers & rotors remain subtly visible.
  */
@@ -615,13 +645,23 @@ export class CarVisual {
     ring.position.set(x, (box.max.y + box.min.y) / 2, (box.max.z + box.min.z) / 2);
     node.add(ring);
 
-    // Thermal incandescent brake rotor glow ring inboard of spokes (uniform-only: 0 extra lights, 0 shader recompiles)
+    // Thermal incandescent carbon-ceramic brake rotor glow ring inboard of spokes (uniform-only: 0 extra lights, 0 shader recompiles)
     const rMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
     const h = rotorHeat;
-    const cherry = vec3(1.15, 0.12, 0.01);
-    const bright = vec3(2.8, 1.05, 0.22);
-    rMat.colorNode = vec4(mix(cherry, bright, smoothstep(float(0.35), float(1.0), h)).mul(h), 1);
-    rMat.opacityNode = h.mul(0.88);
+    const rp = uv().sub(0.5);
+    const rr = rp.length().mul(2.0); // ~0.42 inner hat .. 0.79 outer rotor rim
+    // Swept brake-pad thermal profile: hottest in the middle swept friction band with fine machined rotor grooves
+    const padBand = smoothstep(float(0.41), float(0.50), rr).mul(smoothstep(float(0.80), float(0.70), rr));
+    const grooves = sin(rr.mul(76.0)).mul(0.09).add(0.91);
+    const localHeat = h.mul(padBand.mul(0.55).add(0.45)).mul(grooves).clamp(0, 1);
+    // Authentic blackbody ramp (360 C -> 920 C): deep cherry #880800 -> molten crimson #e82400 -> incandescent orange-gold #ff7818
+    const cherry = vec3(0.95, 0.055, 0.005);
+    const crimson = vec3(1.85, 0.28, 0.02);
+    const incand = vec3(3.45, 1.48, 0.28);
+    const stage1 = mix(cherry, crimson, smoothstep(float(0.0), float(0.52), localHeat));
+    const blackbody = mix(stage1, incand, smoothstep(float(0.46), float(1.0), localHeat));
+    rMat.colorNode = vec4(blackbody.mul(localHeat), 1);
+    rMat.opacityNode = localHeat.mul(0.92);
     if (!sharedRotorRingGeo) sharedRotorRingGeo = new THREE.RingGeometry(0.42, 0.79, 28, 1);
     const rotorGlow = new THREE.Mesh(sharedRotorRingGeo, rMat);
     rotorGlow.scale.setScalar(rimRadius);
@@ -696,16 +736,42 @@ export class CarVisual {
   /** Outward wheel track spacer (m) synced with equipped widebody fender kit so wheels sit flush inside widebody arches. */
   private widebodyTrackM = 0;
   private qc = new THREE.Quaternion();
-  /** Photorealistic Mach-diamond exhaust-only flamethrower VFX (anchored strictly to real exhaust tips). */
+  /** Photorealistic dual-stage Mach-diamond exhaust VFX + wet-road bounce quad + exhaust heat shimmer (0 PointLights). */
   private flameGroup: THREE.Group | null = null;
+  private flamePlumeGroup: THREE.Group | null = null;
+  private flameBounceQuad: THREE.Mesh | null = null;
+  private flameShimmerGroup: THREE.Group | null = null;
   private flameNozzles: THREE.Object3D[] = [];
   private flameIntU: THREE.UniformNode<'float', number> = uniform(0);
   private flameNosU: THREE.UniformNode<'float', number> = uniform(0);
-  private flameLight: THREE.PointLight | null = null;
-  private flameLightAt = new THREE.Vector3();
+  private flameBounceOpU: THREE.UniformNode<'float', number> = uniform(0);
+  private flameHeatU: THREE.UniformNode<'float', number> = uniform(0);
   /** load-time warm-up running (main.ts): every on-demand mesh is drawn so its pipelines compile behind the loader */
   private warming = false;
   private flameLevel = 0;
+  private exhaustHeatLevel = 0;
+  private externalBrakeGlow = false;
+
+  /**
+   * Drive physical incandescent carbon-ceramic brake rotor glow per wheel [FL, FR, RL, RR].
+   * Accepts physical temperatures in Celsius (360 C dull cherry -> 920 C incandescent orange-gold)
+   * or pre-normalized intensities in [0..1]. Zero allocations, uniform-only (0 shader recompiles).
+   */
+  setBrakeGlow(tempsC: readonly [number, number, number, number]) {
+    this.externalBrakeGlow = true;
+    for (let i = 0; i < this.wheels.length && i < 4; i++) {
+      const w = this.wheels[i];
+      const t = tempsC[i] ?? 20;
+      const heat = t <= 1.5
+        ? THREE.MathUtils.clamp(t, 0, 1)
+        : THREE.MathUtils.smoothstep(t, 360, 920);
+      w.rotorHeat.value = heat;
+      if (w.glow) {
+        const v = this.warming || heat > 0.002;
+        if (w.glow.visible !== v) w.glow.visible = v;
+      }
+    }
+  }
 
   setStance(camberFrontDeg: number, camberRearDeg: number) {
     this.camberFrontRad = (camberFrontDeg * Math.PI) / 180;
@@ -791,7 +857,7 @@ export class CarVisual {
     return geo;
   }
 
-  /** Photorealistic WebGPU TSL Mach-diamond exhaust afterburner shader (zero hard edges, HDR bloom). */
+  /** Photorealistic WebGPU TSL outer turbulent Mach-diamond flame tongue shader (zero hard edges, HDR bloom). */
   private createExhaustFlameMat(): THREE.MeshBasicNodeMaterial {
     const m = new THREE.MeshBasicNodeMaterial();
     m.name = 'exhaust_mach_flame';
@@ -805,104 +871,243 @@ export class CarVisual {
     const u = p.x;
 
     // Fast supersonic turbulent gas flow scrolling backward out of the tailpipe
-    const flowA = noise01(vec2(u.mul(3.5), v.mul(3.2).sub(time.mul(22.0))));
-    const flowB = noise01(vec2(u.mul(7.0).add(2.3), v.mul(6.5).sub(time.mul(34.0))));
-    const turb = flowA.mul(0.62).add(flowB.mul(0.38));
+    const flowA = noise01(vec2(u.mul(3.5), v.mul(3.2).sub(time.mul(24.0))));
+    const flowB = noise01(vec2(u.mul(7.0).add(2.3), v.mul(6.8).sub(time.mul(38.0))));
+    const turb = flowA.mul(0.60).add(flowB.mul(0.40));
 
     // Standing Mach shock diamonds near the nozzle exit (signature real GT3 / anti-lag / titanium flame physics!)
-    const shockWave = pow(max(float(0), sin(v.mul(27.0).sub(time.mul(16.0)))), float(3.2))
+    const shockWave = pow(max(float(0), sin(v.mul(29.0).sub(time.mul(18.0)))), float(3.4))
       .mul(smoothstep(float(0.02), float(0.10), v))
-      .mul(smoothstep(float(0.68), float(0.14), v));
+      .mul(smoothstep(float(0.70), float(0.14), v));
 
     // Soft view-angle Fresnel fade removes all hard cone silhouette lines from any viewing angle
     const fresnel = pow(abs(normalView.z), float(0.85));
-    const throat = smoothstep(float(0.0), float(0.05), v);
-    const tailFade = pow(max(float(0), float(1).sub(v).add(turb.sub(0.5).mul(0.26))), float(1.65));
+    const throat = smoothstep(float(0.0), float(0.045), v);
+    const tailFade = pow(max(float(0), float(1).sub(v).add(turb.sub(0.5).mul(0.30))), float(1.55));
 
-    // Normal gasoline/anti-lag palette: white-blue throat -> electric cyan Mach diamonds -> molten orange -> deep crimson tip
-    const gasOuter = mix(vec3(1.0, 0.42, 0.04), vec3(0.85, 0.08, 0.01), smoothstep(float(0.35), float(0.95), v));
-    const gasMid = mix(vec3(1.0, 0.86, 0.48), gasOuter, smoothstep(float(0.10), float(0.45), v));
-    const gasCol = mix(gasMid, vec3(0.55, 0.88, 1.0), shockWave.mul(0.82))
-      .add(vec3(1.0, 0.98, 0.92).mul(smoothstep(float(0.18), float(0.0), v).mul(1.1)));
+    // Normal gasoline/anti-lag palette: white-blue throat -> cobalt Mach diamonds -> flickering amber-orange -> deep crimson tip
+    const gasOuter = mix(vec3(1.0, 0.44, 0.04), vec3(0.86, 0.08, 0.01), smoothstep(float(0.32), float(0.95), v));
+    const gasMid = mix(vec3(1.0, 0.86, 0.48), gasOuter, smoothstep(float(0.09), float(0.44), v));
+    const gasCol = mix(gasMid, vec3(0.42, 0.82, 1.0), shockWave.mul(0.88))
+      .add(vec3(0.94, 0.98, 1.0).mul(smoothstep(float(0.16), float(0.0), v).mul(1.15)));
 
     // Nitrous oxide [X] plasma palette: white-hot throat -> cyan-cobalt shock diamonds -> electric violet tip
-    const nosOuter = mix(vec3(0.12, 0.56, 1.0), vec3(0.42, 0.14, 1.0), smoothstep(float(0.35), float(0.95), v));
-    const nosCol = mix(vec3(0.82, 0.98, 1.0), nosOuter, smoothstep(float(0.10), float(0.50), v))
-      .add(vec3(1.0, 1.0, 1.0).mul(shockWave.mul(0.95)));
+    const nosOuter = mix(vec3(0.10, 0.56, 1.0), vec3(0.44, 0.14, 1.0), smoothstep(float(0.34), float(0.95), v));
+    const nosCol = mix(vec3(0.82, 0.98, 1.0), nosOuter, smoothstep(float(0.09), float(0.48), v))
+      .add(vec3(1.0, 1.0, 1.0).mul(shockWave.mul(0.98)));
 
     const flameRgb = mix(gasCol, nosCol, this.flameNosU);
     const alpha = throat.mul(tailFade).mul(fresnel).mul(turb.mul(0.55).add(0.45)).mul(this.flameIntU).clamp(0, 1);
     // HDR energy > 1.5 triggers rich emitter-biased WebGPU bloom right around the tailpipes
-    const hdrBoost = float(3.8).add(shockWave.mul(2.4)).mul(this.flameIntU);
+    const hdrBoost = float(3.9).add(shockWave.mul(2.6)).mul(this.flameIntU);
     m.colorNode = vec4(flameRgb.mul(hdrBoost), alpha);
     return m;
   }
 
+  /** Inner white-blue supersonic plasma core with crisp cobalt Mach shock-diamond nodes. */
+  private createExhaustCoreMat(): THREE.MeshBasicNodeMaterial {
+    const m = new THREE.MeshBasicNodeMaterial();
+    m.name = 'exhaust_mach_core';
+    m.transparent = true;
+    m.blending = THREE.AdditiveBlending;
+    m.depthWrite = false;
+    m.side = THREE.DoubleSide;
+
+    const p = uv();
+    const v = p.y;
+    const u = p.x;
+    const flow = noise01(vec2(u.mul(4.5), v.mul(5.5).sub(time.mul(32.0))));
+    const diamonds = pow(max(float(0), sin(v.mul(36.0).sub(time.mul(20.0)))), float(4.0))
+      .mul(smoothstep(float(0.02), float(0.08), v))
+      .mul(smoothstep(float(0.78), float(0.18), v));
+    const fresnel = pow(abs(normalView.z), float(0.75));
+    const coreFade = smoothstep(float(0.0), float(0.04), v).mul(pow(max(float(0), float(1).sub(v)), float(1.35)));
+    const gasCore = mix(vec3(0.92, 0.97, 1.0), vec3(0.32, 0.72, 1.0), smoothstep(float(0.08), float(0.55), v))
+      .add(vec3(1.0, 0.94, 0.85).mul(diamonds.mul(1.25)));
+    const nosCore = mix(vec3(1.0, 1.0, 1.0), vec3(0.24, 0.86, 1.0), smoothstep(float(0.10), float(0.60), v))
+      .add(vec3(0.85, 0.98, 1.0).mul(diamonds.mul(1.4)));
+    const rgb = mix(gasCore, nosCore, this.flameNosU);
+    const alpha = coreFade.mul(fresnel).mul(flow.mul(0.35).add(0.65)).mul(this.flameIntU).clamp(0, 1);
+    const hdr = float(4.8).add(diamonds.mul(3.2)).mul(this.flameIntU);
+    m.colorNode = vec4(rgb.mul(hdr), alpha);
+    return m;
+  }
+
+  /** Shader-free wet-road & garage-floor ground-bounce reflection quad material (ZERO PointLights, ZERO recompiles!). */
+  private createExhaustBounceMat(): THREE.MeshBasicNodeMaterial {
+    const m = new THREE.MeshBasicNodeMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -3,
+    });
+    m.name = 'exhaust_ground_bounce';
+    const p = uv();
+    const radial = texture(exhaustBounceTex(), p).r;
+    // Wet asphalt micro-streak shimmer along the reflection axis
+    const sheen = noise01(vec2(p.x.mul(10.0), p.y.mul(3.5).sub(time.mul(6.0)))).mul(0.28).add(0.72);
+    const gasGlow = vec3(1.55, 0.50, 0.08);
+    const nosGlow = vec3(0.16, 0.66, 1.95);
+    const col = mix(gasGlow, nosGlow, this.flameNosU);
+    const a = radial.mul(sheen).mul(this.flameBounceOpU).clamp(0, 1);
+    m.colorNode = vec4(col.mul(a), a);
+    return m;
+  }
+
+  /** Exhaust tip inner hot-bore orange glow + subtle rising thermal heat shimmer (zero PointLights). */
+  private createExhaustShimmerMat(): THREE.MeshBasicNodeMaterial {
+    const m = new THREE.MeshBasicNodeMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    m.name = 'exhaust_heat_shimmer';
+    const p = uv();
+    const centered = p.sub(0.5);
+    const r = centered.length().mul(2.0);
+    const wave = noise01(vec2(p.x.mul(5.0), p.y.mul(4.5).sub(time.mul(6.5))));
+    const soft = smoothstep(float(1.0), float(0.15), r);
+    // Deep hot titanium-amber bore glow + faint shimmering warm air haze
+    const col = mix(vec3(1.35, 0.36, 0.04), vec3(1.85, 0.72, 0.16), wave.mul(0.65));
+    const a = soft.mul(wave.mul(0.45).add(0.55)).mul(this.flameHeatU).mul(0.55).clamp(0, 1);
+    m.colorNode = vec4(col.mul(a.mul(2.2)), a);
+    return m;
+  }
+
   /**
-   * Load-time warm-up (main.ts, next to damage.warmup): the exhaust flames are built now and drawn at zero intensity
-   * through the warm-up frames, and the wheel blur discs and rotor glows stay drawn too, so their pipelines compile behind
-   * the loading screen instead of mid-drive (pipelog: two exhaust_mach_flame pipelines compiled on the main thread at the
-   * first throttle lift of a race). The materials are the same node graphs for every car, so a car bought later reuses
-   * those pipelines. The flame's light stays lazy (setExhaustFlame).
+   * Load-time warm-up (main.ts, next to damage.warmup): the exhaust flames, ground-bounce reflection quad, and heat
+   * shimmer are built now and drawn at zero intensity through the warm-up frames, and the wheel blur discs and rotor
+   * glows stay drawn too, so their pipelines compile behind the loading screen instead of mid-drive.
    */
   warmup(on: boolean) {
     this.warming = on;         // wheel blur discs and rotor glows stay drawn too (update), so they compile now as well
-    this.setExhaustFlame(0);   // builds the flame group (nozzles, plume) once
+    this.setExhaustFlame(0, false, 0, 0);   // builds all exhaust VFX meshes once
     if (!this.flameGroup) return;
     this.flameLevel = 0;
+    this.exhaustHeatLevel = 0;
     this.flameIntU.value = 0;
+    this.flameBounceOpU.value = 0;
+    this.flameHeatU.value = 0;
     this.flameGroup.visible = on;
+    if (this.flamePlumeGroup) this.flamePlumeGroup.visible = on;
+    if (this.flameBounceQuad) this.flameBounceQuad.visible = on;
+    if (this.flameShimmerGroup) this.flameShimmerGroup.visible = on;
   }
 
-  /** Trigger or sustain photorealistic Mach-diamond flames shooting strictly from this car's exhaust pipes. */
-  setExhaustFlame(intensity: number, blueNos = false) {
+  /**
+   * Trigger or sustain photorealistic dual-stage Mach-diamond flames, wet-road ground-bounce reflection glow,
+   * and exhaust tip heat shimmer strictly from this car's exhaust pipes (ZERO PointLights, ZERO allocations).
+   */
+  setExhaustFlame(intensity: number, blueNos = false, roadWetness = 0.35, exhaustHeat = 0) {
     if (!this.flameGroup) {
       const g = new THREE.Group();
       g.name = 'wheel_exhaust_flames';
+      const plumes = new THREE.Group();
+      plumes.name = 'wheel_exhaust_plumes';
+      const shimmers = new THREE.Group();
+      shimmers.name = 'wheel_exhaust_shimmer';
+
       const plumeGeo = this.buildExhaustPlumeGeo();
-      const plumeMat = this.createExhaustFlameMat();
+      const outerMat = this.createExhaustFlameMat();
+      const coreMat = this.createExhaustCoreMat();
+      const shimmerMat = this.createExhaustShimmerMat();
+      const boreGeo = new THREE.CircleGeometry(0.048, 16);
+      boreGeo.rotateY(Math.PI); // face backward (-Z) out of the tailpipe
+      const shimmerFinGeo = new THREE.PlaneGeometry(0.11, 0.22);
+
       const nozzles = this.detectExhaustNozzles();
-      let avgX = 0, avgY = 0, avgZ = 0;
+      let avgX = 0, avgZ = 0, minX = Infinity, maxX = -Infinity;
       for (const nz of nozzles) {
         const pair = new THREE.Group();
         pair.position.set(nz.x, nz.y, nz.z);
         const rScale = nz.r / 0.052;
-        // Outer turbulent plume + tight inner high-velocity supersonic core
-        const outer = new THREE.Mesh(plumeGeo, plumeMat);
-        outer.scale.set(rScale * 1.15, rScale * 1.15, 0.92);
-        const inner = new THREE.Mesh(plumeGeo, plumeMat);
-        inner.scale.set(rScale * 0.56, rScale * 0.56, 0.58);
+        // Stage 1: Outer flickering turbulent amber-orange tongue
+        const outer = new THREE.Mesh(plumeGeo, outerMat);
+        outer.scale.set(rScale * 1.18, rScale * 1.18, 0.96);
+        // Stage 2: Tight inner white-blue supersonic plasma core + cobalt Mach shock diamonds
+        const inner = new THREE.Mesh(plumeGeo, coreMat);
+        inner.scale.set(rScale * 0.54, rScale * 0.54, 0.62);
         inner.rotation.z = Math.PI * 0.5;
         pair.add(outer, inner);
-        g.add(pair);
+        plumes.add(pair);
         this.flameNozzles.push(pair);
-        avgX += nz.x; avgY += nz.y; avgZ += nz.z;
+
+        // Exhaust tip inner hot bore glow + subtle rising heat shimmer right behind the pipe mouth
+        const tipGlow = new THREE.Mesh(boreGeo, shimmerMat);
+        tipGlow.name = 'wheel_exhaust_bore';
+        tipGlow.scale.setScalar(rScale * 0.92);
+        tipGlow.position.set(nz.x, nz.y, nz.z - 0.015);
+        const finA = new THREE.Mesh(shimmerFinGeo, shimmerMat);
+        finA.name = 'wheel_exhaust_haze_a';
+        finA.scale.setScalar(rScale);
+        finA.position.set(nz.x, nz.y + 0.06, nz.z - 0.10);
+        const finB = new THREE.Mesh(shimmerFinGeo, shimmerMat);
+        finB.name = 'wheel_exhaust_haze_b';
+        finB.scale.setScalar(rScale);
+        finB.rotation.y = Math.PI * 0.5;
+        finB.position.set(nz.x, nz.y + 0.06, nz.z - 0.10);
+        shimmers.add(tipGlow, finA, finB);
+
+        avgX += nz.x; avgZ += nz.z;
+        if (nz.x < minX) minX = nz.x;
+        if (nz.x > maxX) maxX = nz.x;
       }
-      // Compact rear diffuser & wet-asphalt reflection flash: its point light is made at the first real flame (below), not
-      // here: built during the load-time warm-up it added ~32 garage pipeline variants and ~2 s to the load (measured).
+
+      // Pre-built additive wet-road / garage-floor ground-bounce reflection quad right below the exhaust tips
       const n = Math.max(1, nozzles.length);
-      this.flameLightAt.set(avgX / n, avgY / n + 0.08, avgZ / n - 0.35);
+      const spanX = Number.isFinite(minX) ? Math.max(0.6, maxX - minX) : 0.9;
+      const bounceGeo = new THREE.PlaneGeometry(spanX + 1.85, 2.75);
+      bounceGeo.rotateX(-Math.PI / 2);
+      const bounceQuad = new THREE.Mesh(bounceGeo, this.createExhaustBounceMat());
+      bounceQuad.name = 'wheel_exhaust_bounce';
+      bounceQuad.position.set(avgX / n, this.contactShadow.position.y + 0.008, avgZ / n - 0.62);
+      bounceQuad.castShadow = false;
+      bounceQuad.receiveShadow = false;
+      bounceQuad.renderOrder = 1;
+
+      g.add(plumes, shimmers, bounceQuad);
       g.visible = false;
       this.model.add(g);
       this.flameGroup = g;
+      this.flamePlumeGroup = plumes;
+      this.flameShimmerGroup = shimmers;
+      this.flameBounceQuad = bounceQuad;
     }
 
-    this.flameLevel = Math.max(this.flameLevel * 0.72, Math.max(0, Math.min(1.4, intensity)));
-    const on = this.flameLevel > 0.06;
-    this.flameGroup.visible = on;
-    this.flameIntU.value = on ? Math.min(1.25, this.flameLevel) : 0;
+    const clampedInt = Math.max(0, Math.min(1.4, intensity));
+    this.flameLevel = Math.max(this.flameLevel * 0.72, clampedInt);
+    const targetHeat = Math.max(Math.min(1, exhaustHeat), this.flameLevel * 0.85);
+    this.exhaustHeatLevel = Math.max(this.exhaustHeatLevel * 0.92, targetHeat);
+
+    const flameOn = this.flameLevel > 0.06;
+    const heatOn = this.exhaustHeatLevel > 0.04;
+    const wet = Math.max(0, Math.min(1, roadWetness));
+    // Ground reflection intensifies cleanly with road wetness (still shows a subtle dry-asphalt / garage floor bounce)
+    const bounceOp = flameOn
+      ? Math.min(0.95, this.flameLevel * (0.24 + 0.76 * wet) * (0.85 + Math.random() * 0.25))
+      : (heatOn ? this.exhaustHeatLevel * (0.04 + 0.08 * wet) : 0);
+
+    this.flameGroup.visible = this.warming || flameOn || heatOn;
+    if (this.flamePlumeGroup) this.flamePlumeGroup.visible = this.warming || flameOn;
+    if (this.flameShimmerGroup) this.flameShimmerGroup.visible = this.warming || heatOn;
+    if (this.flameBounceQuad) this.flameBounceQuad.visible = this.warming || bounceOp > 0.01;
+
+    this.flameIntU.value = flameOn ? Math.min(1.28, this.flameLevel) : 0;
     this.flameNosU.value = blueNos ? 1 : 0;
-    // NOTE: Never add a THREE.PointLight lazily on first flame — mutating scene light count at runtime
-    // forces Three.js WebGPU to recompile ~32 garage/street WGSL pipelines synchronously (~1.5-3s freeze on Rev/Start).
-    // The additive HDR flame cones + post bloom provide the tailpipe flash with zero shader recompiles.
-    if (on) {
+    this.flameBounceOpU.value = bounceOp;
+    this.flameHeatU.value = heatOn ? Math.min(1.0, this.exhaustHeatLevel) : 0;
+
+    if (flameOn) {
       for (let i = 0; i < this.flameNozzles.length; i++) {
-        const flick = 0.72 + Math.random() * 0.56;
-        const wFlick = 0.85 + Math.random() * 0.30;
+        const flick = 0.72 + Math.random() * 0.58;
+        const wFlick = 0.84 + Math.random() * 0.32;
         this.flameNozzles[i].scale.set(
-          wFlick * (0.78 + this.flameLevel * 0.32),
-          wFlick * (0.78 + this.flameLevel * 0.32),
-          (0.32 + this.flameLevel * 0.88) * flick,
+          wFlick * (0.76 + this.flameLevel * 0.34),
+          wFlick * (0.76 + this.flameLevel * 0.34),
+          (0.32 + this.flameLevel * 0.92) * flick,
         );
       }
     }
@@ -974,10 +1179,12 @@ export class CarVisual {
         w.caliper.quaternion.copy(this.qa);
         if (w.caliperRest) w.caliper.quaternion.multiply(w.caliperRest);
       }
-      // Thermal incandescent brake rotor glow driven by C++ brake disc temperature (360 C dull cherry -> 900 C bright HDR orange)
-      const bt = outValid ? (out[OUT.brakeTemp(i)] || 150) : 150;
-      const targetHeat = THREE.MathUtils.smoothstep(bt, 360, 880);
-      w.rotorHeat.value += (targetHeat - w.rotorHeat.value) * Math.min(1, dtS * 8);
+      // Thermal incandescent brake rotor glow fallback when external ForzaVfxController thermal integrator is not driving it
+      if (!this.externalBrakeGlow) {
+        const bt = outValid ? (out[OUT.brakeTemp(i)] || 150) : 150;
+        const targetHeat = THREE.MathUtils.smoothstep(bt, 360, 920);
+        w.rotorHeat.value += (targetHeat - w.rotorHeat.value) * Math.min(1, dtS * 8);
+      }
     }
 
     // Active Aero rear wing animation (DRS flat low-drag vs. Airbrake high-downforce braking pitch)
@@ -985,9 +1192,10 @@ export class CarVisual {
       this.custom.setActiveAero((out[OUT.drsActive] || 0) > 0.5, (out[OUT.airbrakeActive] || 0) > 0.5, dtS);
     }
 
-    // Keep soft contact shadow planted right on the road surface beneath the tyres (fading smoothly if airborne)
+    // Keep soft contact shadow & wet-road exhaust bounce quad planted right on the road surface beneath the tyres
     if (Number.isFinite(wheelMinBottom)) {
       this.contactShadow.position.y = wheelMinBottom + 0.014;
+      if (this.flameBounceQuad) this.flameBounceQuad.position.y = this.contactShadow.position.y + 0.008;
       const clearance = Math.max(0, wheelMinBottom);
       this.shadowOp.value = 0.92 * (1 - THREE.MathUtils.smoothstep(clearance, 0.04, 0.35));
     }

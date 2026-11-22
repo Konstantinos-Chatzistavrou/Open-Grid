@@ -6,8 +6,8 @@
 //   2. Real-time dynamic rev + gear-pull + lift-off anti-lag & turbo-flutter stereo audition WAVs.
 //
 // Usage:
-//   opengrid_engine_dyno hold <voice> <rpm> <throttle> <load> <warmup_s> <record_s> <stage:stock|sport|race> <out_wav> [mono|stereo]
-//   opengrid_engine_dyno demo <voice> <stage:stock|sport|race> <out_wav>
+//   opengrid_engine_dyno hold <voice> <rpm> <throttle> <load> <warmup_s> <record_s> <stage:stock|sport|race> <out_wav> [mono|stereo] [--perspective rear|chase|hood|cockpit] [--tunnel 0..1]
+//   opengrid_engine_dyno demo <voice> <stage:stock|sport|race> <out_wav> [--perspective rear|chase|hood|cockpit] [--tunnel 0..1]
 
 #include "rs/engine_audio.h"
 
@@ -78,28 +78,62 @@ rs::ExhaustStage parseStage(const std::string& s) {
     return rs::ExhaustStage::Sport;
 }
 
+rs::CameraPerspective parsePerspective(const std::string& s) {
+    if (s == "rear") return rs::CameraPerspective::ExteriorRear;
+    if (s == "hood" || s == "bumper") return rs::CameraPerspective::HoodBumper;
+    if (s == "cockpit" || s == "interior") return rs::CameraPerspective::InteriorCockpit;
+    return rs::CameraPerspective::ExteriorChase;
+}
+
+const char* perspectiveName(rs::CameraPerspective p) {
+    switch (p) {
+        case rs::CameraPerspective::ExteriorRear: return "rear";
+        case rs::CameraPerspective::HoodBumper: return "hood";
+        case rs::CameraPerspective::InteriorCockpit: return "cockpit";
+        case rs::CameraPerspective::ExteriorChase:
+        default: return "chase";
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
+    // Parse optional --perspective and --tunnel flags anywhere on the command line,
+    // preserving 100% positional backward compatibility for all existing scripts.
+    rs::CameraPerspective perspective = rs::CameraPerspective::ExteriorChase;
+    float tunnelReflection = 0.0f;
+    std::vector<std::string> pos;
+    pos.reserve(static_cast<size_t>(std::max(0, argc)));
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--perspective" && i + 1 < argc) {
+            perspective = parsePerspective(argv[++i]);
+        } else if (arg == "--tunnel" && i + 1 < argc) {
+            tunnelReflection = std::max(0.0f, std::min(1.0f, std::stof(argv[++i])));
+        } else {
+            pos.push_back(arg);
+        }
+    }
+
+    if (pos.empty()) {
         std::cerr << "Usage:\n"
-                  << "  opengrid_engine_dyno hold <voice> <rpm> <thr> <load> <warmup_s> <rec_s> <stock|sport|race> <out.wav> [mono|stereo]\n"
-                  << "  opengrid_engine_dyno demo <voice> <stock|sport|race> <out.wav>\n";
+                  << "  opengrid_engine_dyno hold <voice> <rpm> <thr> <load> <warmup_s> <rec_s> <stock|sport|race> <out.wav> [mono|stereo] [--perspective rear|chase|hood|cockpit] [--tunnel 0..1]\n"
+                  << "  opengrid_engine_dyno demo <voice> <stock|sport|race> <out.wav> [--perspective rear|chase|hood|cockpit] [--tunnel 0..1]\n";
         return 1;
     }
 
-    const std::string mode = argv[1];
+    const std::string& mode = pos[0];
     if (mode == "hold") {
-        if (argc < 10) return 1;
-        const rs::EngineVoice voice = rs::EngineAudioSynth::parseVoice(argv[2]);
-        const float rpm = std::stof(argv[3]);
-        const float thr = std::stof(argv[4]);
-        const float load = std::stof(argv[5]);
-        const float warmupS = std::stof(argv[6]);
-        const float recS = std::stof(argv[7]);
-        const rs::ExhaustStage stage = parseStage(argv[8]);
-        const std::string outWav = argv[9];
-        const bool stereo = (argc >= 11 && std::string(argv[10]) == "stereo");
+        if (pos.size() < 9) return 1;
+        const rs::EngineVoice voice = rs::EngineAudioSynth::parseVoice(pos[1]);
+        const float rpm = std::stof(pos[2]);
+        const float thr = std::stof(pos[3]);
+        const float load = std::stof(pos[4]);
+        const float warmupS = std::stof(pos[5]);
+        const float recS = std::stof(pos[6]);
+        const rs::ExhaustStage stage = parseStage(pos[7]);
+        const std::string& outWav = pos[8];
+        const bool stereo = (pos.size() >= 10 && pos[9] == "stereo");
 
         rs::EngineAudioConfig cfg{};
         cfg.voice = voice;
@@ -110,7 +144,6 @@ int main(int argc, char** argv) {
 
         rs::EngineAudioSynth synth;
         if (!synth.initialize(cfg)) return 2;
-        synth.warmup(warmupS, rpm, thr);
 
         rs::EngineAudioControl ctrl{};
         ctrl.rpm = rpm;
@@ -119,6 +152,10 @@ int main(int argc, char** argv) {
         ctrl.boostBar = (thr > 0.45f) ? std::min(1.6f, (rpm / 7500.0f) * thr * 1.45f) : 0.0f;
         ctrl.reverbMix = 0.04f; // Clean studio capture; spatial reverb is applied live in UE5 / Web
         ctrl.exhaustStage = stage;
+        ctrl.perspective = perspective;
+        ctrl.tunnelReflection = tunnelReflection;
+        synth.setControl(ctrl);
+        synth.warmup(warmupS, rpm, thr);
         synth.setControl(ctrl);
 
         const int totalFrames = static_cast<int>(recS * cfg.sampleRate);
@@ -132,15 +169,18 @@ int main(int argc, char** argv) {
         if (!writeWav16(outWav, L, R, cfg.sampleRate, stereo)) return 3;
         std::cout << "OK hold " << rs::EngineAudioSynth::voiceName(voice)
                   << " rpm=" << rpm << " measured=" << static_cast<int>(synth.measuredRpm())
-                  << " thr=" << thr << " load=" << load << " -> " << outWav << "\n";
+                  << " thr=" << thr << " load=" << load
+                  << " persp=" << perspectiveName(perspective)
+                  << " tunnel=" << tunnelReflection
+                  << " -> " << outWav << "\n";
         return 0;
     }
 
     if (mode == "demo") {
-        if (argc < 5) return 1;
-        const rs::EngineVoice voice = rs::EngineAudioSynth::parseVoice(argv[2]);
-        const rs::ExhaustStage stage = parseStage(argv[3]);
-        const std::string outWav = argv[4];
+        if (pos.size() < 4) return 1;
+        const rs::EngineVoice voice = rs::EngineAudioSynth::parseVoice(pos[1]);
+        const rs::ExhaustStage stage = parseStage(pos[2]);
+        const std::string& outWav = pos[3];
 
         rs::EngineAudioConfig cfg{};
         cfg.voice = voice;
@@ -151,11 +191,17 @@ int main(int argc, char** argv) {
 
         rs::EngineAudioSynth synth;
         if (!synth.initialize(cfg)) return 2;
+
+        rs::EngineAudioControl initCtrl{};
+        initCtrl.exhaustStage = stage;
+        initCtrl.perspective = perspective;
+        initCtrl.tunnelReflection = tunnelReflection;
+        synth.setControl(initCtrl);
         synth.warmup(0.35f, 950.0f, 0.08f);
 
         // 7-second realistic Forza Horizon 6 audition:
         //   0.0-1.0s: idle -> 1.0-2.8s: WOT 1st-gear pull -> 2.8-2.95s: flat-foot upshift cut + bang ->
-        //   2.95-4.7s: WOT 2nd-gear scream -> 4.7-7.0s: lift-off decel overrun + BOV flutter + slow rhythmic bangs
+        //   2.95-4.7s: WOT 2nd-gear scream -> 4.7-7.0s: lift-off decel overrun + BOV flutter + burbles & bangs
         const float durS = 7.0f;
         const int totalFrames = static_cast<int>(durS * cfg.sampleRate);
         std::vector<float> L(totalFrames), R(totalFrames);
@@ -169,6 +215,8 @@ int main(int argc, char** argv) {
             rs::EngineAudioControl c{};
             c.exhaustStage = stage;
             c.reverbMix = 0.22f;
+            c.perspective = perspective;
+            c.tunnelReflection = tunnelReflection;
             if (t < 1.0f) {
                 c.rpm = 950.0f;
                 c.throttle = 0.06f;
@@ -179,11 +227,13 @@ int main(int argc, char** argv) {
                 c.throttle = 1.0f;
                 c.load = 1.0f;
                 c.boostBar = u * 1.45f;
+                c.vehicleSpeedMps = u * 28.0f;
             } else if (t < 2.94f) {
                 c.rpm = maxRpm - 400.0f;
                 c.throttle = 0.05f;
                 c.load = 0.05f;
                 c.ignitionCut = true;
+                c.vehicleSpeedMps = 28.0f;
                 if (!popped1) { synth.triggerExhaustPop(1.05f); popped1 = true; }
             } else if (t < 4.7f) {
                 const float u = (t - 2.94f) / 1.76f;
@@ -191,22 +241,27 @@ int main(int argc, char** argv) {
                 c.throttle = 1.0f;
                 c.load = 1.0f;
                 c.boostBar = 0.7f + u * 0.9f;
+                c.vehicleSpeedMps = 28.0f + u * 26.0f;
             } else {
                 const float u = (t - 4.7f) / 2.3f;
                 c.rpm = maxRpm * (1.0f - 0.72f * u);
                 c.throttle = 0.0f;
                 c.load = 0.0f;
                 c.boostBar = std::max(0.0f, 1.2f * (1.0f - u * 4.0f));
+                c.vehicleSpeedMps = 54.0f * (1.0f - 0.65f * u);
                 if (!popped2 && t > 4.82f) { synth.triggerExhaustPop(0.95f); popped2 = true; }
-                if (!popped3 && t > 5.28f) { synth.triggerExhaustPop(0.78f); popped3 = true; }
-                if (!popped4 && t > 5.76f) { synth.triggerExhaustPop(0.62f); popped4 = true; }
+                if (!popped3 && t > 5.28f) { synth.triggerOverrunBurble(0.70f); popped3 = true; }
+                if (!popped4 && t > 5.76f) { synth.triggerOverrunBurble(0.55f); popped4 = true; }
             }
             synth.setControl(c);
             synth.renderStereo(L.data() + off, R.data() + off, n);
         }
 
         if (!writeWav16(outWav, L, R, cfg.sampleRate, true)) return 3;
-        std::cout << "OK demo " << rs::EngineAudioSynth::voiceName(voice) << " -> " << outWav << "\n";
+        std::cout << "OK demo " << rs::EngineAudioSynth::voiceName(voice)
+                  << " persp=" << perspectiveName(perspective)
+                  << " tunnel=" << tunnelReflection
+                  << " -> " << outWav << "\n";
         return 0;
     }
 

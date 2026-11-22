@@ -505,10 +505,11 @@ std::unique_ptr<Function> makeTimingCurve(double maxRpm) {
     return fn;
 }
 
-// ---- Physical Unburnt-Fuel Exhaust Detonation / Anti-Lag Pop Generator -----------------------
+// ---- Physical Unburnt-Fuel Exhaust Detonation & Overrun Burble Generator ---------------------
 
 struct ExhaustPopVoice {
     bool active = false;
+    bool isBurble = false;
     float age = 0.0f;
     float duration = 0.24f;
     float intensity = 0.8f;
@@ -520,6 +521,86 @@ struct ExhaustPopVoice {
     float hpState = 0.0f;
 };
 
+// ---- Forza Horizon 6 Camera Perspective Mixing Targets ---------------------------------------
+
+struct PerspectiveMix {
+    float exhaustGain = 1.0f;
+    float stereoWidth = 0.85f;
+    float popGain = 1.0f;
+    float intakeGain = 1.0f;
+    float turboScGain = 1.0f;
+    float mechGain = 0.42f;
+    float gearWhineGain = 0.48f;
+    float envRefGain = 1.0f;
+    float cabinLpHz = 15500.0f;
+    float cabinBoomDb = 0.0f;
+    float cabinDampDb = 0.0f;
+};
+
+PerspectiveMix getPerspectiveTarget(CameraPerspective p) {
+    PerspectiveMix m{};
+    switch (p) {
+        case CameraPerspective::ExteriorRear:
+            // Full tailpipe punch, wide stereo banks, strong overrun pops & crackles, moderate intake
+            m.exhaustGain   = 1.18f;
+            m.stereoWidth   = 1.00f;
+            m.popGain       = 1.28f;
+            m.intakeGain    = 0.68f;
+            m.turboScGain   = 0.78f;
+            m.mechGain      = 0.25f;
+            m.gearWhineGain = 0.30f;
+            m.envRefGain    = 1.00f;
+            m.cabinLpHz     = 16500.0f;
+            m.cabinBoomDb   = 0.0f;
+            m.cabinDampDb   = 0.0f;
+            break;
+        case CameraPerspective::HoodBumper:
+            // Loud induction plenum roar (+5 dB), crisp valvetrain tick, prominent turbo/SC, tighter exhaust
+            m.exhaustGain   = 0.74f;
+            m.stereoWidth   = 0.55f;
+            m.popGain       = 0.65f;
+            m.intakeGain    = 1.78f;
+            m.turboScGain   = 1.55f;
+            m.mechGain      = 1.35f;
+            m.gearWhineGain = 0.72f;
+            m.envRefGain    = 0.88f;
+            m.cabinLpHz     = 14800.0f;
+            m.cabinBoomDb   = 1.0f;
+            m.cabinDampDb   = 0.0f;
+            break;
+        case CameraPerspective::InteriorCockpit:
+            // Warm low-passed cabin exhaust (<2.8 kHz), boosted 68-115 Hz chassis boom, clear intake + gearbox whine
+            m.exhaustGain   = 0.78f;
+            m.stereoWidth   = 0.46f;
+            m.popGain       = 0.68f;
+            m.intakeGain    = 1.35f;
+            m.turboScGain   = 1.18f;
+            m.mechGain      = 0.88f;
+            m.gearWhineGain = 1.32f;
+            m.envRefGain    = 0.52f;
+            m.cabinLpHz     = 2650.0f;
+            m.cabinBoomDb   = 5.8f;
+            m.cabinDampDb   = -2.4f;
+            break;
+        case CameraPerspective::ExteriorChase:
+        default:
+            // Balanced hero mix (exhaust body + tailpipe bark + intake + turbo/SC + environment reflections)
+            m.exhaustGain   = 1.00f;
+            m.stereoWidth   = 0.85f;
+            m.popGain       = 1.00f;
+            m.intakeGain    = 1.00f;
+            m.turboScGain   = 1.00f;
+            m.mechGain      = 0.42f;
+            m.gearWhineGain = 0.48f;
+            m.envRefGain    = 1.00f;
+            m.cabinLpHz     = 15500.0f;
+            m.cabinBoomDb   = 0.0f;
+            m.cabinDampDb   = 0.0f;
+            break;
+    }
+    return m;
+}
+
 // ---- Dedicated 4-Rotor 26B Peripheral-Port Wankel Combustion Core ----------------------------
 
 struct Rotary4Core {
@@ -527,8 +608,9 @@ struct Rotary4Core {
     double lopePhase = 0.0;
     float prevP[4] = {};
 
-    // Outputs dual-bank stereo exhaust (rotors 0,2 -> L; rotors 1,3 -> R) + intake pulse
-    void step(double dt, float rpm, float throttle, bool ignCut, float& exL, float& exR, float& intake, FastRng& rng) {
+    // Outputs dual-bank stereo exhaust (rotors 0,2 -> L; rotors 1,3 -> R) + intake + rotor mechanical pulse
+    void step(double dt, float rpm, float throttle, bool ignCut,
+              float& exL, float& exR, float& intake, float& mech, FastRng& rng) {
         const double omega = std::max(55.0, static_cast<double>(rpm) * (2.0 * kPi / 60.0));
         // Signature aggressive peripheral-port idle "brap-brap-brap" cyclic dispersion below 2200 RPM
         const float idleFactor = clampf((2200.0f - rpm) / 1400.0f, 0.0f, 1.0f);
@@ -541,7 +623,7 @@ struct Rotary4Core {
         const float cutScale = ignCut ? 0.14f : 1.0f;
         const float rpmNorm = clampf((rpm - 900.0f) / 9300.0f, 0.0f, 1.0f);
 
-        float sumL = 0.0f, sumR = 0.0f, sumIn = 0.0f;
+        float sumL = 0.0f, sumR = 0.0f, sumIn = 0.0f, sumMech = 0.0f;
         for (int r = 0; r < 4; ++r) {
             // 4 rotors phased 90 deg apart on eccentric shaft (one firing every 90 deg!)
             const double ph = std::fmod(eShaftRad + r * (kPi * 0.5), 2.0 * kPi);
@@ -574,11 +656,14 @@ struct Rotary4Core {
             // Intake port suction occurs ~180 deg offset from exhaust opening
             const float inWave = std::sin(static_cast<float>(ph) + 2.6f) * (0.4f + 0.6f * std::sin(static_cast<float>(ph) * 2.0f));
             sumIn += inWave * (0.25f + 0.75f * throttle);
+            // Apex-seal + stationary gear mechanical tick pulse
+            sumMech += std::sin(static_cast<float>(ph) * 3.0f) * (0.35f + 0.65f * blowdown);
         }
 
         exL = sumL * 0.48f;
         exR = sumR * 0.48f;
         intake = sumIn * 0.22f;
+        mech = sumMech * 0.18f;
     }
 };
 
@@ -607,24 +692,39 @@ struct EngineAudioSynth::Impl {
 
     // Resampling state between thermodynamic solver rate (e.g. 5-10 kHz) and audio rate (48 kHz)
     double simAccum = 0.0;
-    float prevExL = 0.0f, curExL = 0.0f;
-    float prevExR = 0.0f, curExR = 0.0f;
-    float prevIn = 0.0f, curIn = 0.0f;
-    float prevMech = 0.0f, curMech = 0.0f;
+    float curExL = 0.0f;
+    float curExR = 0.0f;
+    float curIn = 0.0f;
+    float curMech = 0.0f;
+    float prevMechSample = 0.0f;
     float measuredRpm = 950.0f;
 
     // Smoothed controls
     float smoothRpm = 950.0f;
+    float prevSmoothRpm = 950.0f;
+    float rpmSlope = 0.0f;
     float smoothThr = 0.08f;
     float smoothLoad = 0.08f;
     float smoothBoost = 0.0f;
     float prevThr = 0.08f;
     float prevBoost = 0.0f;
+    float smoothTunnel = 0.0f;
+    float smoothWallL = 0.0f;
+    float smoothWallR = 0.0f;
+    float smoothGearWhine = 0.0f;
+    float smoothSpeedMps = 0.0f;
+    float exhaustGasTemp = 0.20f; // 0..1 normalized header gas temp (shifts standing-wave speed of sound up to ~6%)
+
+    // Smooth camera perspective crossfade (~40 ms time constant -> zero-click camera switching!)
+    PerspectiveMix curPersp{};
+    float lastFilterCabinLpHz = 15500.0f;
+    float lastFilterBoomDb = 0.0f;
+    float lastFilterDampDb = 0.0f;
 
     // Automatic RMS level tracker (keeps all 10 engines evenly loud without pumping)
     float envRms = 0.08f;
 
-    // Dual-channel Forza acoustic mastering DSP (exhaust + intake + waveguide + reflections)
+    // Dual-channel Forza acoustic mastering DSP (exhaust + intake + cabin + waveguide + reflections)
     Biquad aaLpL, aaLpR, aaLpIn;
     Biquad dcHpL, dcHpR, dcHpIn;
     Biquad subShelfL, subShelfR;
@@ -634,9 +734,27 @@ struct EngineAudioSynth::Impl {
     Biquad toneLpL, toneLpR;
     Biquad intakeBp, intakeLp;
 
+    // Perspective / Interior Cockpit acoustic shaping
+    Biquad cabinExLpL, cabinExLpR;
+    Biquad cabinBoomEqL, cabinBoomEqR;
+    Biquad cabinDampEqL, cabinDampEqR;
+    Biquad cabinRefLpL, cabinRefLpR;
+
+    // Valvetrain / injector mechanical texture & straight-cut gearbox whine filters
+    Biquad mechHp, mechBp;
+    Biquad gearBp, gearLp;
+    float gearPhase1 = 0.0f;
+    float gearPhase2 = 0.0f;
+
+    // Exhaust waveguide + early asphalt reflections + stereo canyon walls + 4-tap concrete tunnel FDN
     DelayLine<1024> headerCombL, headerCombR;
     DelayLine<2048> erDelayL, erDelayR;
     DelayLine<512> haasDelayR;
+    DelayLine<4096> wallDelayL, wallDelayR;
+    std::array<DelayLine<8192>, 4> tunnelFdn{};
+    std::array<float, 4> fdnLp{};
+    float fdnInHpL = 0.0f, fdnInHpR = 0.0f;
+    float wallLpL = 0.0f, wallLpR = 0.0f;
 
     // Forced induction DSP (Turbo spool + compressor surge BOV flutter + Helical Supercharger)
     float turboPhase = 0.0f;
@@ -647,12 +765,20 @@ struct EngineAudioSynth::Impl {
     float flutterRateHz = 13.5f;
     float flutterDur = 0.52f;
 
-    // Unburnt-fuel exhaust detonation pool (up to 4 overlapping bangs)
-    std::array<ExhaustPopVoice, 4> pops{};
+    // Unburnt-fuel exhaust detonation & overrun burble pool (up to 6 overlapping voices)
+    std::array<ExhaustPopVoice, 6> pops{};
     float autoPopCooldown = 0.0f;
+    float autoBurbleCooldown = 0.0f;
 
-    // Subtle starter-crank oscillator
+    // Physical 4-compression-stroke starter crank & catch-flare state
     float starterPhase = 0.0f;
+    float starterCompPhase = 0.0f;
+    float starterTimer = 0.0f;
+    float starterDuration = 0.42f;
+    float starterFlareTimer = 0.0f;
+    float starterFlareDur = 0.28f;
+    bool prevCtrlStarter = false;
+    Biquad starterBp;
 
     FastRng rng;
 
@@ -675,6 +801,22 @@ struct EngineAudioSynth::Impl {
         for (auto& f : ownedFunctions) if (f) f->destroy();
         ownedFunctions.clear();
         ownedIrs.clear();
+    }
+
+    void updatePerspectiveFilters(float fs) {
+        const float lpCut = clampf(curPersp.cabinLpHz, 1200.0f, fs * 0.44f);
+        const float refLpCut = clampf(curPersp.cabinLpHz * 1.12f, 1600.0f, fs * 0.44f);
+        cabinExLpL.setLowpass(fs, lpCut, 0.72f);
+        cabinExLpR.setLowpass(fs, lpCut, 0.72f);
+        cabinRefLpL.setLowpass(fs, refLpCut, 0.707f);
+        cabinRefLpR.setLowpass(fs, refLpCut, 0.707f);
+        cabinBoomEqL.setPeaking(fs, 90.0f, 1.30f, curPersp.cabinBoomDb);
+        cabinBoomEqR.setPeaking(fs, 90.0f, 1.30f, curPersp.cabinBoomDb);
+        cabinDampEqL.setPeaking(fs, 1450.0f, 1.10f, curPersp.cabinDampDb);
+        cabinDampEqR.setPeaking(fs, 1450.0f, 1.10f, curPersp.cabinDampDb);
+        lastFilterCabinLpHz = curPersp.cabinLpHz;
+        lastFilterBoomDb = curPersp.cabinBoomDb;
+        lastFilterDampDb = curPersp.cabinDampDb;
     }
 
     void setupFilters() {
@@ -724,11 +866,44 @@ struct EngineAudioSynth::Impl {
         turboNoiseBp.setBandpass(fs, 3200.0f, 2.8f);
         flutterBp.setBandpass(fs, 1150.0f, 3.2f);
 
+        mechHp.setHighpass(fs, 1350.0f, 0.75f);
+        mechBp.setBandpass(fs, 3250.0f, 1.45f);
+        gearBp.setBandpass(fs, 1200.0f, 1.55f);
+        gearLp.setLowpass(fs, 4400.0f, 0.75f);
+        starterBp.setBandpass(fs, 380.0f, 1.25f);
+
+        updatePerspectiveFilters(fs);
+    }
+
+    void resetDspState() {
+        aaLpL.reset(); aaLpR.reset(); aaLpIn.reset();
+        dcHpL.reset(); dcHpR.reset(); dcHpIn.reset();
+        subShelfL.reset(); subShelfR.reset();
+        bodyEqL.reset(); bodyEqR.reset();
+        raspEqL.reset(); raspEqR.reset();
+        decelEqL.reset(); decelEqR.reset();
+        toneLpL.reset(); toneLpR.reset();
+        intakeBp.reset(); intakeLp.reset();
+        cabinExLpL.reset(); cabinExLpR.reset();
+        cabinBoomEqL.reset(); cabinBoomEqR.reset();
+        cabinDampEqL.reset(); cabinDampEqR.reset();
+        cabinRefLpL.reset(); cabinRefLpR.reset();
+        mechHp.reset(); mechBp.reset();
+        gearBp.reset(); gearLp.reset();
+        turboNoiseBp.reset(); flutterBp.reset();
+        starterBp.reset();
+
         headerCombL.reset();
         headerCombR.reset();
         erDelayL.reset();
         erDelayR.reset();
         haasDelayR.reset();
+        wallDelayL.reset();
+        wallDelayR.reset();
+        for (auto& d : tunnelFdn) d.reset();
+        fdnLp.fill(0.0f);
+        fdnInHpL = fdnInHpR = 0.0f;
+        wallLpL = wallLpR = 0.0f;
     }
 
     bool init(const EngineAudioConfig& newCfg) {
@@ -740,15 +915,37 @@ struct EngineAudioSynth::Impl {
 
         preset = getPreset(cfg.voice);
         isRotary = (cfg.voice == EngineVoice::Rotary4);
+        ctrl = EngineAudioControl{};
         ctrl.exhaustStage = cfg.exhaustStage;
         ctrl.turboEnabled = cfg.turboEnabled;
 
         simAccum = 0.0;
-        prevExL = curExL = prevExR = curExR = prevIn = curIn = prevMech = curMech = 0.0f;
+        curExL = curExR = curIn = curMech = prevMechSample = 0.0f;
+        smoothRpm = prevSmoothRpm = 950.0f;
+        rpmSlope = 0.0f;
+        smoothThr = smoothLoad = prevThr = 0.08f;
+        smoothBoost = prevBoost = 0.0f;
+        smoothTunnel = smoothWallL = smoothWallR = 0.0f;
+        smoothGearWhine = smoothSpeedMps = 0.0f;
+        exhaustGasTemp = 0.20f;
+        curPersp = getPerspectiveTarget(ctrl.perspective);
         envRms = 0.08f;
         flutterEnv = 0.0f;
+        autoPopCooldown = 0.0f;
+        autoBurbleCooldown = 0.0f;
+        starterPhase = starterCompPhase = 0.0f;
+        starterTimer = starterFlareTimer = 0.0f;
+        prevCtrlStarter = false;
+        gearPhase1 = gearPhase2 = 0.0f;
         for (auto& p : pops) p.active = false;
+
+        batchExL.reserve(1024);
+        batchExR.reserve(1024);
+        batchIn.reserve(1024);
+        batchMech.reserve(1024);
+
         setupFilters();
+        resetDspState();
 
         if (isRotary) {
             rotary = Rotary4Core{};
@@ -1045,20 +1242,23 @@ struct EngineAudioSynth::Impl {
     }
 
     void stepSolverBatch(int steps, float rpm, float thr, bool ignCut,
-                         std::vector<float>& outExL, std::vector<float>& outExR, std::vector<float>& outIn) {
+                         std::vector<float>& outExL, std::vector<float>& outExR,
+                         std::vector<float>& outIn, std::vector<float>& outMech) {
         outExL.clear();
         outExR.clear();
         outIn.clear();
+        outMech.clear();
         if (steps <= 0) return;
 
         if (isRotary) {
             const double dt = 1.0 / static_cast<double>(cfg.simFrequency);
             for (int k = 0; k < steps; ++k) {
-                float el = 0.0f, er = 0.0f, inS = 0.0f;
-                rotary.step(dt, rpm, thr, ignCut, el, er, inS, rng);
+                float el = 0.0f, er = 0.0f, inS = 0.0f, mechS = 0.0f;
+                rotary.step(dt, rpm, thr, ignCut, el, er, inS, mechS, rng);
                 outExL.push_back(el);
                 outExR.push_back(er);
                 outIn.push_back(inS);
+                outMech.push_back(mechS);
             }
             measuredRpm = rpm;
             return;
@@ -1078,6 +1278,7 @@ struct EngineAudioSynth::Impl {
             outExL.push_back(static_cast<float>(sim->getLastExhaustLeft()));
             outExR.push_back(static_cast<float>(sim->getLastExhaustRight()));
             outIn.push_back(static_cast<float>(sim->getLastIntakeSignal()));
+            outMech.push_back(static_cast<float>(sim->getLastMechPulse()));
         }
         sim->endFrame();
 
@@ -1089,25 +1290,61 @@ struct EngineAudioSynth::Impl {
         measuredRpm = static_cast<float>(std::abs(engine->getRpm()));
     }
 
-    // Reusable scratch buffers (zero heap allocation inside render loop after first call)
-    std::vector<float> batchExL, batchExR, batchIn;
+    // Reusable scratch buffers (pre-reserved in init() -> zero heap allocations inside render loop!)
+    std::vector<float> batchExL, batchExR, batchIn, batchMech;
 
     void spawnPop(float intensity) {
+        ExhaustPopVoice* slot = nullptr;
+        float oldestAge = -1.0f;
         for (auto& p : pops) {
             if (!p.active) {
-                p.active = true;
-                p.age = 0.0f;
-                p.intensity = clampf(intensity, 0.25f, 1.5f);
-                p.duration = 0.17f + 0.14f * rng.next01();
-                p.subFreq = 64.0f + 26.0f * rng.next01();
-                p.ringFreq = 210.0f + 160.0f * rng.next01();
-                p.phase = 0.0f;
-                p.ringPhase = 0.0f;
-                p.lpState = 0.0f;
-                p.hpState = 0.0f;
-                return;
+                slot = &p;
+                break;
+            }
+            if (p.age > oldestAge) {
+                oldestAge = p.age;
+                slot = &p;
             }
         }
+        if (!slot) return;
+        slot->active = true;
+        slot->isBurble = false;
+        slot->age = 0.0f;
+        slot->intensity = clampf(intensity, 0.25f, 1.5f);
+        slot->duration = 0.17f + 0.14f * rng.next01();
+        slot->subFreq = 64.0f + 26.0f * rng.next01();
+        slot->ringFreq = 210.0f + 160.0f * rng.next01();
+        slot->phase = 0.0f;
+        slot->ringPhase = 0.0f;
+        slot->lpState = 0.0f;
+        slot->hpState = 0.0f;
+    }
+
+    void spawnBurble(float intensity) {
+        ExhaustPopVoice* slot = nullptr;
+        float oldestBurbleAge = -1.0f;
+        for (auto& p : pops) {
+            if (!p.active) {
+                slot = &p;
+                break;
+            }
+            if (p.isBurble && p.age > oldestBurbleAge) {
+                oldestBurbleAge = p.age;
+                slot = &p;
+            }
+        }
+        if (!slot) return;
+        slot->active = true;
+        slot->isBurble = true;
+        slot->age = 0.0f;
+        slot->intensity = clampf(intensity, 0.15f, 1.25f);
+        slot->duration = 0.085f + 0.090f * rng.next01();
+        slot->subFreq = 140.0f + 75.0f * rng.next01();
+        slot->ringFreq = 155.0f + 225.0f * rng.next01(); // 155..380 Hz warm exhaust-pipe burble band
+        slot->phase = 0.0f;
+        slot->ringPhase = 0.0f;
+        slot->lpState = 0.0f;
+        slot->hpState = 0.0f;
     }
 
     void triggerFlutter(float boostBar) {
@@ -1118,15 +1355,25 @@ struct EngineAudioSynth::Impl {
         flutterDur = 0.42f + 0.18f * clampf(b * 0.5f, 0.0f, 1.0f);
     }
 
+    void triggerStarter(float durationSec) {
+        starterDuration = clampf(durationSec, 0.15f, 2.5f);
+        starterTimer = starterDuration;
+        starterFlareTimer = 0.0f;
+        starterCompPhase = 0.0f;
+    }
+
     void render(float* outL, float* outR, int numFrames) {
         if (!initialized || numFrames <= 0) {
-            if (outL) std::memset(outL, 0, sizeof(float) * numFrames);
-            if (outR) std::memset(outR, 0, sizeof(float) * numFrames);
+            if (numFrames > 0) {
+                if (outL) std::memset(outL, 0, sizeof(float) * static_cast<size_t>(numFrames));
+                if (outR) std::memset(outR, 0, sizeof(float) * static_cast<size_t>(numFrames));
+            }
             return;
         }
 
         const float fs = static_cast<float>(cfg.sampleRate);
         const float invFs = 1.0f / fs;
+        const float twoPi = 2.0f * static_cast<float>(kPi);
         const double simPerAudio = static_cast<double>(cfg.simFrequency) / static_cast<double>(cfg.sampleRate);
         const auto& a = preset.acoustic;
 
@@ -1140,14 +1387,33 @@ struct EngineAudioSynth::Impl {
         const float blockDt = static_cast<float>(numFrames) * invFs;
         const float rpmAlpha = 1.0f - std::exp(-blockDt / 0.018f);
         const float thrAlpha = 1.0f - std::exp(-blockDt / 0.022f);
+        const float envAlpha = 1.0f - std::exp(-blockDt / 0.035f);
         smoothRpm += (clampf(ctrl.rpm, 420.0f, a.redlineRpm + 500.0f) - smoothRpm) * rpmAlpha;
         smoothThr += (clampf(ctrl.throttle, 0.0f, 1.0f) - smoothThr) * thrAlpha;
         smoothLoad += (clampf(ctrl.load, 0.0f, 1.0f) - smoothLoad) * thrAlpha;
         smoothBoost += (clampf(ctrl.boostBar, 0.0f, 2.5f) - smoothBoost) * (1.0f - std::exp(-blockDt / 0.045f));
+        smoothTunnel += (clampf(ctrl.tunnelReflection, 0.0f, 1.0f) - smoothTunnel) * envAlpha;
+        smoothWallL += (clampf(ctrl.wallProximityL, 0.0f, 1.0f) - smoothWallL) * envAlpha;
+        smoothWallR += (clampf(ctrl.wallProximityR, 0.0f, 1.0f) - smoothWallR) * envAlpha;
+        smoothGearWhine += (clampf(ctrl.gearWhineLevel, 0.0f, 1.0f) - smoothGearWhine) * envAlpha;
+        smoothSpeedMps += (clampf(ctrl.vehicleSpeedMps, 0.0f, 140.0f) - smoothSpeedMps) * envAlpha;
 
-        // Automatic physics-driven BOV flutter & overrun pop triggers on crisp high-RPM throttle lift-off!
+        // Track smoothed RPM rate (RPM/s) for realistic decel-only automatic overrun burbles
+        const float instRpmSlope = (smoothRpm - prevSmoothRpm) / std::max(1e-4f, blockDt);
+        rpmSlope += (instRpmSlope - rpmSlope) * (1.0f - std::exp(-blockDt / 0.040f));
+        prevSmoothRpm = smoothRpm;
+
+        // Handle manual starterCrank release -> trigger catch-flare burst
+        if (prevCtrlStarter && !ctrl.starterCrank && starterTimer <= 0.0f) {
+            starterFlareTimer = starterFlareDur;
+            spawnBurble(0.45f);
+        }
+        prevCtrlStarter = ctrl.starterCrank;
+
+        // Automatic physics-driven BOV flutter, high-RPM anti-lag bangs, and light off-throttle burbles!
         const bool hasTurbo = a.hasTurbo || ctrl.turboEnabled;
         if (autoPopCooldown > 0.0f) autoPopCooldown -= blockDt;
+        if (autoBurbleCooldown > 0.0f) autoBurbleCooldown -= blockDt;
         const float thrDrop = prevThr - smoothThr;
         if (thrDrop > 0.25f && smoothRpm > a.redlineRpm * 0.42f) {
             if (hasTurbo && prevBoost > 0.35f) {
@@ -1159,13 +1425,30 @@ struct EngineAudioSynth::Impl {
                 autoPopCooldown = 0.26f + 0.18f * rng.next01();
             }
         }
+        // Light off-throttle overrun burbles when coasting down 4800 -> 2100 RPM on Sport/RaceTitanium
+        if (cfg.exhaustStage != ExhaustStage::Stock &&
+            smoothThr < 0.08f && smoothLoad < 0.16f &&
+            smoothRpm >= 2100.0f && smoothRpm <= 4800.0f &&
+            rpmSlope < -120.0f && autoBurbleCooldown <= 0.0f) {
+            const float rpmFrac = clampf((smoothRpm - 2100.0f) / 2700.0f, 0.0f, 1.0f);
+            const float stageScale = (cfg.exhaustStage == ExhaustStage::RaceTitanium) ? 0.68f : 0.44f;
+            const float bInt = clampf((0.28f + 0.45f * rpmFrac) * stageScale * (0.75f + 0.50f * rng.next01()), 0.20f, 0.85f);
+            spawnBurble(bInt);
+            autoBurbleCooldown = (cfg.exhaustStage == ExhaustStage::RaceTitanium ? 0.085f : 0.135f) + 0.12f * rng.next01();
+        }
         prevThr = smoothThr;
         prevBoost = smoothBoost;
 
-        // Dynamic load-responsive tone shaping (THIS is the Forza Horizon 6 secret sauce!)
+        // Dynamic load-responsive tone shaping (Forza Horizon 6 acoustic core)
         const float rpmNorm = clampf((smoothRpm - 850.0f) / std::max(1000.0f, a.redlineRpm - 850.0f), 0.0f, 1.0f);
         const float loadEff = clampf(std::max(smoothThr, smoothLoad), 0.0f, 1.0f);
         const float decelAmt = clampf((0.12f - smoothThr) / 0.12f, 0.0f, 1.0f) * clampf((smoothRpm - 1800.0f) / 2200.0f, 0.0f, 1.0f);
+
+        // Dynamic exhaust gas temperature model (speed of sound increases with temp -> shortens header comb up to ~6%)
+        const float targetTemp = clampf(0.15f + 0.55f * loadEff + 0.30f * rpmNorm, 0.0f, 1.0f);
+        const float tempTau = (targetTemp > exhaustGasTemp) ? 0.65f : 1.80f;
+        exhaustGasTemp += (targetTemp - exhaustGasTemp) * (1.0f - std::exp(-blockDt / tempTau));
+        const float tempDelayScale = 1.0f / (1.0f + 0.064f * exhaustGasTemp); // ~0.940 at full heat (~6% shorter)
 
         // Lowpass opens wide under WOT load and warms softly at closed-throttle cruise
         const float stageBright = (cfg.exhaustStage == ExhaustStage::RaceTitanium) ? 1.25f
@@ -1182,9 +1465,9 @@ struct EngineAudioSynth::Impl {
         // Intake carbon-airbox formant sweeps subtly up with RPM
         intakeBp.setBandpass(fs, a.intakeHz * (0.82f + 0.75f * rpmNorm), 1.35f);
 
-        // Primary header comb waveguide delay lengths (samples)
-        const float combSampsL = a.pipeCombMsL * 0.001f * fs;
-        const float combSampsR = a.pipeCombMsR * 0.001f * fs;
+        // Primary header comb waveguide delay lengths (samples, shortened dynamically by exhaust gas temperature!)
+        const float combSampsL = a.pipeCombMsL * 0.001f * fs * tempDelayScale;
+        const float combSampsR = a.pipeCombMsR * 0.001f * fs * tempDelayScale;
         const float combFb = a.pipeFeedback * (cfg.exhaustStage == ExhaustStage::RaceTitanium ? 1.15f
                                              : cfg.exhaustStage == ExhaustStage::Stock ? 0.75f : 1.0f);
         const int haasSamps = std::max(1, static_cast<int>(0.0028f * fs)); // 2.8 ms stereo tailpipe width
@@ -1192,13 +1475,38 @@ struct EngineAudioSynth::Impl {
         const int erTap2 = static_cast<int>(0.0193f * fs);
         const int erTap3 = static_cast<int>(0.0297f * fs);
 
+        // Canyon / building wall asymmetric slapback taps (L: 7.5 ms + 19.2 ms, R: 9.1 ms + 23.4 ms)
+        const int wallTapL1 = std::max(1, static_cast<int>(0.0075f * fs));
+        const int wallTapL2 = std::max(1, static_cast<int>(0.0192f * fs));
+        const int wallTapR1 = std::max(1, static_cast<int>(0.0091f * fs));
+        const int wallTapR2 = std::max(1, static_cast<int>(0.0234f * fs));
+
+        // 4-tap metallic concrete tunnel FDN delay lengths (29, 37, 47, 59 ms)
+        const int tunTap0 = std::max(1, static_cast<int>(0.029f * fs));
+        const int tunTap1 = std::max(1, static_cast<int>(0.037f * fs));
+        const int tunTap2 = std::max(1, static_cast<int>(0.047f * fs));
+        const int tunTap3 = std::max(1, static_cast<int>(0.059f * fs));
+
+        // One-pole coefficients for tunnel air absorption (~3.2 kHz), tunnel DC/mud HP (~90 Hz), wall LP (~4.8 kHz), burble band (140..420 Hz)
+        const float fdnDampAlpha = 1.0f - std::exp(-twoPi * 3200.0f * invFs);
+        const float fdnHpAlpha   = 1.0f - std::exp(-twoPi * 90.0f * invFs);
+        const float wallDampAlpha = 1.0f - std::exp(-twoPi * 4800.0f * invFs);
+        const float burbleAlphaHi = 1.0f - std::exp(-twoPi * 420.0f * invFs);
+        const float burbleAlphaLo = 1.0f - std::exp(-twoPi * 140.0f * invFs);
+
+        // Effective wall & tunnel reflection weights (clean FDN feedback gain strictly < 0.72!)
+        const float effWallL = clampf(smoothWallL + 0.62f * smoothTunnel, 0.0f, 1.0f);
+        const float effWallR = clampf(smoothWallR + 0.62f * smoothTunnel, 0.0f, 1.0f);
+        const float tunFb = clampf(0.30f + 0.38f * smoothTunnel, 0.30f, 0.68f);
+        const float tunDrive = 0.38f * smoothTunnel;
+
         // Effective exhaust drive scales dynamically with load + exhaust stage
         const float drive = a.satDrive * (0.68f + 0.52f * loadEff)
                           * (cfg.exhaustStage == ExhaustStage::RaceTitanium ? 1.16f : 1.0f);
         const float normSat = 1.0f / std::max(0.25f, std::tanh(drive * 1.12f));
 
         // Intake roar weight explodes open above 30% throttle (Forza WOT induction snarl!)
-        const float intakeGain = a.intakeMix * (0.06f + 0.94f * std::pow(loadEff, 1.25f)) * (0.55f + 0.45f * rpmNorm);
+        const float baseIntakeGain = a.intakeMix * (0.06f + 0.94f * std::pow(loadEff, 1.25f)) * (0.55f + 0.45f * rpmNorm);
         const float reverbWet = clampf(ctrl.reverbMix, 0.0f, 0.85f);
 
         // Forced induction frequencies
@@ -1210,15 +1518,58 @@ struct EngineAudioSynth::Impl {
             turboNoiseBp.setBandpass(fs, clampf(2100.0f + turboSpoolLevel * 3400.0f, 1400.0f, 7500.0f), 2.6f);
         }
 
+        // Straight-cut motorsport gearbox whine parameters (load-modulated + coasting flank pitch shift!)
+        const float speedNorm = clampf(smoothSpeedMps / 5.5f, 0.0f, 1.0f);
+        const float coastShift = 1.0f + 0.032f * decelAmt;
+        const float loadPitchMod = 1.0f + 0.018f * loadEff;
+        const float gearMeshHz1 = clampf((210.0f + smoothSpeedMps * 27.5f + smoothRpm * 0.038f) * coastShift * loadPitchMod, 180.0f, 3400.0f);
+        const float gearMeshHz2 = clampf(gearMeshHz1 * 1.492f, 260.0f, 5100.0f);
+        const float gearBaseAmp = smoothGearWhine * (0.28f + 0.62f * loadEff + 0.42f * decelAmt)
+                                * (0.06f * rpmNorm + 0.94f * speedNorm)
+                                * (0.55f + 0.45f * clampf(smoothSpeedMps / 65.0f, 0.0f, 1.0f)) * 0.16f;
+        if (smoothGearWhine > 0.002f) {
+            gearBp.setBandpass(fs, clampf(gearMeshHz1 * (1.18f - 0.16f * decelAmt), 350.0f, 3800.0f), 1.45f + 0.55f * decelAmt);
+        }
+
+        // Valvetrain/mechanical texture idle presence boost
+        const float mechIdleBoost = 1.0f + 0.55f * clampf((1800.0f - smoothRpm) / 1000.0f, 0.0f, 1.0f);
+
+        // Camera perspective target + smooth ~40ms per-sample crossfade coefficient
+        const PerspectiveMix targetPersp = getPerspectiveTarget(ctrl.perspective);
+        const float perspAlpha = 1.0f - std::exp(-invFs / 0.040f);
+
         // Run the thermodynamic engine-sim solver for this audio block cleanly (exact step count!)
         const double desiredSteps = simAccum + static_cast<double>(numFrames) * simPerAudio;
         const int nSteps = std::max(1, static_cast<int>(std::floor(desiredSteps)));
         simAccum = desiredSteps - static_cast<double>(nSteps);
-        stepSolverBatch(nSteps, smoothRpm, std::max(0.05f, smoothThr), ctrl.ignitionCut, batchExL, batchExR, batchIn);
+        stepSolverBatch(nSteps, smoothRpm, std::max(0.05f, smoothThr), ctrl.ignitionCut,
+                        batchExL, batchExR, batchIn, batchMech);
         const int actualSteps = static_cast<int>(batchExL.size());
 
         for (int i = 0; i < numFrames; ++i) {
-            float exL = curExL, exR = curExR, inSig = curIn;
+            // Smooth camera perspective parameters (~40ms crossfade -> click-free mid-rev switching!)
+            curPersp.exhaustGain   += (targetPersp.exhaustGain   - curPersp.exhaustGain)   * perspAlpha;
+            curPersp.stereoWidth   += (targetPersp.stereoWidth   - curPersp.stereoWidth)   * perspAlpha;
+            curPersp.popGain       += (targetPersp.popGain       - curPersp.popGain)       * perspAlpha;
+            curPersp.intakeGain    += (targetPersp.intakeGain    - curPersp.intakeGain)    * perspAlpha;
+            curPersp.turboScGain   += (targetPersp.turboScGain   - curPersp.turboScGain)   * perspAlpha;
+            curPersp.mechGain      += (targetPersp.mechGain      - curPersp.mechGain)      * perspAlpha;
+            curPersp.gearWhineGain += (targetPersp.gearWhineGain - curPersp.gearWhineGain) * perspAlpha;
+            curPersp.envRefGain    += (targetPersp.envRefGain    - curPersp.envRefGain)    * perspAlpha;
+            curPersp.cabinLpHz     += (targetPersp.cabinLpHz     - curPersp.cabinLpHz)     * perspAlpha;
+            curPersp.cabinBoomDb   += (targetPersp.cabinBoomDb   - curPersp.cabinBoomDb)   * perspAlpha;
+            curPersp.cabinDampDb   += (targetPersp.cabinDampDb   - curPersp.cabinDampDb)   * perspAlpha;
+
+            // Update cabin filters every 32 samples (~0.67 ms) only while crossfading
+            if ((i & 31) == 0) {
+                if (std::abs(curPersp.cabinLpHz - lastFilterCabinLpHz) > 8.0f ||
+                    std::abs(curPersp.cabinBoomDb - lastFilterBoomDb) > 0.03f ||
+                    std::abs(curPersp.cabinDampDb - lastFilterDampDb) > 0.03f) {
+                    updatePerspectiveFilters(fs);
+                }
+            }
+
+            float exL = curExL, exR = curExR, inSig = curIn, mechSig = curMech;
             if (actualSteps > 0) {
                 const float pos = (static_cast<float>(i) / static_cast<float>(std::max(1, numFrames))) * static_cast<float>(actualSteps);
                 const int k0 = std::min(actualSteps - 1, static_cast<int>(pos));
@@ -1229,9 +1580,12 @@ struct EngineAudioSynth::Impl {
                 const float bR = batchExR[k0];
                 const float aI = (k0 == 0) ? curIn : batchIn[k0 - 1];
                 const float bI = batchIn[k0];
+                const float aM = (k0 == 0) ? curMech : batchMech[k0 - 1];
+                const float bM = batchMech[k0];
                 exL = aL + (bL - aL) * f;
                 exR = aR + (bR - aR) * f;
                 inSig = aI + (bI - aI) * f;
+                mechSig = aM + (bM - aM) * f;
             }
 
             // Pre-scale thermodynamic Pascal/flow values + remove 8kHz->48kHz upsampling stair-step images
@@ -1249,7 +1603,7 @@ struct EngineAudioSynth::Impl {
             exR *= agc;
             inSig *= agc * 0.45f;
 
-            // 1. Primary header waveguide comb resonators (metallic header sing + bank asymmetry)
+            // 1. Primary header waveguide comb resonators (metallic header sing + hot-gas standing-wave shift)
             const float cL = headerCombL.readFrac(combSampsL);
             const float cR = headerCombR.readFrac(combSampsR);
             const float wgL = exL + combFb * cL;
@@ -1257,8 +1611,9 @@ struct EngineAudioSynth::Impl {
             headerCombL.push(clampf(wgL, -2.5f, 2.5f));
             headerCombR.push(clampf(wgR, -2.5f, 2.5f));
 
-            // 2. Physical unburnt-fuel exhaust detonations (broadband shotgun blast + chesty sub impulse — ZERO tonal sine boing!)
+            // 2. Multi-tier overrun pops: sharp anti-lag detonations vs. warm 140-420 Hz exhaust burbles
             float popMono = 0.0f;
+            float burbleMono = 0.0f;
             for (auto& p : pops) {
                 if (!p.active) continue;
                 p.age += invFs;
@@ -1267,18 +1622,70 @@ struct EngineAudioSynth::Impl {
                     continue;
                 }
                 const float nRaw = rng.nextSigned();
-                // Two-stage filtered explosion: heavy low-passed shockwave (< 160 Hz) + supersonic crack transient (12-38 ms)
-                p.lpState += (nRaw - p.lpState) * 0.025f; // deep sub-thump envelope
-                p.hpState += (nRaw - p.hpState) * 0.28f;  // mid-crack band
-                const float subBlast = p.lpState * 6.5f * std::exp(-16.0f * p.age);
-                const float sharpCrack = (nRaw - p.hpState) * 1.45f * std::exp(-48.0f * p.age);
-                const float midTail = p.hpState * 1.15f * std::exp(-22.0f * p.age);
-                popMono += std::tanh((subBlast + sharpCrack + midTail) * 1.35f) * p.intensity;
+                if (p.isBurble) {
+                    // Deep, warm muted exhaust-pipe burble/gurgle (140..420 Hz)
+                    const float u = p.age / p.duration;
+                    p.lpState += (nRaw - p.lpState) * burbleAlphaHi;
+                    p.hpState += (p.lpState - p.hpState) * burbleAlphaLo;
+                    const float bandNoise = (p.lpState - p.hpState) * 3.6f;
+                    const float fInst = p.ringFreq * (1.0f - 0.24f * u);
+                    p.ringPhase += twoPi * fInst * invFs;
+                    if (p.ringPhase > twoPi) p.ringPhase -= twoPi;
+                    const float bodyPulse = std::sin(p.ringPhase) * 0.52f + std::sin(p.ringPhase * 0.5f) * 0.22f;
+                    const float attack = 1.0f - std::exp(-p.age * 260.0f);
+                    const float decay = std::exp(-20.0f * p.age);
+                    burbleMono += std::tanh((bandNoise + bodyPulse) * attack * decay * 1.15f) * p.intensity * 0.55f;
+                } else {
+                    // Sharp broadband anti-lag gunshot crack + chesty sub-bass shockwave
+                    p.lpState += (nRaw - p.lpState) * 0.025f;
+                    p.hpState += (nRaw - p.hpState) * 0.28f;
+                    const float subBlast = p.lpState * 6.5f * std::exp(-16.0f * p.age);
+                    const float sharpCrack = (nRaw - p.hpState) * 1.45f * std::exp(-48.0f * p.age);
+                    const float midTail = p.hpState * 1.15f * std::exp(-22.0f * p.age);
+                    popMono += std::tanh((subBlast + sharpCrack + midTail) * 1.35f) * p.intensity;
+                }
+            }
+            const float totalPop = (popMono + burbleMono) * curPersp.popGain;
+
+            // 3. Physical Starter Crank (4-compression-stroke solenoid whir 145-190 Hz) & Catch-Flare burst
+            float starterSig = 0.0f;
+            float crankExhaustScale = 1.0f;
+            const bool cranking = ctrl.starterCrank || (starterTimer > 0.0f);
+            if (starterTimer > 0.0f) {
+                starterTimer -= invFs;
+                if (starterTimer <= 0.0f) {
+                    starterTimer = 0.0f;
+                    starterFlareTimer = starterFlareDur;
+                    spawnBurble(0.45f);
+                }
+            }
+            if (cranking) {
+                const float compRateHz = clampf(4.0f / std::max(0.25f, starterDuration), 6.5f, 12.0f);
+                starterCompPhase += twoPi * compRateHz * invFs;
+                if (starterCompPhase > twoPi) starterCompPhase -= twoPi;
+                const float compCycle = 0.5f + 0.5f * std::sin(starterCompPhase);
+                const float whirHz = 146.0f + 42.0f * (1.0f - compCycle); // 146..188 Hz rhythmic compression cadence
+                starterPhase += twoPi * whirHz * invFs;
+                if (starterPhase > twoPi) starterPhase -= twoPi;
+                const float gearWhir = std::sin(starterPhase) * 0.58f
+                                     + std::sin(starterPhase * 2.0f) * 0.28f
+                                     + std::sin(starterPhase * 3.04f) * 0.14f;
+                const float compThump = std::sin(starterCompPhase * 2.0f) * 0.28f * compCycle;
+                const float brushNoise = starterBp.process(rng.nextSigned()) * 0.35f;
+                const float chugEnv = 0.52f + 0.48f * compCycle;
+                starterSig = std::tanh((gearWhir * chugEnv + brushNoise * chugEnv + compThump) * 1.25f) * 0.28f;
+                crankExhaustScale = 0.32f;
+            } else if (starterFlareTimer > 0.0f) {
+                starterFlareTimer = std::max(0.0f, starterFlareTimer - invFs);
+                const float u = 1.0f - (starterFlareTimer / starterFlareDur);
+                const float flareEnv = std::sin(static_cast<float>(kPi) * clampf(u, 0.0f, 1.0f)) * std::exp(-2.1f * u);
+                crankExhaustScale = 1.0f + 0.48f * flareEnv;
+                starterSig = starterBp.process(rng.nextSigned()) * flareEnv * 0.26f;
             }
 
-            // 3. Exhaust EQ stack: Helmholtz sub-bass + core body + titanium rasp + hollow decel + dynamic LP
-            float sL = wgL + popMono * 0.95f;
-            float sR = wgR + popMono * 0.90f;
+            // 4. Exhaust EQ stack: Helmholtz sub-bass + core body + titanium rasp + hollow decel + dynamic LP
+            float sL = (wgL * crankExhaustScale + totalPop * 0.95f);
+            float sR = (wgR * crankExhaustScale + totalPop * 0.90f);
 
             sL = subShelfL.process(sL);
             sR = subShelfR.process(sR);
@@ -1296,19 +1703,46 @@ struct EngineAudioSynth::Impl {
             sL = toneLpL.process(sL);
             sR = toneLpR.process(sR);
 
-            // 4. Real Intake Manifold Plenum Roar (centered carbon-airbox bark on WOT!)
-            const float inFiltered = intakeLp.process(intakeBp.process(inSig) + 0.35f * inSig);
-            const float inSat = std::tanh(inFiltered * 1.4f) * intakeGain;
-            sL += inSat;
-            sR += inSat;
+            // Keep pre-cabin exterior exhaust copy for tunnel/canyon wall reflections!
+            const float exExtL = sL;
+            const float exExtR = sR;
 
-            // 5. Forced Induction (Aerodynamic charge-pipe air rush + whisper-soft turbine spool OR Helical Supercharger)
+            // Perspective cabin lowpass + chassis sub-bass boom (~68-115 Hz) + subtle cabin damping
+            sL = cabinDampEqL.process(cabinBoomEqL.process(cabinExLpL.process(sL))) * curPersp.exhaustGain;
+            sR = cabinDampEqR.process(cabinBoomEqR.process(cabinExLpR.process(sR))) * curPersp.exhaustGain;
+
+            // 5. Real Intake Manifold Plenum Roar (centered carbon-airbox bark, +5 dB in HoodBumper!)
+            const float inFiltered = intakeLp.process(intakeBp.process(inSig) + 0.35f * inSig);
+            const float inSat = std::tanh(inFiltered * 1.4f) * baseIntakeGain * curPersp.intakeGain;
+
+            // 6. Valvetrain / Fuel-Injector Mechanical Texture from real engine-sim `mechPulse` tap
+            const float mechDiff = mechSig - prevMechSample;
+            prevMechSample = mechSig;
+            const float mechScaled = isRotary ? (mechDiff * 0.65f) : (mechDiff * 42.0f);
+            const float mechClean = std::tanh(mechBp.process(mechHp.process(mechScaled)) * 1.4f);
+            const float mechOut = mechClean * curPersp.mechGain * mechIdleBoost * 0.085f;
+
+            // 7. Straight-Cut Motorsport Gearbox Whine (dual-harmonic tooth mesh, load & coasting modulated)
+            float gearSig = 0.0f;
+            if (gearBaseAmp > 0.0005f) {
+                gearPhase1 += twoPi * gearMeshHz1 * invFs;
+                if (gearPhase1 > twoPi) gearPhase1 -= twoPi;
+                gearPhase2 += twoPi * gearMeshHz2 * invFs;
+                if (gearPhase2 > twoPi) gearPhase2 -= twoPi;
+                const float toothJitter = 1.0f + 0.04f * rng.nextSigned();
+                const float rawGear = (std::sin(gearPhase1) * 0.64f
+                                     + std::sin(gearPhase1 * 2.0f) * 0.22f
+                                     + std::sin(gearPhase2) * 0.34f) * toothJitter;
+                gearSig = gearLp.process(gearBp.process(rawGear)) * gearBaseAmp * curPersp.gearWhineGain;
+            }
+
+            // 8. Forced Induction (Aerodynamic charge-pipe air rush + turbine spool + BOV flutter + Supercharger)
             float fiMono = 0.0f;
+            float flutterMono = 0.0f;
             if (hasTurbo && turboSpoolLevel > 0.02f) {
-                turboPhase += 2.0f * static_cast<float>(kPi) * turboWhineHz * invFs;
-                if (turboPhase > 2.0f * static_cast<float>(kPi)) turboPhase -= 2.0f * static_cast<float>(kPi);
+                turboPhase += twoPi * turboWhineHz * invFs;
+                if (turboPhase > twoPi) turboPhase -= twoPi;
                 const float airRush = turboNoiseBp.process(rng.nextSigned());
-                // Realistic turbo = 85% pressurized air-rush + 15% soft turbine harmonic (never an annoying sine beep!)
                 const float turbineTone = std::sin(turboPhase) * 0.014f;
                 fiMono += (turbineTone + airRush * 0.12f) * std::pow(turboSpoolLevel, 1.2f) * (0.30f + 0.70f * loadEff);
             }
@@ -1318,43 +1752,89 @@ struct EngineAudioSynth::Impl {
                     flutterEnv = 0.0f;
                 } else {
                     const float u = flutterAge / flutterDur;
-                    // 5-7 crisp aluminum intake compressor-surge blades ("stu-tu-tu-tu-tu")
                     const float pulseFreq = flutterRateHz * (1.0f - 0.25f * u);
-                    const float pulse = std::pow(0.5f + 0.5f * std::sin(2.0f * static_cast<float>(kPi) * pulseFreq * flutterAge), 2.4f);
+                    const float pulse = std::pow(0.5f + 0.5f * std::sin(twoPi * pulseFreq * flutterAge), 2.4f);
                     const float decay = std::exp(-3.4f * u);
                     const float whoosh = flutterBp.process(rng.nextSigned());
-                    fiMono += whoosh * pulse * decay * flutterEnv * 0.58f;
+                    flutterMono = whoosh * pulse * decay * flutterEnv * 0.58f;
+                    fiMono += flutterMono;
                 }
             }
             if (a.hasSupercharger && scGain > 0.002f) {
-                scPhase += 2.0f * static_cast<float>(kPi) * clampf(scWhineHz, 220.0f, 6800.0f) * invFs;
-                if (scPhase > 2.0f * static_cast<float>(kPi)) scPhase -= 2.0f * static_cast<float>(kPi);
+                scPhase += twoPi * clampf(scWhineHz, 220.0f, 6800.0f) * invFs;
+                if (scPhase > twoPi) scPhase -= twoPi;
                 const float scTone = std::sin(scPhase) * 0.65f + std::sin(scPhase * 2.0f) * 0.24f + std::sin(scPhase * 3.0f) * 0.08f;
                 fiMono += scTone * scGain;
             }
+            fiMono *= curPersp.turboScGain;
 
-            // 6. Optional starter cranking pulse
-            if (ctrl.starterCrank) {
-                starterPhase += 2.0f * static_cast<float>(kPi) * 145.0f * invFs;
-                const float crankPulse = std::sin(starterPhase) * (0.5f + 0.5f * std::sin(starterPhase * 0.07f));
-                fiMono += crankPulse * 0.12f;
-            }
-
-            // 7. True stereo dual-tailpipe width (preserve L/R bank balance + subtle 2.8 ms Haas width)
+            // 9. Perspective-aware stereo dual-tailpipe width + centered intake / FI / mech / gearbox / starter
             haasDelayR.push(sR);
-            const float wideL = sL * 0.86f + sR * 0.14f + fiMono;
-            const float wideR = haasDelayR.read(haasSamps) * 0.86f + sL * 0.14f + fiMono;
+            const float haasR = haasDelayR.read(haasSamps);
+            const float crossBleed = 0.50f - 0.36f * curPersp.stereoWidth; // 0.14 wide .. 0.34 intimate cockpit
+            const float mainWeight = 1.0f - crossBleed;
+            const float centerSum = inSat + fiMono + mechOut + gearSig + starterSig;
+            const float wideL = sL * mainWeight + sR * crossBleed + centerSum;
+            const float wideR = haasR * mainWeight + sL * crossBleed + centerSum;
 
-            // 8. Tight early asphalt / garage bay reflections (adds real 3D physical space without mud!)
+            // 10. Tight early asphalt / garage bay reflections
             erDelayL.push(wideL);
             erDelayR.push(wideR);
-            const float refL = 0.45f * erDelayR.read(erTap1) - 0.32f * erDelayL.read(erTap2) + 0.22f * erDelayR.read(erTap3);
-            const float refR = 0.45f * erDelayL.read(erTap1) - 0.32f * erDelayR.read(erTap2) + 0.22f * erDelayL.read(erTap3);
+            const float erL = 0.45f * erDelayR.read(erTap1) - 0.32f * erDelayL.read(erTap2) + 0.22f * erDelayR.read(erTap3);
+            const float erR = 0.45f * erDelayL.read(erTap1) - 0.32f * erDelayR.read(erTap2) + 0.22f * erDelayL.read(erTap3);
 
-            // Dynamic overall master presence (clean 10-14 dB crest factor, zero square-wave clipping!)
+            // 11. Dynamic Tunnel & Canyon Wall Multi-Tap Stereo Acoustic Engine
+            // Feed full-bandwidth exterior exhaust + overrun pops/burbles + turbo flutter into reflection bus!
+            const float refBusL = clampf(exExtL + flutterMono * 0.90f + inSat * 0.22f, -2.5f, 2.5f);
+            const float refBusR = clampf(exExtR + flutterMono * 0.90f + inSat * 0.22f, -2.5f, 2.5f);
+
+            // 11a. Asymmetric L/R canyon & building wall slapback (L: 7.5+19.2ms, R: 9.1+23.4ms)
+            wallDelayL.push(refBusL);
+            wallDelayR.push(refBusR);
+            const float rawWallL = (0.62f * wallDelayL.read(wallTapL1) + 0.38f * wallDelayL.read(wallTapL2)) * effWallL;
+            const float rawWallR = (0.62f * wallDelayR.read(wallTapR1) + 0.38f * wallDelayR.read(wallTapR2)) * effWallR;
+            wallLpL += (rawWallL - wallLpL) * wallDampAlpha;
+            wallLpR += (rawWallR - wallLpR) * wallDampAlpha;
+            const float slapL = (wallLpL * 0.80f + wallLpR * 0.22f) * 0.46f;
+            const float slapR = (wallLpR * 0.80f + wallLpL * 0.22f) * 0.46f;
+
+            // 11b. 4-tap metallic concrete tunnel FDN (29, 37, 47, 59 ms + 3.2 kHz air damping + Hadamard mix)
+            fdnInHpL += (refBusL - fdnInHpL) * fdnHpAlpha;
+            fdnInHpR += (refBusR - fdnInHpR) * fdnHpAlpha;
+            const float tunInL = refBusL - fdnInHpL;
+            const float tunInR = refBusR - fdnInHpR;
+
+            const float d0 = tunnelFdn[0].read(tunTap0);
+            const float d1 = tunnelFdn[1].read(tunTap1);
+            const float d2 = tunnelFdn[2].read(tunTap2);
+            const float d3 = tunnelFdn[3].read(tunTap3);
+
+            fdnLp[0] += (d0 - fdnLp[0]) * fdnDampAlpha;
+            fdnLp[1] += (d1 - fdnLp[1]) * fdnDampAlpha;
+            fdnLp[2] += (d2 - fdnLp[2]) * fdnDampAlpha;
+            fdnLp[3] += (d3 - fdnLp[3]) * fdnDampAlpha;
+
+            const float h0 = 0.5f * ( fdnLp[0] + fdnLp[1] + fdnLp[2] + fdnLp[3]);
+            const float h1 = 0.5f * ( fdnLp[0] - fdnLp[1] + fdnLp[2] - fdnLp[3]);
+            const float h2 = 0.5f * ( fdnLp[0] + fdnLp[1] - fdnLp[2] - fdnLp[3]);
+            const float h3 = 0.5f * ( fdnLp[0] - fdnLp[1] - fdnLp[2] + fdnLp[3]);
+
+            tunnelFdn[0].push(clampf(h0 * tunFb + tunInL * tunDrive, -2.0f, 2.0f));
+            tunnelFdn[1].push(clampf(h1 * tunFb + tunInR * tunDrive, -2.0f, 2.0f));
+            tunnelFdn[2].push(clampf(h2 * tunFb + (tunInL * 0.72f - tunInR * 0.28f) * tunDrive, -2.0f, 2.0f));
+            tunnelFdn[3].push(clampf(h3 * tunFb + (tunInR * 0.72f - tunInL * 0.28f) * tunDrive, -2.0f, 2.0f));
+
+            const float tunOutL = (fdnLp[0] + fdnLp[2] - 0.35f * fdnLp[1]) * 0.44f;
+            const float tunOutR = (fdnLp[1] + fdnLp[3] - 0.35f * fdnLp[0]) * 0.44f;
+
+            // Cabin-glass lowpass on exterior wall & tunnel reflections (wide open in exterior views)
+            const float envWetL = cabinRefLpL.process(slapL + tunOutL) * curPersp.envRefGain;
+            const float envWetR = cabinRefLpR.process(slapR + tunOutR) * curPersp.envRefGain;
+
+            // Dynamic overall master presence (clean 10-14 dB crest factor, strictly bounded [-1, 1] via tanh!)
             const float master = (0.42f + 0.36f * loadEff) * (0.76f + 0.24f * rpmNorm);
-            const float finalL = std::tanh((wideL + refL * reverbWet) * master);
-            const float finalR = std::tanh((wideR + refR * reverbWet) * master);
+            const float finalL = std::tanh((wideL + erL * reverbWet * curPersp.envRefGain + envWetL) * master);
+            const float finalR = std::tanh((wideR + erR * reverbWet * curPersp.envRefGain + envWetR) * master);
 
             if (outL) outL[i] = finalL;
             if (outR) outR[i] = finalR;
@@ -1363,6 +1843,7 @@ struct EngineAudioSynth::Impl {
             curExL = batchExL.back();
             curExR = batchExR.back();
             curIn = batchIn.back();
+            curMech = batchMech.back();
         }
     }
 };
@@ -1385,9 +1866,13 @@ void EngineAudioSynth::warmup(float seconds, float rpm, float throttle) {
     c.ignitionCut = false;
     impl_->ctrl = c;
     impl_->smoothRpm = rpm;
+    impl_->prevSmoothRpm = rpm;
+    impl_->rpmSlope = 0.0f;
     impl_->smoothThr = throttle;
     impl_->smoothLoad = throttle;
     impl_->prevThr = throttle;
+    impl_->curPersp = getPerspectiveTarget(c.perspective);
+    impl_->updatePerspectiveFilters(static_cast<float>(impl_->cfg.sampleRate));
 
     const int totalFrames = static_cast<int>(seconds * impl_->cfg.sampleRate);
     float dummyL[256], dummyR[256];
@@ -1409,6 +1894,14 @@ void EngineAudioSynth::triggerExhaustPop(float intensity) {
 
 void EngineAudioSynth::triggerTurboFlutter(float boostBar) {
     impl_->triggerFlutter(boostBar);
+}
+
+void EngineAudioSynth::triggerStarterCrank(float durationSec) {
+    impl_->triggerStarter(durationSec);
+}
+
+void EngineAudioSynth::triggerOverrunBurble(float intensity) {
+    impl_->spawnBurble(intensity);
 }
 
 void EngineAudioSynth::renderStereo(float* outL, float* outR, int numFrames) {

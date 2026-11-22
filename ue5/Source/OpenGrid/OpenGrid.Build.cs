@@ -20,6 +20,7 @@ public class OpenGrid : ModuleRules
             "Json",
             "JsonUtilities",
             "AudioMixer",
+            "Niagara",
             "OpenGridPhysics"
         });
     }

@@ -5,6 +5,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
+#include "OpenGridEngineSynthComponent.h"
 #include "OpenGridVehicleComponent.h"
 #include "OpenGridCarPawn.generated.h"
 
@@ -16,6 +17,7 @@ class UInputMappingContext;
 class UOpenGridAudioComponent;
 class UOpenGridCustomizationComponent;
 class UOpenGridDamageComponent;
+class UOpenGridVfxComponent;
 class USkeletalMesh;
 class USkeletalMeshComponent;
 class USpringArmComponent;
@@ -93,6 +95,22 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Audio")
     TObjectPtr<UOpenGridAudioComponent> Audio;
+
+    /** Real-time 48 kHz physical combustion synthesizer (USynthComponent) with 3-ray environmental acoustics. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Audio")
+    TObjectPtr<UOpenGridEngineSynthComponent> EngineSynth;
+
+    /** Forza-grade real-time Niagara VFX director (tyre smoke, rain spray, exhaust flames, brake glow, sparks). */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|VFX")
+    TObjectPtr<UOpenGridVfxComponent> VehicleVfx;
+
+    /** Active camera perspective pushed to EngineSynth for intake/exhaust balance and cockpit filtering. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Camera")
+    EOpenGridCameraPerspective ActiveCameraPerspective = EOpenGridCameraPerspective::ExteriorChase;
+
+    /** Update active camera perspective and propagate immediately to EngineSynth. */
+    UFUNCTION(BlueprintCallable, Category="OpenGrid|Camera")
+    void SetCameraPerspective(EOpenGridCameraPerspective NewPerspective);
 
     /**
      * The imported car body without its wheels, as exported by tools/ue5/export_cars_for_ue.mjs: origin on the ground
@@ -172,6 +190,8 @@ private:
     void MapKey(UInputAction* Action, const FKey& Key, bool bNegate = false);
     float ActionValue(const UInputAction* Action) const;
     void PlaceWheels();
+    void UpdateAcousticEnvironmentProbes(float DeltaSeconds);
+    void UpdateEngineAudioAndVfx(float DeltaSeconds);
     void DrawHud() const;
 
     void OnShiftUp();
@@ -195,4 +215,26 @@ private:
 
     UPROPERTY(Transient)
     TObjectPtr<UEnhancedInputComponent> BoundInput;
+
+    // 15 Hz 3-ray acoustic environment probe state (up = tunnel ceiling, L/R = canyon & building walls)
+    float AcousticProbeTimer_ = 1.0f / 15.0f;
+    float TargetTunnelReflection_ = 0.0f;
+    float TargetWallProximityL_ = 0.0f;
+    float TargetWallProximityR_ = 0.0f;
+    float SmoothedTunnelReflection_ = 0.0f;
+    float SmoothedWallProximityL_ = 0.0f;
+    float SmoothedWallProximityR_ = 0.0f;
+
+    // Synced audio + VFX edge-detection state
+    bool bHasPrevAudioVfxSample_ = false;
+    int32 PrevGear_ = 2;
+    float PrevThrottle_ = 0.0f;
+    float PrevBoostBar_ = 0.0f;
+    bool bPrevShiftCut_ = false;
+    bool bPrevBackfire_ = false;
+    bool bPrevBovVenting_ = false;
+    bool bPrevStarterCrank_ = false;
+    float BackfireCooldown_ = 0.0f;
+    float OverrunCooldown_ = 0.0f;
+    float SparkCooldown_ = 0.0f;
 };

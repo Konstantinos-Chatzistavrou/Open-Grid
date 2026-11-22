@@ -39,6 +39,13 @@ enum class ExhaustStage : uint8_t {
     RaceTitanium,
 };
 
+enum class CameraPerspective : uint8_t {
+    ExteriorRear = 0,
+    ExteriorChase = 1,
+    HoodBumper = 2,
+    InteriorCockpit = 3,
+};
+
 struct EngineAudioControl {
     float rpm = 950.0f;            // Target crankshaft RPM (from rs_core / garage rev)
     float throttle = 0.0f;         // 0..1 driver throttle pedal
@@ -49,6 +56,12 @@ struct EngineAudioControl {
     bool starterCrank = false;     // True during ignition key crank
     bool turboEnabled = false;     // Override aftermarket turbo kit on NA engines
     ExhaustStage exhaustStage = ExhaustStage::Sport;
+    CameraPerspective perspective = CameraPerspective::ExteriorChase;
+    float tunnelReflection = 0.0f;    // 0..1 enclosed tunnel/overpass acoustic reverb
+    float wallProximityL = 0.0f;      // 0..1 left canyon/building wall early reflection
+    float wallProximityR = 0.0f;      // 0..1 right canyon/building wall early reflection
+    float gearWhineLevel = 0.0f;      // 0..1 straight-cut motorsport gearbox whine
+    float vehicleSpeedMps = 0.0f;     // vehicle speed in m/s (drives gear mesh pitch)
 };
 
 struct EngineAudioConfig {
@@ -82,6 +95,12 @@ public:
 
     /** Trigger a compressor-surge BOV flutter burst ("stu-tu-tu-tu") on boost lift-off (boostBar 0.2..2.2). */
     void triggerTurboFlutter(float boostBar = 1.0f);
+
+    /** Trigger a physical 4-compression-stroke starter crank sequence + catch-flare burst. */
+    void triggerStarterCrank(float durationSec = 0.42f);
+
+    /** Trigger a warm muted off-throttle overrun exhaust burble/gurgle (intensity 0.15..1.2). */
+    void triggerOverrunBurble(float intensity = 0.55f);
 
     /** Render `numFrames` stereo float samples into `outL` and `outR` (allocation-free). */
     void renderStereo(float* outL, float* outR, int numFrames);

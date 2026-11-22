@@ -13,7 +13,7 @@ import { CarProbe } from './fx/carProbe';
 import { nightEnvTexture } from './fx/nightEnv';
 import { KitSky, kitHdriOn } from './fx/kitHdri';
 import { kitMaterialsOn, setKitMaterialsEnabled } from './fx/kitMaterials';
-import { Particles } from './scene/damage';
+import { ForzaVfxController, type ForzaVfxFrameInput } from './fx/forzaVfx';
 import { Garage } from './scene/garage';
 import { SHOW_PRESETS, ShowroomPost } from './showroomPost';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -448,10 +448,19 @@ async function main() {
     if (eng.turbo === 'twin_scroll') return 1;
     return 0;
   };
+  const exhaustStageOf = (): 'stock' | 'sport' | 'race' => {
+    if (specClass) return 'stock';
+    const eng = engineOf(nr, sel.car);
+    const engLvl = modsOf(sel).engine;
+    if (eng.manifold === 'titanium_headers' || engLvl >= 3 || /gt3/i.test(sel.car)) return 'race';
+    if (eng.manifold === 'equal_length' || engLvl >= 1 || eng.turbo !== 'stock' || customOf(sel).exhaust === 'titanium') return 'sport';
+    return 'stock';
+  };
   const syncAudioEngine = () => {
     const eng = engineOf(nr, sel.car);
     const sw = specClass ? ENGINE_SWAPS.stock : (ENGINE_SWAPS[eng.swap] ?? ENGINE_SWAPS.stock);
     audio.setCarProfile(sel.car, sw.voice, !specClass && eng.turbo !== 'stock');
+    audio.setExhaustStage(exhaustStageOf());
   };
   let builtKey = carKey();
   let core = new CoreCar(coreJson());
@@ -566,11 +575,14 @@ async function main() {
   };
   fitAuthored(visual, visualPath);
   const screenNone = () => menu.screen === 'none';
-  // Tyre smoke: billboards at the rear contact patches, emitted from the core's slip ratio (not a canned effect)
-  const tireSmoke = webgpu ? new Particles(180, { additive: false, gravity: 0.25, grow: 1.4, drag: 1.1, style: 'smoke', opacity: 0.15 }) : null;
-  if (tireSmoke) tireSmoke.color.setRGB(0.72, 0.72, 0.76);   // grey tyre smoke, not tail-light red
-  if (tireSmoke) { tireSmoke.sprite.frustumCulled = false; scene.add(tireSmoke.sprite); }
-  const smokeP = new THREE.Vector3(), smokeV = new THREE.Vector3(), smokeF = new THREE.Vector3(), smokeR = new THREE.Vector3();
+  // Forza Horizon 6 Real-Time VFX Director: 4-wheel tyre smoke, wet-road rooster-tail spray, bouncing titanium sparks,
+  // high-speed rain streaks, physical 4-wheel brake rotor thermals, and curb/landing suspension thump detector.
+  const forzaVfx = new ForzaVfxController(scene, { particles: webgpu, lowPower: isTouch || potato });
+  const forzaWheelRadii: [number, number, number, number] = [0.34, 0.34, 0.34, 0.34];
+  const syncForzaWheelRadii = () => {
+    for (let i = 0; i < 4; i++) forzaWheelRadii[i] = visual.wheel(i)?.radius || 0.34;
+  };
+  syncForzaWheelRadii();
   // Launch control: hold the throttle on the grid, the start clamps wheelspin for ~1.1 s
   let launchArmed = false, launchUntil = 0, lastLaunchText = '';
   /** launch ramp input (reused: no object per 240 Hz tick) */
@@ -800,8 +812,29 @@ async function main() {
   let freeRoamM = 0;      // metres driven in free roam this session (paid on leaving)
   toToggles(assistSet, input.assists);
   input.onAssistKey = () => { fromToggles(assistSet, input.assists); toToggles(assistSet, input.assists); saveAssists(assistSet); };
+  const forzaInput: ForzaVfxFrameInput = {
+    dt: 0,
+    active: false,
+    out: car.out,
+    carPos: pos,
+    carQuat: quat,
+    carVel: visual.velocity,
+    camera,
+    roadWetness: worldClock.wetness,
+    asphaltSurfaceId: core.info.surfaces.asphalt,
+    handbrake: 0,
+    wheelRadii: forzaWheelRadii,
+  };
   const wireDamage = () => { damage.onImpact = (kj, glass) => {
     audio.impact(kj, glass); rumbleKj = Math.max(rumbleKj, kj);
+    if (kj > 1.8) {
+      const lp = damage.last?.lastPoint;
+      const sx = lp && (lp[0] !== 0 || lp[1] !== 0 || lp[2] !== 0) ? lp[0] : pos.x;
+      const sy = lp && (lp[0] !== 0 || lp[1] !== 0 || lp[2] !== 0) ? lp[1] : pos.y;
+      const sz = lp && (lp[0] !== 0 || lp[1] !== 0 || lp[2] !== 0) ? lp[2] : pos.z;
+      const sparkInt = Math.min(1.5, 0.45 + kj * 0.045);
+      forzaVfx.emitSparks(sx, sy, sz, visual.velocity.x, visual.velocity.y, visual.velocity.z, 8 + kj * 0.85, sparkInt, pos.y - visual.cg.y);
+    }
     if (state === 'race' && kj > 3) raceImpacts++;
     // stewards: a heavy hit in a race (ramming / cutting through the wall line) costs +5.0 s
     if (state === 'race' && raceLaps() > 0 && kj > 22 && penalties.addPenalty('Collision / Track Cut', 5.0)) hud.toast('⚠ +5.0s PENALTY', 'Clean racing enforced (GT7 / iRacing rules)');
@@ -843,8 +876,22 @@ async function main() {
     document.body.classList.toggle('noreset', !hud.canRecover);
     document.body.classList.toggle('spectating', st === 'spectate');
     syncHeadlights();
+    syncCameraAudioPerspective();
     if (city) city.props.drawScale = inDriving ? DRAW_SCALE[post.preset] : Math.min(0.45, DRAW_SCALE[post.preset]);
   };
+  let lastAudioCamPersp: 'chase' | 'hood' | 'cockpit' | 'bumper' | 'garage' | '' = '';
+  const syncCameraAudioPerspective = () => {
+    const next: 'chase' | 'hood' | 'cockpit' | 'bumper' | 'garage' = (!driving() || state === 'garage')
+      ? 'garage'
+      : rig.mode === 'hood' ? 'hood'
+      : rig.mode === 'bumper' ? 'bumper'
+      : 'chase';
+    if (next !== lastAudioCamPersp) {
+      lastAudioCamPersp = next;
+      audio.setCameraPerspective(next);
+    }
+  };
+  syncCameraAudioPerspective();
   // In the showroom (title/garage/busy) the nose spots are nearly off so they never bloom into a white veil over the bumper.
   const syncHeadlights = () => { visual.dim = driving() ? 1 : 0.008; visual.applyHeadlights(); };
   // brake 0.5, not 1: a full brake while stopped engages the pedal reverse
@@ -883,7 +930,7 @@ async function main() {
   };
   const resetCar = () => {
     car.body.setEnabled(true);   // paused while spectating (the city streams around the watched car then)
-    spawn(); core.repair(); physWorker?.repair(); damage.repair(); input.hold = true; settledShowroom = 0;
+    spawn(); core.repair(); physWorker?.repair(); damage.repair(); forzaVfx.reset(true); input.hold = true; settledShowroom = 0;
     syncPose();
     ai.reset();
     race = new CoreRace(routeJson, raceLaps());
@@ -913,7 +960,7 @@ async function main() {
     car.place(p, Math.atan2(Math.cos(q.heading), -Math.sin(q.heading)));
     car.settle();
     ranked?.reset();
-    core.repair(); physWorker?.repair(); damage.repair(); input.hold = true;
+    core.repair(); physWorker?.repair(); damage.repair(); forzaVfx.reset(false); input.hold = true;
     syncPose();
     remote?.kick();
   };
@@ -1088,6 +1135,7 @@ async function main() {
   nyc?.breaches.warmup(true, pos);   // room / rubble / portal materials compiled now, not at the first crash
   damage.warmup(true);
   visual.warmup(true);   // exhaust flames, wheel blur, rotor glow: pipelines now, not at the first backfire / speed / hot brake
+  forzaVfx.warmup(true); // 4-wheel smoke, wet spray, titanium sparks, speed rain: pipelines compiled behind loader
   visual.update(pos, quat, car.out);
   if (ai.cars.length && !potato) {   // potato compiles the rivals at the first race start (compileRivals), not here
     const yaw = Math.atan2(Math.cos(s0.heading), -Math.sin(s0.heading));
@@ -1137,6 +1185,7 @@ async function main() {
   nyc?.endWarm();
   damage.warmup(false);
   visual.warmup(false);
+  forzaVfx.warmup(false);
   city.update(camera, true);
   if (webgpu) await (renderer.backend as unknown as { device: GPUDevice }).device.queue.onSubmittedWorkDone();
   const pipelinesAtStart =(renderer as unknown as { _pipelines: { caches: Map<string, unknown> } })._pipelines.caches.size;
@@ -1339,7 +1388,7 @@ async function main() {
     if (!document.hidden) { frameTimes.length = 0; if (tuning) winStart = performance.now() + 1000; prev = performance.now(); }
   });
   let frameNo = 0;
-  g.__game = { city, nyc, ai, visual, audio, rig, damage, trace, input, renderer, camera, scene, post, THREE, grade: GRADE, heat, setHeat, cops, worldClock, setGroundWetness, stats: () => frameStats(scene, renderer), texStats: () => sceneTextureStats(scene, 0),
+  g.__game = { city, nyc, ai, visual, audio, rig, damage, forzaVfx, trace, input, renderer, camera, scene, post, THREE, grade: GRADE, heat, setHeat, cops, worldClock, setGroundWetness, stats: () => frameStats(scene, renderer), texStats: () => sceneTextureStats(scene, 0),
     get car() { return car; }, get core() { return core; }, get state() { return state; }, ticksNow: () => ticks, routeSamples: route.samples, menu: () => menu, sel,
     get party() { return party; }, get remote() { return remote; }, streetProps, obstacles, standings: () => standings(), get lap() { return lap; },
     setPreset: (name: PresetName) => { setPreset(PRESET_ORDER.indexOf(name)); setExtra(); },
@@ -2059,6 +2108,7 @@ async function main() {
       scene.remove(visual.root);
       damage.dispose();
       visualPath = path; visualCfg = cfg; visual = next; shape = shapeOf(cfg);
+      syncForzaWheelRadii();
       fitAuthored(next, path);
       visual.setPlate(sel.name);
       drawEarly(visual.model);
@@ -2798,12 +2848,14 @@ async function main() {
     if (!mine) { obstacles?.release(h.pole); return; }
     core.contact(h.point, h.impulse, ++contactId);
     audio.impact(Math.max(15, h.impulse / 400), false, 'pole');
+    forzaVfx.emitSparks(h.point.x, h.point.y, h.point.z, visual.velocity.x, visual.velocity.y, visual.velocity.z, 16, 1.15, pos.y - visual.cg.y);
     party?.sendPole(h.pole.x, h.pole.y, h.vx, h.vz);
   };
   /** We broke through a building wall: the front takes the energy the car lost; the party sees the hole. */
   const wallHit = (w: WallHit) => {
     core.contact(w.point, w.impulse, ++contactId);
     audio.impact(Math.max(60, (w.impulse * w.impulse) / (2 * core.info.mass) / 1000), w.storefront, 'wall');
+    forzaVfx.emitSparks(w.point.x, w.point.y, w.point.z, visual.velocity.x, visual.velocity.y, visual.velocity.z, 24, 1.35, pos.y - visual.cg.y);
     party?.sendBreach(w.spec);
   };
   // Wire falling pole & heavy collapsing building rubble impacts to localized car denting, chassis damage, suspension jolt & audio.
@@ -2813,6 +2865,7 @@ async function main() {
       streetProps.onLand = (x, y, z, energy) => {
         core.contact({ x, y, z }, Math.sqrt(2 * core.info.mass * energy), ++contactId);
         damage.dentFromWorld(new THREE.Vector3(x, y, z), new THREE.Vector3(0, -1, 0), energy, true);
+        forzaVfx.emitSparks(x, y, z, visual.velocity.x, 1.5, visual.velocity.z, 14, 1.0, pos.y - visual.cg.y);
         audio.impact(Math.max(10, energy / 1000), true, 'pole');
       };
     }
@@ -2825,8 +2878,10 @@ async function main() {
         if (car?.body && car.body.isEnabled()) {
           car.body.applyImpulseAtPoint({ x: 0, y: -Math.min(1800, hit.massKg * 9.5), z: 0 }, hit.point, true);
         }
+        forzaVfx.emitSparks(hit.point.x, hit.point.y, hit.point.z, visual.velocity.x, 1.2, visual.velocity.z, 16, 1.1, pos.y - visual.cg.y);
         const kj = Math.max(14, hit.energyJ / 450);
         audio.impact(kj, hit.glass, 'wall');
+        audio.suspensionThump(Math.min(1, 0.35 + hit.massKg * 0.004));
         rumbleKj = Math.max(rumbleKj, kj);
       };
     }
@@ -2997,21 +3052,6 @@ async function main() {
         }
         p2Car.tick(state === 'race' ? p2p.raw : IDLE, input.assists);
       }
-      if (tireSmoke) {
-        if (state === 'race' && ticks % 3 === 0) {
-          const slip = Math.max(Math.abs(car.out[OUT.wheel(2) + 7]), Math.abs(car.out[OUT.wheel(3) + 7]));
-          const kmh = Math.abs(car.out[OUT.speed]) * 3.6;
-          if (slip > 0.32 && kmh > 3) {
-            smokeF.set(0, 0, 1).applyQuaternion(quat);
-            smokeR.set(1, 0, 0).applyQuaternion(quat);
-            for (let side = -1; side <= 1; side += 2) {
-              smokeP.copy(pos).addScaledVector(smokeF, -1.35).addScaledVector(smokeR, side * 0.8).setY(0.12);
-              smokeV.set((Math.random() - 0.5) * 1.1, 0.7 + Math.random() * 0.7, (Math.random() - 0.5) * 1.1);
-              tireSmoke.emit(smokeP, smokeV, 0.9 + Math.random() * 0.7, 0.3 + Math.min(1, slip) * 0.45);
-            }
-          }
-        }
-      }
       if (inShowroom) { car.body.setLinvel({ x: 0, y: Math.min(0, car.body.linvel().y), z: 0 }, true); car.body.setAngvel({ x: 0, y: 0, z: 0 }, true); settledShowroom++; }   // parked for the showroom
       ai.tick(DT, car.body.translation());
       remote?.tick(now - (acc - DT) * 1000, DT);   // other players' bodies at this tick's time
@@ -3045,9 +3085,6 @@ async function main() {
       acc -= DT;
       steps++;
     }
-    // Tyre smoke ages once per frame by the simulated time (it used to age by the whole frame on EVERY 240 Hz tick, so
-    // its life shrank 4-8x with the tick count and depended on the frame rate). Emission stays per tick, above.
-    if (tireSmoke && live) tireSmoke.update(simDt);
     if (launchEl && steps > 0) {
       const lt = state === 'countdown' && launchArmed ? 'LAUNCH READY' : state === 'race' && launchUntil > 0 && ticks * DT < launchUntil ? 'LAUNCH' : '';
       if (lt !== lastLaunchText) launchEl.textContent = lastLaunchText = lt;
@@ -3127,9 +3164,20 @@ async function main() {
         }
       }
       visual.update(pos, quat, car.out, prevPos, prevQuat);   // car.out was computed from the pose BEFORE the last step
+      // Forza Horizon 6 Real-Time VFX: 4-wheel brake thermals, 4-wheel drift/lockup smoke, wet rooster-tail spray,
+      // titanium sparks, high-speed rain streaks, and suspension curb/landing thump detection (zero allocations).
+      forzaInput.dt = live ? (simDt > 0 ? simDt : frame) : frame;
+      forzaInput.active = live && state === 'race' && !inGarage;
+      forzaInput.out = car.out;
+      forzaInput.carVel = visual.velocity;
+      forzaInput.roadWetness = worldClock.wetness;
+      forzaInput.asphaltSurfaceId = core.info.surfaces.asphalt;
+      forzaInput.handbrake = state === 'race' ? input.raw.handbrake : 0;
+      forzaVfx.update(forzaInput);
+      visual.setBrakeGlow(forzaVfx.rotorTempC);
       if (splitActive && p2Visual && p2Car) {
         p2Visual.update(p2Pos, p2Quat, p2Car.out, p2PrevPos, p2PrevQuat);
-        p2Visual.setExhaustFlame(p2Car.nosThrustN > 0 ? 1.25 : 0, p2Car.nosThrustN > 0);
+        p2Visual.setExhaustFlame(p2Car.nosThrustN > 0 ? 1.25 : 0, p2Car.nosThrustN > 0, worldClock.wetness);
       }
       if (!inShowroom || settledShowroom <= 24) {
         ai.update(alpha, camera);
@@ -3138,11 +3186,17 @@ async function main() {
     }
     prof.vis += performance.now() - tVis;
     const tAud = performance.now();
+    syncCameraAudioPerspective();
     if (driving()) {
       if (audio.garageEngineOn) { audio.stopGarageEngine(); menu.garageEngineOn = false; }
       audio.update(car.out, car.out[OUT.speed]);
+      audio.updateBrakes(car.out[OUT.brake] || 0, Math.abs(car.out[OUT.speed] || 0), forzaVfx.peakRotorTempC);
+      if (state === 'race' && forzaVfx.suspensionThump > 0.05) {
+        audio.suspensionThump(forzaVfx.suspensionThump);
+      }
     } else if (state === 'garage') {
       audio.updateGarage(frame);
+      audio.updateBrakes(0, 0, 40);
     } else if (audio.garageEngineOn) {
       audio.stopGarageEngine();
       menu.garageEngineOn = false;
@@ -3232,18 +3286,21 @@ async function main() {
         setGroundWetness(worldClock.wetness);
       }
 
-      // Engine Health, Temperature, Nitrous Oxide ([X] purge) & Flamethrower Exhaust VFX
+      // Engine Health, Temperature, Nitrous Oxide ([X] purge) & Dual-Stage Mach-Diamond Exhaust VFX + Wet-Road Bounce
       if (live && state === 'race') {
         const eng = engineOf(nr, sel.car);
         const nosKey = input.isKeyDown('KeyX');
-        const nrTick = tickEngineAndNos(eng, frame, car.out[OUT.rpm] || 800, core.info.redline, Math.abs(car.out[OUT.speed]), nosKey);
+        const rpmNow = car.out[OUT.rpm] || 800;
+        const nrTick = tickEngineAndNos(eng, frame, rpmNow, core.info.redline, Math.abs(car.out[OUT.speed]), nosKey);
         car.nosThrustN = nrTick.nosThrustN;
         const shiftPop = (car.out[OUT.shiftCut] || 0) > 0.5 || (car.out[OUT.bovVenting] || 0) > 0.5;
         const audioFlame = audio.drivingFlameLevel;
+        const rpmFrac = Math.max(0, Math.min(1, (rpmNow - 2200) / Math.max(1500, core.info.redline - 2200)));
+        const exhaustHeat = Math.min(1, rpmFrac * 0.55 + Math.max(0, (eng.tempC - 82) / 45) * 0.35 + (nrTick.nosActive ? 0.5 : 0));
         if (nrTick.flameBurst || shiftPop || audioFlame > 0.05) {
           const flInt = Math.max(audioFlame, nrTick.nosActive ? 1.3 : shiftPop ? 1.05 : nrTick.flameBurst ? 0.9 : 0);
-          visual.setExhaustFlame(flInt, nrTick.nosActive);
-        } else visual.setExhaustFlame(0, false);
+          visual.setExhaustFlame(flInt, nrTick.nosActive, worldClock.wetness, Math.max(exhaustHeat, flInt * 0.9));
+        } else visual.setExhaustFlame(0, false, worldClock.wetness, exhaustHeat);
         const nt = `NOS ${eng.nosLiters.toFixed(1)}L [X] · ${Math.round(eng.tempC)}°C · ENG ${Math.round(eng.health)}%`;
         if (nt !== lastNosText) {
           nosBarEl.textContent = lastNosText = nt;
@@ -3253,8 +3310,14 @@ async function main() {
         replay.record(frame, pos, quat, car.out[OUT.speed], car.out[OUT.rpm], input.raw.steer, input.raw.brake, ai.cars);   // yaw = root.rotation.y, read at 20 Hz
       } else {
         car.nosThrustN = 0;
-        if (state === 'garage' && audio.garageFlameLevel > 0.02) visual.setExhaustFlame(audio.garageFlameLevel, false);
-        else visual.setExhaustFlame(0, false);
+        if (state === 'garage') {
+          const gFlame = audio.garageFlameLevel;
+          const gHeat = audio.garageEngineOn ? Math.min(1, 0.28 + gFlame * 0.85) : 0;
+          // Polished garage concrete floor catches subtle warm tailpipe flame bounce reflection when revving!
+          visual.setExhaustFlame(gFlame > 0.02 ? gFlame : 0, false, 0.65, gHeat);
+        } else {
+          visual.setExhaustFlame(0, false, 0, 0);
+        }
       }
       const wh = inFreeRoam ? (wagers.hudBanner() || raceNodes.promptHtml()) : '';
       if (wh !== lastWagerHtml) { wagerHudEl.innerHTML = lastWagerHtml = wh; }
@@ -3360,6 +3423,10 @@ async function main() {
           car.body.setLinvel({ x: lv.x * (1 - drag), y: lv.y, z: lv.z * (1 - drag) }, true);
         }
         audio.impact(Math.max(12, impulse * 0.18), kind === 'shop' || kind === 'wall', kind);
+        if (impulse > 40) {
+          const sInt = Math.min(1.4, 0.35 + impulse / 4200);
+          forzaVfx.emitSparks(pos.x, pos.y - 0.15, pos.z, lv.x, lv.y + 0.8, lv.z, 6 + sInt * 10, sInt, pos.y - visual.cg.y);
+        }
         // Wrecking during a Cop Race Event raises Heat (never in Free Roam!).
         if (copsActiveInRace() && impulse > 5000 && Date.now() - heat.lastGain > 20_000) bumpHeat(1);
       });

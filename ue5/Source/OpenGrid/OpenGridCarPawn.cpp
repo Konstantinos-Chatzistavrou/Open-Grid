@@ -2,13 +2,16 @@
 #include "OpenGridCarPawn.h"
 
 #include "Camera/CameraComponent.h"
+#include "CollisionQueryParams.h"
 #include "Components/BoxComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/HitResult.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/World.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/PlayerController.h"
@@ -19,7 +22,9 @@
 #include "OpenGridAudioComponent.h"
 #include "OpenGridCustomizationComponent.h"
 #include "OpenGridDamageComponent.h"
+#include "OpenGridEngineSynthComponent.h"
 #include "OpenGridVehicleComponent.h"
+#include "OpenGridVfxComponent.h"
 #include "UObject/ConstructorHelpers.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOpenGridPawn, Log, All);
@@ -114,6 +119,13 @@ AOpenGridCarPawn::AOpenGridCarPawn()
     Customization = CreateDefaultSubobject<UOpenGridCustomizationComponent>(TEXT("Customization"));
     Damage = CreateDefaultSubobject<UOpenGridDamageComponent>(TEXT("Damage"));
     Audio = CreateDefaultSubobject<UOpenGridAudioComponent>(TEXT("Audio"));
+
+    EngineSynth = CreateDefaultSubobject<UOpenGridEngineSynthComponent>(TEXT("EngineSynth"));
+    EngineSynth->SetupAttachment(Chassis);
+    EngineSynth->SetRelativeLocation(FVector(-180.0f, 0.0f, 10.0f));
+    EngineSynth->bAutoActivate = true;
+
+    VehicleVfx = CreateDefaultSubobject<UOpenGridVfxComponent>(TEXT("VehicleVfx"));
 }
 
 void AOpenGridCarPawn::BeginPlay()
@@ -204,6 +216,15 @@ void AOpenGridCarPawn::BeginPlay()
     }
 
     Super::BeginPlay();
+
+    if (EngineSynth)
+    {
+        EngineSynth->SetCameraPerspective(ActiveCameraPerspective);
+        if (!EngineSynth->IsPlaying())
+        {
+            EngineSynth->Start();
+        }
+    }
 }
 
 // ---- Input ----------------------------------------------------------------------------------------------------------
@@ -303,10 +324,20 @@ void AOpenGridCarPawn::OnShiftUp() { Vehicle->ShiftUp(); }
 void AOpenGridCarPawn::OnShiftDown() { Vehicle->ShiftDown(); }
 void AOpenGridCarPawn::OnRecover() { Recover(); }
 
+void AOpenGridCarPawn::SetCameraPerspective(EOpenGridCameraPerspective NewPerspective)
+{
+    ActiveCameraPerspective = NewPerspective;
+    if (EngineSynth)
+    {
+        EngineSynth->SetCameraPerspective(NewPerspective);
+    }
+}
+
 void AOpenGridCarPawn::Recover()
 {
     Vehicle->RepairAndService();   // as the web build's R: fix damage, refuel, restore the engine
     if (Damage) Damage->RepairAllDamage();
+    if (VehicleVfx) VehicleVfx->ResetThermalState();
     const FRotator Yaw(0.0f, GetActorRotation().Yaw, 0.0f);
     Chassis->SetWorldLocationAndRotation(GetActorLocation() + FVector(0.0f, 0.0f, 100.0f), Yaw, false, nullptr, ETeleportType::TeleportPhysics);
     Chassis->SetPhysicsLinearVelocity(FVector::ZeroVector);
@@ -332,11 +363,251 @@ void AOpenGridCarPawn::Tick(float DeltaSeconds)
     Vehicle->HandbrakeInput = FMath::Clamp(ActionValue(Handbrake), 0.0f, 1.0f);
 
     PlaceWheels();
+    UpdateAcousticEnvironmentProbes(DeltaSeconds);
+    UpdateEngineAudioAndVfx(DeltaSeconds);
     if (!Damage || !Damage->IsComponentTickEnabled())
     {
         UpdateCrushMorphTargets();
     }
     if (bShowDebugHud) DrawHud();
+}
+
+void AOpenGridCarPawn::UpdateAcousticEnvironmentProbes(float DeltaSeconds)
+{
+    if (DeltaSeconds <= 0.0f || !Chassis)
+    {
+        return;
+    }
+
+    constexpr float kAcousticProbeIntervalSec = 1.0f / 15.0f;  // ~15 Hz throttle
+    constexpr float kAcousticProbeRangeCm = 1500.0f;           // 15 m range
+
+    AcousticProbeTimer_ += DeltaSeconds;
+    if (AcousticProbeTimer_ >= kAcousticProbeIntervalSec)
+    {
+        AcousticProbeTimer_ = 0.0f;
+
+        if (UWorld* World = GetWorld())
+        {
+            const FVector ProbeOrigin = Chassis->GetComponentLocation() + Chassis->GetUpVector() * 45.0f;
+            const FVector RightAxis = Chassis->GetRightVector();
+
+            FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(OpenGridAcousticProbe), /*bTraceComplex=*/false, this);
+
+            auto ProbeRay = [&](const FVector& Direction) -> float
+            {
+                FHitResult Hit;
+                const FVector End = ProbeOrigin + Direction * kAcousticProbeRangeCm;
+                if (!World->LineTraceSingleByChannel(Hit, ProbeOrigin, End, ECC_Visibility, QueryParams))
+                {
+                    return 0.0f;
+                }
+                const float LinearProximity = 1.0f - FMath::Clamp(Hit.Distance / kAcousticProbeRangeCm, 0.0f, 1.0f);
+                return FMath::Pow(LinearProximity, 1.35f);
+            };
+
+            TargetTunnelReflection_ = ProbeRay(FVector::UpVector);
+            TargetWallProximityL_ = ProbeRay(-RightAxis);
+            TargetWallProximityR_ = ProbeRay(RightAxis);
+        }
+    }
+
+    constexpr float kAcousticInterpSpeed = 8.0f;
+    SmoothedTunnelReflection_ = FMath::FInterpTo(SmoothedTunnelReflection_, TargetTunnelReflection_, DeltaSeconds, kAcousticInterpSpeed);
+    SmoothedWallProximityL_ = FMath::FInterpTo(SmoothedWallProximityL_, TargetWallProximityL_, DeltaSeconds, kAcousticInterpSpeed);
+    SmoothedWallProximityR_ = FMath::FInterpTo(SmoothedWallProximityR_, TargetWallProximityR_, DeltaSeconds, kAcousticInterpSpeed);
+
+    if (EngineSynth)
+    {
+        EngineSynth->SetAcousticEnvironment(SmoothedTunnelReflection_, SmoothedWallProximityL_, SmoothedWallProximityR_);
+    }
+}
+
+void AOpenGridCarPawn::UpdateEngineAudioAndVfx(float DeltaSeconds)
+{
+    if (DeltaSeconds <= 0.0f || !Vehicle || !Vehicle->bCarLoaded)
+    {
+        return;
+    }
+
+    BackfireCooldown_ = FMath::Max(0.0f, BackfireCooldown_ - DeltaSeconds);
+    OverrunCooldown_ = FMath::Max(0.0f, OverrunCooldown_ - DeltaSeconds);
+    SparkCooldown_ = FMath::Max(0.0f, SparkCooldown_ - DeltaSeconds);
+
+    const float Rpm = Vehicle->EngineRpm;
+    const float Throttle = FMath::Clamp(Vehicle->ThrottleInput, 0.0f, 1.0f);
+    const float Brake = FMath::Clamp(Vehicle->BrakeInput, 0.0f, 1.0f);
+    const float Handbrake = FMath::Clamp(Vehicle->HandbrakeInput, 0.0f, 1.0f);
+    const float SpeedMps = FMath::Max(0.0f, Vehicle->SpeedKmh / 3.6f);
+    const float BoostBar = FMath::Max(0.0f, Vehicle->BoostBar);
+    const int32 CurrentGear = Vehicle->CurrentGear;
+    const bool bShiftCut = Vehicle->bShiftCutActive;
+    const bool bBackfire = Vehicle->bBackfireActive;
+    const bool bBovVenting = Vehicle->bBovVenting;
+    const bool bStarterCrank = Vehicle->bStarterCrank;
+    const bool bNosActive = Vehicle->bNitrousActive;
+    const float Wetness = Audio ? FMath::Clamp(Audio->Wetness, 0.0f, 1.0f) : 0.0f;
+
+    const float EngineLoad = bShiftCut
+        ? 0.05f
+        : FMath::Clamp(Throttle * 0.85f + FMath::Clamp(BoostBar * 0.25f, 0.0f, 0.25f), 0.0f, 1.0f);
+
+    const float WhineHz = (Vehicle->GearWhineHz > 0.0f) ? Vehicle->GearWhineHz : Vehicle->TransmissionWhineHz;
+    const bool bInGear = (CurrentGear != 1);
+    const float GearWhineLevel = bInGear
+        ? FMath::Clamp((WhineHz / 2400.0f) * (0.25f + 0.75f * FMath::Max(Throttle, Brake)), 0.0f, 1.0f)
+        : 0.0f;
+
+    const float ReverbMix = FMath::Clamp(
+        0.14f + SmoothedTunnelReflection_ * 0.48f + 0.18f * FMath::Max(SmoothedWallProximityL_, SmoothedWallProximityR_),
+        0.08f,
+        0.85f);
+
+    // 1. Push continuous telemetry to live physical combustion synthesizer
+    if (EngineSynth)
+    {
+        EngineSynth->SetCameraPerspective(ActiveCameraPerspective);
+        EngineSynth->SetEngineTelemetry(Rpm, Throttle, EngineLoad, BoostBar, bShiftCut, ReverbMix);
+        EngineSynth->SetDrivetrainAcoustics(GearWhineLevel, SpeedMps);
+    }
+
+    // 2. Synced audio + VFX impulse events (skip edge triggers on very first frame after spawn)
+    if (bHasPrevAudioVfxSample_)
+    {
+        // Starter motor crank rising edge
+        if (bStarterCrank && !bPrevStarterCrank_ && EngineSynth)
+        {
+            EngineSynth->TriggerStarterCrank(0.42f);
+        }
+
+        // High-RPM upshift bang (flat-foot / DCT ignition-cut crack + dual-tailpipe flame)
+        const bool bHighRpmUpshift =
+            ((CurrentGear > PrevGear_) && (PrevGear_ >= 2) && (Rpm > 4800.0f)) ||
+            (bShiftCut && !bPrevShiftCut_ && (Rpm > 5000.0f));
+        if (bHighRpmUpshift && BackfireCooldown_ <= 0.0f)
+        {
+            const float ShiftIntensity = FMath::Clamp((Rpm - 4400.0f) / 3400.0f, 0.50f, 1.25f);
+            if (EngineSynth)
+            {
+                EngineSynth->TriggerExhaustPop(ShiftIntensity);
+            }
+            if (VehicleVfx)
+            {
+                VehicleVfx->TriggerExhaustBackfire(FMath::Min(ShiftIntensity, 1.0f), bNosActive);
+            }
+            BackfireCooldown_ = 0.14f;
+        }
+
+        // Lift-off overrun burble / crackle + hot exhaust flames at high RPM
+        const float ThrottleDrop = PrevThrottle_ - Throttle;
+        const bool bLiftOffOverrun =
+            (ThrottleDrop > 0.30f && Throttle < 0.12f && Rpm > 3500.0f) ||
+            (Vehicle->OverrunPopIntensity > 0.30f && Throttle < 0.15f && Rpm > 3200.0f);
+        if (bLiftOffOverrun && OverrunCooldown_ <= 0.0f)
+        {
+            const float BurbleIntensity = FMath::Clamp(
+                FMath::Max((Rpm - 3200.0f) / 4500.0f, Vehicle->OverrunPopIntensity),
+                0.35f,
+                1.0f);
+            if (EngineSynth)
+            {
+                EngineSynth->TriggerOverrunBurble(BurbleIntensity);
+            }
+            if (VehicleVfx && Rpm > 4900.0f && BackfireCooldown_ <= 0.0f)
+            {
+                VehicleVfx->TriggerExhaustBackfire(BurbleIntensity * 0.72f, false);
+                BackfireCooldown_ = 0.18f;
+            }
+            OverrunCooldown_ = 0.26f;
+        }
+
+        // Physics-core backfire event
+        if (bBackfire && !bPrevBackfire_ && BackfireCooldown_ <= 0.0f)
+        {
+            const float CorePopIntensity = FMath::Clamp(FMath::Max(0.85f, Vehicle->OverrunPopIntensity), 0.5f, 1.2f);
+            if (EngineSynth)
+            {
+                EngineSynth->TriggerExhaustPop(CorePopIntensity);
+            }
+            if (VehicleVfx)
+            {
+                VehicleVfx->TriggerExhaustBackfire(FMath::Min(CorePopIntensity, 1.0f), bNosActive);
+            }
+            BackfireCooldown_ = 0.14f;
+        }
+
+        // Compressor-surge BOV flutter on boosted lift-off
+        if (EngineSynth && ((bBovVenting && !bPrevBovVenting_) || (ThrottleDrop > 0.30f && PrevBoostBar_ > 0.45f)))
+        {
+            EngineSynth->TriggerTurboFlutter(FMath::Max(PrevBoostBar_, BoostBar));
+        }
+
+        // Underbody titanium spark bursts on chassis scrape / bottoming
+        if (VehicleVfx && Chassis && Vehicle->bScrapeActive && SpeedMps > 3.0f && SparkCooldown_ <= 0.0f)
+        {
+            const FVector UpAxis = Chassis->GetUpVector();
+            const FVector SparkLoc = Chassis->GetComponentLocation() - UpAxis * Chassis->GetScaledBoxExtent().Z;
+            const float SparkIntensity = FMath::Clamp(SpeedMps / 28.0f, 0.45f, 1.5f);
+            VehicleVfx->TriggerSparkBurst(SparkLoc, UpAxis, SparkIntensity);
+            SparkCooldown_ = 0.08f;
+        }
+    }
+
+    bHasPrevAudioVfxSample_ = true;
+    PrevGear_ = CurrentGear;
+    PrevThrottle_ = Throttle;
+    PrevBoostBar_ = BoostBar;
+    bPrevShiftCut_ = bShiftCut;
+    bPrevBackfire_ = bBackfire;
+    bPrevBovVenting_ = bBovVenting;
+    bPrevStarterCrank_ = bStarterCrank;
+
+    // 3. Push full vehicle & 4-wheel telemetry into Niagara VFX Director
+    if (VehicleVfx)
+    {
+        FOpenGridVfxTelemetry VfxTel;
+        VfxTel.EngineRpm = Rpm;
+        VfxTel.RedlineRpm = 7800.0f;
+        VfxTel.Throttle = Throttle;
+        VfxTel.EngineLoad = EngineLoad;
+        VfxTel.BrakeInput = Brake;
+        VfxTel.HandbrakeInput = Handbrake;
+        VfxTel.SpeedMps = SpeedMps;
+        VfxTel.AmbientTempC = Vehicle->AmbientAirCelsius;
+        VfxTel.GlobalWetness = Wetness;
+        VfxTel.bNitrousActive = bNosActive;
+        VfxTel.bScrapeActive = Vehicle->bScrapeActive;
+        VfxTel.VehicleVelocityCms = Chassis ? Chassis->GetPhysicsLinearVelocity() : FVector::ZeroVector;
+
+        VfxTel.Wheels.SetNum(4);
+        const int32 NumWheelStates = FMath::Min(4, Vehicle->WheelStates.Num());
+        for (int32 i = 0; i < 4; ++i)
+        {
+            FOpenGridWheelVfxTelemetry& Dst = VfxTel.Wheels[i];
+            Dst.Wetness = Wetness;
+
+            if (i < NumWheelStates)
+            {
+                const FOpenGridWheelState& Src = Vehicle->WheelStates[i];
+                Dst.bInContact = Src.bInContact;
+                Dst.ContactPointWorldCm = !Src.ContactPointWorldCm.IsNearlyZero() ? Src.ContactPointWorldCm : Src.WorldCenterCm;
+                Dst.ContactNormalWorld = Chassis ? Chassis->GetUpVector() : FVector::UpVector;
+
+                const float LongSlip = FMath::Abs(Src.SlipRatio);
+                const float LatSlip = FMath::Abs(Src.SlipAngleDeg) / 12.0f;
+                Dst.SlipIntensity = FMath::Sqrt(LongSlip * LongSlip + LatSlip * LatSlip);
+                Dst.TyreTempC = Src.SurfaceTempC;
+                Dst.NormalLoadN = Src.NormalLoadN;
+                Dst.DebrisIntensity = FMath::Clamp(Src.CavityRingGain * 0.9f, 0.0f, 1.0f);
+            }
+            else if (Vehicle->WheelCentresWorld.IsValidIndex(i))
+            {
+                Dst.ContactPointWorldCm = Vehicle->WheelCentresWorld[i];
+            }
+        }
+
+        VehicleVfx->UpdateVehicleVfx(DeltaSeconds, VfxTel);
+    }
 }
 
 void AOpenGridCarPawn::ApplyVisualMods()
