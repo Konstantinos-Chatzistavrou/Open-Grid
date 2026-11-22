@@ -1,6 +1,6 @@
 {
   "schema": "rivals/1",
-  "notes": "AI rival personalities, one per grid slot (slot k uses entry k; the player's slot is skipped). skill = fraction of grip the AI dares to use, reaction_time s, headway s, aggression 0..1, lane_offset m (+ = left).",
+  "notes": "AI rival personalities, one per grid slot (slot k uses entry k; the player's slot is skipped). skill = fraction of grip the AI dares to use, reaction_time s, headway s, aggression 0..1, lane_offset m (+ = left), racing_line and racecraft (true unless set false: follow the minimum-curvature line, slipstream, committed passes, defending).",
   "rivals": [
     {
       "name": "Vex",

@@ -13,13 +13,15 @@ AIDriver::AIDriver(const CarConfig& cfg, const Route& route, AIParams p) : cfg_(
     const double a_brake = p_.skill * 0.85 * cfg.tire_front.mu_x * kGravity;
     const auto& rs = route.samples();
     const int n = (int)rs.size();
+    if (p_.racing_line) line_ = RacingLine(route);
     vprof_.resize(n);
     // cornering limit:  v^2 |k| <= a_lat
     // Narrow streets are taken more carefully (walls a metre away): grip used scales with width,
     // from 70 % in a 4.6 m alley to 100 % on roads 8 m wide or more.
     for (int i = 0; i < n; ++i) {
         double width_factor = clamp((rs[i].width_left + rs[i].width_right - 2.0) / 6.0, 0.7, 1.0);
-        vprof_[i] = std::min(75.0, std::sqrt(a_lat * width_factor / std::max(std::abs(rs[i].curvature), 1e-4)));
+        const double k = p_.racing_line ? line_.curvature(rs[i].s) : rs[i].curvature;
+        vprof_[i] = std::min(75.0, std::sqrt(a_lat * width_factor / std::max(std::abs(k), 1e-4)));
     }
     for (int pass = 0; pass < 2; ++pass) {
         // braking: v_i^2 <= v_{i+1}^2 + 2 a ds   (backward)
@@ -142,6 +144,7 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
     defending_inside = false;
     under_pressure_lockup = false;
     double base_lat = p_.lane_offset;
+    bool racecraft_lat = false;          // racecraft picked an absolute lateral position (overrides the racing line)
     if (p_.proactive_racecraft) {
         double lead_gap = 1e9, lead_lat = 0.0, lead_speed = 0.0;
         double chase_gap = 1e9, chase_lat = 0.0;
@@ -183,35 +186,49 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
         }
         const double route_v = std::min(speed_profile(pr.s), speed_profile(pr.s + std::max(v, 0.0) * 0.5));
 
+        // a committed pass ends once the car is behind us or has pulled 30 m away
+        if (committed_pass_ && (lead_gap > 30.0 || lead_gap >= 1e8)) committed_pass_ = false;
         // 1. Slipstream Tuck: straight ahead and 16 < lead_gap <= 38 m
-        if (std::abs(corner_sample.curvature) < 0.004 && lead_gap > 16.0 && lead_gap <= 38.0) {
+        if (!committed_pass_ && std::abs(corner_sample.curvature) < 0.004 && lead_gap > 16.0 && lead_gap <= 38.0) {
             tucking_slipstream = true;
             base_lat = lead_lat;
+            racecraft_lat = true;
             avoid_ = 0.0;
             target = std::max(target, std::min(route_v, lead_speed + 4.0));
         }
 
-        // 2. Slingshot Pass: lead_gap <= 16 m and road width allows passing
-        const bool can_pass = (here_sample.width_left + here_sample.width_right) >= 5.3;
-        if (lead_gap <= 16.0 && can_pass) {
+        // 2. Slingshot Pass: lead_gap <= 16 m and a side with room for a whole car (2.2 m beside the lead car's
+        //    centre plus 1.2 m to the road edge); otherwise stay behind and follow.
+        const double room_l = here_sample.width_left - lead_lat;
+        const double room_r = here_sample.width_right + lead_lat;
+        const double need = 2.6 + 1.2;
+        if ((lead_gap <= 16.0 || committed_pass_) && std::max(room_l, room_r) >= need) {
             slingshot_passing = true;
             tucking_slipstream = false;
-            const double room_l = here_sample.width_left - lead_lat;
-            const double room_r = here_sample.width_right + lead_lat;
-            double pass_dir = 1.0;
-            if (std::abs(corner_k) > 0.004 && ((corner_k > 0.0 ? room_l : room_r) >= 2.0)) {
-                pass_dir = sign(corner_k);
-            } else if (std::abs(room_l - room_r) > 0.15) {
-                pass_dir = (room_l > room_r) ? 1.0 : -1.0;
-            } else if (std::abs(pr.lateral - lead_lat) > 0.1) {
-                pass_dir = (pr.lateral >= lead_lat) ? 1.0 : -1.0;
+            double pass_dir = room_l >= room_r ? 1.0 : -1.0;
+            if (committed_pass_ && (pass_dir_ > 0 ? room_l : room_r) >= need) {
+                pass_dir = pass_dir_;                            // keep the side we committed to
+            } else if (std::abs(corner_k) > 0.004 && (corner_k > 0.0 ? room_l : room_r) >= need) {
+                pass_dir = sign(corner_k);                       // the inside of the next corner if it has room
+            } else if (room_l >= need && room_r >= need && std::abs(pr.lateral - lead_lat) > 0.1) {
+                pass_dir = (pr.lateral >= lead_lat) ? 1.0 : -1.0; // both open: the side we are already on
             }
-            base_lat = lead_lat + pass_dir * 2.2;
+            committed_pass_ = true;
+            pass_dir_ = pass_dir;
+            base_lat = lead_lat + pass_dir * 2.6;           // a car width (1.9 m) plus 0.7 m between the cars
+            racecraft_lat = true;
             avoid_ = 0.0;
-            target = std::max(target, std::min(route_v, std::max(lead_speed, v) + 4.5));
-            if (lead_gap > 5.0 || std::abs(pr.lateral - lead_lat) > 1.4) {
+            // Only outrun the car-following limit once a full car width beside it (cars 1.9 m wide): until then the
+            // following logic (gap, closing speed) keeps us off its bumper while we pull out.
+            const bool clear_beside = std::abs(pr.lateral - lead_lat) > 2.1;
+            if (clear_beside) {
+                target = std::max(target, std::min(route_v, std::max(lead_speed, v) + 4.5));
                 braking_for_traffic = false;
+            } else if (lead_gap > 9.0 && !braking_for_traffic) {
+                target = std::max(target, std::min(route_v, v));   // pulling out from well back: hold speed
             }
+        } else if (committed_pass_) {
+            committed_pass_ = false;                             // no room any more: fall in behind
         }
 
         // 3. Defensive Inside-Line Blocking: clear ahead, attacker < 18 m behind, corner approaching
@@ -219,12 +236,14 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
             defending_inside = true;
             tucking_slipstream = false;
             base_lat = sign(corner_k) * 1.65;
+            racecraft_lat = true;
             avoid_ = 0.0;
         }
 
         // Hold passing lane while clearing a car alongside
         if (!tucking_slipstream && !slingshot_passing && !defending_inside && has_alongside) {
             base_lat = alongside_lat + (pr.lateral >= alongside_lat ? 1.0 : -1.0) * 2.2;
+            racecraft_lat = true;
         }
 
         // 4. Human-Like Tailgating Pressure & Late-Braking Lockup
@@ -243,6 +262,17 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
     // ---- steering: pure pursuit to a point Ld ahead on the offset centreline
     double ld = clamp(3.5 + 0.4 * std::max(v, 0.0), 5.0, 30.0);   // short at low speed: less corner cutting
     RouteSample ahead = route_.at(pr.s + ld);
+    if (p_.racing_line && !racecraft_lat) base_lat = line_.lateral(pr.s + ld);
+    // Leave a car's width to anyone alongside (overlapping along the road): never steer into them. Applies to every
+    // AI, racing or not: the car being passed holds its side of the road.
+    for (const OtherCar& o : others) {
+        if (length(o.position - s.position) > 12.0) continue;
+        const Route::Projection op = route_.project(o.position, hint_);
+        if (std::abs(route_.delta(pr.s, op.s)) > 0.5 * (4.5 + o.length)) continue;
+        const double sep = 0.5 * (1.9 + o.width) + 0.25;
+        if (op.lateral >= pr.lateral) base_lat = std::min(base_lat + avoid_, op.lateral - sep) - avoid_;
+        else base_lat = std::max(base_lat + avoid_, op.lateral + sep) - avoid_;
+    }
     double lat = clamp(base_lat + avoid_, -(ahead.width_right - 1.2), ahead.width_left - 1.2);
     active_lateral_target = lat;
     Vec3 tp = ahead.p + route_.left(pr.s + ld) * lat;

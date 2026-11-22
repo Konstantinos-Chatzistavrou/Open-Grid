@@ -1,9 +1,11 @@
 // Phase 4: damage, route, AI driver (incl. reaction-time pile-ups), race tracker.
 #include <cmath>
 #include <memory>
+#include <cstdlib>
 #include "harness.hpp"
 #include "rs/ai.hpp"
 #include "rs/race.hpp"
+#include "rs/racing_line.hpp"
 
 using namespace rs;
 
@@ -260,5 +262,104 @@ RS_TEST(race_uturn) {
         char what[96];
         std::snprintf(what, sizeof what, "lap tracked %+.1f m off the centreline (%.1f s, theory %.1f s)", lane, race.progress(c).finish_time, r.length() / 36);
         test::check(what, race.progress(c).finished && std::abs(race.progress(c).finish_time - r.length() / 36) < 0.5);
+    }
+}
+
+// ---------------------------------------------------------------- racing line + overtaking
+// A 10 m wide road round a 220 x 140 m block with 12 m corners. Straight 0: s 0..196, first (left) corner 196..214.8.
+RS_TEST(racing_line) {
+    const Route r = block_route(220, 140, 12, 5.0);
+    const RacingLine line(r);
+    double kmax_c = 0, kmax_l = 0;
+    for (double s = 0; s < r.length(); s += 1.0) {
+        kmax_c = std::max(kmax_c, std::abs(r.at(s).curvature));
+        kmax_l = std::max(kmax_l, std::abs(line.curvature(s)));
+    }
+    const double before = line.lateral(180), apex = line.lateral(205.4), after = line.lateral(231);
+    std::printf("         line offset (+ = left / inside): 16 m before the corner %.2f m, apex %.2f m, 16 m after %.2f m; "
+                "max curvature centreline %.4f, line %.4f 1/m\n", before, apex, after, kmax_c, kmax_l);
+    test::check("outside before the corner", before < -1.0);
+    test::check("inside at the apex", apex > 1.5);
+    test::check("outside again on the exit", after < -1.0);
+    test::check("the line is straighter than the centreline", kmax_l < 0.85 * kmax_c);
+    for (double s = 0; s < r.length(); s += 1.0)
+        if (std::abs(line.lateral(s)) > 5.0 - 1.3 + 1e-6) { test::check("the line stays on the road", false); break; }
+
+    // Lap time: the same AI on the centreline and on the racing line.
+    const CarConfig cfg = test::car();
+    auto lap = [&](bool use_line, double* max_off) {
+        AIParams p;
+        p.racing_line = use_line;
+        AICar car(cfg, r, p, {150, 0, 0}, 0, 20);
+        double travelled = 0, last_s = 150, t_start = -1, worst = 0;
+        while (car.sim->time < 200) {
+            car.step({});
+            const double s_now = car.ai->route_s;
+            travelled += r.delta(last_s, s_now);
+            last_s = s_now;
+            if (t_start < 0 && travelled > r.length() * 0.25) { t_start = car.sim->time; travelled = 0; }
+            if (t_start >= 0) worst = std::max(worst, std::abs(r.project(car.sim->body.state.position).lateral));
+            if (t_start >= 0 && travelled >= r.length()) break;
+        }
+        *max_off = worst;
+        return car.sim->time - t_start;
+    };
+    double off_c = 0, off_l = 0;
+    const double t_c = lap(false, &off_c), t_l = lap(true, &off_l);
+    std::printf("         flying lap: centreline %.2f s, racing line %.2f s (%.1f %% faster); max offset %.2f / %.2f m of 5.0\n",
+                t_c, t_l, 100 * (1 - t_l / t_c), off_c, off_l);
+    test::check("the racing line laps faster", t_l < 0.97 * t_c);
+    test::check("the car stays on the road on the racing line", off_l < 5.0 - 0.9);
+
+    // Racing behind a car that corners slower (same engine): no contact over two minutes. (Passing it needs an outbraking
+    // move into a corner, which this AI does not attempt: it pulls out on straights only.)
+    AIParams fast, slow;
+    fast.racing_line = slow.racing_line = true;
+    fast.proactive_racecraft = true;
+    slow.skill = 0.6;
+    auto no_contact = [&](AICar& a, AICar& b, const Route& rt, double secs, double start_gap, double* t_pass) {
+        double min_lat = 1e9, prog_a = 0, prog_b = 0, la = a.ai->route_s, lb = b.ai->route_s;
+        bool first = true;
+        *t_pass = -1;
+        while (a.sim->time < secs) {
+            a.step({b.as_other()});
+            b.step({a.as_other()});
+            if (first) { la = a.ai->route_s; lb = b.ai->route_s; first = false; }
+            prog_a += rt.delta(la, a.ai->route_s); la = a.ai->route_s;
+            prog_b += rt.delta(lb, b.ai->route_s); lb = b.ai->route_s;
+            const Vec3 d = a.sim->body.state.position - b.sim->body.state.position;
+            const Vec3 fwd = rt.tangent(b.ai->route_s);
+            const double along = std::abs(dot(d, fwd)), lat = std::abs(d.x * fwd.y - d.y * fwd.x);
+            if (along < 4.6) min_lat = std::min(min_lat, lat);
+            if (*t_pass < 0 && prog_a > prog_b + start_gap + 10.0) *t_pass = a.sim->time;
+            if (std::getenv("RS_DEBUG2") && std::fmod(a.sim->time, 1.0) < a.sim->dt)
+                std::printf("         T %.0f gap %.1f | A s %.0f lat %.2f v %.1f tgt %.1f pass %d tuck %d brk %d gapA %.1f | B s %.0f lat %.2f v %.1f\n", a.sim->time,
+                            prog_b + start_gap - prog_a, a.ai->route_s, rt.project(a.sim->body.state.position).lateral, test::speed(*a.sim), a.ai->target_speed,
+                            a.ai->slingshot_passing, a.ai->tucking_slipstream, a.ai->braking_for_traffic, a.ai->gap_ahead, b.ai->route_s,
+                            rt.project(b.sim->body.state.position).lateral, test::speed(*b.sim));
+        }
+        return min_lat;
+    };
+    {
+        AICar a(cfg, r, fast, {100, 0, 0}, 0, 20), b(cfg, r, slow, {125, 0, 0}, 0, 20);
+        double t_pass = -1;
+        const double gap = no_contact(a, b, r, 120, 25, &t_pass);
+        std::printf("         circuit, 2 min behind a car that corners slower: closest side-by-side %.2f m (none = no overlap at all)%s\n",
+                    gap, t_pass > 0 ? ", it got past" : "");
+        test::check("no contact behind a slower-cornering car", gap > 1.9);
+    }
+    // A genuinely slower car (half the engine torque) on a 10 m wide straight: pull out, pass, no contact.
+    {
+        CarConfig weak = cfg;
+        for (auto& pt : weak.engine.torque_curve) pt[1] *= 0.5;
+        const Route st = straight_route(1500, 5.0);
+        AIParams slow2;
+        slow2.racing_line = true;
+        AICar a(cfg, st, fast, {20, 0, 0}, 0, 20), b(weak, st, slow2, {60, 0, 0}, 0, 20);
+        double t_pass = -1;
+        const double gap = no_contact(a, b, st, 45, 40, &t_pass);
+        std::printf("         straight, a half-power car 40 m ahead: past (10 m clear) after %.1f s, closest side-by-side %.2f m\n", t_pass, gap);
+        test::check("the faster car pulls out and passes", t_pass > 0);
+        test::check("no overlap while passing (> 1.9 m between centres)", gap > 1.9);
     }
 }

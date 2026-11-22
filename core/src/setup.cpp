@@ -107,6 +107,10 @@ std::vector<Rival> parse_rivals(const std::string& text) {
         p.headway = r.value("headway", p.headway);
         p.aggression = r.value("aggression", p.aggression);
         p.lane_offset = r.value("lane_offset", p.lane_offset);
+        // rivals race: the racing line and racecraft (slipstream, committed passes, defending) are on unless the file
+        // turns them off
+        p.racing_line = r.value("racing_line", true);
+        p.proactive_racecraft = r.value("racecraft", true);
         if (p.skill <= 0 || p.skill > 1.0) throw std::runtime_error("rivals: " + v.name + ": skill must be in (0, 1]");
         out.push_back(v);
     }
