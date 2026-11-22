@@ -205,14 +205,20 @@ CC0 1.0 (no credit required; listed with thanks):
 
 - **Valenza Integrale Evo** (`valenza_integrale`, marque `valenza`): Original · OpenGrid Contributors (tools/pipeline/sculpt_fleet.py) — de-branded, restyled, spoiler-separated & 3D OpenGrid badged via `tools/pipeline/ingest_car.py`.
 
-## Audio assets (Real Engine & Drivetrain Recordings — CC BY 3.0)
-Engine loops, turbo spool/BOV flutter, straight-cut gearbox whine, and anti-lag exhaust bangs in
-`web/public/assets/audio/*.ogg` and `ue5/Import/Audio/*.wav` are pitch-locked, phase-looped excerpts
-derived from real-world automotive recordings archived on Wikimedia Commons under CC BY 3.0
-(https://creativecommons.org/licenses/by/3.0/) via `tools/ue5/extract_real_audio_stems.py`.
-Changes made: 0.4–1.5 s steady/on-throttle excerpts isolated, pitch-locked to constant reference RPM,
-equal-power phase-looped, warm-mastered, and transcoded to 48 kHz WAV / Vorbis OGG. Full per-stem
-provenance: `assets_source/audio/manifest.json`.
+## Audio assets (AngeTheGreat engine-sim MIT + Real Recordings CC BY 3.0)
+- **Engine Simulator (`engine-sim`)** by AngeTheGreat (Ange Yaghi), https://github.com/ange-yaghi/engine-sim,
+  licensed under the MIT License (Copyright 2022 AngeTheGreat / Ange Yaghi).
+  All 26 piston engine RPM loops (`eng_flat6_*`, `eng_v12_*`, `eng_v10_*`, `eng_tt_i6_*`, `eng_v8_cross_*`,
+  `eng_v8_flat_*`, `eng_sc_v8_*`) in `web/public/assets/audio/*.ogg` and `ue5/Import/Audio/*.wav` are rendered
+  headlessly via `tools/ue5/engine_sim_dyno.cpp` & `tools/ue5/render_engine_sim_stems.py` using AngeTheGreat's
+  real-time thermodynamic combustion, gas-dynamics, and exhaust impulse-response convolution simulator.
+
+- **Real Automotive FX & Rotary Recordings (CC BY 3.0)**:
+  Rotary engine loops (`eng_rotary4_*`), turbo spool & BOV flutter (`turbo_spool_loop`, `turbo_flutter_bov`),
+  straight-cut gearbox whine (`gear_whine_straightcut`), and anti-lag exhaust bangs (`exhaust_backfire_pop`,
+  `exhaust_antilag_pop2`, `exhaust_antilag_pop3`) are pitch-locked, phase-looped excerpts derived from real-world
+  automotive recordings archived on Wikimedia Commons under CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)
+  via `tools/ue5/extract_real_audio_stems.py`. Full per-stem provenance: `assets_source/audio/manifest.json`.
 
 - **Porsche 911 GT3 (992) with Fi Exhaust - engine and exhaust sound (YouTube -ZK8A1PT-4k).opus** by CARSMANIA (YouTube) (https://commons.wikimedia.org/wiki/File:Porsche_911_GT3_(992)_with_Fi_Exhaust_-_engine_and_exhaust_sound_(YouTube_-ZK8A1PT-4k).opus), CC BY 3.0.
 - **Porsche 911 GT3 (997) - engine and exhaust sound (YouTube Eh89UkPfUfA).opus** by CARSMANIA (YouTube) (https://commons.wikimedia.org/wiki/File:Porsche_911_GT3_(997)_-_engine_and_exhaust_sound_(YouTube_Eh89UkPfUfA).opus), CC BY 3.0.
