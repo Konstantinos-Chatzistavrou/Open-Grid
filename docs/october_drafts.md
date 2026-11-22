@@ -40,7 +40,11 @@ While porting, six tests that already existed on `main` turned out to be missing
 them: `anti_pitch`, `brake_fade`, `h_shifter`, `self_aligning`, `pedal_reverse`, `wreck_drivable_fire_brakes`.
 All six pass and are now registered.
 
-### Open findings from these tests (not changed, for a decision)
+### Findings from these tests
+
+Findings 1 and 2 were fixed on 2026-11-22 (docs/physics.md, "Tyre compounds, cooling to the air, wear from
+friction work"). Findings 3 and 4 are left as described.
+
 
 1. **Cold tyres grip as well as warm ones.** On a fast skidpad ramp, tyres soaked at 20 °C reach 0.990 g and
    tyres at 90 °C reach 0.989 g. The compound alone loses about 9 % at 20 °C (grip factor 0.906), so another
@@ -101,7 +105,7 @@ All six pass and are now registered.
 | Tyre temperatures, brake temperatures and pad friction in the HUD | On main (brake, clutch, gearbox, flat-spot and blistering chips; inner / middle / outer tyre temperatures in the telemetry panel) |
 | Gamepad rumble from tyre grip and ABS | On main (`input.ts`) |
 | Set tyre temperature, wear and pressure from the web (cold starts, used tyres) | Core hook added (`set_tyres`); not yet exposed to the web bridge |
-| **Per-car tyre compounds and brake sizes** (touring vs GT vs GTR) | **Not ported. Proposal**: the core already reads `temp_optimal_c`, `temp_window_c`, `pressure_cold_kpa` and the brake disc fields from car JSON, but no car sets them, so every car shares one compound. The draft's numbers had no sources; real values need data |
+| **Per-car tyre compounds and brake sizes** (touring vs GT vs GTR) | **Tyres done 2026-11-22**: road / semi-slick / slick compounds on every car (docs/physics.md). Brakes per car not done: no verified data for carbon-ceramic discs |
 | Smaller caster trail and pneumatic trail, bigger disc heat capacity | Not ported: tuning without sources |
 
 ## 6. Test-page tweaks

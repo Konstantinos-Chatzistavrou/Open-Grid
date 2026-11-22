@@ -226,3 +226,49 @@ In Godot (`--autotest`): ABS full pedal from 100 km/h = 33.6 m (fixed 0.78 pedal
   < ~5 % effect, and only with one wheel on a kerb). The limited-slip differential already existed (clutch pack:
   preload + power / coast ramps).
 
+
+## Tyre compounds, cooling to the air, wear from friction work (2026-11-22)
+
+Found by the handling tests (`core/tests/test_handling.cpp`, docs/october_drafts.md): cold tyres gripped as well as warm
+ones and grip-limited cornering never wore the tread. Three causes, three fixes.
+
+- **No set running temperature.** The carcass used to relax toward a fixed rolling equilibrium of 78 C at
+  (0.012 + 0.0012 v) 1/s, about 2 C/s from a cold start, whatever the energy said. It now cools through the sidewall
+  toward the ambient air: ~0.32 m^2 of sidewall, ~2.5 mm of rubber (tread and sidewall compounds conduct 0.30-0.54 W/(m K)
+  in patent measurements; 0.35 * 0.32 / 0.0025 ~ 45 W/K) in series with an air film of the tread's coefficient per m^2
+  (area ratio 0.52). The carcass settles where rolling hysteresis (C_rr F_z v), slip work and cooling balance.
+  Measured (vela_gt, air 30 C): 5 min at 90 km/h takes a 90 C tyre to 48 C and a 20 C tyre to 38 C; the cavity air
+  settles ~6 C above the air after 15-20 min (~+1 psi) and then holds. Tire Rack's street test saw ~+1 psi per 5 min
+  for 20 min, then stable (about 4 psi, with town braking heating the rims): the timing matches, the rise is lower
+  than that test (open point). Hard cornering (0.8 g) warms a 20 C tyre to ~60 C carcass / 64 C surface in 3 min.
+  The surface <-> carcass conduction stays 400 W/K (a two-node model cannot have both the real ~1.4 mm heat
+  penetration in 10 s and the real seconds-fast surface cool-down; the fast surface is kept).
+- **Compounds per car** (`"compound"` in `tire_front` / `tire_rear`; explicit `temp_optimal_c`, `temp_window_c`,
+  `start_temp_c`, `wear_per_mj` override it; `rs::apply_compound`):
+
+  | compound | full grip (core/surface blend) | reset temp | wear | cars |
+  |---|---|---|---|---|
+  | `road` | 10-90 C (50 +- 40) | 45 C | 1 / 150 MJ | 18 road cars |
+  | `semi_slick` | 50-100 C (75 +- 25) | 70 C | 1 / 90 MJ | Kestrel GT, Falcorn 9R, Falcorn 9R RS, Kronos Fulmine |
+  | `slick` | 75-105 C (90 +- 15) | 85 C | 1 / 52.5 MJ | Tornado GT3, Strix GT7 |
+
+  Road: tyre makers (Continental, Uniroyal, Pirelli) put the point where summer compounds start to harden at ~7 C.
+  Slick: Pirelli describes race compounds as covering "a working range of about 30 degrees each". Semi-slick sits
+  between; no manufacturer window was found (Michelin's Cup 2 track guides were not readable), so its numbers are the
+  least certain. Below the window grip falls to 0.85 (grip factor) plus the rib WLF term with zones on; measured on a
+  fast skidpad: a 20 C slick 0.754 g vs 0.989 g warm, a 15 C road tyre 1.016 g vs 1.011 g at 50 C.
+- **Wear from all friction work** (Reye 1860; Schallamach & Turner): wear += P_slip dt * wear_per_mj / 1e6, no
+  threshold. Before, only slides above 18 kW per tyre wore the tread. Calibration: the most-loaded tyre does ~0.15 MJ/km
+  of friction work on AI laps (12 and 40 m corners, ~110 km/h average), so the rates give ~1000 / 600 / 350 km of
+  race-pace driving to a worn tread (road / semi-slick / slick). The slick figure follows GT3 practice (sets built for
+  double stints; Spa 24 h allows 30 dry sets for a weekend of several thousand km); the road and semi-slick track lives
+  are enthusiast-reported, not manufacturer data. Street driving does far less friction work, so road tyres last
+  tens of thousands of km there.
+- **Tyre zones on by default.** `Vehicle::tire_zones_enabled` (3-rib temperatures, WLF rib grip, thermal stiffness)
+  was off in the core and on in the web bridge, so the tests and any other host (the Unreal 5.8 plugin) ran a simpler
+  tyre than the game. It is now on by default: the same model everywhere. Effects on the reference car (vela_gt):
+  skidpad 1.002 g (C7 Z51: 1.03-1.11 g), 60-0 32.4 m in the web core (31.7-32.6 m). The Kestrel's aero gain in the
+  200 m corner is +0.038 g with the full model (13 % of its weight in downforce at 49 m/s, less load sensitivity and
+  the drag its rear tyres carry); the character test now asks for +0.03 g.
+- Brakes per car (disc material and size) are not done: no verified specific heat or fade curve for carbon-ceramic
+  (C/SiC) discs was found; only their mass (about half of cast iron, SGL Carbon).
