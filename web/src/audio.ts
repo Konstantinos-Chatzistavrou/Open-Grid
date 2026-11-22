@@ -27,10 +27,14 @@ interface EngineVoiceSpec {
   /** Dual exhaust bank X-pipe / header waveguide comb delays (seconds) */
   combL: number;
   combR: number;
-  /** 3 acoustic exhaust/intake formant resonators [freqHz, Q, gainDb] */
+  /** 3 acoustic exhaust/intake formant resonators [freqHz, Q, gainDb] for fallback synth */
   f1: [number, number, number];
   f2: [number, number, number];
   f3: [number, number, number];
+  /** 3 stationary fixed-frequency exhaust/muffler/header pipe formants [freqHz, Q, gainDb] for 4-zone stems */
+  sf1: [number, number, number];
+  sf2: [number, number, number];
+  sf3: [number, number, number];
   /** Idle lope rate (Hz) & depth (rotary peripheral-port brap & cross-plane V8 cam lope vs smooth V12/I6) */
   lopeHz: number;
   lopeDepth: number;
@@ -50,6 +54,7 @@ const ENGINE_VOICES: Record<EngineVoiceId, EngineVoiceSpec> = {
     mainGain: 0.76, subGain: 0.74, bankGain: 0.38, harmGain: 0.14,
     combL: 0.0024, combR: 0.0043,
     f1: [112, 2.2, 8.0], f2: [330, 1.8, 5.5], f3: [1220, 2.4, 4.2],
+    sf1: [115, 1.6, 4.2], sf2: [420, 1.5, 3.0], sf3: [1620, 2.0, 2.4],
     lopeHz: 17.5, lopeDepth: 0.032, drive: 4.4, boost: 'none', revRpm: 7200, waveKey: 'crossplane',
   },
   v8_twin_turbo: {
@@ -57,6 +62,7 @@ const ENGINE_VOICES: Record<EngineVoiceId, EngineVoiceSpec> = {
     mainGain: 0.74, subGain: 0.68, bankGain: 0.36, harmGain: 0.16,
     combL: 0.0028, combR: 0.0046,
     f1: [104, 2.4, 8.5], f2: [295, 1.9, 5.8], f3: [1180, 2.3, 3.8],
+    sf1: [118, 1.7, 4.4], sf2: [435, 1.6, 2.8], sf3: [1680, 2.0, 2.2],
     lopeHz: 18.0, lopeDepth: 0.026, drive: 4.2, boost: 'turbo', revRpm: 7800, waveKey: 'crossplane',
   },
   v8_supercharged: {
@@ -64,6 +70,7 @@ const ENGINE_VOICES: Record<EngineVoiceId, EngineVoiceSpec> = {
     mainGain: 0.78, subGain: 0.76, bankGain: 0.40, harmGain: 0.14,
     combL: 0.0026, combR: 0.0048,
     f1: [98, 2.5, 9.0], f2: [310, 1.7, 6.0], f3: [1350, 2.2, 4.5],
+    sf1: [115, 1.6, 4.6], sf2: [440, 1.5, 3.2], sf3: [1850, 1.9, 3.0],
     lopeHz: 15.5, lopeDepth: 0.038, drive: 4.8, boost: 'supercharger', revRpm: 7200, waveKey: 'crossplane',
   },
   v8_flatplane: {
@@ -71,6 +78,7 @@ const ENGINE_VOICES: Record<EngineVoiceId, EngineVoiceSpec> = {
     mainGain: 0.80, subGain: 0.30, bankGain: 0.42, harmGain: 0.36,
     combL: 0.0018, combR: 0.0019,
     f1: [165, 2.0, 5.5], f2: [520, 2.1, 5.5], f3: [1780, 2.8, 6.8],
+    sf1: [158, 1.6, 3.2], sf2: [560, 1.7, 3.4], sf3: [2150, 2.1, 3.6],
     lopeHz: 24.0, lopeDepth: 0.014, drive: 4.6, boost: 'none', revRpm: 9000, waveKey: 'flatplane',
   },
   v12_na: {
@@ -78,6 +86,7 @@ const ENGINE_VOICES: Record<EngineVoiceId, EngineVoiceSpec> = {
     mainGain: 0.84, subGain: 0.24, bankGain: 0.44, harmGain: 0.46,
     combL: 0.0015, combR: 0.00155,
     f1: [195, 2.0, 4.8], f2: [640, 2.3, 6.2], f3: [2150, 3.0, 7.6],
+    sf1: [182, 1.5, 2.8], sf2: [640, 1.8, 3.8], sf3: [2480, 2.2, 4.2],
     lopeHz: 28.0, lopeDepth: 0.008, drive: 3.8, boost: 'none', revRpm: 9300, waveKey: 'v12',
   },
   v10_screamer: {
@@ -85,6 +94,7 @@ const ENGINE_VOICES: Record<EngineVoiceId, EngineVoiceSpec> = {
     mainGain: 0.80, subGain: 0.36, bankGain: 0.50, harmGain: 0.42,
     combL: 0.0019, combR: 0.0027,
     f1: [170, 2.2, 5.4], f2: [560, 2.4, 6.8], f3: [1980, 3.1, 7.8],
+    sf1: [170, 1.6, 3.0], sf2: [600, 1.8, 4.0], sf3: [2360, 2.2, 4.2],
     lopeHz: 22.0, lopeDepth: 0.014, drive: 4.5, boost: 'none', revRpm: 9000, waveKey: 'v10',
   },
   v6_tt: {
@@ -92,6 +102,7 @@ const ENGINE_VOICES: Record<EngineVoiceId, EngineVoiceSpec> = {
     mainGain: 0.78, subGain: 0.46, bankGain: 0.44, harmGain: 0.24,
     combL: 0.0023, combR: 0.0036,
     f1: [135, 2.3, 6.8], f2: [430, 2.1, 6.0], f3: [1520, 2.6, 5.4],
+    sf1: [132, 1.7, 3.8], sf2: [470, 1.6, 3.2], sf3: [1780, 2.0, 2.8],
     lopeHz: 19.0, lopeDepth: 0.020, drive: 4.3, boost: 'turbo', revRpm: 8000, waveKey: 'v6',
   },
   flat6_na: {
@@ -99,6 +110,7 @@ const ENGINE_VOICES: Record<EngineVoiceId, EngineVoiceSpec> = {
     mainGain: 0.76, subGain: 0.38, bankGain: 0.52, harmGain: 0.38,
     combL: 0.0017, combR: 0.0031,
     f1: [155, 2.1, 5.6], f2: [490, 2.4, 6.5], f3: [1880, 3.2, 7.8],
+    sf1: [152, 1.6, 3.4], sf2: [540, 1.8, 3.8], sf3: [2200, 2.2, 4.0],
     lopeHz: 21.0, lopeDepth: 0.018, drive: 4.7, boost: 'none', revRpm: 9000, waveKey: 'flat6',
   },
   flat8_na: {
@@ -106,6 +118,7 @@ const ENGINE_VOICES: Record<EngineVoiceId, EngineVoiceSpec> = {
     mainGain: 0.80, subGain: 0.32, bankGain: 0.46, harmGain: 0.42,
     combL: 0.0016, combR: 0.0025,
     f1: [175, 2.2, 5.2], f2: [580, 2.3, 6.4], f3: [2040, 3.0, 7.5],
+    sf1: [165, 1.6, 3.2], sf2: [580, 1.7, 3.6], sf3: [2280, 2.1, 3.8],
     lopeHz: 24.5, lopeDepth: 0.012, drive: 4.5, boost: 'none', revRpm: 9400, waveKey: 'flat8',
   },
   i6_forged: {
@@ -113,6 +126,7 @@ const ENGINE_VOICES: Record<EngineVoiceId, EngineVoiceSpec> = {
     mainGain: 0.82, subGain: 0.28, bankGain: 0.44, harmGain: 0.30,
     combL: 0.0020, combR: 0.00205,
     f1: [148, 2.2, 6.2], f2: [460, 2.2, 6.0], f3: [1680, 2.8, 6.2],
+    sf1: [142, 1.6, 3.6], sf2: [495, 1.7, 3.4], sf3: [1920, 2.0, 3.2],
     lopeHz: 25.0, lopeDepth: 0.010, drive: 3.9, boost: 'turbo', revRpm: 8200, waveKey: 'i6',
   },
   rotary_4: {
@@ -120,31 +134,31 @@ const ENGINE_VOICES: Record<EngineVoiceId, EngineVoiceSpec> = {
     mainGain: 0.80, subGain: 0.40, bankGain: 0.54, harmGain: 0.50,
     combL: 0.0013, combR: 0.00135,
     f1: [185, 2.4, 5.2], f2: [720, 2.8, 7.2], f3: [2480, 3.4, 8.6],
-    lopeHz: 11.5, lopeDepth: 0.068, drive: 5.2, boost: 'none', revRpm: 10200, waveKey: 'rotary',
+    sf1: [188, 1.7, 3.0], sf2: [680, 1.9, 4.2], sf3: [2580, 2.3, 4.5],
+    lopeHz: 11.5, lopeDepth: 0.068, drive: 5.2, boost: 'turbo', revRpm: 10200, waveKey: 'rotary',
   },
 };
 
-/** Dual-zone physical combustion stem mapping (`/assets/audio/<id>.ogg` + reference RPM). */
-interface EngineStemZoneSpec {
-  low: readonly [id: string, refRpm: number];
-  high: readonly [id: string, refRpm: number];
-}
+/** 4-zone physical combustion stem mapping (`/assets/audio/<id>.ogg` + reference RPM). */
+interface EngineStemZone { id: string; refRpm: number }
 
-const ENGINE_STEM_ZONES: Record<EngineVoiceId, EngineStemZoneSpec> = {
-  flat6_na:        { low: ['eng_flat6_low', 1800],    high: ['eng_flat6_4000', 4000] },
-  v12_na:          { low: ['eng_v12_low', 2000],      high: ['eng_v12_5000', 5000] },
-  v10_screamer:    { low: ['eng_v10_low', 2000],      high: ['eng_v10_5500', 5500] },
-  rotary_4:        { low: ['eng_rotary4_low', 1600],  high: ['eng_rotary4_6000', 6000] },
-  i6_forged:       { low: ['eng_tt_i6_low', 1800],    high: ['eng_tt_i6_4000', 4000] },
-  v6_tt:           { low: ['eng_tt_i6_low', 1800],    high: ['eng_tt_i6_4000', 4000] },
-  v8_crossplane:   { low: ['eng_v8_cross_low', 1500], high: ['eng_v8_cross_4200', 4200] },
-  v8_twin_turbo:   { low: ['eng_v8_cross_low', 1500], high: ['eng_v8_cross_4200', 4200] },
-  v8_flatplane:    { low: ['eng_v8_flat_low', 2000],  high: ['eng_v8_flat_5500', 5500] },
-  flat8_na:        { low: ['eng_v8_flat_low', 2000],  high: ['eng_v8_flat_5500', 5500] },
-  v8_supercharged: { low: ['eng_v8_cross_low', 1500], high: ['eng_sc_v8_whine', 4000] },
+// 4 zones per voice: [z0 Idle, z1 Low-Mid, z2 Mid-High, z3 Redline Scream]
+const ENGINE_STEM_ZONES: Record<EngineVoiceId, readonly [EngineStemZone, EngineStemZone, EngineStemZone, EngineStemZone]> = {
+  flat6_na:        [{ id: 'eng_flat6_1000', refRpm: 1000 },   { id: 'eng_flat6_low', refRpm: 2400 },   { id: 'eng_flat6_4000', refRpm: 4800 },   { id: 'eng_flat6_7800', refRpm: 7800 }],
+  v12_na:          [{ id: 'eng_v12_1000', refRpm: 1000 },     { id: 'eng_v12_low', refRpm: 2500 },     { id: 'eng_v12_5000', refRpm: 5000 },     { id: 'eng_v12_8000', refRpm: 8000 }],
+  v10_screamer:    [{ id: 'eng_v10_1000', refRpm: 1000 },     { id: 'eng_v10_low', refRpm: 2400 },     { id: 'eng_v10_5500', refRpm: 5200 },     { id: 'eng_v10_7800', refRpm: 7800 }],
+  rotary_4:        [{ id: 'eng_rotary4_1100', refRpm: 1100 }, { id: 'eng_rotary4_low', refRpm: 2600 }, { id: 'eng_rotary4_6000', refRpm: 5500 }, { id: 'eng_rotary4_8500', refRpm: 8500 }],
+  i6_forged:       [{ id: 'eng_tt_i6_1000', refRpm: 1000 },   { id: 'eng_tt_i6_low', refRpm: 2400 },   { id: 'eng_tt_i6_4000', refRpm: 4500 },   { id: 'eng_tt_i6_7000', refRpm: 7000 }],
+  v6_tt:           [{ id: 'eng_tt_i6_1000', refRpm: 1000 },   { id: 'eng_tt_i6_low', refRpm: 2400 },   { id: 'eng_tt_i6_4000', refRpm: 4500 },   { id: 'eng_tt_i6_7000', refRpm: 7000 }],
+  v8_crossplane:   [{ id: 'eng_v8_cross_900', refRpm: 900 },  { id: 'eng_v8_cross_low', refRpm: 2100 },{ id: 'eng_v8_cross_4200', refRpm: 4200 },{ id: 'eng_v8_cross_6800', refRpm: 6800 }],
+  v8_twin_turbo:   [{ id: 'eng_v8_cross_900', refRpm: 900 },  { id: 'eng_v8_cross_low', refRpm: 2100 },{ id: 'eng_v8_cross_4200', refRpm: 4200 },{ id: 'eng_v8_cross_6800', refRpm: 6800 }],
+  v8_flatplane:    [{ id: 'eng_v8_flat_1100', refRpm: 1100 }, { id: 'eng_v8_flat_low', refRpm: 2600 }, { id: 'eng_v8_flat_5500', refRpm: 5200 }, { id: 'eng_v8_flat_8000', refRpm: 8000 }],
+  flat8_na:        [{ id: 'eng_v8_flat_1100', refRpm: 1100 }, { id: 'eng_v8_flat_low', refRpm: 2600 }, { id: 'eng_v8_flat_5500', refRpm: 5200 }, { id: 'eng_v8_flat_8000', refRpm: 8000 }],
+  v8_supercharged: [{ id: 'eng_v8_cross_900', refRpm: 900 },  { id: 'eng_v8_cross_low', refRpm: 2100 },{ id: 'eng_sc_v8_whine', refRpm: 4200 },  { id: 'eng_sc_v8_6800', refRpm: 6800 }],
 };
 
 const FX_LOOP_STEMS = [
+  'turbo_spool_loop',
   'gear_whine_straightcut',
   'tyre_scrub_dry',
   'tyre_spray_wet',
@@ -214,10 +228,21 @@ export class GameAudio {
   private lastGear = 1;
   private lastRpm = 800;
   private nextCrackleAt = 0;
+  private lastShiftBarkAt = 0;
   private voiceId: EngineVoiceId = 'v8_crossplane';
   private extraTurbo = false;
   private boostSpool = 0;
   private revUntil = 0;
+  // Zero-hiccup acoustic envelope followers (smooth out clutch engagement & 15-30 Hz TC throttle pulses)
+  private smoothRpm = 850;
+  private smoothThr = 0;
+  private smoothLoad = 0.2;
+  private lastUpdateMs = 0;
+  private hasValidSmooth = false;
+  private revLimiterCutUntil = 0;
+  private revLimiterNextToggle = 0;
+  private downshiftBlipUntil = 0;
+  private downshiftBlipRpm = 0;
   // Real interactive Garage engine state (Ignition = toggle ON/OFF, Rev = momentary press-and-hold!)
   private garageRunning = false;
   private garageRevHeld = false;
@@ -233,18 +258,20 @@ export class GameAudio {
   /** Low-power mobile/potato audio mode: skips heavy stereo FFT ConvolverNode reverb to save phone ARM CPU. */
   lowPower = false;
 
-  // Multi-zone physical combustion & FX audio stems (`/assets/audio/<id>.ogg`) with graceful synth fallback
+  // 4-zone physical combustion & FX audio stems (`/assets/audio/<id>.ogg`) with graceful synth fallback
   private stemBuffers = new Map<string, AudioBuffer>();
   private stemAttempted = new Set<string>();
-  private stemLowSrc: AudioBufferSourceNode | null = null;
-  private stemLowId: string | null = null;
-  private stemHighSrc: AudioBufferSourceNode | null = null;
-  private stemHighId: string | null = null;
-  private stemLowGain: GainNode | null = null;
-  private stemHighGain: GainNode | null = null;
+  private stemZoneSrcs: (AudioBufferSourceNode | null)[] = [null, null, null, null];
+  private stemZoneIds: (string | null)[] = [null, null, null, null];
+  private stemZoneGains: (GainNode | null)[] = [null, null, null, null];
+  private stemF1: BiquadFilterNode | null = null;
+  private stemF2: BiquadFilterNode | null = null;
+  private stemF3: BiquadFilterNode | null = null;
   private stemToneFilter: BiquadFilterNode | null = null;
   private stemShaper: WaveShaperNode | null = null;
   private stemEngMaster: GainNode | null = null;
+  private stemTurboSrc: AudioBufferSourceNode | null = null;
+  private stemTurboGain: GainNode | null = null;
   private stemGearSrc: AudioBufferSourceNode | null = null;
   private stemGearGain: GainNode | null = null;
   private stemDryTyreSrc: AudioBufferSourceNode | null = null;
@@ -271,13 +298,22 @@ export class GameAudio {
     this.garageThr = 0;
     this.garageFlame = 0;
     this.boostSpool = 0;
+    this.smoothRpm = 850;
+    this.smoothThr = 0;
+    this.smoothLoad = 0.2;
+    this.lastUpdateMs = 0;
+    this.hasValidSmooth = false;
+    this.revLimiterCutUntil = 0;
+    this.revLimiterNextToggle = 0;
+    this.downshiftBlipUntil = 0;
+    this.downshiftBlipRpm = 0;
     const ctx = this.ctx;
     if (!ctx) return;
     const t = ctx.currentTime;
     const zero = (g?: GainNode | null) => {
       if (!g) return;
       g.gain.cancelScheduledValues(t);
-      g.gain.setTargetAtTime(0, t, 0.02);
+      g.gain.setTargetAtTime(0, t, 0.005);
     };
     zero(this.eng?.g);
     zero(this.eng?.boostGain);
@@ -288,9 +324,9 @@ export class GameAudio {
     zero(this.wind?.g);
     zero(this.reverbSend);
     zero(this.srn?.g);
-    zero(this.stemLowGain);
-    zero(this.stemHighGain);
+    for (let i = 0; i < 4; i++) zero(this.stemZoneGains[i]);
     zero(this.stemEngMaster);
+    zero(this.stemTurboGain);
     zero(this.stemGearGain);
     zero(this.stemDryTyreGain);
     zero(this.stemWetSprayGain);
@@ -305,7 +341,7 @@ export class GameAudio {
     const zero = (g?: GainNode | null) => {
       if (!g) return;
       g.gain.cancelScheduledValues(t);
-      g.gain.setTargetAtTime(0, t, 0.02);
+      g.gain.setTargetAtTime(0, t, 0.006);
     };
     zero(this.eng?.gearGain);
     zero(this.tyre?.g);
@@ -347,7 +383,25 @@ export class GameAudio {
     e.formant2.frequency.setTargetAtTime(v.f2[0], t, 0.04); e.formant2.Q.value = v.f2[1]; e.formant2.gain.value = v.f2[2];
     e.formant3.frequency.setTargetAtTime(v.f3[0], t, 0.04); e.formant3.Q.value = v.f3[1]; e.formant3.gain.value = v.f3[2];
     e.shaper.curve = distortion(v.drive);
-    if (this.stemShaper) this.stemShaper.curve = distortion(1.0 + v.drive * 0.12);
+    // Helical roots supercharger whine uses richer triangle harmonics; turbo compressor whistle stays pure sine
+    e.oBoost.type = v.boost === 'supercharger' ? 'triangle' : 'sine';
+    // Stationary fixed-frequency exhaust/muffler/header formants for the 4-zone stem bus
+    if (this.stemF1) {
+      this.stemF1.frequency.setTargetAtTime(v.sf1[0], t, 0.04);
+      this.stemF1.Q.value = v.sf1[1];
+      this.stemF1.gain.setTargetAtTime(v.sf1[2], t, 0.04);
+    }
+    if (this.stemF2) {
+      this.stemF2.frequency.setTargetAtTime(v.sf2[0], t, 0.04);
+      this.stemF2.Q.value = v.sf2[1];
+      this.stemF2.gain.setTargetAtTime(v.sf2[2], t, 0.04);
+    }
+    if (this.stemF3) {
+      this.stemF3.frequency.setTargetAtTime(v.sf3[0], t, 0.04);
+      this.stemF3.Q.value = v.sf3[1];
+      this.stemF3.gain.setTargetAtTime(v.sf3[2], t, 0.04);
+    }
+    if (this.stemShaper) this.stemShaper.curve = warmExhaustCurve(1.1 + v.drive * 0.14);
     this.preloadVoiceStems(this.voiceId);
     this.preloadFxStems();
     this.syncEngineStemSources();
@@ -412,7 +466,7 @@ export class GameAudio {
     } else {
       const wasHeld = this.garageRevHeld;
       this.garageRevHeld = false;
-      if (wasHeld && this.garageRpm > 3000) {
+      if (wasHeld && this.garageRpm > 2800) {
         this.garageWasHighRpm = true;
         this.triggerGarageLiftOffEffects();
       }
@@ -447,15 +501,22 @@ export class GameAudio {
     this.garageRpm = 0;
     this.garageThr = 0;
     this.garageFlame = 0;
+    this.boostSpool = 0;
+    this.hasValidSmooth = false;
+    this.lastUpdateMs = 0;
     const e = this.eng, ctx = this.ctx;
     if (e && ctx) {
       const t = ctx.currentTime;
-      e.g.gain.setTargetAtTime(0, t, 0.05);
-      e.boostGain.gain.setTargetAtTime(0, t, 0.05);
-      e.gearGain.gain.setTargetAtTime(0, t, 0.05);
-      if (this.stemEngMaster) this.stemEngMaster.gain.setTargetAtTime(0, t, 0.05);
-      if (this.stemLowGain) this.stemLowGain.gain.setTargetAtTime(0, t, 0.05);
-      if (this.stemHighGain) this.stemHighGain.gain.setTargetAtTime(0, t, 0.05);
+      e.g.gain.setTargetAtTime(0, t, 0.02);
+      e.boostGain.gain.setTargetAtTime(0, t, 0.02);
+      e.gearGain.gain.setTargetAtTime(0, t, 0.02);
+      if (this.stemEngMaster) this.stemEngMaster.gain.setTargetAtTime(0, t, 0.02);
+      for (let i = 0; i < 4; i++) {
+        const zg = this.stemZoneGains[i];
+        if (zg) zg.gain.setTargetAtTime(0, t, 0.02);
+      }
+      if (this.stemTurboGain) this.stemTurboGain.gain.setTargetAtTime(0, t, 0.02);
+      if (this.reverbSend) this.reverbSend.gain.setTargetAtTime(0, t, 0.03);
     }
   }
 
@@ -465,11 +526,12 @@ export class GameAudio {
     if (!ctx || !this.out || ctx.state !== 'running' || this.muted) return;
     const t = ctx.currentTime;
     const vSpec = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
-    const intensity = Math.min(1, Math.max(0.25, (this.garageRpm - 2800) / Math.max(3000, vSpec.revRpm - 2800)));
+    const intensity = Math.min(1, Math.max(0.45, (this.garageRpm - 2600) / Math.max(3000, vSpec.revRpm - 2600)));
     const boostMode = vSpec.boost !== 'none' ? vSpec.boost : (this.extraTurbo ? 'turbo' : 'none');
-    if (boostMode === 'turbo' && this.boostSpool > 0.2 && t > this.lastBovAt + 0.28) {
+    if (boostMode === 'turbo' && this.boostSpool > 0.2 && t > this.lastBovAt + 0.26) {
       this.lastBovAt = t;
-      this.triggerTurboBov(t, intensity);
+      this.triggerTurboBov(t, Math.max(0.75, intensity));
+      this.boostSpool *= 0.28;
     }
     this.exhaustPop(t + 0.03, intensity);
     this.garageFlame = Math.max(this.garageFlame, 0.75 + 0.45 * intensity);
@@ -477,7 +539,7 @@ export class GameAudio {
 
   /**
    * Per-frame real engine synthesizer update while in the Garage showroom.
-   * Drives the EXACT same dual-zone physical combustion stems + multi-harmonic PeriodicWave synth as driving!
+   * Drives the EXACT same 4-zone physical combustion stems + turbo/supercharger + multi-harmonic PeriodicWave synth as driving!
    */
   updateGarage(dt: number) {
     const e = this.eng, ctx = this.ctx;
@@ -487,41 +549,46 @@ export class GameAudio {
     }
     const now = performance.now();
     const t = ctx.currentTime;
+    const safeDt = clamp(dt, 0.004, 0.05);
     const vSpec = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
     const idleRpm = this.voiceId === 'rotary_4' ? 1150 : vSpec.firingsPerRev >= 5 ? 980 : 860;
     const redline = vSpec.revRpm;
 
     // Decay exhaust flame smoothly between pops/limiter cuts
-    this.garageFlame = Math.max(0, this.garageFlame - dt * 4.2);
+    this.garageFlame = Math.max(0, this.garageFlame - safeDt * 4.2);
 
     // Silence road/tyre/wind/gear noise (both synth & stem layers) in the static garage
-    if (this.tyre) this.tyre.g.gain.setTargetAtTime(0, t, 0.05);
-    if (this.wind) this.wind.g.gain.setTargetAtTime(0, t, 0.05);
-    if (this.roadRoll) this.roadRoll.g.gain.setTargetAtTime(0, t, 0.05);
-    if (this.cavity) this.cavity.g.gain.setTargetAtTime(0, t, 0.05);
-    e.gearGain.gain.setTargetAtTime(0, t, 0.05);
-    if (this.stemGearGain) this.stemGearGain.gain.setTargetAtTime(0, t, 0.05);
-    if (this.stemDryTyreGain) this.stemDryTyreGain.gain.setTargetAtTime(0, t, 0.05);
-    if (this.stemWetSprayGain) this.stemWetSprayGain.gain.setTargetAtTime(0, t, 0.05);
-    if (this.stemKerbGain) this.stemKerbGain.gain.setTargetAtTime(0, t, 0.05);
+    if (this.tyre) this.tyre.g.gain.setTargetAtTime(0, t, 0.03);
+    if (this.wind) this.wind.g.gain.setTargetAtTime(0, t, 0.03);
+    if (this.roadRoll) this.roadRoll.g.gain.setTargetAtTime(0, t, 0.03);
+    if (this.cavity) this.cavity.g.gain.setTargetAtTime(0, t, 0.03);
+    e.gearGain.gain.setTargetAtTime(0, t, 0.03);
+    if (this.stemGearGain) this.stemGearGain.gain.setTargetAtTime(0, t, 0.03);
+    if (this.stemDryTyreGain) this.stemDryTyreGain.gain.setTargetAtTime(0, t, 0.03);
+    if (this.stemWetSprayGain) this.stemWetSprayGain.gain.setTargetAtTime(0, t, 0.03);
+    if (this.stemKerbGain) this.stemKerbGain.gain.setTargetAtTime(0, t, 0.03);
 
     if (!this.garageRunning) {
       // Smooth engine spin-down when ignition is switched OFF
-      this.garageRpm = Math.max(0, this.garageRpm - dt * 2800);
-      this.garageThr = Math.max(0, this.garageThr - dt * 8);
+      this.garageRpm = Math.max(0, this.garageRpm - safeDt * 2800);
+      this.garageThr = Math.max(0, this.garageThr - safeDt * 8);
       if (this.garageRpm < 180) {
-        e.g.gain.setTargetAtTime(0, t, 0.05);
-        e.boostGain.gain.setTargetAtTime(0, t, 0.05);
-        if (this.stemEngMaster) this.stemEngMaster.gain.setTargetAtTime(0, t, 0.05);
+        this.boostSpool = 0;
+        e.g.gain.setTargetAtTime(0, t, 0.03);
+        e.boostGain.gain.setTargetAtTime(0, t, 0.03);
+        if (this.stemEngMaster) this.stemEngMaster.gain.setTargetAtTime(0, t, 0.03);
+        if (this.stemTurboGain) this.stemTurboGain.gain.setTargetAtTime(0, t, 0.03);
         return;
       }
     } else if (now < this.garageCrankUntil) {
       // Cranking starter before ignition catches
       this.garageRpm = 320 + Math.sin(now * 0.06) * 45;
       this.garageThr = 0.08;
-      e.g.gain.setTargetAtTime(0, t, 0.03);
-      e.boostGain.gain.setTargetAtTime(0, t, 0.03);
-      if (this.stemEngMaster) this.stemEngMaster.gain.setTargetAtTime(0, t, 0.03);
+      this.boostSpool = 0;
+      e.g.gain.setTargetAtTime(0, t, 0.02);
+      e.boostGain.gain.setTargetAtTime(0, t, 0.02);
+      if (this.stemEngMaster) this.stemEngMaster.gain.setTargetAtTime(0, t, 0.02);
+      if (this.stemTurboGain) this.stemTurboGain.gain.setTargetAtTime(0, t, 0.02);
       return;
     } else {
       const pulsing = now < this.garagePulseUntil;
@@ -536,7 +603,7 @@ export class GameAudio {
       }
 
       const targetThr = revPressed ? 1.0 : flaring ? 0.16 : 0.0;
-      this.garageThr += (targetThr - this.garageThr) * Math.min(1, dt * (revPressed ? 18 : 10));
+      this.garageThr += (targetThr - this.garageThr) * Math.min(1, safeDt * (revPressed ? 18 : 10));
 
       // Realistic unloaded flywheel RPM response (exotics & rotaries spin up faster than heavy V8s)
       const accelRate = this.voiceId === 'rotary_4' || vSpec.firingsPerRev >= 5 ? 9200 : 7600;
@@ -544,11 +611,11 @@ export class GameAudio {
       const inLimCut = now < this.garageLimCutUntil;
 
       if (revPressed && !inLimCut) {
-        this.garageRpm += accelRate * dt;
+        this.garageRpm += accelRate * safeDt;
         if (this.garageRpm >= redline) {
           this.garageRpm = redline - 240;
           this.garageLimCutUntil = now + 72; // authentic crisp fuel/ignition rev-limiter bounce!
-          if (!this.muted) this.shiftBark(t, 0.85);
+          if (!this.muted) this.shiftBark(t, 0.9);
           this.garageFlame = Math.max(this.garageFlame, 1.15);
           this.garageWasHighRpm = true;
         }
@@ -556,16 +623,16 @@ export class GameAudio {
         const floorRpm = flaring ? idleRpm + 650 : idleRpm;
         const dropRate = inLimCut ? 5200 : decelRate;
         if (this.garageRpm > floorRpm) {
-          this.garageRpm = Math.max(floorRpm, this.garageRpm - dropRate * dt);
+          this.garageRpm = Math.max(floorRpm, this.garageRpm - dropRate * safeDt);
         } else {
-          this.garageRpm += (floorRpm - this.garageRpm) * Math.min(1, dt * 8);
+          this.garageRpm += (floorRpm - this.garageRpm) * Math.min(1, safeDt * 8);
         }
       }
 
       // Overrun crackle pops & exhaust flames while decelerating from high RPM after letting go of Rev
       if (!revPressed && this.garageWasHighRpm) {
-        if (this.garageRpm > 2800 && !this.muted && t > this.nextCrackleAt) {
-          const inten = Math.min(1, (this.garageRpm - 2500) / Math.max(3000, redline - 2500));
+        if (this.garageRpm > 2600 && !this.muted && t > this.nextCrackleAt) {
+          const inten = Math.min(1, (this.garageRpm - 2400) / Math.max(3000, redline - 2400));
           this.exhaustPop(t, inten);
           this.garageFlame = Math.max(this.garageFlame, 0.55 + 0.55 * inten);
           this.nextCrackleAt = t + 0.055 + Math.random() * 0.11;
@@ -573,28 +640,33 @@ export class GameAudio {
           this.garageWasHighRpm = false;
         }
       }
-      // Subtle lift-off pop right as a swap pulse ends
-      if (pulsing && now + dt * 1000 >= this.garagePulseUntil && this.garageRpm > 3200) {
+      // Lift-off BOV + pop right as a swap pulse ends
+      if (pulsing && now + safeDt * 1000 >= this.garagePulseUntil && this.garageRpm > 3000) {
         this.garageWasHighRpm = true;
         this.triggerGarageLiftOffEffects();
       }
     }
 
-    // Drive the REAL multi-harmonic engine synthesizer + dual-zone combustion stems with `garageRpm` & `garageThr`
+    // Drive the REAL 4-zone combustion stems + multi-harmonic engine synthesizer with `garageRpm` & `garageThr`
     const rpm = Math.max(450, this.garageRpm);
     const thr = this.garageThr;
     const f = Math.max(20, (rpm / 60) * vSpec.firingsPerRev);
     const tc = 0.018;
-    const lopeAmt = rpm < 1800 ? vSpec.lopeDepth : vSpec.lopeDepth * 0.35;
-    const lope = 1 + lopeAmt * Math.sin(t * vSpec.lopeHz);
+    // Gentle idle lope ONLY below 1250 RPM at closed throttle (zero jitter on pulls!)
+    const idleLopeFactor = thr <= 0.1 && rpm < 1250
+      ? clamp((1250 - rpm) / 450, 0, 1) * clamp((0.1 - thr) / 0.1, 0, 1)
+      : 0;
+    const lope = 1 + Math.sin(t * vSpec.lopeHz) * vSpec.lopeDepth * idleLopeFactor;
+    const stemLope = 1 + Math.sin(t * vSpec.lopeHz) * (vSpec.lopeDepth * 0.45) * idleLopeFactor;
 
     e.oMain.frequency.setTargetAtTime(f * lope, t, tc);
     e.oSub.frequency.setTargetAtTime(f * vSpec.subRatio * lope, t, tc);
     e.oBank.frequency.setTargetAtTime(f * vSpec.bankRatio * (2 - lope), t, tc);
     e.oHarm.frequency.setTargetAtTime(f * vSpec.harmRatio, t, tc);
 
-    const rpmNorm = Math.min(1, (rpm - 650) / Math.max(5500, redline - 650));
+    const rpmNorm = clamp((rpm - 650) / Math.max(5500, redline - 650), 0, 1);
     const load = 0.16 + 0.84 * thr;
+    const isDecel = thr < 0.1 && rpm > 2600;
     e.exhaustFilter.frequency.setTargetAtTime(160 + f * 1.9, t, tc);
     e.exhaustGain.gain.setTargetAtTime(0.18 + 0.42 * load + 0.22 * rpmNorm, t, tc);
 
@@ -602,37 +674,22 @@ export class GameAudio {
     e.intakeGain.gain.setTargetAtTime(thr * thr * (0.28 + 0.36 * rpmNorm), t, tc);
 
     const spinFade = this.garageRunning ? 1 : Math.min(1, rpm / Math.max(1, idleRpm));
-    const master = this.muted ? 0 : (0.15 + 0.25 * load + 0.11 * rpmNorm) * spinFade;
-    const stemsActive = this.updateEngineStems(rpm, thr, rpmNorm, master, lope, tc);
+    const limDip = now < this.garageLimCutUntil ? 0.58 : 1.0;
+    const master = this.muted ? 0 : (0.16 + 0.26 * load + 0.12 * rpmNorm) * spinFade * limDip;
+    const stemsActive = this.updateEngineStems(rpm, thr, rpmNorm, master, stemLope, tc, isDecel);
 
-    // Real supercharger whine OR turbo spool while revving in Garage
-    const boostMode = vSpec.boost !== 'none' ? vSpec.boost : (this.extraTurbo ? 'turbo' : 'none');
-    if (boostMode === 'supercharger' && !this.muted && this.garageRunning) {
-      const scFreq = 920 + rpm * 0.31;
-      const scDuck = stemsActive && this.voiceId === 'v8_supercharged' ? 0.35 : 1.0;
-      e.oBoost.frequency.setTargetAtTime(scFreq, t, 0.02);
-      e.boostFilter.frequency.setTargetAtTime(scFreq, t, 0.03);
-      e.boostGain.gain.setTargetAtTime((0.025 + 0.105 * thr) * (0.35 + 0.65 * rpmNorm) * scDuck, t, 0.03);
-    } else if (boostMode === 'turbo' && !this.muted && this.garageRunning) {
-      const targetSpool = Math.max(0, (rpmNorm - 0.15) * 1.25) * thr;
-      this.boostSpool += (targetSpool - this.boostSpool) * 0.16;
-      const tFreq = 2200 + this.boostSpool * 4400;
-      e.oBoost.frequency.setTargetAtTime(tFreq, t, 0.035);
-      e.boostFilter.frequency.setTargetAtTime(tFreq, t, 0.035);
-      e.boostGain.gain.setTargetAtTime(this.boostSpool * 0.052, t, 0.035);
-    } else {
-      this.boostSpool *= 0.85;
-      e.boostGain.gain.setTargetAtTime(0, t, 0.05);
-    }
+    // Real turbo spool stem + whistle OR supercharger whine (routed directly to out + reverb!)
+    this.updateForcedInduction(vSpec, rpm, rpmNorm, thr, 0, safeDt, t, !this.muted && this.garageRunning);
 
     const topBright = vSpec.firingsPerRev >= 5 || this.voiceId === 'rotary_4' || this.voiceId === 'flat6_na' || this.voiceId === 'flat8_na' ? 2600 : 1800;
     const cutoff = 320 + f * (2.2 + 5.8 * load) + rpmNorm * topBright * thr;
     e.lp.frequency.setTargetAtTime(cutoff, t, tc);
 
-    e.g.gain.setTargetAtTime(stemsActive ? master * 0.15 : master, t, 0.035);
+    // Duck raw oscillator synth to 0.06 when all 4 combustion stems are active (subtle sub-body only)
+    e.g.gain.setTargetAtTime(stemsActive ? master * 0.06 : master, t, 0.03);
     // Warm enclosed showroom reverb so the garage echoes like a real concrete bay
     if (this.reverbSend) {
-      this.reverbSend.gain.setTargetAtTime(this.muted ? 0 : 0.36, t, 0.08);
+      this.reverbSend.gain.setTargetAtTime(this.muted ? 0 : 0.38, t, 0.08);
     }
   }
 
@@ -843,15 +900,16 @@ export class GameAudio {
     const oBank = mBank.o, gBank = mBank.og;
 
     // Dedicated forced-induction synthesizer: helical Supercharger whine OR high-freq Turbocharger spool whistle
+    // Routed DIRECTLY to `this.out` (+ `reverbSend` below) so ducking `g` NEVER silences boost whine!
     const oBoost = ctx.createOscillator();
     oBoost.type = 'sine';
     const boostFilter = ctx.createBiquadFilter();
     boostFilter.type = 'bandpass';
     boostFilter.frequency.value = 2400;
-    boostFilter.Q.value = 3.5;
+    boostFilter.Q.value = 2.8;
     const boostGain = ctx.createGain();
     boostGain.gain.value = 0;
-    oBoost.connect(boostFilter).connect(boostGain).connect(g);
+    oBoost.connect(boostFilter).connect(boostGain).connect(this.out!);
     oBoost.start();
 
     // Dual-exhaust pipe waveguide comb filter (left & right exhaust banks meeting at X-pipe)
@@ -916,16 +974,16 @@ export class GameAudio {
     lp.type = 'lowpass';
     lp.Q.value = 1.4;
 
-    // Straight-cut GT sequential transmission whine (audible inside/behind race cars as speed climbs)
+    // Straight-cut GT sequential transmission whine — routed DIRECTLY to `this.out` (+ `reverbSend` below)
     const oGear = ctx.createOscillator();
     oGear.type = 'triangle';
     const gearFilter = ctx.createBiquadFilter();
     gearFilter.type = 'bandpass';
     gearFilter.frequency.value = 1400;
-    gearFilter.Q.value = 4.5;
+    gearFilter.Q.value = 4.2;
     const gearGain = ctx.createGain();
     gearGain.gain.value = 0;
-    oGear.connect(gearFilter).connect(gearGain).connect(g);
+    oGear.connect(gearFilter).connect(gearGain).connect(this.out!);
     oGear.start();
 
     // Environmental wall/tunnel acoustic reverb convolver (skipped on low-power phones to save ARM FFT CPU)
@@ -985,7 +1043,11 @@ export class GameAudio {
       .connect(lp)
       .connect(g)
       .connect(this.out!);
-    if (this.reverbSend) g.connect(this.reverbSend);
+    if (this.reverbSend) {
+      g.connect(this.reverbSend);
+      boostGain.connect(this.reverbSend);
+      gearGain.connect(this.reverbSend);
+    }
 
     this.startAdaptiveMusic();
 
@@ -1006,53 +1068,98 @@ export class GameAudio {
     const ctx = this.ctx;
     if (!ctx || !this.out) return;
 
-    // Dual-zone engine combustion stem bus:
-    // (lowSrc -> stemLowGain) + (highSrc -> stemHighGain) -> stemToneFilter -> stemShaper -> stemEngMaster -> out (+ reverbSend)
-    const stemLowGain = ctx.createGain();
-    stemLowGain.gain.value = 0;
-    const stemHighGain = ctx.createGain();
-    stemHighGain.gain.value = 0;
+    // 4-zone engine combustion stem bus with stationary exhaust/muffler formants + 3.5 ms stereo Haas width:
+    // sum(zone[0..3]) -> stemF1 -> stemF2 -> stemF3 -> stemToneFilter -> stemShaper -> Haas Stereo Merger -> stemEngMaster -> out (+ reverbSend)
+    const stemF1 = ctx.createBiquadFilter();
+    stemF1.type = 'peaking';
+    stemF1.frequency.value = 130;
+    stemF1.Q.value = 1.6;
+    stemF1.gain.value = 3.8;
+
+    const stemF2 = ctx.createBiquadFilter();
+    stemF2.type = 'peaking';
+    stemF2.frequency.value = 480;
+    stemF2.Q.value = 1.6;
+    stemF2.gain.value = 3.2;
+
+    const stemF3 = ctx.createBiquadFilter();
+    stemF3.type = 'peaking';
+    stemF3.frequency.value = 1900;
+    stemF3.Q.value = 2.0;
+    stemF3.gain.value = 3.0;
 
     const stemToneFilter = ctx.createBiquadFilter();
     stemToneFilter.type = 'lowpass';
     stemToneFilter.frequency.value = 1800;
-    stemToneFilter.Q.value = 0.85;
+    stemToneFilter.Q.value = 0.78;
 
     const stemShaper = ctx.createWaveShaper();
-    stemShaper.curve = distortion(1.45);
+    stemShaper.curve = warmExhaustCurve(1.6);
     stemShaper.oversample = '2x';
+
+    // Centered sub/body + 3.5 ms L/R Haas stereo exhaust width above 180 Hz (huge 3D engine without mono bass cancellation)
+    const stemMerger = ctx.createChannelMerger(2);
+    const stemCenter = ctx.createGain();
+    stemCenter.gain.value = 0.72;
+    stemShaper.connect(stemCenter);
+    stemCenter.connect(stemMerger, 0, 0);
+    stemCenter.connect(stemMerger, 0, 1);
+
+    const stemHaasHp = ctx.createBiquadFilter();
+    stemHaasHp.type = 'highpass';
+    stemHaasHp.frequency.value = 180;
+    stemHaasHp.Q.value = 0.7;
+    const stemHaasDelayL = ctx.createDelay(0.02);
+    stemHaasDelayL.delayTime.value = 0.0016;
+    const stemHaasDelayR = ctx.createDelay(0.02);
+    stemHaasDelayR.delayTime.value = 0.0051; // 3.5 ms inter-aural Haas exhaust spread
+    const stemHaasGainL = ctx.createGain();
+    stemHaasGainL.gain.value = 0.36;
+    const stemHaasGainR = ctx.createGain();
+    stemHaasGainR.gain.value = 0.36;
+    stemShaper.connect(stemHaasHp);
+    stemHaasHp.connect(stemHaasDelayL).connect(stemHaasGainL).connect(stemMerger, 0, 0);
+    stemHaasHp.connect(stemHaasDelayR).connect(stemHaasGainR).connect(stemMerger, 0, 1);
 
     const stemEngMaster = ctx.createGain();
     stemEngMaster.gain.value = 0;
 
-    stemLowGain.connect(stemToneFilter);
-    stemHighGain.connect(stemToneFilter);
-    stemToneFilter.connect(stemShaper).connect(stemEngMaster).connect(this.out);
+    for (let i = 0; i < 4; i++) {
+      const zg = ctx.createGain();
+      zg.gain.value = 0;
+      zg.connect(stemF1);
+      this.stemZoneGains[i] = zg;
+    }
+
+    stemF1.connect(stemF2).connect(stemF3).connect(stemToneFilter).connect(stemShaper);
+    stemMerger.connect(stemEngMaster).connect(this.out);
     if (this.reverbSend) stemEngMaster.connect(this.reverbSend);
 
-    this.stemLowGain = stemLowGain;
-    this.stemHighGain = stemHighGain;
+    this.stemF1 = stemF1;
+    this.stemF2 = stemF2;
+    this.stemF3 = stemF3;
     this.stemToneFilter = stemToneFilter;
     this.stemShaper = stemShaper;
     this.stemEngMaster = stemEngMaster;
 
-    // Looping FX stem gain buses (zeroed until driving update modulates them)
-    const mkFxBus = () => {
+    // Dedicated independent forced-induction & FX stem gain buses (zeroed until update modulates them)
+    const mkFxBus = (toReverb = false) => {
       const g = ctx.createGain();
       g.gain.value = 0;
       g.connect(this.out!);
+      if (toReverb && this.reverbSend) g.connect(this.reverbSend);
       return g;
     };
-    this.stemGearGain = mkFxBus();
-    this.stemDryTyreGain = mkFxBus();
-    this.stemWetSprayGain = mkFxBus();
-    this.stemKerbGain = mkFxBus();
+    this.stemTurboGain = mkFxBus(true);
+    this.stemGearGain = mkFxBus(false);
+    this.stemDryTyreGain = mkFxBus(false);
+    this.stemWetSprayGain = mkFxBus(false);
+    this.stemKerbGain = mkFxBus(false);
   }
 
   private preloadVoiceStems(voice: EngineVoiceId) {
     const zones = ENGINE_STEM_ZONES[voice] ?? ENGINE_STEM_ZONES.v8_crossplane;
-    void this.loadStem(zones.low[0]);
-    void this.loadStem(zones.high[0]);
+    for (const z of zones) void this.loadStem(z.id);
   }
 
   private preloadFxStems() {
@@ -1081,16 +1188,17 @@ export class GameAudio {
 
   private onStemDecoded(id: string, buf: AudioBuffer) {
     const zones = ENGINE_STEM_ZONES[this.voiceId] ?? ENGINE_STEM_ZONES.v8_crossplane;
-    if (id === zones.low[0] || id === zones.high[0]) {
+    if (zones.some((z) => z.id === id)) {
       this.syncEngineStemSources();
     }
-    if (id === 'gear_whine_straightcut') this.attachFxLoop('gear', buf);
+    if (id === 'turbo_spool_loop') this.attachFxLoop('turbo', buf);
+    else if (id === 'gear_whine_straightcut') this.attachFxLoop('gear', buf);
     else if (id === 'tyre_scrub_dry') this.attachFxLoop('dryTyre', buf);
     else if (id === 'tyre_spray_wet') this.attachFxLoop('wetSpray', buf);
     else if (id === 'kerb_rumble_strip') this.attachFxLoop('kerb', buf);
   }
 
-  private attachFxLoop(kind: 'gear' | 'dryTyre' | 'wetSpray' | 'kerb', buf: AudioBuffer) {
+  private attachFxLoop(kind: 'turbo' | 'gear' | 'dryTyre' | 'wetSpray' | 'kerb', buf: AudioBuffer) {
     const ctx = this.ctx;
     if (!ctx) return;
     const startLoop = (dest: GainNode | null) => {
@@ -1102,7 +1210,8 @@ export class GameAudio {
       src.start();
       return src;
     };
-    if (kind === 'gear' && !this.stemGearSrc) this.stemGearSrc = startLoop(this.stemGearGain);
+    if (kind === 'turbo' && !this.stemTurboSrc) this.stemTurboSrc = startLoop(this.stemTurboGain);
+    else if (kind === 'gear' && !this.stemGearSrc) this.stemGearSrc = startLoop(this.stemGearGain);
     else if (kind === 'dryTyre' && !this.stemDryTyreSrc) this.stemDryTyreSrc = startLoop(this.stemDryTyreGain);
     else if (kind === 'wetSpray' && !this.stemWetSpraySrc) this.stemWetSpraySrc = startLoop(this.stemWetSprayGain);
     else if (kind === 'kerb' && !this.stemKerbSrc) this.stemKerbSrc = startLoop(this.stemKerbGain);
@@ -1110,102 +1219,181 @@ export class GameAudio {
 
   private syncEngineStemSources() {
     const ctx = this.ctx;
-    if (!ctx || !this.stemLowGain || !this.stemHighGain) return;
+    if (!ctx) return;
     const zones = ENGINE_STEM_ZONES[this.voiceId] ?? ENGINE_STEM_ZONES.v8_crossplane;
-    const [lowId, lowRef] = zones.low;
-    const [highId, highRef] = zones.high;
-    const curRpm = Math.max(650, this.garageRunning ? this.garageRpm : this.lastRpm);
+    const curRpm = Math.max(650, this.garageRunning ? this.garageRpm : this.smoothRpm);
 
-    if (this.stemLowId !== lowId || (!this.stemLowSrc && this.stemBuffers.has(lowId))) {
-      if (this.stemLowSrc) {
-        try { this.stemLowSrc.stop(); this.stemLowSrc.disconnect(); } catch {}
-        this.stemLowSrc = null;
-        this.stemLowId = null;
-      }
-      const buf = this.stemBuffers.get(lowId);
-      if (buf) {
-        const src = ctx.createBufferSource();
-        src.buffer = buf;
-        src.loop = true;
-        src.playbackRate.value = clamp(curRpm / lowRef, 0.42, 2.35);
-        src.connect(this.stemLowGain);
-        src.start();
-        this.stemLowSrc = src;
-        this.stemLowId = lowId;
-      }
-    }
-
-    if (this.stemHighId !== highId || (!this.stemHighSrc && this.stemBuffers.has(highId))) {
-      if (this.stemHighSrc) {
-        try { this.stemHighSrc.stop(); this.stemHighSrc.disconnect(); } catch {}
-        this.stemHighSrc = null;
-        this.stemHighId = null;
-      }
-      const buf = this.stemBuffers.get(highId);
-      if (buf) {
-        const src = ctx.createBufferSource();
-        src.buffer = buf;
-        src.loop = true;
-        src.playbackRate.value = clamp(curRpm / highRef, 0.42, 2.35);
-        src.connect(this.stemHighGain);
-        src.start();
-        this.stemHighSrc = src;
-        this.stemHighId = highId;
+    for (let i = 0; i < 4; i++) {
+      const z = zones[i];
+      const zg = this.stemZoneGains[i];
+      if (!zg) continue;
+      if (this.stemZoneIds[i] !== z.id || (!this.stemZoneSrcs[i] && this.stemBuffers.has(z.id))) {
+        const old = this.stemZoneSrcs[i];
+        if (old) {
+          try { old.stop(); old.disconnect(); } catch {}
+          this.stemZoneSrcs[i] = null;
+          this.stemZoneIds[i] = null;
+        }
+        const buf = this.stemBuffers.get(z.id);
+        if (buf) {
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.loop = true;
+          src.playbackRate.value = clamp(curRpm / z.refRpm, 0.68, 1.42);
+          src.connect(zg);
+          src.start();
+          this.stemZoneSrcs[i] = src;
+          this.stemZoneIds[i] = z.id;
+        }
       }
     }
   }
 
-  private hasBothEngineStems(): boolean {
+  private hasAllEngineStems(): boolean {
     const zones = ENGINE_STEM_ZONES[this.voiceId] ?? ENGINE_STEM_ZONES.v8_crossplane;
-    return this.stemLowSrc !== null && this.stemLowId === zones.low[0]
-      && this.stemHighSrc !== null && this.stemHighId === zones.high[0];
+    for (let i = 0; i < 4; i++) {
+      if (this.stemZoneSrcs[i] === null || this.stemZoneIds[i] !== zones[i].id) return false;
+    }
+    return true;
   }
 
   /**
-   * Drive dual-zone realistic combustion engine stems for both driving (`update`) and Garage (`updateGarage`).
-   * Returns true when BOTH zones for the active voice are active so the caller can duck the raw oscillator synth to 15%.
+   * Drive 4-zone realistic combustion engine stems for both driving (`update`) and Garage (`updateGarage`).
+   * Keeps `playbackRate` strictly inside `[0.68, 1.42]` with piecewise equal-power cos/sin crossfades across
+   * adjacent zones (`z0 <-> z1 <-> z2 <-> z3`), stationary exhaust formants, and distinct load vs decel character.
+   * Returns true when all 4 zones for the active voice are active so the caller ducks the raw synth to 0.06.
    */
-  private updateEngineStems(rpm: number, thr: number, rpmNorm: number, master: number, lope: number, tc: number): boolean {
+  private updateEngineStems(
+    rpm: number,
+    thr: number,
+    rpmNorm: number,
+    master: number,
+    stemLope: number,
+    tc: number,
+    isDecel: boolean,
+  ): boolean {
     const ctx = this.ctx;
-    if (!ctx || !this.stemEngMaster || !this.stemLowGain || !this.stemHighGain || !this.stemToneFilter) {
-      return false;
-    }
+    if (!ctx || !this.stemEngMaster || !this.stemToneFilter) return false;
     const t = ctx.currentTime;
-    if (!this.hasBothEngineStems() || !this.stemLowSrc || !this.stemHighSrc) {
-      this.stemEngMaster.gain.setTargetAtTime(0, t, 0.04);
+    if (!this.hasAllEngineStems()) {
+      this.stemEngMaster.gain.setTargetAtTime(0, t, 0.03);
       return false;
     }
     const zones = ENGINE_STEM_ZONES[this.voiceId] ?? ENGINE_STEM_ZONES.v8_crossplane;
     const vSpec = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
-    const lowRef = zones.low[1];
-    const highRef = zones.high[1];
 
-    // Smooth playbackRate tracking with subtle organic idle lope micro-variation
-    const idleMicro = 1 + (lope - 1) * 0.35;
-    const lowRate = clamp((rpm / lowRef) * idleMicro, 0.42, 2.35);
-    const highRate = clamp((rpm / highRef) * (1 + (lope - 1) * 0.15), 0.42, 2.35);
-    this.stemLowSrc.playbackRate.setTargetAtTime(lowRate, t, tc);
-    this.stemHighSrc.playbackRate.setTargetAtTime(highRate, t, tc);
+    // Strictly bounded playbackRate [0.68, 1.42] per zone (gentle idle lope ONLY on z0 below 1250 RPM at closed throttle)
+    for (let i = 0; i < 4; i++) {
+      const src = this.stemZoneSrcs[i]!;
+      const lopeScale = i === 0 ? stemLope : 1;
+      const rate = clamp((rpm / zones[i].refRpm) * lopeScale, 0.68, 1.42);
+      src.playbackRate.setTargetAtTime(rate, t, tc);
+    }
 
-    // Equal-power cos/sin crossfade: 100% lowZone below ~2,100 RPM -> 100% highZone above ~4,600 RPM,
-    // biased earlier under heavy throttle so WOT pulls roar aggressively
-    const effRpm = rpm + thr * 450;
-    const xfade = clamp((effRpm - 2100) / (4600 - 2100), 0, 1);
-    const angle = xfade * Math.PI * 0.5;
-    this.stemLowGain.gain.setTargetAtTime(Math.cos(angle), t, tc);
-    this.stemHighGain.gain.setTargetAtTime(Math.sin(angle), t, tc);
+    // Piecewise equal-power cos/sin crossfade across adjacent zones (at most 2 zones active at any RPM)
+    const r0 = zones[0].refRpm;
+    const r1 = zones[1].refRpm;
+    const r2 = zones[2].refRpm;
+    const r3 = zones[3].refRpm;
+    const m01 = Math.sqrt(r0 * r1), hw01 = Math.min(m01 * 0.14, (r1 - r0) * 0.28);
+    const m12 = Math.sqrt(r1 * r2), hw12 = Math.min(m12 * 0.16, (r2 - r1) * 0.28);
+    const m23 = Math.sqrt(r2 * r3), hw23 = Math.min(m23 * 0.16, (r3 - r2) * 0.28);
 
-    // Load-responsive exhaust tone filter opens smoothly with throttle & RPM
-    const exoticBright =
-      vSpec.firingsPerRev >= 5 || this.voiceId === 'rotary_4' || this.voiceId === 'flat6_na'
-      || this.voiceId === 'flat8_na' || this.voiceId === 'v8_supercharged'
-        ? 3200
-        : 1800;
-    const toneCutoff = 850 + thr * 3400 + rpmNorm * (2800 + exoticBright * (0.45 + 0.55 * thr));
-    this.stemToneFilter.frequency.setTargetAtTime(Math.min(14000, toneCutoff), t, tc);
+    const effRpm = rpm + 220 * thr;
+    let w0 = 0, w1 = 0, w2 = 0, w3 = 0;
+    if (effRpm <= m01 - hw01) {
+      w0 = 1;
+    } else if (effRpm < m01 + hw01) {
+      const u = (effRpm - (m01 - hw01)) / (2 * hw01);
+      w0 = Math.cos(u * Math.PI * 0.5);
+      w1 = Math.sin(u * Math.PI * 0.5);
+    } else if (effRpm <= m12 - hw12) {
+      w1 = 1;
+    } else if (effRpm < m12 + hw12) {
+      const u = (effRpm - (m12 - hw12)) / (2 * hw12);
+      w1 = Math.cos(u * Math.PI * 0.5);
+      w2 = Math.sin(u * Math.PI * 0.5);
+    } else if (effRpm <= m23 - hw23) {
+      w2 = 1;
+    } else if (effRpm < m23 + hw23) {
+      const u = (effRpm - (m23 - hw23)) / (2 * hw23);
+      w2 = Math.cos(u * Math.PI * 0.5);
+      w3 = Math.sin(u * Math.PI * 0.5);
+    } else {
+      w3 = 1;
+    }
+    this.stemZoneGains[0]!.gain.setTargetAtTime(w0, t, tc);
+    this.stemZoneGains[1]!.gain.setTargetAtTime(w1, t, tc);
+    this.stemZoneGains[2]!.gain.setTargetAtTime(w2, t, tc);
+    this.stemZoneGains[3]!.gain.setTargetAtTime(w3, t, tc);
 
-    this.stemEngMaster.gain.setTargetAtTime(Math.min(0.85, master * 1.18), t, 0.035);
+    // Load-responsive tone filter (1400 Hz decel/cruise -> 13500 Hz WOT redline) + metallic decel formant resonance
+    const baseOpen = 1400 + rpmNorm * 1350;
+    const wotOpen = Math.pow(clamp(thr, 0, 1), 0.85) * (6300 + rpmNorm * 4450);
+    const decelClose = isDecel ? -320 : 0;
+    const toneCutoff = clamp(baseOpen + wotOpen + decelClose, 1150, 13500);
+    this.stemToneFilter.frequency.setTargetAtTime(toneCutoff, t, tc);
+
+    if (this.stemF2) {
+      const decelBoost = isDecel ? 2.5 : 0;
+      this.stemF2.gain.setTargetAtTime(vSpec.sf2[2] + decelBoost, t, 0.04);
+    }
+
+    this.stemEngMaster.gain.setTargetAtTime(Math.min(0.95, master * 1.38), t, 0.03);
     return true;
+  }
+
+  /**
+   * Independent forced-induction mix (Turbo spool loop + compressor whistle OR Helical Supercharger whine).
+   * Routed directly to `this.out` + `this.reverbSend` so engine synth ducking NEVER silences boost!
+   */
+  private updateForcedInduction(
+    vSpec: EngineVoiceSpec,
+    rpm: number,
+    rpmNorm: number,
+    smoothThr: number,
+    coreBoostBar: number,
+    dt: number,
+    t: number,
+    active: boolean,
+  ): 'none' | 'turbo' | 'supercharger' {
+    const e = this.eng!;
+    const boostMode = vSpec.boost !== 'none' ? vSpec.boost : (this.extraTurbo ? 'turbo' : 'none');
+
+    if (boostMode === 'supercharger' && active) {
+      this.boostSpool = 0;
+      if (this.stemTurboGain) this.stemTurboGain.gain.setTargetAtTime(0, t, 0.03);
+      const scFreq = 950 + rpm * 0.34;
+      e.oBoost.frequency.setTargetAtTime(scFreq, t, 0.02);
+      e.boostFilter.frequency.setTargetAtTime(scFreq, t, 0.025);
+      e.boostFilter.Q.setTargetAtTime(2.6, t, 0.04);
+      const scGain = (0.035 + 0.185 * smoothThr) * (0.30 + 0.70 * rpmNorm);
+      e.boostGain.gain.setTargetAtTime(clamp(scGain, 0, 0.22), t, 0.025);
+    } else if (boostMode === 'turbo' && active) {
+      const fromCore = Math.max(0, coreBoostBar / 1.5);
+      const fromSynth = Math.max(0, (rpmNorm - 0.10) * 1.35) * smoothThr;
+      const targetSpool = clamp(Math.max(fromCore, fromSynth), 0, 1.15);
+      const spoolTc = targetSpool >= this.boostSpool ? 0.085 : 0.22;
+      this.boostSpool += (targetSpool - this.boostSpool) * (1 - Math.exp(-dt / spoolTc));
+
+      const spoolLevel = clamp(this.boostSpool, 0, 1);
+      if (this.stemTurboSrc && this.stemTurboGain) {
+        const rate = clamp(0.58 + this.boostSpool * 1.15 + rpmNorm * 0.25, 0.52, 1.95);
+        this.stemTurboSrc.playbackRate.setTargetAtTime(rate, t, 0.03);
+        this.stemTurboGain.gain.setTargetAtTime(Math.pow(spoolLevel, 0.85) * 0.36, t, 0.03);
+      }
+      const tFreq = 2400 + this.boostSpool * 4800;
+      e.oBoost.frequency.setTargetAtTime(tFreq, t, 0.03);
+      e.boostFilter.frequency.setTargetAtTime(tFreq, t, 0.03);
+      e.boostFilter.Q.setTargetAtTime(3.6, t, 0.04);
+      e.boostGain.gain.setTargetAtTime(spoolLevel * (this.stemTurboSrc ? 0.07 : 0.14), t, 0.03);
+    } else {
+      this.boostSpool *= Math.exp(-dt / 0.18);
+      e.boostGain.gain.setTargetAtTime(0, t, 0.035);
+      if (this.stemTurboGain) this.stemTurboGain.gain.setTargetAtTime(0, t, 0.035);
+    }
+
+    return boostMode;
   }
 
   private playStemOneShot(id: string, at: number, gain: number, playbackRate: number, toReverb = false): boolean {
@@ -1226,39 +1414,124 @@ export class GameAudio {
 
   private triggerTurboBov(t: number, intensity = 1) {
     if (this._muted) return;
-    const rate = 0.92 + Math.random() * 0.16;
-    if (this.playStemOneShot('turbo_flutter_bov', t, 0.36 * intensity, rate, true)) {
+    const inten = clamp(intensity, 0.45, 1.2);
+    const rate = 0.94 + Math.random() * 0.12;
+    if (this.playStemOneShot('turbo_flutter_bov', t, 0.65 * inten, rate, true)) {
       return;
     }
     for (let k = 0; k < 4; k++) {
-      this.burst(t + k * 0.048, 0.042, 'bandpass', 3600 - k * 340, 5.2, 0.13 * intensity * (1 - k * 0.18));
+      this.burst(t + k * 0.048, 0.045, 'bandpass', 3600 - k * 340, 4.8, 0.22 * inten * (1 - k * 0.17));
     }
+  }
+
+  /** Crisp motorsport downshift rev-match throttle blip. */
+  private downshiftBlipSound(t: number, intensity: number) {
+    if (this._muted) return;
+    const vSpec = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
+    const inten = clamp(intensity, 0.35, 1.0);
+    // Short intake/header throat snap + light exhaust overrun pop
+    this.burst(t, 0.085, 'bandpass', vSpec.sf2[0] * 1.15, 2.0, 0.20 * inten);
+    this.playStemOneShot('exhaust_backfire_pop', t + 0.025, 0.34 * inten, 1.04 + Math.random() * 0.14, true);
   }
 
   /** Every frame with the core's output. */
   update(out: Float64Array, speed: number) {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running' || !this.eng) return;
-    const t = ctx.currentTime, tc = 0.024;
-    const rpm = Math.max(650, out[OUT.rpm]);
-    const thr = out[OUT.throttle];
+    const nowMs = performance.now();
+    const dt = this.lastUpdateMs > 0 ? clamp((nowMs - this.lastUpdateMs) / 1000, 0.004, 0.05) : 0.016;
+    this.lastUpdateMs = nowMs;
+
+    const t = ctx.currentTime, tc = 0.020;
+    const rawRpm = Math.max(650, out[OUT.rpm]);
+    const rawThr = clamp(out[OUT.throttle], 0, 1);
     const gear = Math.round(out[OUT.gear]);
     const stalled = out[OUT.stalled] > 0.5;
+    const tcActive = (out[OUT.tc] || 0) > 0.5;
     const vSpec = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
+    const redline = vSpec.revRpm;
+
+    if (!this.hasValidSmooth) {
+      this.smoothRpm = rawRpm;
+      this.smoothThr = rawThr;
+      this.smoothLoad = 0.16 + 0.84 * rawThr;
+      this.lastGear = gear;
+      this.lastRpm = rawRpm;
+      this.hasValidSmooth = true;
+    }
+
+    // Gearshift transitions: upshift ignition-cut bang + BOV flutter, downshift rev-match blip!
+    let upshiftUnderBoost = false;
+    if (gear !== this.lastGear) {
+      if (!this.muted && !stalled) {
+        if (gear > this.lastGear) {
+          if (this.lastRpm > 3000 && t > this.lastShiftBarkAt + 0.16) {
+            this.lastShiftBarkAt = t;
+            this.shiftBark(t, clamp((this.lastRpm - 2200) / 4800, 0.45, 1.0));
+          }
+          upshiftUnderBoost = this.boostSpool > 0.25;
+        } else if (gear < this.lastGear && gear >= 1 && rawRpm > 2400) {
+          this.downshiftBlipUntil = nowMs + 135;
+          this.downshiftBlipRpm = Math.min(redline, rawRpm + 950);
+          this.downshiftBlipSound(t, clamp((rawRpm - 2200) / 4500, 0.4, 1.0));
+        }
+      }
+      this.lastGear = gear;
+    }
+    if ((out[OUT.shiftCut] || 0) > 0.5 && !this.muted && !stalled && t > this.lastShiftBarkAt + 0.16) {
+      this.lastShiftBarkAt = t;
+      this.shiftBark(t, clamp((rawRpm - 2200) / 4800, 0.5, 1.0));
+    }
+
+    // Crisp redline rev-limiter bounce (strictly at true redline under heavy throttle — NEVER interferes with launch!)
+    let limDip = 1.0;
+    if (!stalled && rawRpm >= redline * 0.975 && rawThr > 0.65) {
+      if (nowMs >= this.revLimiterNextToggle) {
+        this.revLimiterCutUntil = nowMs + 36;
+        this.revLimiterNextToggle = nowMs + 78;
+        if (!this.muted && Math.random() < 0.55) {
+          this.exhaustPop(t, 0.85);
+        }
+      }
+      if (nowMs < this.revLimiterCutUntil) limDip = 0.58;
+    } else {
+      this.revLimiterCutUntil = 0;
+    }
+
+    // Zero-hiccup asymmetric acoustic envelope followers:
+    // - smoothRpm removes clutch-bite / substep jaggedness (fast 18 ms attack, 32 ms release)
+    // - smoothThr absorbs 15-30 Hz traction-control wheelspin throttle pulses (25 ms attack, 95 ms release)
+    const targetRpm = nowMs < this.downshiftBlipUntil ? Math.max(rawRpm, this.downshiftBlipRpm) : rawRpm;
+    const rpmTc = targetRpm >= this.smoothRpm ? 0.018 : 0.032;
+    this.smoothRpm += (targetRpm - this.smoothRpm) * (1 - Math.exp(-dt / rpmTc));
+
+    const thrTc = rawThr >= this.smoothThr ? 0.025 : 0.095;
+    this.smoothThr += (rawThr - this.smoothThr) * (1 - Math.exp(-dt / thrTc));
+
+    const targetLoad = 0.16 + 0.84 * this.smoothThr;
+    const loadTc = targetLoad >= this.smoothLoad ? 0.028 : 0.085;
+    this.smoothLoad += (targetLoad - this.smoothLoad) * (1 - Math.exp(-dt / loadTc));
+
+    const rpm = Math.max(650, this.smoothRpm);
+    const thr = this.smoothThr;
+    const load = this.smoothLoad;
     const f = (rpm / 60) * vSpec.firingsPerRev;
 
-    // Architecture-specific idle lope (chunky rotary peripheral-port brap & V8 cam lope vs smooth V12 / I6)
-    const idleFactor = Math.max(0, 1 - (rpm - 650) / 1050);
-    const lope = 1 + Math.sin(t * vSpec.lopeHz) * vSpec.lopeDepth * idleFactor + (Math.random() - 0.5) * 0.007;
+    // Gentle organic idle lope ONLY below 1250 RPM at closed throttle (ZERO random jitter or pull wobble!)
+    const idleLopeFactor = thr <= 0.1 && rpm < 1250
+      ? clamp((1250 - rpm) / 450, 0, 1) * clamp((0.1 - thr) / 0.1, 0, 1)
+      : 0;
+    const lope = 1 + Math.sin(t * vSpec.lopeHz) * vSpec.lopeDepth * idleLopeFactor;
+    const stemLope = 1 + Math.sin(t * vSpec.lopeHz) * (vSpec.lopeDepth * 0.45) * idleLopeFactor;
+
     const e = this.eng;
     e.oMain.frequency.setTargetAtTime(f * lope, t, tc);
     e.oSub.frequency.setTargetAtTime(f * vSpec.subRatio * lope, t, tc);
     e.oBank.frequency.setTargetAtTime(f * vSpec.bankRatio * (2 - lope), t, tc);
     e.oHarm.frequency.setTargetAtTime(f * vSpec.harmRatio, t, tc);
 
-    // Exhaust gas flow & intake induction roar
-    const rpmNorm = Math.min(1, (rpm - 650) / Math.max(5500, vSpec.revRpm - 650));
-    const load = 0.18 + 0.82 * thr;
+    // Exhaust gas flow & intake induction roar (fallback synth)
+    const rpmNorm = clamp((rpm - 650) / Math.max(5500, redline - 650), 0, 1);
     e.exhaustFilter.frequency.setTargetAtTime(160 + f * 1.9, t, tc);
     e.exhaustGain.gain.setTargetAtTime(0.18 + 0.42 * load + 0.22 * rpmNorm, t, tc);
 
@@ -1269,116 +1542,99 @@ export class GameAudio {
     const kmh = absSpeed * 3.6;
     // At 250 km/h aerodynamic wind noise swells and gently ducks the engine mix (like real high-speed cabins)
     const highSpdWind = Math.max(0, Math.min(1, (kmh - 140) / 130));
-    const windDuck = 1 - highSpdWind * 0.34;
-    const master = this.muted || stalled ? 0 : (0.16 + 0.24 * load + 0.10 * rpmNorm) * windDuck;
-    const stemsActive = this.updateEngineStems(rpm, thr, rpmNorm, master, lope, tc);
+    const windDuck = 1 - highSpdWind * 0.30;
+    const master = this.muted || stalled ? 0 : (0.17 + 0.25 * load + 0.11 * rpmNorm) * windDuck * limDip;
+    const isDecel = !tcActive && rawThr < 0.1 && thr < 0.45 && rpm > 2600;
+    const stemsActive = this.updateEngineStems(rpm, thr, rpmNorm, master, stemLope, tc, isDecel);
 
-    // Forced-induction synthesizer: linear RPM supercharger whine OR lag-spooled turbo compressor whistle
-    const boostMode = vSpec.boost !== 'none' ? vSpec.boost : (this.extraTurbo ? 'turbo' : 'none');
-    if (boostMode === 'supercharger' && !this.muted && !stalled) {
-      const scFreq = 920 + rpm * 0.31;
-      const scDuck = stemsActive && this.voiceId === 'v8_supercharged' ? 0.35 : 1.0;
-      e.oBoost.frequency.setTargetAtTime(scFreq, t, 0.02);
-      e.boostFilter.frequency.setTargetAtTime(scFreq, t, 0.03);
-      e.boostGain.gain.setTargetAtTime((0.025 + 0.105 * thr) * (0.35 + 0.65 * rpmNorm) * scDuck, t, 0.03);
-    } else if (boostMode === 'turbo' && !this.muted && !stalled) {
-      const targetSpool = Math.max(0, (rpmNorm - 0.18) * 1.25) * thr;
-      this.boostSpool += (targetSpool - this.boostSpool) * 0.12;
-      const tFreq = 2200 + this.boostSpool * 4400;
-      e.oBoost.frequency.setTargetAtTime(tFreq, t, 0.04);
-      e.boostFilter.frequency.setTargetAtTime(tFreq, t, 0.04);
-      e.boostGain.gain.setTargetAtTime(this.boostSpool * 0.048, t, 0.04);
-    } else {
-      this.boostSpool *= 0.85;
-      e.boostGain.gain.setTargetAtTime(0, t, 0.05);
-    }
+    // Independent forced-induction mix: Turbo spool loop + whistle OR Supercharger whine directly on `this.out`
+    const boostMode = this.updateForcedInduction(
+      vSpec, rpm, rpmNorm, thr, out[OUT.boostBar] || 0, dt, t, !this.muted && !stalled,
+    );
 
-    // Dynamic low-pass opens with throttle and RPM; higher-revving exotic engines open brighter at the top end
+    // Dynamic low-pass for fallback synth
     const topBright = vSpec.firingsPerRev >= 5 || this.voiceId === 'rotary_4' || this.voiceId === 'flat6_na' || this.voiceId === 'flat8_na' ? 2600 : 1800;
     const cutoff = 320 + f * (2.2 + 5.8 * load) + rpmNorm * topBright * thr;
     e.lp.frequency.setTargetAtTime(cutoff, t, tc);
 
-    e.g.gain.setTargetAtTime(stemsActive ? master * 0.15 : master, t, 0.04);
-    // The engine voice above follows every frame (24-40 ms smoothing: fewer updates would step the revs). The slow layers
-    // (80-140 ms smoothing) glide the same at ~30 Hz: half the automation events posted to the audio thread for them.
+    // Duck raw oscillator synth to 0.06 when all 4 combustion stems are active (ultra-subtle sub body only)
+    e.g.gain.setTargetAtTime(stemsActive ? master * 0.06 : master, t, 0.03);
+
+    // Slow layers (80-140 ms smoothing) glide smoothly at ~30 Hz
     const slow = t - this.slowAt >= 0.03 || t < this.slowAt;
     if (slow) this.slowAt = t;
     if (this.reverbSend && slow) {
-      // Narrow tunnels/walled canyons amplify and echo the exhaust note
-      this.reverbSend.gain.setTargetAtTime(this.muted ? 0 : this.envReverb * 0.62, t, 0.08);
+      // Narrow tunnels/walled canyons amplify and echo the exhaust + turbo + BOV
+      this.reverbSend.gain.setTargetAtTime(this.muted ? 0 : this.envReverb * 0.64, t, 0.08);
     }
 
-    // Distinct rolling tire surface audio: realistic wet spray stem + fallback hiss / gravel crunch / dry asphalt
+    // Distinct rolling tire surface audio: wet spray stem (up to 0.44) + fallback hiss / gravel crunch / dry asphalt
     if (slow) {
       const wetAmt = this.onGravel ? 0 : Math.max(0, (this.roadWetness - 0.15) / 0.85);
       const spdFrac = Math.min(1, kmh / 170);
       if (this.stemWetSpraySrc && this.stemWetSprayGain) {
         this.stemWetSpraySrc.playbackRate.setTargetAtTime(clamp(0.68 + spdFrac * 0.78, 0.6, 1.75), t, 0.08);
-        this.stemWetSprayGain.gain.setTargetAtTime(this.muted ? 0 : wetAmt * Math.pow(spdFrac, 1.25) * 0.34, t, 0.08);
+        this.stemWetSprayGain.gain.setTargetAtTime(this.muted ? 0 : wetAmt * Math.pow(spdFrac, 1.15) * 0.44, t, 0.08);
       }
       if (this.roadRoll) {
         const rollFrac = Math.min(1, kmh / 180);
         const targetFreq = this.onGravel ? 240 + kmh * 2.2 : this.roadWetness > 0.55 ? 1650 + kmh * 9.5 : 460 + kmh * 3.2;
-        const wetDuck = this.stemWetSpraySrc && !this.onGravel && this.roadWetness > 0.35 ? 1 - 0.75 * wetAmt : 1;
-        const targetGain = this.muted ? 0 : rollFrac * (this.onGravel ? 0.14 : this.roadWetness > 0.55 ? 0.11 : 0.055) * wetDuck;
+        const wetDuck = this.stemWetSpraySrc && !this.onGravel && this.roadWetness > 0.35 ? 1 - 0.78 * wetAmt : 1;
+        const targetGain = this.muted ? 0 : rollFrac * (this.onGravel ? 0.15 : this.roadWetness > 0.55 ? 0.11 : 0.055) * wetDuck;
         this.roadRoll.f.frequency.setTargetAtTime(targetFreq, t, 0.08);
         this.roadRoll.g.gain.setTargetAtTime(targetGain, t, 0.08);
       }
     }
 
-    // Simcenter Tire 2606 Doppler-split toroidal air-cavity resonance + kerb rumble strip stem over curbs/bumps
+    // Simcenter Tire 2606 Doppler-split toroidal air-cavity resonance + punchy kerb rumble strip stem (up to 0.52)
     let peakCav = 0;
     for (let i = 0; i < 4; i++) peakCav = Math.max(peakCav, out[OUT.cavityGain(i)] || 0);
     if (this.stemKerbSrc && this.stemKerbGain) {
-      const kerbExcite = Math.min(1, peakCav * 1.4) * Math.min(1, absSpeed / 4.0);
+      const kerbExcite = Math.min(1, peakCav * 1.55) * Math.min(1, absSpeed / 3.5);
       this.stemKerbSrc.playbackRate.setTargetAtTime(clamp(0.55 + (absSpeed / 42) * 1.35, 0.5, 2.2), t, 0.03);
-      this.stemKerbGain.gain.setTargetAtTime(this.muted ? 0 : kerbExcite * 0.38, t, 0.025);
+      this.stemKerbGain.gain.setTargetAtTime(this.muted ? 0 : kerbExcite * 0.52, t, 0.025);
     }
     if (this.cavity) {
       const fLo = Math.max(120, Math.min(340, out[OUT.cavityLowHz] || 220));
       const fHi = Math.max(130, Math.min(380, out[OUT.cavityHighHz] || 228));
       this.cavity.fLo.frequency.setTargetAtTime(fLo, t, 0.03);
       this.cavity.fHi.frequency.setTargetAtTime(fHi, t, 0.03);
-      this.cavity.g.gain.setTargetAtTime(this.muted ? 0 : Math.min(0.24, peakCav * 0.22) * (this.stemKerbSrc ? 0.3 : 1), t, 0.025);
+      this.cavity.g.gain.setTargetAtTime(this.muted ? 0 : Math.min(0.24, peakCav * 0.22) * (this.stemKerbSrc ? 0.25 : 1), t, 0.025);
     }
 
-    // Turbo Blow-Off Valve (BOV) compressor surge flutter triggered by C++ drivetrain state or turbo lift-off
-    const bovTriggered = (out[OUT.bovVenting] || 0) > 0.5
-      || (boostMode === 'turbo' && this.boostSpool > 0.32 && thr < 0.08);
-    if (!this.muted && !stalled && bovTriggered && t > this.lastBovAt + 0.32) {
+    // Turbo Blow-Off Valve (BOV) compressor surge flutter (`stu-tu-tu-tu`) on upshifts under boost, lift-off, or C++ bovVenting
+    const liftOffBov = boostMode === 'turbo' && this.boostSpool > 0.25 && !tcActive && rawThr < 0.12 && thr < 0.45;
+    const coreBov = (out[OUT.bovVenting] || 0) > 0.5 && !tcActive;
+    const bovTriggered = (boostMode === 'turbo' && upshiftUnderBoost) || liftOffBov || coreBov;
+    if (!this.muted && !stalled && bovTriggered && t > this.lastBovAt + 0.26) {
       this.lastBovAt = t;
-      this.triggerTurboBov(t, Math.max(0.65, this.boostSpool));
-      this.boostSpool *= 0.35;
+      this.triggerTurboBov(t, Math.max(0.7, this.boostSpool));
+      this.boostSpool *= 0.28;
     }
 
-    // Straight-cut GT transmission gear whine stem + subtle synth fallback proportional to wheel speed + engine load
+    // Straight-cut GT transmission gear whine stem (audible from 25 km/h upward, up to 0.24) + independent synth edge
+    const gearPresence = clamp((kmh - 20) / 30, 0, 1);
     const gearFreq = Math.max(240, absSpeed * 28 + rpm * 0.12);
     e.oGear.frequency.setTargetAtTime(gearFreq, t, 0.03);
-    const whineLevel = this.muted || stalled ? 0 : Math.min(0.038, (absSpeed / 65) * 0.026 * (0.4 + 0.6 * thr));
+    const stemWhine = this.muted || stalled
+      ? 0
+      : gearPresence * Math.pow(clamp(kmh / 170, 0, 1), 0.65) * 0.24 * (0.42 + 0.58 * thr);
     if (this.stemGearSrc && this.stemGearGain) {
-      const gearRate = clamp(0.45 + (absSpeed / 58) * 1.45 + (rpm / 9000) * 0.25, 0.42, 2.35);
+      const gearRate = clamp(0.48 + (absSpeed / 54) * 1.38 + (rpm / 9000) * 0.24, 0.45, 2.25);
       this.stemGearSrc.playbackRate.setTargetAtTime(gearRate, t, 0.03);
-      const stemWhine = this.muted || stalled ? 0 : Math.min(0.16, (absSpeed / 65) * 0.12 * (0.35 + 0.65 * thr)) * Math.min(1, absSpeed / 6);
-      this.stemGearGain.gain.setTargetAtTime(stemWhine, t, 0.04);
+      this.stemGearGain.gain.setTargetAtTime(stemWhine, t, 0.035);
     }
-    e.gearGain.gain.setTargetAtTime(this.stemGearSrc ? whineLevel * 0.15 : whineLevel, t, 0.04);
+    e.gearGain.gain.setTargetAtTime(this.stemGearSrc ? stemWhine * 0.15 : stemWhine * 0.45, t, 0.035);
 
-    // Gearshift ignition-cut bark when shifting up or down under load
-    if (gear !== this.lastGear && !this.muted && !stalled) {
-      if (gear > this.lastGear && this.lastRpm > 3200) {
-        this.shiftBark(t, Math.min(1, (this.lastRpm - 2500) / 4800));
-      }
-      this.lastGear = gear;
-    }
-    this.lastRpm = rpm;
+    this.lastRpm = rawRpm;
 
     // Lift-off overrun exhaust pops & crackles when decelerating from high RPM
-    if (!this.muted && !stalled && thr < 0.08 && rpm > 2900 && t > this.nextCrackleAt) {
-      this.exhaustPop(t, Math.min(1, (rpm - 2600) / 4500));
-      this.nextCrackleAt = t + 0.045 + Math.random() * 0.14;
+    if (!this.muted && !stalled && isDecel && t > this.nextCrackleAt) {
+      this.exhaustPop(t, clamp((rpm - 2400) / 4400, 0.5, 1.0));
+      this.nextCrackleAt = t + 0.045 + Math.random() * 0.13;
     }
 
-    // Tyres: realistic dry rubber scrub stem + dual-formant tread squeal weighted by normal load
+    // Tyres: dry rubber scrub stem (up to 0.55) + dual-formant tread squeal weighted by normal load
     let squeal = 0, slip = 0;
     for (let i = 0; i < 4; i++) {
       const o = OUT.wheel(i);
@@ -1392,9 +1648,9 @@ export class GameAudio {
     if (this.stemDryTyreSrc && this.stemDryTyreGain) {
       const dryFactor = this.onGravel ? 0.15 : Math.max(0.25, 1 - this.roadWetness * 0.75);
       this.stemDryTyreSrc.playbackRate.setTargetAtTime(clamp(0.72 + Math.min(1.4, slip) * 0.42 + Math.min(0.3, absSpeed / 120), 0.65, 1.85), t, 0.04);
-      this.stemDryTyreGain.gain.setTargetAtTime(this.muted ? 0 : squeal * dryFactor * 0.42, t, 0.04);
+      this.stemDryTyreGain.gain.setTargetAtTime(this.muted ? 0 : squeal * dryFactor * 0.55, t, 0.04);
     }
-    this.tyre!.g.gain.setTargetAtTime(this.muted ? 0 : squeal * 0.28 * (this.stemDryTyreSrc ? 0.2 : 1), t, 0.04);
+    this.tyre!.g.gain.setTargetAtTime(this.muted ? 0 : squeal * 0.28 * (this.stemDryTyreSrc ? 0.18 : 1), t, 0.04);
     this.tyre!.f.frequency.setTargetAtTime(780 + 380 * Math.min(1.6, slip), t, 0.04);
     this.tyre!.f2.frequency.setTargetAtTime(1520 + 620 * Math.min(1.6, slip), t, 0.04);
 
@@ -1448,28 +1704,31 @@ export class GameAudio {
     }, 185);
   }
 
-  /** Brief ignition-cut exhaust thump on high-RPM upshifts. */
+  /** Crisp ignition-cut exhaust bang on high-RPM upshifts (`exhaust_backfire_pop` at gain 0.55–0.80). */
   private shiftBark(t: number, intensity: number) {
     if (this._muted) return;
-    const rate = 0.86 + Math.random() * 0.32;
-    if (this.playStemOneShot('exhaust_backfire_pop', t, 0.42 * intensity, rate, true)) {
-      this.tone(t, 0.045, 115, 48, 'sawtooth', 0.11 * intensity);
+    const inten = clamp(intensity, 0, 1);
+    const rate = 0.88 + Math.random() * 0.28;
+    const bangGain = 0.55 + 0.25 * inten;
+    if (this.playStemOneShot('exhaust_backfire_pop', t, bangGain, rate, true)) {
+      this.tone(t, 0.048, 120, 46, 'sawtooth', 0.14 * (0.5 + 0.5 * inten));
       return;
     }
-    this.burst(t, 0.075, 'bandpass', 190 + Math.random() * 70, 1.4, 0.38 * intensity);
-    this.tone(t, 0.065, 115, 48, 'sawtooth', 0.22 * intensity);
+    this.burst(t, 0.075, 'bandpass', 190 + Math.random() * 70, 1.4, 0.44 * (0.5 + 0.5 * inten));
+    this.tone(t, 0.065, 115, 48, 'sawtooth', 0.24 * (0.5 + 0.5 * inten));
   }
 
-  /** Exhaust header pop / burble on high-RPM throttle lift-off. */
+  /** Exhaust header pop / overrun burble on high-RPM throttle lift-off (`exhaust_backfire_pop` at gain 0.42–0.72). */
   private exhaustPop(t: number, intensity: number) {
     if (this._muted) return;
+    const inten = clamp(intensity, 0.4, 1.0);
     const rate = 0.86 + Math.random() * 0.32;
-    const popGain = (0.28 + Math.random() * 0.24) * intensity;
+    const popGain = (0.42 + Math.random() * 0.30) * (0.72 + 0.28 * inten);
     if (this.playStemOneShot('exhaust_backfire_pop', t, popGain, rate, true)) {
-      this.tone(t, 0.028, 125 + Math.random() * 40, 44, 'triangle', 0.08 * intensity);
+      this.tone(t, 0.028, 125 + Math.random() * 40, 44, 'triangle', 0.10 * inten);
       return;
     }
-    const g = (0.14 + Math.random() * 0.18) * intensity;
+    const g = (0.18 + Math.random() * 0.20) * inten;
     this.burst(t, 0.038 + Math.random() * 0.03, 'bandpass', 240 + Math.random() * 260, 1.8, g);
     this.tone(t, 0.04, 130 + Math.random() * 50, 42, 'triangle', g * 0.65);
   }
@@ -1627,6 +1886,17 @@ function distortion(k: number): Float32Array<ArrayBuffer> {
   for (let i = 0; i < n; i++) {
     const x = (i / (n - 1)) * 2 - 1;
     c[i] = ((1 + k) * x) / (1 + k * Math.abs(x));
+  }
+  return c;
+}
+
+/** Warm asymmetric exhaust-pipe saturation curve (adds subtle 2nd-harmonic analog body with zero DC offset). */
+function warmExhaustCurve(drive: number): Float32Array<ArrayBuffer> {
+  const n = 1024, c = new Float32Array(new ArrayBuffer(n * 4));
+  const norm = Math.tanh(drive * 1.14) || 1;
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    c[i] = Math.tanh(drive * (x + 0.14 * x * x)) / norm;
   }
   return c;
 }
