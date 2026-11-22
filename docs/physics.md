@@ -272,3 +272,26 @@ ones and grip-limited cornering never wore the tread. Three causes, three fixes.
   the drag its rear tyres carry); the character test now asks for +0.03 g.
 - Brakes per car (disc material and size) are not done: no verified specific heat or fade curve for carbon-ceramic
   (C/SiC) discs was found; only their mass (about half of cast iron, SGL Carbon).
+
+## Wet roads, racing line, incandescence (2026-11-22)
+
+- **Wet grip** (`wet_grip_factor`, core/src/pinnacle.cpp). Before this, rain reached no physics at all (the weather
+  grip multipliers were unused and the bridge passed no water). Now `Vehicle::road_water_mm` (set by the host from the
+  weather: rain 1 mm, a damp winter road ~0.1 mm; puddles per contact add on top) scales friction by
+  (1) a damp-film term: no loss until a critical depth that falls with speed (Beautru, IFSTTAR: 0.34 / 0.31 / 0.15 mm
+  at 20 / 40 / 60 km/h), then ~5 % for a treaded tyre; (2) drainage: 1 / (1 + (v / v_d)^2), v_d from the Horne onset
+  speed (pressure, tread, film) x (tread / 7.5 mm)^0.2 / (1 + 0.5 ln(h / 1 mm)) (depth matters at >= 96 km/h, not below
+  50: Veith). Fitted to Continental's wet ABS stops from 80 km/h: the Vela GT stops in 27.6 / 31.9 / 37.3 m with new /
+  3 mm / 1.6 mm tread (Continental 25.8 / 31.0 / 36.2 m). Test `wet_braking`.
+  Open point: in the DRY, 1.6 mm tread stops 17 % longer (the flat wear grip penalty, 1 - 0.15 wear^2); real worn road
+  tyres brake as well or better in the dry.
+- **Racing line** (`rs::RacingLine`, core/src/racing_line.cpp): minimum-curvature line within the road minus 1.3 m,
+  projected Gauss-Seidel / SOR on the lateral offsets; AI racers follow it and take corner speeds from its curvature
+  (12.5 % quicker flying lap on a 10 m wide block). Overtaking: a pass needs room for a whole car, the passer only
+  outruns the following limit once a car width clear, a started pass is carried through, and every AI leaves a car
+  width to a car alongside. Rivals use it unless rivals.json says otherwise. Test `racing_line`. Not done: outbraking
+  moves into a corner.
+- **Incandescence** (`rs::incandescence`): Planck x emissivity (oxidised iron 0.8) over the CIE 1931 functions
+  (Wyman-Sloan-Shirley fit), 683 lm/W, linear sRGB nits: 0.006 nit at 525 C (Draper point), 1.1 nit at 700 C, 71 nit at
+  900 C. For brake discs in the web and Unreal; the web visual is on branch review/brake-glow-physical, waiting for a
+  look review.
