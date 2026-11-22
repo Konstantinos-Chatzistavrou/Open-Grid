@@ -199,6 +199,9 @@ struct DamageState {
     double brakes = 1.0;                       // brake effectiveness (fade / failure), all brakes
 };
 
+/** Brake pad friction factor vs disc temperature (C), 1 = the working plateau (curve in vehicle.cpp). */
+double brake_pad_mu(double disc_c);
+
 class Vehicle {
 public:
     explicit Vehicle(const CarConfig& cfg);
@@ -277,6 +280,9 @@ public:
     /** Tests / tooling: set every brake disc to this temperature (C); reset_motion puts them back to warm. */
     void set_brake_temperature(double c) { disc_temp_.fill(c); disc_init_ = true; }
     void set_brake_fluid_temperature(double c) { fluid_temp_.fill(c); }
+    /** Tests / tooling: every tyre soaked at temp_c (tread, ribs, carcass; cavity air at the model's running share,
+     *  never above temp_c) with wear 0..1, pressure from the ideal gas law. Call after reset (reset makes them new). */
+    void set_tyres(double temp_c, double wear);
 private:
     bool disc_init_ = false;
     std::array<double, 4> fluid_temp_{45.0, 45.0, 45.0, 45.0}; // caliper DOT 4 brake fluid temperature, C

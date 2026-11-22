@@ -72,6 +72,18 @@ Vec3 Vehicle::current_inertia() const {
     };
 }
 
+void Vehicle::set_tyres(double temp_c, double wear) {
+    for (int w = 0; w < 4; ++w) {
+        TireCondition& c = tire_condition_[w];
+        c.temperature_c = c.surface_c = c.flash_c = c.inner_c = c.middle_c = c.outer_c = temp_c;
+        c.inner_air_c = std::min(temp_c, clamp(0.45 * c.ambient_air_c + 0.55 * temp_c, -25.0, 160.0));
+        c.last_carcass_c_ = c.temperature_c;
+        c.last_inner_air_c_ = c.inner_air_c;
+        c.wear = clamp(wear, 0.0, 1.0);
+        c.pressure_kpa = c.ideal_gas_pressure_kpa(&cfg_.tire(w));
+    }
+}
+
 void Vehicle::service() {
     EngineSystemState& sys = drivetrain_.systems;
     sys.fuel_liters = sys.fuel_capacity_liters;
