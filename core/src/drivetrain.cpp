@@ -617,12 +617,15 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
             T_k = std::min(T_k, t_gb_cap);
         }
 
-        const double i_shaft = cfg_.drivetrain.driveline_inertia + inertia(x, root_) / (G * G);
+        const double eta = std::max(cfg_.drivetrain.efficiency, 0.1);
+        const double i_wheels = inertia(x, root_) / (G * G);              // the wheels' inertia seen at the gearbox input
+        const double i_shaft = cfg_.drivetrain.driveline_inertia + i_wheels;
         const double w_shaft = G * w_carrier;
-        const double a_shaft = G * free_accel(x, root_) * (inertia(x, root_) / (G * G)) / i_shaft;
+        const double a_shaft = G * free_accel(x, root_) * i_wheels / i_shaft;
         const double dv = engine_omega - w_shaft;
+        // the shaft side receives eta x the clutch torque (gear losses): to the solve it is 1/eta times heavier
         clutch_torque = solve_karnopp(engine_omega, t_engine / e.inertia, e.inertia,
-                                      w_shaft, a_shaft, i_shaft, T_s, T_k);
+                                      w_shaft, a_shaft, i_shaft / eta, T_s, T_k);
         systems.clutch_slip_rads = systems.clutch_locked ? 0.0 : dv;
         if (!systems.clutch_locked) {
             slip_power_w = std::abs(clutch_torque * dv);
@@ -650,7 +653,15 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         }
 
         if (!popped_out) {
-            double prop_torque = clutch_torque * G * cfg_.drivetrain.efficiency;
+            // The driveline (gearbox shafts, propshaft) turns with the gearbox input, so part of the clutch torque goes into
+            // spinning it up and never reaches the carrier. With the tyre torque at the carrier T_c and
+            // r = (wheels' inertia at the input) / (all inertia at the input):   T_prop = r eta G T_clutch - (1 - r) T_c,
+            // which makes the carrier accelerate exactly as the clutch solve above planned. (Integrating the wheels without
+            // the driveline inertia made the shaft side react ~4x harder than planned: every locked-clutch correction
+            // overshot, and a fully engaged clutch chattered lock / slip every step at any step rate.)
+            const double r_w = i_wheels / i_shaft;
+            const double t_tyre_c = free_accel(x, root_) * inertia(x, root_);
+            double prop_torque = r_w * clutch_torque * G * eta - (1.0 - r_w) * t_tyre_c;
 
             if (systems.torsional_compliance_enabled) {
                 // Integrate torsional twist between diff output and halfshafts with +-backlash_rad deadzone

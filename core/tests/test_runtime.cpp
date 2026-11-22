@@ -434,6 +434,24 @@ RS_TEST(runtime_determinism) {
                 a.s.position.x, b.s.position.x, c.s.position.x);
     test::check_range("360 vs 1000 Hz: speed after the drive", v360 / v1000, 0.97, 1.03, "ratio");
     test::check_range("240 vs 1000 Hz: speed after the drive", v240 / v1000, 0.97, 1.03, "ratio");
+
+    // A fully engaged clutch must stay locked while the car drives: the clutch solve and the driveline must agree on
+    // the inertia behind the clutch, or every locked-step correction overshoots and the clutch chatters lock / slip
+    // each step. That chatter amplified rounding into whole-percent changes of this drive between compilers.
+    {
+        CarWorld w(cfg, 1000);
+        for (const auto& cmd : script(1000)) w.runtime->submit(cmd);
+        int flips = 0;
+        bool prev = false;
+        for (int i = 1; i <= 3200; ++i) {
+            w.step();
+            const bool locked = w.vehicle->engine_systems().clutch_locked;
+            if (i > 1600 && locked != prev) ++flips;
+            prev = locked;
+        }
+        std::printf("  clutch lock / slip changes from 1.6 to 3.2 s (clutch engaged, a shift at 1.9 s): %d\n", flips);
+        test::check_range("an engaged clutch does not chatter between lock and slip", flips, 0, 12, "changes");
+    }
 }
 
 RS_TEST(runtime_threaded) {
