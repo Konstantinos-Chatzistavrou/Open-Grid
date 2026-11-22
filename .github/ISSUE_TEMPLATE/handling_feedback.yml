@@ -1,0 +1,54 @@
+name: Handling feedback
+description: You drove it. Tell us how the car felt compared with real cars or sims you know.
+title: "[handling] "
+labels: ["handling", "feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing. The protocol is in [docs/testing_program.md](https://github.com/Konstantinos-Chatzistavrou/Open-Grid/blob/main/docs/testing_program.md); any part of it helps.
+  - type: input
+    id: car
+    attributes: { label: Car and track, placeholder: "Vela GT, Example Circuit" }
+    validations: { required: true }
+  - type: input
+    id: setup
+    attributes:
+      label: Your setup
+      description: Wheel and pedals (or gamepad/keyboard), rotation in degrees, force feedback on/off, browser and OS.
+      placeholder: "Moza R5, 900 deg, FFB on, Chrome 131 on Windows 11"
+    validations: { required: true }
+  - type: dropdown
+    id: assists
+    attributes:
+      label: Assists
+      multiple: true
+      options: [ABS, Traction control, Stability control, Automatic gearbox, All off]
+  - type: textarea
+    id: ratings
+    attributes:
+      label: Ratings (1 = wrong, 5 = feels real) and one sentence each
+      value: |
+        Turn-in: /5 -
+        Feeling the limit: /5 -
+        Lift-off mid-corner: /5 -
+        Power oversteer, catching slides: /5 -
+        Hard braking: /5 -
+        Kerbs: /5 -
+        Force feedback: /5 -
+  - type: textarea
+    id: compare
+    attributes:
+      label: Compared with
+      description: A real car you drive on track, or a sim (iRacing, ACC, rFactor 2, Assetto Corsa, BeamNG). Closer to which, and where does it differ?
+  - type: textarea
+    id: worst
+    attributes:
+      label: The one thing that feels most wrong
+      description: Where on track, what you did, what the car did, what you expected.
+    validations: { required: true }
+  - type: textarea
+    id: media
+    attributes:
+      label: Video, telemetry, screenshots
+      description: Drag files here or paste links. Optional, very useful.

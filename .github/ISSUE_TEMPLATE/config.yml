@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Live demo
+    url: https://racing-game-brown-six.vercel.app/
+    about: Drive it in the browser before filing handling feedback.
