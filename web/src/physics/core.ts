@@ -15,6 +15,11 @@ interface RsModule {
   _rs_reset_motion(id: number, speed: number, gear: number): void;
   _rs_set_atmosphere(id: number, airC: number, trackC: number, altitudeM: number, humidity: number): void;
   _rs_set_road_water(id: number, mm: number): void;
+  _rs_dyno_begin(id: number): void;
+  _rs_dyno_end(id: number): void;
+  _rs_dyno_reset_meter(id: number): void;
+  _rs_dyno_step(id: number, dt: number): void;
+  _rs_dyno_curve(id: number): number;
   _rs_set_turbo_stage(id: number, stage: number): void;
   _rs_rays(id: number): void;
   _rs_rays_patch(id: number): void;
@@ -80,7 +85,7 @@ export class CoreCar {
   get buf(): Float64Array {
     const m = mod!;
     if (!this._buf || this._buf.buffer !== m.HEAPF64.buffer) {
-      this._buf = new Float64Array(m.HEAPF64.buffer, this._ptr, 392);
+      this._buf = new Float64Array(m.HEAPF64.buffer, this._ptr, 448);
       this._raysBuf = this._buf.subarray(16, 40);
       this._raysPatchBuf = this._buf.subarray(280, 352);
     }
@@ -149,6 +154,41 @@ export class CoreCar {
     b[40] = assists.autoClutch === 'off' ? -1 : assists.autoClutch === 'poor' ? 2 : assists.autoClutch === 'normal' ? 1 : 0;
     mod!._rs_step(this.id, dt);
     return b;
+  }
+
+  // ---- Garage dyno (core rs/dyno.hpp): the same car on a flat virtual road under straps; see the bridge for slots.
+  dynoBegin() { mod!._rs_dyno_begin(this.id); }
+  dynoEnd() { mod!._rs_dyno_end(this.id); }
+  dynoResetMeter() { mod!._rs_dyno_reset_meter(this.id); }
+  dynoStep(raw: RawInput, assists: AssistToggles, dt: number): Float64Array {
+    this.writeInputs(raw, assists);
+    mod!._rs_dyno_step(this.id, dt);
+    return this.buf;
+  }
+  /** Live and peak readings (SI units: W, Nm, m/s, s). */
+  dynoReadout() {
+    const b = this.buf;
+    return { rpm: b[407], speed: b[408], wheelPower: b[409], crankTorque: b[410], peakPower: b[411], peakPowerRpm: b[412],
+      peakTorque: b[413], peakTorqueRpm: b[414], topSpeed: b[415], zeroTo100: b[416], distance: b[417], wheelForce: b[418] };
+  }
+  /** Body pose of the virtual road car (three world): position xyz, quaternion xyzw. */
+  dynoPose(): Float64Array { return this.buf.subarray(400, 407); }
+  /** Power / torque curve: [rpm, wheel power W, crank torque Nm] per 100 rpm with a full-throttle reading. */
+  dynoCurve(): [number, number, number][] {
+    const p = mod!._rs_dyno_curve(this.id) >> 3, h = mod!.HEAPF64, n = h[p], out: [number, number, number][] = [];
+    for (let i = 0; i < n; i++) out.push([h[p + 1 + 3 * i], h[p + 2 + 3 * i], h[p + 3 + 3 * i]]);
+    return out;
+  }
+
+  private writeInputs(raw: RawInput, assists: AssistToggles) {
+    const b = this.buf;
+    b[80] = raw.steer; b[81] = raw.throttle; b[82] = raw.brake; b[83] = raw.clutch; b[84] = raw.handbrake;
+    b[85] = raw.shiftUp ? 1 : 0; b[86] = raw.shiftDown ? 1 : 0; b[87] = raw.device;
+    b[88] = +assists.abs; b[89] = +assists.tc; b[90] = +assists.esc; b[91] = +assists.autoGearbox;
+    b[93] = assists.absSlip ?? 0; b[94] = assists.tcSlip ?? 0; b[95] = assists.countersteer ?? 0;
+    b[92] = raw.directGear ?? -99;
+    b[41] = raw.lineLock ?? 0;
+    b[40] = assists.autoClutch === 'off' ? -1 : assists.autoClutch === 'poor' ? 2 : assists.autoClutch === 'normal' ? 1 : 0;
   }
 
   /** Multi-point curb patch step: contacts12 = 12 x [hit, px, py, pz, nx, ny, nz, surface] (96 doubles). */

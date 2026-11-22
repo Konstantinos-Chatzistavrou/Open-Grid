@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "rs/incandescence.hpp"
+#include "rs/dyno.hpp"
 #include "rs/config.hpp"
 #include "rs/controls.hpp"
 #include "rs/damage.hpp"
@@ -27,6 +28,22 @@ namespace {
 
 rs::Vec3 to_core(double x, double y, double z) { return {x, -z, y}; }
 void put(double* o, const rs::Vec3& v) { o[0] = v.x; o[1] = v.z; o[2] = -v.y; }   // core -> three
+
+// core orientation -> three quaternion (x, y, z, w): three body axes are X = left, Y = up, Z = forward.
+void put_quat(double* o, const rs::Quat& q) {
+    double L[3], U[3], F[3];
+    put(L, q.rotate({0, 1, 0}));
+    put(U, q.rotate({0, 0, 1}));
+    put(F, q.rotate({1, 0, 0}));
+    // rotation matrix columns L, U, F -> quaternion
+    const double m00 = L[0], m11 = U[1], m22 = F[2], tr = m00 + m11 + m22;
+    double x, y, z, w;
+    if (tr > 0) { const double s = std::sqrt(tr + 1.0) * 2; w = 0.25 * s; x = (U[2] - F[1]) / s; y = (F[0] - L[2]) / s; z = (L[1] - U[0]) / s; }
+    else if (m00 > m11 && m00 > m22) { const double s = std::sqrt(1.0 + m00 - m11 - m22) * 2; w = (U[2] - F[1]) / s; x = 0.25 * s; y = (U[0] + L[1]) / s; z = (F[0] + L[2]) / s; }
+    else if (m11 > m22) { const double s = std::sqrt(1.0 + m11 - m00 - m22) * 2; w = (F[0] - L[2]) / s; x = (U[0] + L[1]) / s; y = 0.25 * s; z = (F[1] + U[2]) / s; }
+    else { const double s = std::sqrt(1.0 + m22 - m00 - m11) * 2; w = (L[1] - U[0]) / s; x = (F[0] + L[2]) / s; y = (F[1] + U[2]) / s; z = 0.25 * s; }
+    o[0] = x; o[1] = y; o[2] = z; o[3] = w;
+}
 
 // three quaternion (x, y, z, w) -> core orientation, via the body axes.
 rs::Quat quat_to_core(const double* q) {
@@ -48,7 +65,9 @@ struct Car {
     std::array<rs::WheelRay, 4> rays;
     std::array<rs::WheelContactPatchRays, 4> patch_rays;
     std::array<double, 4> spin{};
-    std::vector<double> buf = std::vector<double>(392, 0.0);
+    std::vector<double> buf = std::vector<double>(448, 0.0);
+    std::unique_ptr<rs::DynoRoad> dyno_road;     // garage dyno (rs/dyno.hpp): set between rs_dyno_begin / rs_dyno_end
+    std::unique_ptr<rs::DynoMeter> dyno_meter;
 };
 
 std::vector<std::unique_ptr<Car>> g_cars;
@@ -359,6 +378,53 @@ EMSCRIPTEN_KEEPALIVE void rs_contact(int id, double x, double y, double z, doubl
     Car& c = *g_cars[id];
     const rs::Vec3 body = c.cs.orientation.inv_rotate(to_core(x, y, z) - c.cs.position);
     c.vehicle->add_contact(std::uint64_t(other), body, impulse);
+}
+
+// ---- Garage dyno (road-load chassis dyno, rs/dyno.hpp): the same car on a flat virtual road under straps, so it revs,
+// shifts, sounds and reaches its top speed exactly as on the road while the model stays on the rollers.
+// rs_dyno_begin(id) -> rs_dyno_step(id, dt) every physics tick (inputs as rs_step: buf[80..95], buf[40..41]; outputs as
+// rs_step) -> rs_dyno_end(id). Extra outputs: buf[400..406] body pose (three world: pos xyz, quat xyzw),
+// [407] rpm [408] speed m/s [409] wheel power W [410] crank torque est. Nm [411] peak wheel power W [412] at rpm
+// [413] peak crank torque Nm [414] at rpm [415] top speed m/s (0 until steady) [416] 0-100 km/h s (< 0 until done)
+// [417] rollers turned m [418] wheel force N. rs_dyno_curve(id) -> [n, (rpm, wheel power W, crank torque Nm) x n].
+EMSCRIPTEN_KEEPALIVE void rs_dyno_begin(int id) {
+    Car& c = *g_cars[id];
+    c.dyno_road = std::make_unique<rs::DynoRoad>(c.cfg);
+    c.dyno_meter = std::make_unique<rs::DynoMeter>(c.cfg);
+    c.dyno_road->reset(*c.vehicle);
+    c.spin = {};
+}
+EMSCRIPTEN_KEEPALIVE void rs_dyno_end(int id) {
+    Car& c = *g_cars[id];
+    c.dyno_road.reset();
+    c.dyno_meter.reset();
+    c.vehicle->reset_motion(0.0, -1);
+}
+EMSCRIPTEN_KEEPALIVE void rs_dyno_reset_meter(int id) { if (g_cars[id]->dyno_meter) g_cars[id]->dyno_meter->reset(); }
+EMSCRIPTEN_KEEPALIVE void rs_dyno_step(int id, double dt) {
+    Car& c = *g_cars[id];
+    if (!c.dyno_road) return;
+    c.cs = c.dyno_road->state();
+    const auto contacts = c.dyno_road->contacts(*c.vehicle);
+    step_with_contacts(c, contacts, dt);
+    c.dyno_road->integrate(c.out, dt);
+    rs::DynoMeter& m = *c.dyno_meter;
+    m.sample(c.out, c.vehicle->engine_rpm(), dt);
+    double* b = c.buf.data();
+    put(b + 400, c.dyno_road->state().position);
+    put_quat(b + 403, c.dyno_road->state().orientation);
+    b[407] = m.rpm; b[408] = m.speed_mps; b[409] = m.wheel_power_w; b[410] = m.crank_torque_nm;
+    b[411] = m.peak_wheel_power_w(); b[412] = m.peak_power_rpm(); b[413] = m.peak_crank_torque_nm(); b[414] = m.peak_torque_rpm();
+    b[415] = m.top_speed_mps(); b[416] = m.zero_to_100_s(); b[417] = c.dyno_road->distance_m(); b[418] = m.wheel_force_n;
+}
+EMSCRIPTEN_KEEPALIVE double* rs_dyno_curve(int id) {
+    static std::vector<double> v;
+    v.assign(1, 0.0);
+    if (!g_cars[id]->dyno_meter) return v.data();
+    for (const rs::DynoPoint& p : g_cars[id]->dyno_meter->curve())
+        if (p.wheel_power_w > 0) { v.push_back(p.rpm); v.push_back(p.wheel_power_w); v.push_back(p.crank_torque_nm); }
+    v[0] = double((v.size() - 1) / 3);
+    return v.data();
 }
 
 // Damage report -> buf[200..]: crush m (front, rear, left, right) [200..203], zone 0..1 [204..207],
