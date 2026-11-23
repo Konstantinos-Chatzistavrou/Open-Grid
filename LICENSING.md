@@ -32,7 +32,7 @@ these files.
 - `data/cars/`, `data/tracks/city.json`, `data/tracks/city_route.json`, `data/rivals.json`, `data/city_props.json`,
   `web/public/data/`
 - `docs/`, `README.md`, `CREDITS.md`, `PLAN.md`, `PORTING.md`, this file
-- the "OpenGrid" logo and title artwork
+- the "OpenGrid" logo and title artwork (as artwork only: see **Name and logo** below)
 
 **Third-party material keeps its own licence** (details and attributions in [`CREDITS.md`](CREDITS.md)):
 - **Map data**: `web/public/assets/nyc/`, `web/public/assets/cities/`, `data/tracks/{nyc,london,paris,tokyo,losangeles}_route.json`
@@ -48,6 +48,30 @@ these files.
   (`data/tires/LICENSE-projectchrono.txt`).
 - **Basis Universal transcoder**, `web/public/libs/basis/`: Apache-2.0.
 - Libraries loaded at run time (three.js MIT, Rapier Apache-2.0, meshoptimizer MIT, PeerJS MIT) keep their licences.
+
+## Name and logo
+
+"Open Grid" and "OpenGrid" (the project name), the logo, the "OG" app icon and the title artwork identify this
+project and its maintainer. **Neither licence above grants any right to use them**: Apache-2.0 says so in section 6,
+and CC BY-NC 4.0 in section 2(b)(2) ("patent and trademark rights are not licensed"). Even though the logo artwork
+is CC BY-NC like the other art, that covers copying the picture, not using it as the name or mark of another
+product.
+
+You can:
+- use, fork and modify the code under Apache-2.0, and the assets under CC BY-NC 4.0, and keep the credit lines
+  those licences ask for;
+- say where something came from, for example "based on Open Grid", "a fork of Open Grid", or link to
+  https://github.com/Konstantinos-Chatzistavrou/Open-Grid;
+- keep an unmodified mirror or GitHub fork under its original name.
+
+You cannot, without written permission:
+- call a modified version, a fork that is distributed as a product, or a game or tool built from this code or art
+  "Open Grid" or "OpenGrid", or use a name that could be confused with it ("Open Grid 2", "Open Grid Pro", "Open
+  Grid Online", "OpenGrid Official", a look-alike domain or store page);
+- use the logo or the "OG" icon as your own logo or icon, or in a way that suggests the project made, approved or
+  endorses your version.
+
+Pick your own name and your own logo; the code is yours to build on.
 
 ## History
 

@@ -231,5 +231,7 @@ Two licences (details per folder in `LICENSING.md`):
 - **Everything else we made** (3D models, textures, car and track data, docs): **Creative Commons
   Attribution-NonCommercial 4.0** (`LICENSES/CC-BY-NC-4.0.txt`, SPDX `CC-BY-NC-4.0`): free to share and adapt with
   credit, no commercial use.
+- **The name and logo are not licensed**: forks may use the code and (non-commercially) the art, but must not call
+  themselves "Open Grid" or use the logo. See "Name and logo" in `LICENSING.md`.
 - **Third-party material** keeps its own licence, listed in `CREDITS.md`: map data ODbL (OpenStreetMap), the fitted tyre
   data BSD-3-Clause (Project Chrono), original car models CC BY 4.0, city models and textures CC0.
