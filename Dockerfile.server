@@ -1,4 +1,4 @@
-# Self-Hosted Community Matchmaking & Party Broker Server (OpenGrid)
+# Self-Hosted Community Matchmaking & Party Broker Server (Open Grid)
 FROM node:20-alpine
 WORKDIR /app
 COPY server/package*.json ./

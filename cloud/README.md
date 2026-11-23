@@ -1,4 +1,4 @@
-# OpenGrid online service
+# Open Grid online service
 
 The server of the **online career**: accounts, XP, credits, purchases, and the race rooms that time ranked party races.
 It runs on Cloudflare's free plan (Workers + D1 + SQLite-backed Durable Objects). No servers to maintain; going over a

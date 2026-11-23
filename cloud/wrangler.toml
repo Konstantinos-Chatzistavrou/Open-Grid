@@ -1,4 +1,4 @@
-# OpenGrid online service (Cloudflare Workers free plan). Deploy: npm run db:remote && npm run deploy
+# Open Grid online service (Cloudflare Workers free plan). Deploy: npm run db:remote && npm run deploy
 # Secrets (never in this file): `wrangler secret put IP_SALT` and `wrangler secret put VERIFIER_KEY`.
 name = "opengrid"
 main = "src/index.ts"

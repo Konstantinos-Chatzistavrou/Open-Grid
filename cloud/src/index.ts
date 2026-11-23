@@ -1,4 +1,4 @@
-// OpenGrid online service (Cloudflare Worker). Routes:
+// Open Grid online service (Cloudflare Worker). Routes:
 //   POST /v1/account               create an anonymous account -> { id, token }      (max 5 per network per day)
 //   GET  /v1/me                    the online career profile
 //   POST /v1/look   { car, look }  save one car's look (paint parts and colours; validated, shared by both careers)

@@ -7,12 +7,12 @@ This repository holds two kinds of work, under two licences.
 | **Software**: all source code, shaders, build and processing scripts, HTML / CSS, configuration, JSON schemas | **Apache License 2.0** (SPDX `Apache-2.0`) | [`LICENSE`](LICENSE), [`NOTICE`](NOTICE) |
 | **Everything else we made**: 3D models, textures, materials, car and track data, rival / prop data, documentation, images, text | **Creative Commons Attribution-NonCommercial 4.0 International** (SPDX `CC-BY-NC-4.0`) | [`LICENSES/CC-BY-NC-4.0.txt`](LICENSES/CC-BY-NC-4.0.txt), https://creativecommons.org/licenses/by-nc/4.0/ |
 
-Copyright © 2026 OpenGrid contributors.
+Copyright © 2026 Open Grid contributors.
 
 ## What the CC BY-NC 4.0 part means
 
 You may copy, share and adapt the models, data and docs, **for non-commercial purposes only**, and you must **give
-credit**: name "OpenGrid contributors", link to this repository
+credit**: name "Open Grid contributors", link to this repository
 (https://github.com/Konstantinos-Chatzistavrou/Open-Grid) and to the licence, and say whether you changed anything.
 Selling them, putting them in a paid or ad-funded product, or any other use primarily intended for commercial
 advantage needs written permission from the copyright holder. The Apache-2.0 licence of the code does not extend to
@@ -32,7 +32,7 @@ these files.
 - `data/cars/`, `data/tracks/city.json`, `data/tracks/city_route.json`, `data/rivals.json`, `data/city_props.json`,
   `web/public/data/`
 - `docs/`, `README.md`, `CREDITS.md`, `PLAN.md`, `PORTING.md`, this file
-- the "OpenGrid" logo and title artwork (as artwork only: see **Name and logo** below)
+- the "Open Grid" logo and title artwork (as artwork only: see **Name and logo** below)
 
 **Third-party material keeps its own licence** (details and attributions in [`CREDITS.md`](CREDITS.md)):
 - **Map data**: `web/public/assets/nyc/`, `web/public/assets/cities/`, `data/tracks/{nyc,london,paris,tokyo,losangeles}_route.json`
@@ -51,8 +51,8 @@ these files.
 
 ## Name and logo
 
-"Open Grid" and "OpenGrid" (the project name), the logo, the "OG" app icon and the title artwork identify this
-project and its maintainer. **Neither licence above grants any right to use them**: Apache-2.0 says so in section 6,
+"Open Grid" (two words; handles and package names write it "Open-Grid" or "OpenGrid"), the logo, the "OG" app icon
+and the title artwork identify this project and its maintainer. **Neither licence above grants any right to use them**: Apache-2.0 says so in section 6,
 and CC BY-NC 4.0 in section 2(b)(2) ("patent and trademark rights are not licensed"). Even though the logo artwork
 is CC BY-NC like the other art, that covers copying the picture, not using it as the name or mark of another
 product.
@@ -66,8 +66,8 @@ You can:
 
 You cannot, without written permission:
 - call a modified version, a fork that is distributed as a product, or a game or tool built from this code or art
-  "Open Grid" or "OpenGrid", or use a name that could be confused with it ("Open Grid 2", "Open Grid Pro", "Open
-  Grid Online", "OpenGrid Official", a look-alike domain or store page);
+  "Open Grid", "OpenGrid" or "Open-Grid", or use a name that could be confused with it ("Open Grid 2", "Open Grid
+  Pro", "Open Grid Online", "Open Grid Official", a look-alike domain or store page);
 - use the logo or the "OG" icon as your own logo or icon, or in a way that suggests the project made, approved or
   endorses your version.
 

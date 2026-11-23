@@ -1,4 +1,4 @@
-name: OpenGrid CI
+name: Open Grid CI
 
 on:
   push:

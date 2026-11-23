@@ -211,7 +211,7 @@ CC0 1.0 (no credit required; listed with thanks):
   (Copyright 2022 AngeTheGreat / Ange Yaghi; full MIT licence texts preserved in
   `core/third_party/engine_sim/LICENSE`, `core/third_party/engine_sim/LICENSE-scs`, and
   `core/third_party/engine_sim/LICENSE-csv`).
-  Vendored headlessly into `core/third_party/engine_sim/` and extended by OpenGrid (`core/src/engine_audio.cpp`,
+  Vendored headlessly into `core/third_party/engine_sim/` and extended by Open Grid (`core/src/engine_audio.cpp`,
   `ue5/Source/OpenGrid/OpenGridEngineSynthComponent.cpp`) with dual-bank exhaust + intake plenum microphones,
   Helmholtz & titanium acoustic exhaust waveguides, overrun anti-lag bangs, turbo spool/surge, supercharger whine,
   and a dedicated 4-rotor 26B peripheral-port Wankel combustion model (`Rotary4`).

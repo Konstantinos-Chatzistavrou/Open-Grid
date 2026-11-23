@@ -2,7 +2,7 @@
   "name": "opengrid-cloud",
   "private": true,
   "type": "module",
-  "description": "OpenGrid online service: accounts, online career (XP, credits, purchases) and server-timed ranked race rooms. Cloudflare Workers + D1 + Durable Objects (free plan).",
+  "description": "Open Grid online service: accounts, online career (XP, credits, purchases) and server-timed ranked race rooms. Cloudflare Workers + D1 + Durable Objects (free plan).",
   "license": "Apache-2.0",
   "scripts": {
     "dev": "wrangler dev --local --port 8787",
