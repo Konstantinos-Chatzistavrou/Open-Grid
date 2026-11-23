@@ -89,8 +89,9 @@ function convert() {
       qCz1: r4(g('QCZ1')),
       qDz1: r4(g('QDZ1')), qDz2: r4(g('QDZ2')),
       qDz3: 0, qDz4: r4(g('QDZ4')),                         // peak trail by gamma alone: not mirror-symmetric (zeroed) / gamma^2 even
-      qEz1: r4(g('QEZ1')), qEz2: r4(g('QEZ2')), qEz3: r4(g('QEZ3')), qEz4: r4(g('QEZ4')),
-      qEz5: r4(-g('QEZ5')),                                 // gamma: odd
+      qEz1: r4(g('QEZ1')), qEz2: r4(g('QEZ2')), qEz3: r4(g('QEZ3')),
+      qEz4: 0,                                              // atan(Bt Ct alpha) without gamma: breaks L/R symmetry at gamma=0 (zeroed)
+      qEz5: r4(g('QEZ5')),                                  // gamma * atan(Bt Ct alpha): both gamma and alpha flip -> EVEN, keep sign
       qHz1: 0, qHz2: 0,                                     // left-tyre offsets
       qHz3: r4(g('QHZ3')), qHz4: r4(g('QHZ4')),              // shift of alpha by gamma: both flip -> keeps
       qBz9: r4(g('QBZ9')), qBz10: r4(g('QBZ10')),
