@@ -97,6 +97,11 @@ About 70 more test cases in `core/tests/` check the parts on their own, for exam
     L/R steering-torque symmetry at 0° camber by 7.58 N·m at 4 kN) and negated `QEZ5` even though `gamma * atan(...)`
     is even under `(alpha, gamma) -> (-alpha, -gamma)`. Zeroing `qEz4` and keeping `+QEZ5` collapsed symmetrized
     `Mz` RMSE from 7.63% to 0.000%.
+  - **Fixed in every car (2026-11-23)**: all 24 shipped cars were generated before the fix and carried the old
+    `qEz4`/`qEz5`; they now use the corrected values (handling numbers did not move, only the self-aligning moment, so
+    steering torque is now the same left and right). `core/tests/test_tire_config.cpp` (`tire_symmetry`) checks every
+    car in `data/cars/` for left/right symmetry of `Fy` and `Mz`, and fails (up to 20 N·m on the old files) if a car
+    is generated with the old converter again.
   - **Raw left-tyre `.tir` deltas** (intentional mirror-symmetry zeroing so left and right turns match with a single
     tyre block): `Fx` 0.61–1.04% RMSE (`PHX1/2`, `PVX1/2`), `Fy` 2.74–3.20% RMSE (`PVY1/2`, `PHY1/2`, `PEY3`),
     `Mz` 9.10–18.29% RMSE (`QHZ1/2`, `QDZ6/7`, `QBZ4`, `QDZ3`, `QEZ4`).

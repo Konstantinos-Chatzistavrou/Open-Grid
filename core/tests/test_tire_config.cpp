@@ -1,6 +1,9 @@
 // Tyre model sanity + config loading.
 #include <cmath>
+#include <filesystem>
 #include <stdexcept>
+#include <string>
+#include <vector>
 #include "harness.hpp"
 #include "rs/tire.hpp"
 
@@ -117,4 +120,40 @@ RS_TEST(config) {
     threw = false;
     try { parse_car_config(R"({"schema":"car/2"})"); } catch (const std::exception&) { threw = true; }
     test::check("wrong schema version rejected", threw);
+}
+
+// Every shipped car must steer the same left and right: a tyre block is used on both sides of the car, so its
+// pure-slip lateral force and self-aligning moment have to be odd in slip angle at zero camber. (A sign error in
+// qEz4/qEz5 once made the steering torque stronger one way; found by the VDSim cross-check, tools/tyre/.)
+RS_TEST(tire_symmetry) {
+    namespace fs = std::filesystem;
+    const double deg = kPi / 180.0;
+    std::vector<fs::path> files;
+    for (const auto& e : fs::directory_iterator(test::data_path("cars"))) {
+        const std::string name = e.path().filename().string();
+        if (e.path().extension() == ".json" && name.find(".visual") == std::string::npos && name != "catalog.json")
+            files.push_back(e.path());
+    }
+    test::check("found the car files", files.size() >= 20);
+    double worst_fy = 0, worst_mz = 0;
+    std::string worst_car;
+    for (const auto& f : files) {
+        const CarConfig c = load_car_config(f.string());
+        for (const TireParams* p : {&c.tire_front, &c.tire_rear}) {
+            for (double fz : {2000.0, 4000.0, 6000.0}) {
+                for (double a : {2.0, 4.0, 8.0}) {
+                    const double fy_p = mf_pure_fy(*p, a * deg, fz, 1.0), fy_n = mf_pure_fy(*p, -a * deg, fz, 1.0);
+                    const double mz_p = mf_aligning_torque(*p, 0, a * deg, fz, 1.0, 0, 0, fy_p);
+                    const double mz_n = mf_aligning_torque(*p, 0, -a * deg, fz, 1.0, 0, 0, fy_n);
+                    worst_fy = std::max(worst_fy, std::abs(fy_p + fy_n));
+                    const double mz = std::abs(mz_p + mz_n);
+                    if (mz > worst_mz) { worst_mz = mz; worst_car = c.name; }
+                }
+            }
+        }
+    }
+    std::printf("         worst |Fy(a)+Fy(-a)| %.4f N, worst |Mz(a)+Mz(-a)| %.4f N m (%s), %zu cars\n", worst_fy, worst_mz,
+                worst_car.c_str(), files.size());
+    test::check_range("Fy is odd in slip angle for every car", worst_fy, 0, 0.01, "N");
+    test::check_range("Mz is odd in slip angle for every car", worst_mz, 0, 0.05, "N m");
 }
