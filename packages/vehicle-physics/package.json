@@ -6,15 +6,30 @@
   "main": "./index.js",
   "types": "./index.d.ts",
   "exports": {
-    ".": { "types": "./index.d.ts", "default": "./index.js" },
-    "./harness": { "types": "./harness.d.ts", "default": "./harness.js" },
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./harness": {
+      "types": "./harness.d.ts",
+      "default": "./harness.js"
+    },
     "./cars/example_coupe.json": "./cars/example_coupe.json",
-    "./routes/example_circuit.json": "./routes/example_circuit.json"
+    "./routes/example_circuit.json": "./routes/example_circuit.json",
+    "./bots/*": "./bots/*"
   },
   "files": [
-    "index.js", "index.d.ts", "harness.js", "harness.d.ts",
-    "dist/rs_core.js", "dist/rs_core.wasm",
-    "cars/", "routes/", "bots/", "README.md", "LICENSE"
+    "index.js",
+    "index.d.ts",
+    "harness.js",
+    "harness.d.ts",
+    "dist/rs_core.js",
+    "dist/rs_core.wasm",
+    "cars/",
+    "routes/",
+    "bots/",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "sync-wasm": "node scripts/sync-wasm.mjs",
@@ -25,10 +40,29 @@
     "bot-race": "node examples/bot-race.mjs",
     "leaderboard": "node scripts/leaderboard.mjs"
   },
-  "keywords": ["vehicle physics", "car physics", "racing", "simulation", "pacejka", "tyre model", "wasm", "webassembly", "three.js", "rapier", "bot", "ai driver"],
+  "keywords": [
+    "vehicle physics",
+    "car physics",
+    "racing",
+    "simulation",
+    "pacejka",
+    "tyre model",
+    "wasm",
+    "webassembly",
+    "three.js",
+    "rapier",
+    "bot",
+    "ai driver"
+  ],
   "license": "Apache-2.0",
-  "repository": { "type": "git", "url": "git+https://github.com/Konstantinos-Chatzistavrou/Open-Grid.git", "directory": "packages/vehicle-physics" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Konstantinos-Chatzistavrou/Open-Grid.git",
+    "directory": "packages/vehicle-physics"
+  },
   "homepage": "https://github.com/Konstantinos-Chatzistavrou/Open-Grid/tree/main/packages/vehicle-physics",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "sideEffects": false
 }

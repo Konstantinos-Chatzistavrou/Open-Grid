@@ -5,7 +5,8 @@ AI rivals. It runs in the browser, and its vehicle physics is an engine-independ
 Open source and non-profit.
 
 **[Play the live demo](https://racing-game-brown-six.vercel.app/)** (desktop Chrome or Edge recommended; keyboard,
-controller or wheel)
+controller or wheel). To keep it as an app, use **Install** in Chrome or Edge's address bar, or "Add to Home Screen" on
+a phone.
 
 <!-- Media: drop the files into docs/media/ (shot list: docs/media/SHOTLIST.md), then delete this comment's markers.
 [![30-second gameplay video](docs/media/trailer_poster.jpg)](docs/media/trailer.mp4)
