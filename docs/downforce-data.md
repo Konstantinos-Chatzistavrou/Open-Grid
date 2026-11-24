@@ -84,3 +84,35 @@ node tools/physics/aero_check.mjs --speed 200
 node tools/validate_mod.mjs --dir data/cars
 node tools/assets/check_licences.mjs
 ```
+
+## Measured front/rear balance: status of the gap
+
+A dedicated search for **wind-tunnel or on-track measured front/rear aerodynamic balance** under a reusable licence
+was carried out on 2026-11-24. Result: **the measured-balance gap is not closed**, and no licence-clean measurement
+was found. The closest candidates and why they were rejected:
+
+| candidate | what it has | licence / rights | verdict |
+|---|---|---|---|
+| IST FST14 on-track study, "Aerodynamic Validation: An On-Track Study of a Formula Student Vehicle" | measured front balance **46.20 %** (prediction 50.9 %) | repository record: **Rights type: Embargoed access, available 2027-05-01** | rejected — values not usable before embargo |
+| Durham PhD thesis (wheel aerodynamics, front/rear lift) | measured front/rear wheel lift | © author, **all rights reserved** in the thesis PDF | rejected — no reuse licence |
+| SAE 2024-01-2549 and other SAE papers | measured force coefficients at yaw | paywalled, copyrighted | rejected |
+| Chalmers / KTH thesis PDFs | full-scale and model lift data | no clear reuse licence on the values | rejected |
+| MDPI journal pages | several CC BY aero papers | pages blocked by bot protection on direct fetch; **mdpi-res.com PDF mirror is reachable** for the CC BY paper used below | partially usable |
+
+The one legal balance reference added is **CFD + fluid-structure interaction, not measured**: Piechna, *Energies*
+2022, 15, 5543 (**CC BY 4.0**), Table 4, pitch 0°, a DrivAer-type covered-wheel car:
+
+| configuration | CL | CLf | CLr | front share |
+|---|---:|---:|---:|---:|
+| no splitter | -0.212 | +0.049 (lift) | -0.261 | undefined (rear-only downforce) |
+| rigid closed splitter | -0.441 | -0.298 | -0.143 | **67.6 %** |
+| inflated open splitter | -0.490 | -0.421 | -0.069 | **85.9 %** |
+
+It is stored in `data/physics/aero_reference.json` as `energies2022_*` with `kind: "CFD ... (NOT measured)"`, and the
+checker uses its 0.55–0.90 front-share band only as a **class proxy**: road-class cars outside the band get a
+`[WARN]` (not a failure), because a rear-biased winged car can be legitimate. Our gameplay `front_balance` values are
+**not modified**.
+
+What would actually close the gap: a CC BY/CC0/public-domain **wind-tunnel or on-track** dataset with axle-resolved
+forces (the embargoed IST study is the nearest known candidate and becomes usable in 2027-05), or commissioning our
+own test. Until then the gap is documented rather than filled with inferred numbers.

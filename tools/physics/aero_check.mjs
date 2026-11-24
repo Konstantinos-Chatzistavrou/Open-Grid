@@ -39,13 +39,30 @@ const drivaerCdA = { low: cdMin * A.low, high: cdMax * A.high };
 const wing = ref.references.find((r) => r.id === 'naca0012_wing');
 const clMaxBound = (wing?.cl_max ?? 1.4) * (ref.assumptions.wing_area_m2_for_bound ?? 1.0) * 1.15; // +15% underbody allowance
 
-let failures = 0, checked = 0, missing = 0;
+let failures = 0, checked = 0, missing = 0, warns = 0;
 const rows = [];
 const fail = (car, msg) => { failures++; console.log(`  [FAIL] ${car}: ${msg}`); };
 
 console.log(`Aero check at ${speedKmh} km/h (q = ${q.toFixed(0)} Pa)`);
 console.log(`references: DrivAer Cd ${cdMin}..${cdMax} (CC BY 4.0) -> CdA band ${drivaerCdA.low.toFixed(2)}..${drivaerCdA.high.toFixed(2)} m^2 at assumed A ${A.low}..${A.high} m^2`);
-console.log(`ClA bound from NACA 0012 cl_max ${wing?.cl_max} x ${ref.assumptions.wing_area_m2_for_bound} m^2 (+15%): ${clMaxBound.toFixed(2)} m^2\n`);
+console.log(`ClA bound from NACA 0012 cl_max ${wing?.cl_max} x ${ref.assumptions.wing_area_m2_for_bound} m^2 (+15%): ${clMaxBound.toFixed(2)} m^2`);
+
+// --- balance reference (CFD, explicitly not measured) ---------------------------------------------------
+const balance = ref.balance_reference;
+const balanceRefs = ref.references.filter((r) => typeof r.front_share_derived === 'number');
+if (balance) {
+  console.log(`balance reference: front share ${balance.front_share_range[0]}..${balance.front_share_range[1]} for ${balance.class}`);
+  console.log(`  basis: ${balance.basis} — a class proxy, NOT a wind-tunnel measurement of our cars`);
+}
+// integrity: the reference's own front/rear coefficients must sum to its total lift
+for (const r of ref.references) {
+  if (typeof r.cl === 'number' && typeof r.cl_front === 'number' && typeof r.cl_rear === 'number'
+      && Math.abs((r.cl_front + r.cl_rear) - r.cl) > 1e-3) {
+    failures++;
+    console.log(`  [FAIL] reference ${r.id}: CLf + CLr = ${(r.cl_front + r.cl_rear).toFixed(3)} but CL = ${r.cl}`);
+  }
+}
+console.log('');
 
 for (const f of files) {
   const car = JSON.parse(readFileSync(join(carsDir, f), 'utf8'));
@@ -66,6 +83,14 @@ for (const f of files) {
   if (ld < 0 || ld > 2.5) fail(name, `L/D ${ld.toFixed(2)} outside 0..2.5`);
   if (clA > 0.1 && (typeof a.front_balance !== 'number' || a.front_balance < 0.30 || a.front_balance > 0.60))
     fail(name, `front_balance ${a.front_balance} outside 0.30..0.60 with downforce`);
+  if (isRoad && typeof a.front_balance === 'number' && clA > 0.1 && balance) {
+    const [lo, hi] = balance.front_share_range;
+    if (a.front_balance < lo || a.front_balance > hi) {
+      warns++;
+      console.log(`  [WARN] ${name}: front_balance ${a.front_balance} outside the CFD class band ${lo}..${hi} ` +
+        '(CFD proxy, not measured; a rear-biased winged car can be legitimate — value left unchanged)');
+    }
+  }
   if (isRoad && (cdA < drivaerCdA.low * 0.8 || cdA > drivaerCdA.high * 1.2))
     fail(name, `road-class CdA ${cdA} outside DrivAer-derived band x 0.8..1.2 (${(drivaerCdA.low * 0.8).toFixed(2)}..${(drivaerCdA.high * 1.2).toFixed(2)})`);
 }
@@ -77,4 +102,5 @@ for (const r of rows.sort((x, y) => y.clA - x.clA))
 
 console.log(`\nchecked ${checked} cars, ${missing} without aero, ${failures} failure(s)`);
 console.log('Reference values: data/physics/aero_reference.json; assumptions and licences: docs/downforce-data.md');
+console.log(`\nchecked ${checked} cars, ${missing} without aero, ${failures} failure(s), ${warns} balance warning(s)`);
 process.exit(failures ? 1 : 0);

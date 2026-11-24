@@ -65,6 +65,54 @@
       "licence": "public domain (US Government work)",
       "kind": "wind-tunnel aerofoil data",
       "notes": "Used only as an upper-bound check for wing/device downforce, not as a car coefficient. Values are representative of the NACA 0012 family; exact Re/surface condition varies with the table."
+    },
+    {
+      "id": "energies2022_none",
+      "vehicle": "DrivAer-type car, no splitter",
+      "cd": 0.449,
+      "cl": -0.212,
+      "cl_front": 0.049,
+      "cl_rear": -0.261,
+      "cm": -0.143,
+      "front_share_derived": null,
+      "source": "Piechna, J. 'Towards Balanced Aerodynamic Axle Loading of a Car with Covered Wheels - Inflatable Splitter', Energies 2022, 15, 5543, Table 4 (pitch 0 deg)",
+      "url": "https://doi.org/10.3390/en15155543",
+      "licence": "CC BY 4.0 (paper); values are the authors' CFD/FSI results, not wind-tunnel measurements",
+      "kind": "CFD + fluid-structure interaction (NOT measured)",
+      "conditions": "DrivAer-type passenger car with covered wheels, 2.794 m wheelbase, pitch 0 deg",
+      "notes": "Front axle carries lift, rear axle downforce: rear-biased; front share undefined (negative)."
+    },
+    {
+      "id": "energies2022_rigid_closed",
+      "vehicle": "DrivAer-type car, rigid closed splitter",
+      "cd": 0.477,
+      "cl": -0.441,
+      "cl_front": -0.298,
+      "cl_rear": -0.143,
+      "cm": 0.071,
+      "front_share_derived": 0.6757369614512472,
+      "source": "Piechna, J. 'Towards Balanced Aerodynamic Axle Loading of a Car with Covered Wheels - Inflatable Splitter', Energies 2022, 15, 5543, Table 4 (pitch 0 deg)",
+      "url": "https://doi.org/10.3390/en15155543",
+      "licence": "CC BY 4.0 (paper); values are the authors' CFD/FSI results, not wind-tunnel measurements",
+      "kind": "CFD + fluid-structure interaction (NOT measured)",
+      "conditions": "DrivAer-type passenger car with covered wheels, 2.794 m wheelbase, pitch 0 deg",
+      "notes": "Front share from |CLf|/(|CLf|+|CLr|) = 67.6%. Positive CM agrees (front-dominant)."
+    },
+    {
+      "id": "energies2022_inflated_open",
+      "vehicle": "DrivAer-type car, inflated open splitter",
+      "cd": 0.474,
+      "cl": -0.49,
+      "cl_front": -0.421,
+      "cl_rear": -0.069,
+      "cm": 0.163,
+      "front_share_derived": 0.8591836734693877,
+      "source": "Piechna, J. 'Towards Balanced Aerodynamic Axle Loading of a Car with Covered Wheels - Inflatable Splitter', Energies 2022, 15, 5543, Table 4 (pitch 0 deg)",
+      "url": "https://doi.org/10.3390/en15155543",
+      "licence": "CC BY 4.0 (paper); values are the authors' CFD/FSI results, not wind-tunnel measurements",
+      "kind": "CFD + fluid-structure interaction (NOT measured)",
+      "conditions": "DrivAer-type passenger car with covered wheels, 2.794 m wheelbase, pitch 0 deg",
+      "notes": "Front share 85.9% front: strongly front-biased."
     }
   ],
   "assumptions": {
@@ -73,7 +121,17 @@
       "high": 2.2,
       "note": "Assumed passenger-car frontal area for converting DrivAer Cd to a CdA band. The DrivAer reference area was not re-derived here; this is an explicit assumption, not a measured value."
     },
-    "wing_area_m2_for_bound": 1.0,
+    "wing_area_m2_for_bound": 1,
     "downforce_bound_note": "Upper bound for ClA = cl_max x 1.0 m^2 wing plus a modest underbody contribution; values above this need explicit evidence."
+  },
+  "balance_reference": {
+    "source_id": "energies2022_rigid_closed",
+    "class": "covered-wheel road car with a front splitter",
+    "front_share_range": [
+      0.55,
+      0.9
+    ],
+    "basis": "CFD (CC BY 4.0), not wind-tunnel measured",
+    "note": "Use only as a class proxy. No measured front/rear balance under a reusable licence was found (see docs/downforce-data.md). The range spans the rigid-closed (0.676) and inflated-open (0.859) configurations; it is not a specification for our cars."
   }
 }
