@@ -85,7 +85,7 @@ Build: `assets_source/scripts/make_trees.py` -> `web/public/assets/trees/`.
   `assets_source/licenses/downloaded_cars_2026-11-15/`.
 
 ## New York (Midtown / Manhattan) city data
-- Street network, parks, water, trees, signals and street furniture: (c) OpenStreetMap contributors, Open Database Licence (ODbL), https://www.openstreetmap.org/copyright
+- Street network, parks, water, trees, signals and street furniture (and, for the in-car GPS, the `maxspeed` limits and the water / green area layers, `tools/nyc/gps_layers.py`): (c) OpenStreetMap contributors, Open Database Licence (ODbL), https://www.openstreetmap.org/copyright
   (extract from download.bbbike.org). Building footprints, official roof heights, ground elevation and construction years: NYC Open Data "Building Footprints"
   (dataset 5zhs-2jue) and "Borough Boundaries" (gthc-hcne), City of New York, public domain. Processing: tools/nyc/.
 

@@ -30,6 +30,12 @@ export interface NavTheme {
   button: string;
   buttonIcon: string;
   poi: string;
+  water: string;
+  green: string;
+  trafficOrange: string;
+  trafficRed: string;
+  trafficOrangeCasing: string;
+  trafficRedCasing: string;
 }
 
 export const NIGHT: NavTheme = {
@@ -58,6 +64,12 @@ export const NIGHT: NavTheme = {
   button: '#2a2f36',
   buttonIcon: '#e8eaed',
   poi: '#7ea1ff',
+  water: '#123552',
+  green: '#1d3d32',
+  trafficOrange: '#f9ab00',
+  trafficRed: '#ea4335',
+  trafficOrangeCasing: '#7a4d00',
+  trafficRedCasing: '#6d1b14',
 };
 
 export const DAY: NavTheme = {
@@ -86,6 +98,12 @@ export const DAY: NavTheme = {
   button: '#ffffff',
   buttonIcon: '#3c4043',
   poi: '#4285f4',
+  water: '#a9d3f5',
+  green: '#cfe8cb',
+  trafficOrange: '#f29900',
+  trafficRed: '#d93025',
+  trafficOrangeCasing: '#b06a00',
+  trafficRedCasing: '#8c1c13',
 };
 
 export type ManeuverKind = 'straight' | 'slight' | 'turn' | 'sharp' | 'uturn' | 'arrive';

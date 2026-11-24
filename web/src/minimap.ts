@@ -12,11 +12,14 @@ import {
 } from './navUi';
 
 /** cls: 0 local, 1 collector (secondary / tertiary), 2 arterial (primary), 3 highway (trunk / motorway) */
-interface Seg { x0: number; y0: number; x1: number; y1: number; w: number; cls: number; stamp: number }
+interface Seg { x0: number; y0: number; x1: number; y1: number; w: number; cls: number; lim: number; stamp: number }
+/** a water / green area: bounding box and rings (flat x,y lists, outer first then holes) */
+interface Area { b: number[]; r: number[][] }
 interface Turn { s: number; dir: -1 | 1; ang: number; kind: ManeuverKind; name: string }
 interface Landmark { x: number; y: number; name: string }
 interface Named { x: number; y: number; name: string; cls: number }
-export interface Blip { x: number; z: number; color: string }
+/** v: speed (m/s) of a car driving on the road (traffic); leave it out for markers */
+export interface Blip { x: number; z: number; color: string; v?: number }
 
 const CELL = 100;
 export const NAV_W = 560, NAV_H = 350;
@@ -62,6 +65,17 @@ export class Minimap {
   /** road segments of one tier by stroke width: one path + one stroke per width */
   private byWidth = new Map<number, number[]>();
   private pool: number[][] = [];
+  /** water and green areas (areas.json) */
+  private water: Area[] = [];
+  private green: Area[] = [];
+  private pts: number[] = [];   // scratch: one ring in camera space (r, y, z)
+  private clip: number[] = [];
+  /** traffic: where cars are crawling (from the cars on the road), and how heavy the traffic is at this hour (0..1) */
+  private jams: { x: number; y: number; t: number }[] = [];
+  private slow: { x: number; y: number; t: number; since: number }[] = [];
+  private jamAt = 0;
+  trafficLevel = 0;
+  private trafficB: [Map<number, number[]>, Map<number, number[]>] = [new Map(), new Map()];
   private itD: number[] = [];
   private itT: Float32Array[] = [];
   private itO: number[] = [];
@@ -75,7 +89,7 @@ export class Minimap {
   // the view of the frame being drawn
   private vx = 0; private vy = 0; private vhx = 1; private vhy = 0; private vH = 50; private vD = 57;
   private flat = false; private flatK = 1 / 3.8;
-  private sx = 0; private sy = 0; private sz = 0;
+  private sx = 0; private sy = 0; private sz = 0; private pr = 0; private py = 0;
   /** colours: 'auto' follows the in-game clock (night 19:20 - 06:10) */
   themeMode: 'auto' | 'day' | 'night' = 'auto';
   /** in-game seconds since midnight, set by the game each frame (arrival clock, day / night) */
@@ -135,7 +149,7 @@ export class Minimap {
   setTileBase(base: string) { this.buildings.setBase(base); }
 
   /** Road edges of one tile's graph (game frame). Note: `e.pts` in map.json are INTERIOR shape points between nodes[a] and nodes[b]! */
-  addGraph(g: { nodes: number[][]; edges: { a: number; b: number; w: number; hw: string; name?: string; pts?: number[][] }[] }) {
+  addGraph(g: { nodes: number[][]; edges: { a: number; b: number; w: number; hw: string; ms?: number; name?: string; pts?: number[][] }[] }) {
     for (const e of g.edges) {
       const na = g.nodes[e.a], nb = g.nodes[e.b];
       if (!na || !nb) continue;
@@ -145,7 +159,7 @@ export class Minimap {
         const a = pts[i], b = pts[i + 1];
         if (!a || !b || !Number.isFinite(a[0]) || !Number.isFinite(a[1]) || !Number.isFinite(b[0]) || !Number.isFinite(b[1])) continue;
         if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.25) continue;
-        const s: Seg = { x0: a[0], y0: a[1], x1: b[0], y1: b[1], w: e.w || 6, cls, stamp: 0 };
+        const s: Seg = { x0: a[0], y0: a[1], x1: b[0], y1: b[1], w: e.w || 6, cls, lim: e.ms && e.ms > 0 ? e.ms : LIMIT[cls], stamp: 0 };
         // into EVERY grid cell the segment's bounding box overlaps, so long highways / bridges never vanish
         const gx0 = Math.floor(Math.min(s.x0, s.x1) / CELL), gx1 = Math.floor(Math.max(s.x0, s.x1) / CELL);
         const gy0 = Math.floor(Math.min(s.y0, s.y1) / CELL), gy1 = Math.floor(Math.max(s.y0, s.y1) / CELL);
@@ -173,10 +187,17 @@ export class Minimap {
     this.routeLen = 0;
     this.turns = [];
     this.waypoint = null;
+    this.water = []; this.green = []; this.jams = []; this.slow = [];
     this.buildings.clear();
     this.street = '';
     this.limit = 0;
     this.last = 0;
+  }
+
+  /** Water and green areas of the city (tiles/areas.json: {water: Area[], green: Area[]}). */
+  setAreas(a: { water?: Area[]; green?: Area[] } | null) {
+    this.water = a?.water ?? [];
+    this.green = a?.green ?? [];
   }
 
   /** Real-life city landmark labels (game frame x east, y north). */
@@ -253,7 +274,7 @@ export class Minimap {
     const g = f + this.vD;
     const z = g * COS_A + (this.vH - h) * SIN_A;
     const y = g * SIN_A + (h - this.vH) * COS_A;
-    this.sz = z;
+    this.sz = z; this.pr = r; this.py = y;
     if (z < NEAR) { this.sx = this.sy = NaN; return; }
     const k = FOCAL / z;
     this.sx = AXIS_X + r * k;
@@ -267,11 +288,39 @@ export class Minimap {
     return h < 6.2 || h >= 19.3 ? NIGHT : DAY;
   }
 
+  /** smooth value noise in 0..1 over ~260 m cells (the same everywhere for the same place: the same road is jammed every time you look) */
+  private noise(x: number, y: number) {
+    const gx = x / 260, gy = y / 260, ix = Math.floor(gx), iy = Math.floor(gy), fx = gx - ix, fy = gy - iy;
+    const h = (a: number, b: number) => {
+      let v = (Math.imul(a, 374761393) + Math.imul(b, 668265263)) | 0;
+      v = Math.imul(v ^ (v >>> 13), 1274126177); v ^= v >>> 16;
+      return (v >>> 0) / 4294967296;
+    };
+    const u = fx * fx * (3 - 2 * fx), w = fy * fy * (3 - 2 * fy);
+    const a = h(ix, iy), b = h(ix + 1, iy), c = h(ix, iy + 1), d = h(ix + 1, iy + 1);
+    return a + (b - a) * u + (c - a) * w + (a - b - c + d) * u * w;
+  }
+
+  /**
+   * How congested the road is at a point, 0..1: the game's own traffic for the hour (WorldClock.trafficDensity, heaviest
+   * 22:00-01:00, empty before dawn) spread over the arterials and highways in patches, plus a jam around every car that is
+   * crawling or stopped on the road. Colours: > 0.45 orange, > 0.75 red.
+   */
+  private congestion(x: number, y: number, tier: number) {
+    let c = 0;
+    if (this.trafficLevel > 0.3 && tier > 0) c = this.trafficLevel * (tier === 1 ? 0.55 : 1) * Math.pow(this.noise(x, y), 2.4);
+    for (const j of this.jams) {
+      const d = Math.hypot(j.x - x, j.y - y);
+      if (d < 100) c = Math.max(c, 1 - d / 100 + 0.1);
+    }
+    return c;
+  }
+
   /** Posted limit of the road under the car (km/h), from the nearest segment's class; refreshed twice a second. */
   private limitUnder(x: number, y: number, now: number) {
     if (now - this.limitAt < 500) return this.limit;
     this.limitAt = now;
-    let best = 22 * 22, cls = -1;
+    let best = 22 * 22, lim = 0;
     const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL);
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
       const list = this.grid.get(`${gx + i}_${gy + j}`);
@@ -280,10 +329,10 @@ export class Minimap {
         const ex = s.x1 - s.x0, ey = s.y1 - s.y0, l2 = ex * ex + ey * ey || 1;
         const t = clamp(((x - s.x0) * ex + (y - s.y0) * ey) / l2, 0, 1);
         const d = (s.x0 + ex * t - x) ** 2 + (s.y0 + ey * t - y) ** 2;
-        if (d < best) { best = d; cls = s.cls; }
+        if (d < best) { best = d; lim = s.lim; }
       }
     }
-    this.limit = cls >= 0 ? LIMIT[cls] : 0;
+    this.limit = lim;
     return this.limit;
   }
 
@@ -317,6 +366,27 @@ export class Minimap {
     const kmh = Math.abs(speed) * 3.6;
     this.avgSpeed += (Math.max(speed, 5) - this.avgSpeed) * 0.012;
 
+    // ---- traffic: a jam wherever a car on the road is crawling or stopped; they fade after 25 s
+    if (now - this.jamAt > 250) {
+      this.jamAt = now;
+      this.jams = this.jams.filter((j) => now - j.t < 25000);
+      // a car is only "stuck" once it has been crawling (< 2.5 m/s) in the same place for 6 s: a car pulling away from the kerb or
+      // a whole grid starting from rest is not a jam
+      this.slow = this.slow.filter((q) => now - q.t < 700);
+      for (const o of others) {
+        if (o.v === undefined || o.v > 2.5) continue;
+        const ox = o.x, oy = -o.z;
+        if (Math.hypot(ox - cx, oy - cy) > 1500) continue;
+        const q = this.slow.find((k) => Math.hypot(k.x - ox, k.y - oy) < 25);
+        if (q) q.t = now;
+        else if (this.slow.length < 40) { this.slow.push({ x: ox, y: oy, t: now, since: now }); continue; }
+        if (q && now - q.since >= 6000) {
+          const near = this.jams.find((j) => Math.hypot(j.x - ox, j.y - oy) < 40);
+          if (near) near.t = now; else if (this.jams.length < 16) this.jams.push({ x: ox, y: oy, t: now });
+        }
+      }
+    }
+
     // ---- the next turns of the route (distance along it)
     let next: Turn | null = null, dist = Infinity, then: Turn | null = null, thenGap = Infinity;
     const remain = routeS !== null && this.routeLen > 0 ? (this.routeClosed ? this.routeLen - routeS : Math.max(0, this.routeLen - routeS)) : null;
@@ -346,6 +416,7 @@ export class Minimap {
     c.save();
     c.beginPath(); c.rect(0, 0, NAV_W, NAV_H); c.clip();
     c.fillStyle = T.land; c.fillRect(0, 0, NAV_W, NAV_H);
+    this.drawAreas(c, T, cx, cy, hx, hy);
     this.drawRoads(c, T, cx, cy, hx, hy);
     if (!this.flat && this.camH < 135) this.drawBuildings(c, T, cx, cy, hx, hy);
     this.drawLabels(c, T, cx, cy, hx, hy);
@@ -409,6 +480,15 @@ export class Minimap {
           let bucket = byWidth.get(lw);
           if (!bucket) byWidth.set(lw, (bucket = pool.pop() ?? []));
           bucket.push(ux, uy, bx, by);
+          if (this.trafficLevel > 0.3 || this.jams.length) {
+            const cg = this.congestion((s.x0 + s.x1) / 2, (s.y0 + s.y1) / 2, tier);
+            if (cg > 0.45) {
+              const tb = this.trafficB[cg > 0.75 ? 1 : 0];
+              let tbk = tb.get(lw);
+              if (!tbk) tb.set(lw, (tbk = pool.pop() ?? []));
+              tbk.push(ux, uy, bx, by);
+            }
+          }
         }
       }
       // casings of the whole tier first, then the fills, so the junctions of one tier merge cleanly
@@ -421,9 +501,77 @@ export class Minimap {
           c.stroke();
         }
       }
+      // traffic: a coloured stripe down the middle of the slow roads of this tier
+      for (let k = 0; k < 2; k++) {
+        const tb = this.trafficB[k];
+        if (!tb.size) continue;
+        c.strokeStyle = k ? T.trafficRed : T.trafficOrange;
+        for (const [lw, b] of tb) {
+          c.beginPath();
+          for (let i = 0; i < b.length; i += 4) { c.moveTo(b[i], b[i + 1]); c.lineTo(b[i + 2], b[i + 3]); }
+          c.lineWidth = Math.max(2, lw * 0.55);
+          c.stroke();
+          b.length = 0; pool.push(b);
+        }
+        tb.clear();
+      }
       for (const b of byWidth.values()) { b.length = 0; pool.push(b); }
       byWidth.clear();
     }
+  }
+
+  /** water and green areas under the roads; each ring is clipped at the camera's near plane before it is projected */
+  private drawAreas(c: CanvasRenderingContext2D, T: NavTheme, cx: number, cy: number, hx: number, hy: number) {
+    if (!this.water.length && !this.green.length) return;
+    let ccx = cx, ccy = cy, reach: number;
+    if (this.flat) reach = (NAV_W / this.flatK) * 0.75;
+    else {
+      const ahead = this.vH / Math.tan(Math.max(0.12, DEPRESSION - Math.atan(AXIS_Y / FOCAL))) - this.vD;
+      reach = ahead * 0.85; ccx = cx + hx * ahead * 0.45; ccy = cy + hy * ahead * 0.45;
+    }
+    for (let layer = 0; layer < 2; layer++) {
+      const list = layer ? this.green : this.water, fill = layer ? T.green : T.water;
+      c.fillStyle = fill;
+      for (const a of list) {
+        const b = a.b;
+        // the box against the view circle
+        const dx = Math.max(b[0] - ccx, 0, ccx - b[2]), dy = Math.max(b[1] - ccy, 0, ccy - b[3]);
+        if (dx * dx + dy * dy > reach * reach) continue;
+        c.beginPath();
+        for (const r of a.r) this.ringPath(c, r);
+        c.fill('evenodd');
+      }
+    }
+  }
+
+  /** Add one ring (flat x,y list) to the current path, in screen space. */
+  private ringPath(c: CanvasRenderingContext2D, ring: number[]) {
+    const n = ring.length >> 1;
+    if (n < 3) return;
+    if (this.flat) {
+      for (let i = 0; i < n; i++) { this.proj(ring[2 * i], ring[2 * i + 1], 0); if (i) c.lineTo(this.sx, this.sy); else c.moveTo(this.sx, this.sy); }
+      c.closePath();
+      return;
+    }
+    // camera space (right, up, depth), then Sutherland-Hodgman against depth >= NEAR
+    const P = this.pts; P.length = 0;
+    for (let i = 0; i < n; i++) { this.proj(ring[2 * i], ring[2 * i + 1], 0); P.push(this.pr, this.py, this.sz); }
+    const O = this.clip; O.length = 0;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n, a = i * 3, b = j * 3;
+      const ai = P[a + 2] >= NEAR, bi = P[b + 2] >= NEAR;
+      if (ai) O.push(P[a], P[a + 1], P[a + 2]);
+      if (ai !== bi) {
+        const t = (NEAR - P[a + 2]) / (P[b + 2] - P[a + 2]);
+        O.push(P[a] + (P[b] - P[a]) * t, P[a + 1] + (P[b + 1] - P[a + 1]) * t, NEAR);
+      }
+    }
+    if (O.length < 9) return;
+    for (let i = 0; i < O.length; i += 3) {
+      const k = FOCAL / O[i + 2], x = AXIS_X + O[i] * k, y = AXIS_Y - O[i + 1] * k;
+      if (i) c.lineTo(x, y); else c.moveTo(x, y);
+    }
+    c.closePath();
   }
 
   private drawBuildings(c: CanvasRenderingContext2D, T: NavTheme, cx: number, cy: number, hx: number, hy: number) {
@@ -512,9 +660,10 @@ export class Minimap {
       this.proj(n.x, n.y, 0);
       const x = this.sx, y = this.sy;
       if (seen.has(n.name)) continue;                                                       // one label per street
-      if (!(x > CARD_W + 30 && x < NAV_W - 52 && y > 120 && y < NAV_H - 14)) continue;   // clear of the cards, buttons and the haze
-      if (!this.flat && Math.abs(x - AXIS_X) < 34) continue;                              // not under the guidance line
       const w = c.measureText(n.name).width + 6, h = 13;
+      if (!(x - w / 2 > CARD_W + 22 && x + w / 2 < NAV_W - 56 && y > (this.flat ? 20 : 120) && y < NAV_H - 14)) continue;   // clear of the cards, buttons and the haze
+      if (!this.flat && Math.abs(x - AXIS_X) < 34) continue;                              // not under the guidance line
+      if (this.flat && Math.abs(x - NAV_W / 2) < w / 2 + 22 && Math.abs(y - NAV_H / 2) < 24) continue;   // not under the car
       let clash = false;
       for (let i = 0; i < boxes.length; i += 4) if (Math.abs(x - boxes[i]) < (w + boxes[i + 2]) / 2 && Math.abs(y - boxes[i + 1]) < (h + boxes[i + 3]) / 2) { clash = true; break; }
       if (clash) continue;
@@ -539,9 +688,10 @@ export class Minimap {
     if (routeS === null) return;
     // upcoming 1.5 km, in runs so the width follows the perspective
     const step = 9, n = 170;
-    const px: number[] = [], py: number[] = [], pz: number[] = [];
+    const px: number[] = [], py: number[] = [], pz: number[] = [], wxs: number[] = [], wys: number[] = [];
     for (let i = 0; i <= n; i++) {
       const p = this.routeAt(routeS - 20 + i * step, this.rp);
+      wxs.push(p.x); wys.push(p.y);
       this.proj(p.x, p.y, 0);
       px.push(this.sx); py.push(this.sy); pz.push(this.sz);
     }
@@ -557,8 +707,10 @@ export class Minimap {
           if (Number.isNaN(px[j])) { started = false; continue; }
           if (started) c.lineTo(px[j], py[j]); else { c.moveTo(px[j], py[j]); started = true; }
         }
-        if (pass === 0) { c.strokeStyle = T.routeCasing; c.lineWidth = w + 3.6; }
-        else { c.strokeStyle = T.route; c.lineWidth = w; }
+        // the guidance line turns orange / red where the road ahead is slow
+        const m = Math.min(n, i + (run >> 1)), cg = this.trafficLevel > 0.3 || this.jams.length ? this.congestion(wxs[m], wys[m], 2) : 0;
+        if (pass === 0) { c.strokeStyle = cg > 0.75 ? T.trafficRedCasing : cg > 0.45 ? T.trafficOrangeCasing : T.routeCasing; c.lineWidth = w + 3.6; }
+        else { c.strokeStyle = cg > 0.75 ? T.trafficRed : cg > 0.45 ? T.trafficOrange : T.route; c.lineWidth = w; }
         c.stroke();
       }
     }

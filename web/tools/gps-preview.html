@@ -18,6 +18,8 @@ const [map, route] = await Promise.all([
   fetch(`/data/tracks/${city}_route.json`).then((r) => r.json()),
 ]);
 mm.addGraph(map);
+mm.setAreas(await fetch(base + 'areas.json').then((r) => (r.ok ? r.json() : null)).catch(() => null));
+mm.trafficLevel = Number(q.get('traffic') || 0);
 mm.setRoute(route.samples, route.closed !== false);
 mm.setTileBase(base);
 if (q.get('gps')) mm.themeMode = q.get('gps');

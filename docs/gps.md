@@ -11,7 +11,9 @@ Code: `web/src/minimap.ts` (state + renderer), `web/src/navUi.ts` (themes, turn 
 - **Tilted 3D map, heading-up**, perspective-projected in a 2D canvas (560 x 350 logical px, buffer scaled to the screen,
   at least 560 wide). The camera climbs with speed (60 m at standstill, 160 m flat out) and drops in when a turn is within
   260 m. Roads from the tiles' `map.json` in four tiers (local / collector / arterial / highway), casings first so
-  junctions merge; street names as upright labels with a halo, one per street, kept clear of the cards.
+  junctions merge; street names as upright labels with a halo, one per street, kept clear of the cards. Under the roads:
+  **water and green areas** (parks, grass, cemeteries, pitches, woods) from `tiles/areas.json`, clipped at the camera's near
+  plane so a lake under the car does not break the projection.
 - **Buildings**: the oriented boxes the tiles already ship for collision (`<ix>_<iy>.col.json`, game frame) extruded to a low
   map-style height (40 % of real, capped at 12 % of the camera height) so they never hide the streets; tiles stream in
   around the car (3 at a time, 30 kept). A city without tiles has none.
@@ -21,6 +23,15 @@ Code: `web/src/minimap.ts` (state + renderer), `web/src/navUi.ts` (themes, turn 
   within 320 m; bottom card with minutes, distance and the arrival time on the **game** clock (which runs 4x real time);
   compass, sound and search buttons; the speed-limit sign (from the road class under the car: 30 / 50 / 60 / 100 km/h) above
   the speed bubble, which turns red over the limit. Off the route it shows the clock, heading and street instead.
+- **Speed limits are real where OSM has them**: every edge of `tiles/map.json` carries `ms` (km/h), the `maxspeed` tag of the
+  nearest way of the same street (matched within 8 m, name and class preferred), else the typical limit of that road class in
+  the city's country (NYC: the 25 mph citywide default). Tagged share per city: Amsterdam 100 %, Paris 99 %, Berlin 98 %,
+  London 97 %, Singapore 97 %, Barcelona 94 %, Melbourne 82 %, Toronto 79 %, NYC 68 %, Madrid 62 %, Miami 53 %, San Francisco
+  52 %, Los Angeles 36 %, Tokyo 33 %, Lisbon 11 %, Chicago 10 %, Seoul 5 %, Crete 0 % (its sources are not in the repo).
+- **Traffic** is the game's own, not a feed: the hour's traffic density (`WorldClock.trafficDensity`, heaviest 22:00-01:00,
+  empty before dawn) spread over the arterials and highways in smooth patches of ~260 m that are the same every time you look,
+  plus a jam around every AI car that is crawling or stopped on the road (under 3.5 m/s, not parked, not waiting on the grid;
+  25 s memory). Slow roads get an orange (> 0.45) or red (> 0.75) stripe, and so does the guidance line ahead.
 - **Day / night**: night colours 19:20 - 06:10 on the game clock, day colours otherwise (`?gps=day|night` fixes it).
 - **Overview** (click the screen or Tab): flat north-up map, the whole route faint with the part ahead bright, a scale bar;
   a click sets a waypoint, right-click clears it.
@@ -42,6 +53,13 @@ JS time per redraw (15 Hz): 0.3 ms median (city, highway), 1.5 ms with the CPU t
 `http://127.0.0.1:5173/tools/gps-preview.html?city=nyc&s=300&v=18&gps=night&hour=22.5`, then `window.drive(s0, speed, frames,
 expanded)`; the canvas is `window.mm.cv` (`mm.cv.toDataURL()` for a full-resolution grab). Use with `web/tools/cdp.mjs`.
 
+## Data pipeline
+`python3 tools/nyc/gps_layers.py [city ...]` (needs `osmium`, `pyproj`, `shapely` and the city's OSM extract in
+`assets_source/downloads/`, the same inputs as the tile build) rewrites each city's `map.json` (adds `ms`) and writes
+`areas.json` (2 m simplification, areas under 400 m2 dropped, 2.3 MB for the 17 cities). Both are derived databases of
+OpenStreetMap and stay under the ODbL (CREDITS.md, LICENSING.md).
+
 ## Not done
-- Map layers the data does not have: water, parks, rail, traffic colouring, lane guidance, POI icons.
-- Speed limits are a class default; the tiles carry no `maxspeed`.
+- Rail, lane guidance, POI icons; real traffic (there is no feed: the traffic above is the game's own simulation).
+- Crete has no area layers and class-default limits (its OSM extract is not in `assets_source`).
+- Tokyo, Lisbon, Chicago and Seoul have few `maxspeed` tags in OSM; their limits are mostly the country default.

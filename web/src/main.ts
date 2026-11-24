@@ -1748,6 +1748,8 @@ async function main() {
     try {
       const m = await fetch(cityInfo.base + 'map.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
       if (m) minimap.addGraph(m);
+      // water and green areas (tools/nyc/gps_layers.py): a city without the file just has a plain land colour
+      minimap.setAreas(await fetch(cityInfo.base + 'areas.json').then((r) => (r.ok ? r.json() : null)).catch(() => null));
     } catch { /* no map: the minimap shows the route only */ }
   })();
   const mmFwd = new THREE.Vector3();
@@ -2206,14 +2208,16 @@ async function main() {
       minimap.setTileBase(cityInfo.base);
 
       loader.text(`Loading ${cityInfo.name} street network…`, 22);
-      const [newRoute, newMap] = await Promise.all([
+      const [newRoute, newMap, newAreas] = await Promise.all([
         fetch(cityInfo.route).then((r) => r.json()),
         fetch(cityInfo.base + 'map.json').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch(cityInfo.base + 'areas.json').then((r) => (r.ok ? r.json() : null)).catch(() => null),
       ]);
       route = newRoute;
       routeJson = JSON.stringify(route);
       minimap.setRoute(route.samples, route.closed !== false);
       if (newMap) minimap.addGraph(newMap);
+      minimap.setAreas(newAreas);
 
       loader.text(`Streaming ${cityInfo.name} 1:1 tiles…`, 32);
       const nextStreamer = new NycStreamer(scene, renderer, pw, camera, {
@@ -3378,8 +3382,10 @@ async function main() {
       mmFwd.set(0, 0, 1).applyQuaternion(watching ? specQuat : quat);
       const pal = paletteOf(a11y);
       blipsBuf.length = 0;
-      if (ai.mode === 'race') for (const c of ai.cars) blipsBuf.push({ x: c.pos.x, z: c.pos.z, color: pal.rival });
-      else if (ai.mode === 'cruise') for (const c of ai.cars) blipsBuf.push({ x: c.pos.x, z: c.pos.z, color: pal.traffic });
+      // a car's speed on the blip lets the GPS mark a jam where cars crawl or stand (not parked, not waiting on the grid)
+      const roll = (c: (typeof ai.cars)[number]) => (c.parked || ai.held ? undefined : Math.abs(c.v));
+      if (ai.mode === 'race') for (const c of ai.cars) blipsBuf.push({ x: c.pos.x, z: c.pos.z, color: pal.rival, v: roll(c) });
+      else if (ai.mode === 'cruise') for (const c of ai.cars) blipsBuf.push({ x: c.pos.x, z: c.pos.z, color: pal.traffic, v: roll(c) });
       if (remote) for (const id of remote.ids()) { const r = remote.get(id); if (r) blipsBuf.push({ x: r.root.position.x, z: r.root.position.z, color: pal.peer }); }
       if (raceLaps() === 0) {
         for (const zb of zones.minimapBlips()) blipsBuf.push({ x: zb.x, z: zb.z, color: zb.color === '#00e5ff' ? pal.speedTrap : pal.driftZone });
@@ -3393,6 +3399,7 @@ async function main() {
       }
       const L = lap?.routeLength ?? route.length_m;
       minimap.clockSec = worldClock.gameSeconds;
+      minimap.trafficLevel = worldClock.trafficDensity;
       if (watching) minimap.update(now, specPos, mmFwd, specOut[OUT.speed], null, blipsBuf);
       else minimap.update(now, pos, mmFwd, Math.abs(car.out[OUT.speed]), lap ? ((lap.distance % L) + L) % L : null, blipsBuf);
       // the cabin screen mirrors the GPS canvas; dark in the menus (car off)
