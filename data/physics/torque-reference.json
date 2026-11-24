@@ -1,0 +1,119 @@
+{
+  "schema": "open-grid/torque-reference/1",
+  "generated": "2026-11-24",
+  "about": "Measured full-load engine torque curves under redistributable licences. Values are stored verbatim from the cited tables: never smoothed, never extrapolated.",
+  "curves": [
+    {
+      "id": "toyota-7a-fe-1.8-full-load",
+      "engine": "Toyota 7A-FE, 1.8 L inline-4 petrol (naturally aspirated)",
+      "condition": "Full load (wide-open throttle), engine warm (coolant 82-88 C), hydraulic water-brake dynamometer, 0.5 m torque arm with load cell, speed stabilised before each reading",
+      "measured": true,
+      "digitised": false,
+      "points_rpm_nm": [
+        [
+          1000,
+          80.5
+        ],
+        [
+          1500,
+          99.5
+        ],
+        [
+          2000,
+          114
+        ],
+        [
+          2500,
+          126.5
+        ],
+        [
+          3000,
+          135.5
+        ],
+        [
+          3500,
+          132.5
+        ],
+        [
+          4000,
+          127.5
+        ],
+        [
+          4500,
+          118.5
+        ],
+        [
+          5000,
+          107
+        ],
+        [
+          5500,
+          90
+        ]
+      ],
+      "reported_power_kw": [
+        [
+          1000,
+          8.4
+        ],
+        [
+          1500,
+          15.6
+        ],
+        [
+          2000,
+          23.9
+        ],
+        [
+          2500,
+          33.1
+        ],
+        [
+          3000,
+          42.6
+        ],
+        [
+          3500,
+          48.6
+        ],
+        [
+          4000,
+          53.4
+        ],
+        [
+          4500,
+          55.9
+        ],
+        [
+          5000,
+          56
+        ],
+        [
+          5500,
+          51.8
+        ]
+      ],
+      "source": {
+        "title": "Design, Fabrication, and Performance Evaluation of a Locally Developed Automotive Engine Test Bed Using a Hydraulic Water-Brake Dynamometer",
+        "authors": [
+          "Gregory, A. Dolor",
+          "Esabunor Temabor"
+        ],
+        "venue": "International Journal of Mechanical and Civil Engineering (Global Publication House)",
+        "date": "2026-11-01",
+        "doi": "10.5281/zenodo.23856320",
+        "url": "https://zenodo.org/records/23856320",
+        "table": "Table 4 - Measured torque, calculated brake power and exhaust temperature at full load",
+        "license": {
+          "id": "CC-BY-4.0",
+          "url": "https://creativecommons.org/licenses/by/4.0/"
+        }
+      },
+      "notes": "Attribution: measure data from the cited article, CC BY 4.0. The article reports peak 135.5 Nm at 3000 rpm; its own comparison notes this is 10.3% below the workshop manual figure for this engine (151 Nm at 2800 rpm), consistent with a locally built dynamometer and a high-mileage engine. Use as a measured reference curve, not as the absolute rating for a new engine."
+    }
+  ],
+  "gaps": [
+    "Only one measured full-load curve was found that is both tabulated and redistributable. SAE/Elsevier tables, OEM service data, FSAE TTC/Calspan and commercial simulator maps are excluded by licence.",
+    "No measured BSFC/fuel map, torque-converter or thermal-derating data was found under a compatible licence."
+  ]
+}
