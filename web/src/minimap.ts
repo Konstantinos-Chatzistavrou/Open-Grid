@@ -13,7 +13,7 @@ const CELL = 100;
 
 export class Minimap {
   readonly el = document.createElement('div');
-  private cv = document.createElement('canvas');
+  readonly cv = document.createElement('canvas');
   private ctx: CanvasRenderingContext2D;
   private banner = document.createElement('div');
   private footScale: HTMLElement | null = null;
@@ -42,6 +42,8 @@ export class Minimap {
   private segPool: Seg[][] = [];
   private rp = { x: 0, y: 0 };
   visible = true;
+  /** set when the canvas was redrawn: the in-car screen uploads its texture only then, not every frame */
+  dirty = false;
   /** Full-screen interactive map mode (toggled by clicking minimap or pressing Tab). */
   expanded = false;
   /** Click-to-set GPS Waypoint in three.js world coordinates (x, z). */
@@ -413,6 +415,7 @@ export class Minimap {
       if (curStreet) txt = `<span>${esc(curStreet)}</span>`;
     }
     if (this.bannerHtml !== txt) { this.banner.innerHTML = this.bannerHtml = txt; this.banner.hidden = !txt; }
+    this.dirty = true;
     // watch face: speed, ETA chip, current street pill
     if (this.speedEl) this.speedEl.textContent = String(Math.round(Math.abs(speed) * 3.6));
     const remain = routeS !== null && this.routeLen > 0 ? Math.max(0, this.routeLen - routeS) : null;

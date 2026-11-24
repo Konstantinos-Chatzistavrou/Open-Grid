@@ -15,6 +15,7 @@ import { KitSky, kitHdriOn } from './fx/kitHdri';
 import { kitMaterialsOn, setKitMaterialsEnabled } from './fx/kitMaterials';
 import { ForzaVfxController, type ForzaVfxFrameInput } from './fx/forzaVfx';
 import { Garage } from './scene/garage';
+import { createNavScreen } from './scene/navScreen';
 import { SHOW_PRESETS, ShowroomPost } from './showroomPost';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CoreCar, CoreRace, OUT, loadCore, type LapInfo, type RawInput } from './physics/core';
@@ -1703,7 +1704,12 @@ async function main() {
   applyLook();
   const drivingLine = new DrivingLine(scene, ai);
   // GPS minimap: the tiles' road graphs (loaded in the background), the race route, rivals / players & 1:1 city landmarks
+  let lastNavTouch = 0;
   const minimap = new Minimap(document.getElementById('hud')!);
+  // a physical nav screen in the cabin, textured from the same GPS canvas
+  // in-car nav screen: opt-in until its texture upload is cheap enough (?navscreen=1)
+  const navScreen = params.get('navscreen') === '1' ? createNavScreen(minimap.cv) : null;
+  if (navScreen) { visual.model.add(navScreen.group); (g.__game as Record<string, unknown>).navScreen = navScreen; }
   minimap.setRoute(route.samples, route.closed !== false);
   minimap.setLandmarks(cityInfo.landmarks);
   input.onMap = () => minimap.show(!minimap.visible);
@@ -3385,6 +3391,12 @@ async function main() {
       const L = lap?.routeLength ?? route.length_m;
       if (watching) minimap.update(now, specPos, mmFwd, specOut[OUT.speed], null, blipsBuf);
       else minimap.update(now, pos, mmFwd, Math.abs(car.out[OUT.speed]), lap ? ((lap.distance % L) + L) % L : null, blipsBuf);
+      // the cabin screen mirrors the GPS canvas; dark in the menus (car off)
+      if (navScreen) {
+        navScreen.setVisible(menu.screen === 'none');
+        // 2 Hz upload: the cabin screen is read at a glance, not 60 times a second
+        if (now - lastNavTouch > 500) { lastNavTouch = now; navScreen.touch(); }
+      }
     }
     menuNav.paused = !!menu.ctl?.calibrating;
     menuNav.update(now);

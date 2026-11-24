@@ -40,10 +40,10 @@ function vnoise(x: number, seed: number) {
   return h(i) + (h(i + 1) - h(i)) * u;
 }
 
-export type CamMode = 'chase' | 'far' | 'cinematic' | 'drift' | 'free' | 'hood' | 'bumper' | 'orbit';
+export type CamMode = 'chase' | 'far' | 'cinematic' | 'drift' | 'free' | 'hood' | 'cockpit' | 'bumper' | 'orbit';
 /** Every view the rig offers, in the order C cycles them: NFS-style chase, a wider chase, a low
  *  cinematic, a drift cam, a persistent Free Cam (stays where you drag it), hood, bumper, and orbit. */
-const MODES: CamMode[] = ['chase', 'far', 'cinematic', 'drift', 'free', 'hood', 'bumper', 'orbit'];
+const MODES: CamMode[] = ['chase', 'far', 'cinematic', 'drift', 'free', 'hood', 'cockpit', 'bumper', 'orbit'];
 const MODE_CFG: Record<CamMode, { dist: number; height: number; kind: 'chase' | 'bumper' | 'orbit'; drift?: boolean; holdFree?: boolean }> = {
   chase: { dist: DIST, height: HEIGHT, kind: 'chase' },
   far: { dist: DIST * 1.45, height: HEIGHT + 0.35, kind: 'chase' },
@@ -54,6 +54,7 @@ const MODE_CFG: Record<CamMode, { dist: number; height: number; kind: 'chase' | 
   // free: AAA free-orbit driving camera — drag by mouse/touch to lock any angle & zoom without auto-recenter
   free: { dist: DIST * 1.08, height: HEIGHT * 0.96, kind: 'chase', holdFree: true },
   hood: { dist: 0, height: 0, kind: 'bumper' },
+  cockpit: { dist: 0, height: 0, kind: 'bumper' },
   bumper: { dist: 0, height: 0, kind: 'bumper' },
   orbit: { dist: 7.6, height: 2.3, kind: 'orbit' },
 };
@@ -74,6 +75,8 @@ export class CameraRig {
   private want = new THREE.Vector3();
   private head = new THREE.Vector3();
   private bumperQ = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI);
+  /** cockpit view: a touch of downward pitch so the dash and screen sit in frame */
+  private cockpitTilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.07);
   private punch = 0;                              // deg
   private shake = 0;                              // 0..1 redline shake envelope
   private t = 0;
@@ -150,8 +153,11 @@ export class CameraRig {
 
     if (cfg.kind === 'bumper') {
       const hood = this.mode === 'hood';
-      cam.position.copy(carPos).add(this.tmp.set(0, hood ? 1.05 : 0.62, hood ? 0.95 : 0.25).applyQuaternion(carQuat));
+      const cockpit = this.mode === 'cockpit';
+      // cockpit: behind the wheel, so the dash-mounted nav screen is in frame
+      cam.position.copy(carPos).add(this.tmp.set(cockpit ? 0.33 : 0, cockpit ? 1.02 : hood ? 1.05 : 0.62, cockpit ? 0.02 : hood ? 0.95 : 0.25).applyQuaternion(carQuat));
       cam.quaternion.copy(carQuat).multiply(this.bumperQ);
+      if (cockpit) cam.quaternion.multiply(this.cockpitTilt);
       if (Math.abs(this.freeYaw) > 1e-4 || Math.abs(this.freePitch) > 1e-4) {
         this.lookEuler.set(this.freePitch, this.freeYaw, 0, 'YXZ');
         this.lookQ.setFromEuler(this.lookEuler);
