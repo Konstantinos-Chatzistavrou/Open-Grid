@@ -17,6 +17,40 @@ physically plausible. The game's fictional cars are **not** claimed to match the
 
 Stored as `data/physics/inertia-reference.json` (12 configurations, SI conversions included).
 
+## Modern reference: 2020 NCAP Static Stability Factor measurements (2026-11-24)
+
+The 1997 Federal Register set covers only 1990s SUVs, so modern cars were added from a second legal source:
+
+- **Rollover Stability Measurements for 2020 New Car Assessment Program (NCAP) — Static Stability Factor
+  (SSF) Measurements**, NHTSA docket **NHTSA-2001-9663-0497**, prepared for NHTSA by SEA, Ltd. Vehicle
+  Dynamics Division. **US Government work submitted to a federal docket → public domain** (caveat: confirm
+  contractor copyright status before any commercial redistribution).
+  Original: <https://downloads.regulations.gov/NHTSA-2001-9663-0497/attachment_1.pdf> (403 to scripts; use the
+  archived copy: <http://web.archive.org/web/20230802123148if_/https://downloads.regulations.gov/NHTSA-2001-9663-0497/attachment_1.pdf>).
+- The report contains 53 measured vehicles (2019–2021): **test weight, average track width, CG height and SSF**
+  from SEA's Vehicle Inertia Measurement Facility. It does **not** publish moments of inertia.
+
+| vehicle (2020, driver only) | mass kg | CG m | track m | SSF (track/2h) |
+|---|---:|---:|---:|---:|
+| Subaru WRX (AWD) | 1610 | 0.529 | 1.53 | 1.45 |
+| Kia Stinger (AWD) | 1967 | 0.524 | 1.61 | 1.53 |
+| Cadillac CT5 (AWD) | 1849 | 0.544 | 1.62 | 1.48 |
+| Volvo S60 (FWD) | 1774 | 0.545 | 1.59 | 1.46 |
+| Mazda 3 (FWD) | 1464 | 0.541 | 1.57 | 1.45 |
+| Hyundai Sonata (FWD) | 1498 | 0.557 | 1.64 | 1.47 |
+| Nissan Sentra (FWD) | 1481 | 0.536 | 1.57 | 1.46 |
+| Mazda CX-30 (AWD) | 1562 | 0.607 | 1.56 | 1.29 |
+| Volvo XC90 (FWD) | 2093 | 0.701 | 1.67 | 1.19 |
+
+All values are **measured**; SSF is carried as printed and the tool re-derives `track/(2·CG)` as a consistency
+check (max deviation 0.01, inside rounding). No derived rows were needed.
+
+**Sports-car class result.** The sportiest entries here are the WRX, Stinger and CT5 (sport sedans), at
+**CG 0.52–0.54 m**. Our fictional cars sit at **0.41–0.53 m**, i.e. at or below that reference, which is the right
+direction for low sports cars; the checker flags any car above the modern measured maximum + 2 cm.
+**No modern two-door sports coupe (Camaro/Mustang/Supra/86) appears in this NCAP set**, and no public-domain
+measured yaw inertia was found for modern cars, so those remain documented gaps rather than fabricated numbers.
+
 ## Units and conversions
 
 | quantity | printed unit | SI conversion |

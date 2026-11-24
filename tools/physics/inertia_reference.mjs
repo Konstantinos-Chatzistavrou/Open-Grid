@@ -8,6 +8,10 @@
 // Tables 3/4 (NHTSA/VRTC, CU, CarT measurements of a 1994/1996 Isuzu Trooper and 1996 Acura SLX).
 // It is REFERENCE data for real vehicles - not measurements of our fictional cars. The game's values are
 // only checked for physical plausibility; this tool never rewrites them.
+//
+// Modern reference rows are from the 2020 NCAP SSF measurement report (NHTSA docket NHTSA-2001-9663-0497,
+// public-domain US Government work): measured test weight, average track, CG height and SSF for 2019-2021
+// vehicles. That report does NOT publish moments of inertia, so modern yaw inertia remains a documented gap.
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,6 +57,23 @@ for (const e of rows) {
 }
 if (!failures) ok('all ' + rows.length + ' reference entries pass unit and physical-range checks');
 
+// Modern (2019-2021) NCAP/VIMF reference: measured CG height, track and weight. SSF is derived from track/(2h).
+console.log('\nModern NCAP/VIMF reference (' + (ref.modernSource?.title?.split(' - ')[0] ?? '2020 NCAP') + ')');
+let maxModernCg = 0;
+for (const e of ref.modernEntries ?? []) {
+  const m = e.weight_lb * LB, cg = e.cg_in * IN, tr = e.track_in * IN;
+  const pred = tr / (2 * cg);
+  console.log('  ' + e.vehicle.padEnd(22) + ' m ' + m.toFixed(0).padStart(5) + ' kg  cg ' + cg.toFixed(3) + ' m  track ' + tr.toFixed(2) +
+    ' m  SSF ' + e.ssf.toFixed(2) + ' (track/2h ' + pred.toFixed(2) + ')');
+  if (!(m > 900 && m < 4000)) fail(e.id + ': modern mass out of range');
+  if (!(cg > 0.35 && cg < 0.95)) fail(e.id + ': modern CG out of range');
+  if (!(e.ssf > 0.8 && e.ssf < 1.8)) fail(e.id + ': modern SSF out of range');
+  if (Math.abs(pred - e.ssf) > 0.02) fail(e.id + ': SSF inconsistent with measured track and CG (' + pred.toFixed(2) + ' vs ' + e.ssf.toFixed(2) + ')');
+  maxModernCg = Math.max(maxModernCg, cg);
+}
+if (!maxModernCg) fail('no modern reference entries');
+else ok('modern entries measured (CG/track/weight): ' + (ref.modernEntries?.length ?? 0) + '; moments of inertia are NOT published in this source');
+
 // Game cars: plausibility only (cg 0.35-0.85 m, yaw 1200-6000 kg m^2, yaw/mass 0.8-3.2 m^2, yaw > roll)
 console.log('\nGame cars vs physical bounds');
 const dir = join(ROOT, 'data/cars');
@@ -70,6 +91,8 @@ for (const f of readdirSync(dir)) {
   if (!(yaw > 1200 && yaw < 6000)) notes.push('yaw out of 1200-6000 kg m^2');
   if (!(r2 > 0.8 && r2 < 3.2)) notes.push('yaw/mass out of 0.8-3.2 m^2');
   if (!(yaw > roll)) notes.push('yaw <= roll');
+  // a sports car should sit at or below the measured modern passenger CG range
+  if (maxModernCg && !(cg <= maxModernCg + 0.02)) notes.push('cg above modern measured reference');
   console.log('  ' + f.padEnd(24) + ' m ' + String(m).padStart(5) + ' kg  cg ' + cg.toFixed(2) + ' m  roll ' + roll.toFixed(0).padStart(5) +
     '  yaw ' + yaw.toFixed(0).padStart(5) + ' kg m^2  yaw/m ' + r2.toFixed(2) + ' m^2  ' + (notes.length ? 'FAIL: ' + notes.join('; ') : 'ok'));
   for (const n of notes) fail(f + ': ' + n);

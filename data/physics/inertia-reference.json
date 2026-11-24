@@ -167,5 +167,143 @@
     "SSF = track width / (2 * CG height); the report notes the measured track widths differed between subject vehicles, so equal CG heights can give different SSF.",
     "The two CarT rows do not publish inertia columns; they are kept for CG height/SSF only.",
     "No modern sports-car inertia measurements were found under a public-domain or permissive licence; that gap is documented, not filled with estimates."
-  ]
+  ],
+  "modernSource": {
+    "title": "Rollover Stability Measurements for 2020 New Car Assessment Program (NCAP) - Static Stability Factor (SSF) Measurements",
+    "publisher": "NHTSA / SEA, Ltd. Vehicle Dynamics Division (docket NHTSA-2001-9663-0497)",
+    "url": "https://downloads.regulations.gov/NHTSA-2001-9663-0497/attachment_1.pdf",
+    "archivedUrl": "http://web.archive.org/web/20230802123148if_/https://downloads.regulations.gov/NHTSA-2001-9663-0497/attachment_1.pdf",
+    "licence": "public-domain",
+    "licenceNote": "US Government work submitted to a federal docket (NHTSA-2001-9663-0497); prepared for NHTSA by SEA, Ltd. Treated as public domain. If you plan commercial redistribution, confirm contractor copyright status with NHTSA/counsel.",
+    "measured": [
+      "test weight",
+      "average track width",
+      "CG height",
+      "SSF"
+    ],
+    "notMeasured": [
+      "moments of inertia"
+    ],
+    "accessed": "2026-11-24"
+  },
+  "modernEntries": [
+    {
+      "id": "wrx-2020",
+      "vehicle": "2020 Subaru WRX",
+      "configuration": "Driver only (NCAP/VIMF test)",
+      "drive": "AWD",
+      "vimf": 7406,
+      "track_in": 60.3,
+      "wheelbase_in": 104.3,
+      "weight_lb": 3548.7,
+      "cg_in": 20.83,
+      "ssf": 1.45,
+      "sourceOrg": "SEA/NHTSA"
+    },
+    {
+      "id": "stinger-2020",
+      "vehicle": "2020 Kia Stinger",
+      "configuration": "Driver only (NCAP/VIMF test)",
+      "drive": "AWD",
+      "vimf": 7444,
+      "track_in": 63.2,
+      "wheelbase_in": 114.5,
+      "weight_lb": 4336.5,
+      "cg_in": 20.63,
+      "ssf": 1.53,
+      "sourceOrg": "SEA/NHTSA"
+    },
+    {
+      "id": "ct5-2020",
+      "vehicle": "2020 Cadillac CT5",
+      "configuration": "Driver only (NCAP/VIMF test)",
+      "drive": "AWD",
+      "vimf": 7457,
+      "track_in": 63.6,
+      "wheelbase_in": 116.1,
+      "weight_lb": 4075.3,
+      "cg_in": 21.42,
+      "ssf": 1.48,
+      "sourceOrg": "SEA/NHTSA"
+    },
+    {
+      "id": "s60-2020",
+      "vehicle": "2020 Volvo S60",
+      "configuration": "Driver only (NCAP/VIMF test)",
+      "drive": "FWD",
+      "vimf": 7370,
+      "track_in": 62.7,
+      "wheelbase_in": 113.3,
+      "weight_lb": 3911.2,
+      "cg_in": 21.44,
+      "ssf": 1.46,
+      "sourceOrg": "SEA/NHTSA"
+    },
+    {
+      "id": "mazda3-2020",
+      "vehicle": "2020 Mazda 3",
+      "configuration": "Driver only (NCAP/VIMF test)",
+      "drive": "FWD",
+      "vimf": 7423,
+      "track_in": 61.9,
+      "wheelbase_in": 107.3,
+      "weight_lb": 3227.6,
+      "cg_in": 21.3,
+      "ssf": 1.45,
+      "sourceOrg": "SEA/NHTSA"
+    },
+    {
+      "id": "sonata-2020",
+      "vehicle": "2020 Hyundai Sonata",
+      "configuration": "Driver only (NCAP/VIMF test)",
+      "drive": "FWD",
+      "vimf": 7468,
+      "track_in": 64.4,
+      "wheelbase_in": 112,
+      "weight_lb": 3303.2,
+      "cg_in": 21.91,
+      "ssf": 1.47,
+      "sourceOrg": "SEA/NHTSA"
+    },
+    {
+      "id": "sentra-2020",
+      "vehicle": "2020 Nissan Sentra",
+      "configuration": "Driver only (NCAP/VIMF test)",
+      "drive": "FWD",
+      "vimf": 7495,
+      "track_in": 61.7,
+      "wheelbase_in": 106.7,
+      "weight_lb": 3265.7,
+      "cg_in": 21.11,
+      "ssf": 1.46,
+      "sourceOrg": "SEA/NHTSA"
+    },
+    {
+      "id": "cx30-2020",
+      "vehicle": "2020 Mazda CX-30",
+      "configuration": "Driver only (NCAP/VIMF test)",
+      "drive": "AWD",
+      "vimf": 7486,
+      "track_in": 61.4,
+      "wheelbase_in": 104.5,
+      "weight_lb": 3444.2,
+      "cg_in": 23.89,
+      "ssf": 1.28,
+      "sourceOrg": "SEA/NHTSA"
+    },
+    {
+      "id": "xc90-2020",
+      "vehicle": "2020 Volvo XC90",
+      "configuration": "Driver only (NCAP/VIMF test)",
+      "drive": "FWD",
+      "vimf": 7518,
+      "track_in": 65.8,
+      "wheelbase_in": 117.7,
+      "weight_lb": 4615.1,
+      "cg_in": 27.59,
+      "ssf": 1.19,
+      "sourceOrg": "SEA/NHTSA"
+    }
+  ],
+  "modernEntriesNote": "Measured CG height and track from the 2020 NCAP SSF report. Moments of inertia are NOT published in this source: modern yaw inertia remains a gap. No modern two-door sports coupe is in this NCAP set; the sportiest entries are the WRX, Stinger and CT5."
 }
