@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <cstdlib>
 #include <fstream>
 #include <map>
@@ -212,6 +213,28 @@ double cornering_stiffness(const TireParams& p, double fz) {
     return (fy_p - fy_m) / (2.0 * da);
 }
 
+// Directory-wide smoke check: every .tir in data/tires loads and returns finite MF forces over a load/slip grid.
+// Deliberately physics-light (the deep per-tyre checks below cover the core datasets) so a newly added, unusual
+// tyre cannot be silently skipped and cannot weaken the existing assertions.
+void verify_loads_and_finite(const LoadedTir& t) {
+    const std::string& name = t.filename;
+    test::check((name + ": .tir parses and loads").c_str(), t.loaded);
+    if (!t.loaded) return;
+    const TireOperating op = nominal_op(t.params);
+    const double deg = kPi / 180.0;
+    bool finite = true;
+    for (double load_scale : {0.5, 1.0, 1.5}) {
+        const double fz = t.fnomin * load_scale;
+        for (double kappa : {-0.15, -0.05, 0.0, 0.05, 0.15}) {
+            for (double alpha_deg : {-12.0, -4.0, 0.0, 4.0, 12.0}) {
+                const TireForces tf = magic_formula(t.params, kappa, std::tan(alpha_deg * deg), fz, 1.0, 0.0, op);
+                if (!std::isfinite(tf.fx) || !std::isfinite(tf.fy) || !std::isfinite(tf.mz)) finite = false;
+            }
+        }
+    }
+    test::check((name + ": finite Fx/Fy/Mz over 3-load x 5-slip x 5-slip-angle grid").c_str(), finite);
+}
+
 void verify_single_tyre(const LoadedTir& t, bool require_positive_camber_thrust) {
     const std::string& name = t.filename;
     test::check((name + ": parsed valid .tir coefficients").c_str(),
@@ -301,6 +324,11 @@ RS_TEST(tire_library) {
     const LoadedTir feda40  = load_tir_file("feda_335_65R22_5_40psi.tir");
     const LoadedTir feda70  = load_tir_file("feda_335_65R22_5_70psi.tir");
     const LoadedTir feda95  = load_tir_file("feda_335_65R22_5_95psi.tir");
+    const LoadedTir citybus = load_tir_file("citybus_pac2002.tir");
+    const LoadedTir polaris = load_tir_file("polaris_pac2002.tir");
+    const LoadedTir uazbus  = load_tir_file("uazbus_pac2002.tir");
+    const LoadedTir feda60  = load_tir_file("feda_335_65R22_5_60psi_pac2002.tir");
+    const LoadedTir p235    = load_tir_file("pac2002_235_60R16.tir");
 
     // Per-tyre physical sanity across all 9 BSD-3 Chrono datasets
     verify_single_tyre(audi, true);
@@ -312,6 +340,21 @@ RS_TEST(tire_library) {
     verify_single_tyre(feda40, false);
     verify_single_tyre(feda70, false);
     verify_single_tyre(feda95, false);
+    verify_loads_and_finite(citybus);
+    verify_loads_and_finite(polaris);
+    verify_loads_and_finite(uazbus);
+    verify_loads_and_finite(feda60);
+    verify_loads_and_finite(p235);
+
+    // Every .tir in data/tires must load and stay finite: no dataset may be added without being exercised.
+    int tir_files = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(test::data_path("tires"))) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".tir") continue;
+        ++tir_files;
+        verify_loads_and_finite(load_tir_file(entry.path().filename().string()));
+    }
+    test::check("data/tires contains at least 10 .tir datasets (expanded beyond the original 9)", tir_files >= 10);
+    std::printf("         tire library: %d .tir files loaded from data/tires\n", tir_files);
 
     // Class hierarchy: Sport GT 245/40 R18 vs Classic 185/80 R14
     const double ca_fz_audi_nom = cornering_stiffness(audi.params, audi.fnomin) / audi.fnomin;

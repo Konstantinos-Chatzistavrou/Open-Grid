@@ -2,7 +2,7 @@
 
 All `.tir` property files in `data/tires/` are stored **verbatim** from [Project Chrono](https://github.com/projectchrono/chrono) under the **BSD-3-Clause** licence (Copyright (c) 2016, Project Chrono Development Team; full licence text in `data/tires/LICENSE-projectchrono.txt`).
 
-These datasets cover six distinct vehicle/tyre archetypes — Sport GT, Passenger Sedan, SUV, Classic/Vintage, Heavy Off-Road, and a 3-pressure heavy radial reference series (`40 / 70 / 95 psi`) — and are verified by both:
+These datasets cover nine distinct vehicle/tyre archetypes — Sport GT, Passenger Sedan, SUV, Classic/Vintage, Heavy Off-Road, UTV, City Bus, Light Commercial, and a 4-pressure heavy radial reference series (`40 / 60 / 70 / 95 psi`) — and are verified by both:
 1. Live cross-check against [VDSim](https://github.com/Onlyti/VDSim) (`core/src/magic_formula_tire.cpp`, commit `0534695d`, Apache-2.0) via `tools/tyre/crosscheck_vdsim.py` and `core/build/mf_dump`, summarized in `docs/tyre_library_crosscheck.csv`.
 2. Automated C++ unit/physics regression suite `RS_TEST(tire_library)` in `core/tests/test_tire_library.cpp`.
 
@@ -19,10 +19,23 @@ These datasets cover six distinct vehicle/tyre archetypes — Sport GT, Passenge
 | `feda_335_65R22_5_40psi.tir` | `data/vehicle/feda/tires/335_65R22_5_G275MSA_40psi.tir` | 335/65 R22.5 @ 40 psi (2.7 bar) | `MF_05` | `5` | `UNKNOWN` | **Multi-Pressure Reference (40 psi)** (inflation-stiffness benchmark) |
 | `feda_335_65R22_5_70psi.tir` | `data/vehicle/feda/tires/335_65R22_5_G275MSA_70psi.tir` | 335/65 R22.5 @ 70 psi (4.8 bar) | `MF_05` | `5` | `UNKNOWN` | **Multi-Pressure Reference (70 psi)** (inflation-stiffness benchmark) |
 | `feda_335_65R22_5_95psi.tir` | `data/vehicle/feda/tires/335_65R22_5_G275MSA_95psi.tir` | 335/65 R22.5 @ 95 psi (6.5 bar) | `MF_05` | `5` | `UNKNOWN` | **Multi-Pressure Reference (95 psi)** (inflation-stiffness benchmark) |
+| `feda_335_65R22_5_60psi_pac2002.tir` | `data/vehicle/feda/tires/335_65R22_5_G275MSA_60psi.tir` | 335/65 R22.5 @ 60 psi (4.1 bar) | `MF_05` | `5` | `UNKNOWN` | **Multi-Pressure Reference (60 psi)** (fills the 40/70 gap) |
+| `polaris_pac2002.tir` | `data/vehicle/Polaris/Polaris_Pac02Tire.tir` | 29x9-14 61M (UTV) | `PAC2002` | *(omitted)* | `LEFT` | **UTV / light off-road** (Ø0.7366 m, 279 mm section, 4 kN nominal) |
+| `citybus_pac2002.tir` | `data/vehicle/citybus/tire/CityBus_Pac02Tire.tir` | 315/80 R22.5 heavy radial | `PAC2002` | *(omitted)* | `LEFT` | **City bus / heavy commercial** (Ø1.096 m, 318 mm section, 35 kN nominal) |
+| `uazbus_pac2002.tir` | `data/vehicle/uaz/tire/UAZBUS_Pac02Tire.tir` | 225/75 R16 (van) | `PAC2002` | *(omitted)* | `LEFT` | **Light commercial / van** (Ø0.758 m, 225 mm section, 4 kN nominal) |
+| `pac2002_235_60R16.tir` | `data/vehicle/hmmwv/pactest.tir` | 235/60 R16 | `PAC2002` | *(omitted)* | `LEFT` | **Passenger / C-segment** (Ø0.688 m, 235 mm section, 4.85 kN nominal, Kv 210 kN/m) |
 
 > **Upstream equivalence notes** (preserved verbatim for traceability to Project Chrono):
 > - `sedan_pac2002.tir` and `audi_245_40R18_pac2002.tir` are byte-for-byte identical (`sha256` prefix `ef4c08a321d0`): Project Chrono's Sedan model reuses the Audi 245/40 R18 PAC2002 fit.
 > - `generic_pac2002.tir` and `hmmwv_pac2002.tir` contain identical coefficients and differ only in line endings (LF vs CRLF): Project Chrono's Generic template reuses the HMMWV 37x12.5 R16.5 Load E fit.
+
+> **Expansion (2026-11-24)** — four further verbatim Chrono datasets were added, pinned to upstream commit
+> `e166f3e5a1383741e86cf1e195a46eba4a66473d`: `citybus_pac2002.tir` (18,647 B, sha256 `5731415e818c…`),
+> `polaris_pac2002.tir` (15,509 B, `09125852e6ab…`), `uazbus_pac2002.tir` (15,668 B, `cca76d9ed407…`),
+> `feda_335_65R22_5_60psi_pac2002.tir` (15,859 B, `67419d36be47…`), plus `pac2002_235_60R16.tir`
+> (16,949 B, `9d0b75bd109e…`, upstream `data/vehicle/hmmwv/pactest.tir`). All headers (including `TYRESIDE`) are intact and the
+> values are untouched. Verified by the directory sweep in `core/tests/test_tire_library.cpp` and by
+> `docs/tyre_data_sources.md`.
 
 ## Dimensions & nominal performance at `FNOMIN`
 
