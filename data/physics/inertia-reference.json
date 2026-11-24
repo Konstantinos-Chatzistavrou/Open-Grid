@@ -1,0 +1,171 @@
+{
+  "schema": "open-grid-inertia-reference/1",
+  "description": "Measured vehicle inertia and CG height from a US Government work (public domain). Reference data only: these are real vehicles, not the game's fictional cars.",
+  "source": {
+    "title": "Federal Register, Vol. 62, No. 145 (29 July 1997), Notices, pp. 40611-40612, Tables 3 and 4",
+    "publisher": "U.S. Government Printing Office / NHTSA",
+    "url": "https://archive.org/download/sim_federal-register-find_1997-07-29_62_145/sim_federal-register-find_1997-07-29_62_145.pdf",
+    "licence": "public-domain",
+    "licenceNote": "Work of the U.S. Government (17 USC 105); the tables are measurements performed by NHTSA/VRTC, CU and CarT.",
+    "accessed": "2026-11-24"
+  },
+  "units": {
+    "source": {
+      "weight": "lb",
+      "inertia": "slug*ft^2 (printed as ft.lb.s^2)",
+      "cg": "in",
+      "ssf": "dimensionless"
+    },
+    "si": {
+      "mass": "kg",
+      "inertia": "kg*m^2",
+      "cg": "m"
+    },
+    "conversions": {
+      "lb_to_kg": 0.45359237,
+      "slugft2_to_kgm2": 1.35581795,
+      "in_to_m": 0.0254,
+      "note": "1 ft.lb.s^2 is the slug*ft^2 unit of mass moment of inertia; multiplying by 1.35581795 gives kg*m^2."
+    }
+  },
+  "entries": [
+    {
+      "id": "slx-1996-1occ",
+      "vehicle": "1996 Acura SLX",
+      "configuration": "w/ 1 occupant",
+      "sourceOrg": "VRTC",
+      "weight_lb": 4467,
+      "roll_slugft2": 636,
+      "yaw_slugft2": 2869,
+      "cg_in": 27.5,
+      "ssf": 1.09
+    },
+    {
+      "id": "slx-1996-4occ",
+      "vehicle": "1996 Acura SLX",
+      "configuration": "w/ 4 occupants + cargo to GVWR",
+      "sourceOrg": "VRTC",
+      "weight_lb": 5506,
+      "roll_slugft2": 735,
+      "yaw_slugft2": 3425,
+      "cg_in": 27.9,
+      "ssf": 1.07
+    },
+    {
+      "id": "slx-1996-base",
+      "vehicle": "1996 Acura SLX",
+      "configuration": "as tested",
+      "sourceOrg": "VRTC",
+      "weight_lb": 4289,
+      "roll_slugft2": 611,
+      "yaw_slugft2": 2878,
+      "cg_in": 27.2,
+      "ssf": 1.1
+    },
+    {
+      "id": "slx-1996-outriggers",
+      "vehicle": "1996 Acura SLX",
+      "configuration": "w/ VRTC outriggers",
+      "sourceOrg": "VRTC",
+      "weight_lb": 4402,
+      "roll_slugft2": 675,
+      "yaw_slugft2": 2935,
+      "cg_in": 26.7,
+      "ssf": 1.12
+    },
+    {
+      "id": "trooper-1996-cu",
+      "vehicle": "1996 Isuzu Trooper",
+      "configuration": "as tested",
+      "sourceOrg": "CU",
+      "weight_lb": 4448,
+      "roll_slugft2": 654,
+      "yaw_slugft2": 2942,
+      "cg_in": 27.5,
+      "ssf": 1.09
+    },
+    {
+      "id": "trooper-1996-human",
+      "vehicle": "1996 Isuzu Trooper",
+      "configuration": "w/ human driver",
+      "sourceOrg": "CU",
+      "weight_lb": 4614,
+      "roll_slugft2": 687,
+      "yaw_slugft2": 2956,
+      "cg_in": 27.7,
+      "ssf": 1.08
+    },
+    {
+      "id": "trooper-1996-sandbag",
+      "vehicle": "1996 Isuzu Trooper",
+      "configuration": "w/ sandbag driver",
+      "sourceOrg": "CU",
+      "weight_lb": 4614,
+      "roll_slugft2": 679,
+      "yaw_slugft2": 2946,
+      "cg_in": 27.7,
+      "ssf": 1.08
+    },
+    {
+      "id": "trooper-1996-outsand",
+      "vehicle": "1996 Isuzu Trooper",
+      "configuration": "w/ sandbag driver + CU outriggers",
+      "sourceOrg": "CU",
+      "weight_lb": 4883,
+      "roll_slugft2": 894,
+      "yaw_slugft2": 3460,
+      "cg_in": 27.3,
+      "ssf": 1.1
+    },
+    {
+      "id": "trooper-1996-cart",
+      "vehicle": "1996 Isuzu Trooper",
+      "configuration": "as tested (no inertia columns published)",
+      "sourceOrg": "CarT",
+      "weight_lb": 4496,
+      "roll_slugft2": null,
+      "yaw_slugft2": null,
+      "cg_in": 27.5,
+      "ssf": 1.1
+    },
+    {
+      "id": "trooper-1996-cart-instr",
+      "vehicle": "1996 Isuzu Trooper",
+      "configuration": "w/ instrumentation",
+      "sourceOrg": "CarT",
+      "weight_lb": 4807,
+      "roll_slugft2": null,
+      "yaw_slugft2": null,
+      "cg_in": 27.3,
+      "ssf": 1.1
+    },
+    {
+      "id": "trooper-1994-1occ",
+      "vehicle": "1994 Isuzu Trooper",
+      "configuration": "w/ 1 occupant",
+      "sourceOrg": "VRTC",
+      "weight_lb": 4465,
+      "roll_slugft2": 617,
+      "yaw_slugft2": 2918,
+      "cg_in": 27,
+      "ssf": 1.07
+    },
+    {
+      "id": "trooper-1994-4occ",
+      "vehicle": "1994 Isuzu Trooper",
+      "configuration": "w/ 4 occupants + cargo to GVWR",
+      "sourceOrg": "VRTC",
+      "weight_lb": 5513,
+      "roll_slugft2": 719,
+      "yaw_slugft2": 3345,
+      "cg_in": 27.7,
+      "ssf": 1.04
+    }
+  ],
+  "notes": [
+    "Table 3 covers the 1996 Acura SLX (badge-engineered Isuzu Trooper) and 1996 Trooper; Table 4 the 1994 Trooper.",
+    "SSF = track width / (2 * CG height); the report notes the measured track widths differed between subject vehicles, so equal CG heights can give different SSF.",
+    "The two CarT rows do not publish inertia columns; they are kept for CG height/SSF only.",
+    "No modern sports-car inertia measurements were found under a public-domain or permissive licence; that gap is documented, not filled with estimates."
+  ]
+}
