@@ -20,6 +20,13 @@ Z up. Body frame (ISO 8855): +X forward, +Y left, +Z up, origin at the centre of
 - Compression `c = L0 + r - d_hit`. Spring `F = k c`; bump stop `k_bs (c - c_static - travel)`.
 - Damper `F = c_bump * dc/dt` (compressing) or `c_rebound * dc/dt` (extending). dc/dt is the
   mount velocity along the suspension axis (no finite differences, so no noise).
+- Damper rate `dc/dt` is the exact rate at which the ray's hit distance shrinks over static ground: the velocity of
+  the hit point (a point fixed to the body at the end of the ray) along the ground normal, over the cosine between
+  ray and normal. It is NOT the mount velocity dotted with the ray direction: that also counts forward speed x
+  sin(pitch) (0.45 m/s of false "compression" on every damper at 86 m/s and 0.3 deg of pitch), a speed-proportional
+  force that fed pitch into heave and drove a growing limit cycle above ~300 km/h (wheel loads swinging 8-25 kN on a
+  13 kN car; the Aether Borealis R took off and "reached" 610 km/h on an engine that allows 376). Fixed 2026-11-24;
+  regression: `reference_data_top_speed_balance` (steady ride at top speed for every car).
 - Anti-roll bar `F = k_arb (c_this - c_other)` per axle.
 - Tyre load `Fz = F_susp * (up . n)` + geometric transfer (below). Springs only push.
 - Static geometry is derived from the data: mounts are placed so the car rests exactly at

@@ -531,10 +531,14 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const double max_phys_comp = std::min(ax.spring_rest_length,
             cfg_.wheels[w].static_compression + ax.max_compression + 0.025);
         comp[w] = clamp(rays[w].length - c.distance, 0.0, max_phys_comp);
-        // Compression rate = speed of the mount along the suspension axis toward the ground
-        // (ground assumed static).
-        Vec3 v_mount = s.velocity + cross(s.angular_velocity, rays[w].origin - s.position);
-        comp_rate[w] = dot(v_mount, rays[w].direction);
+        // Compression rate = how fast the ray's hit distance shrinks, ground assumed static. The hit point is a point
+        // fixed to the body (the end of the ray), so its velocity along the ground normal, divided by the cosine
+        // between ray and normal, is exactly -d(distance)/dt. (Dotting the mount velocity with the RAY direction, as
+        // before, also counted forward speed x sin(pitch): at 86 m/s and 0.3 deg of pitch a false 0.45 m/s of
+        // "compression" on every damper at once - a speed-proportional force that fed pitch back into heave and drove
+        // a growing heave limit cycle above ~300 km/h.)
+        const Vec3 v_hit = s.velocity + cross(s.angular_velocity, rays[w].origin + rays[w].direction * c.distance - s.position);
+        comp_rate[w] = -dot(v_hit, c.normal) / std::max(cos_n, 0.35);
     }
     for (int w = 0; w < 4; ++w) {
         if (!touching[w]) continue;
