@@ -244,7 +244,9 @@ export class Minimap {
     } else {
       // round watch face
       c.beginPath(); c.arc(r, r, r - 1, 0, Math.PI * 2); c.clip();
-      c.fillStyle = 'rgba(7, 11, 18, 0.94)'; c.fillRect(0, 0, size, size);
+      const glass = c.createRadialGradient(r * 0.9, r * 0.6, 0, r, r, size * 0.72);
+      glass.addColorStop(0, '#121b2a'); glass.addColorStop(0.55, '#0a111c'); glass.addColorStop(1, '#04070c');
+      c.fillStyle = glass; c.fillRect(0, 0, size, size);
       // world -> canvas: translate to the car, rotate so the car points up, scale, flip y
       c.translate(r, r * 1.18);
       c.scale(k, -k);
@@ -273,12 +275,13 @@ export class Minimap {
           bucket.push(s);
         }
       }
-      c.strokeStyle = major ? 'rgba(190, 205, 230, 0.82)' : 'rgba(140, 152, 178, 0.56)';
+      const casing = major ? 'rgba(2, 5, 10, 0.9)' : 'rgba(2, 5, 10, 0.55)';
+      const fill = major ? 'rgba(232, 240, 252, 0.95)' : 'rgba(158, 172, 196, 0.66)';
       for (const [lw, bucket] of byWidth) {
-        c.lineWidth = lw;
         c.beginPath();
         for (let i = 0; i < bucket.length; i++) { const s = bucket[i]; c.moveTo(s.x0, s.y0); c.lineTo(s.x1, s.y1); }
-        c.stroke();
+        c.strokeStyle = casing; c.lineWidth = lw + Math.max(1.2, 1.6 * this.zoom); c.stroke();
+        c.strokeStyle = fill; c.lineWidth = lw; c.stroke();
         bucket.length = 0;
         pool.push(bucket);
       }
@@ -301,10 +304,33 @@ export class Minimap {
         c.strokeStyle = 'rgba(255, 255, 255, 0.35)'; c.lineWidth = lw + 7 * this.zoom; c.stroke();
         c.strokeStyle = '#f2f7ff'; c.lineWidth = lw; c.stroke();
       }
+      // direction chevrons on the next stretch, like a real nav
+      if (routeS !== null && this.routeLen > 0) {
+        c.fillStyle = '#ffffff'; c.strokeStyle = 'rgba(2, 5, 10, 0.85)'; c.lineWidth = 1.1 * this.zoom;
+        const sz = 6.5 * this.zoom;
+        for (let d = 28; d <= 600; d += 58) {
+          const p = this.routeAt(routeS + d, { x: 0, y: 0 });
+          const q = this.routeAt(routeS + d + 7, { x: 0, y: 0 });
+          const a = Math.atan2(q.y - p.y, q.x - p.x);
+          c.save(); c.translate(p.x, p.y); c.rotate(a);
+          c.beginPath(); c.moveTo(sz, 0); c.lineTo(-sz * 0.65, sz * 0.72); c.lineTo(-sz * 0.2, 0); c.lineTo(-sz * 0.65, -sz * 0.72); c.closePath();
+          c.fill(); c.stroke(); c.restore();
+        }
+      }
       // start / finish
       const s0 = this.route[0];
       c.fillStyle = '#fff'; c.fillRect(s0.x - 4 * this.zoom, s0.y - 4 * this.zoom, 8 * this.zoom, 8 * this.zoom);
       c.fillStyle = '#000'; c.fillRect(s0.x - 4 * this.zoom, s0.y - 4 * this.zoom, 4 * this.zoom, 4 * this.zoom); c.fillRect(s0.x, s0.y, 4 * this.zoom, 4 * this.zoom);
+    }
+    // landmarks near the car as small points of interest
+    if (this.landmarks.length) {
+      c.save();
+      c.fillStyle = 'rgba(236, 244, 255, 0.85)'; c.strokeStyle = 'rgba(2, 5, 10, 0.8)'; c.lineWidth = 0.8 * this.zoom;
+      for (const lm of this.landmarks) {
+        if (Math.abs(lm.x - cx) > (r * 1.7) * this.zoom || Math.abs(lm.y - cy) > (r * 1.7) * this.zoom) continue;
+        c.beginPath(); c.arc(lm.x, lm.y, 2.1 * this.zoom, 0, Math.PI * 2); c.fill(); c.stroke();
+      }
+      c.restore();
     }
     // rivals / players
     for (const o of others) {
@@ -324,7 +350,17 @@ export class Minimap {
       c.strokeStyle = '#000'; c.lineWidth = 1.8 * this.zoom; c.stroke();
     }
     c.restore();
-    // the car: arrow at the centre (screen space)
+    // the car: a soft heading cone, then the arrow (screen space)
+    c.save();
+    c.translate(r, this.expanded ? r : r * 1.18);
+    if (this.expanded) c.rotate(Math.PI / 2 - theta);
+    const cone = c.createRadialGradient(0, 0, 0, 0, 0, 54);
+    cone.addColorStop(0, 'rgba(96, 200, 255, 0.40)');
+    cone.addColorStop(0.5, 'rgba(96, 200, 255, 0.11)');
+    cone.addColorStop(1, 'rgba(96, 200, 255, 0)');
+    c.fillStyle = cone;
+    c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, 54, -Math.PI / 2 - 0.55, -Math.PI / 2 + 0.55); c.closePath(); c.fill();
+    c.restore();
     c.save();
     c.translate(r, this.expanded ? r : r * 1.18);
     if (this.expanded) c.rotate(Math.PI / 2 - theta);

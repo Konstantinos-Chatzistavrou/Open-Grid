@@ -510,16 +510,28 @@ body.touch.spectating #board { top: calc(54px + env(safe-area-inset-top)); }
 /* ---- GPS: circular watch-style nav (reference: car-GPS watch face) --------------------------------------- */
 #minimap { position: absolute; left: 16px; bottom: 46px; width: 238px; height: 238px; pointer-events: none;
   border-radius: 50%; overflow: hidden;
-  background: radial-gradient(circle at 50% 28%, #141a25 0%, #070a10 62%, #03050a 100%);
-  box-shadow: 0 0 0 5px #0a0d13, 0 0 0 7px #20262f, 0 0 0 8px #000, 0 18px 40px #000d, inset 0 0 34px #000b; }
+  /* brushed-metal bezel: a conic sweep under a dark glass face */
+  background: conic-gradient(from 205deg, #2c333d, #0b0e14 18%, #3c4552 38%, #0a0d12 58%, #323a45 78%, #0b0e14 100%),
+              radial-gradient(circle at 50% 25%, #1b2230, #04060a 70%);
+  background-blend-mode: normal, normal;
+  box-shadow: 0 0 0 1px #6b7686 inset, 0 0 0 6px #0a0d13, 0 1px 0 #8d99ab, 0 2px 0 #05070b,
+    0 0 0 8px #000, 0 20px 44px #000e, inset 0 0 30px #000c; }
+/* glass glare over the face */
+#minimap::after { content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(120% 80% at 30% 8%, #ffffff2b 0%, #ffffff0d 26%, transparent 55%),
+              linear-gradient(118deg, transparent 38%, #ffffff14 45%, transparent 52%);
+  mix-blend-mode: screen; }
 #minimap canvas { position: absolute; left: 19px; top: 19px; width: 200px; height: 200px; border-radius: 50%; display: block;
   pointer-events: auto; cursor: pointer; box-shadow: 0 0 0 1px #ffffff12, inset 0 0 26px #000d; }
 /* speed, like the watch face: big number over the map, unit under it */
-#minimap .gps-speed { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); text-align: center; pointer-events: none;
-  color: #fff; font: 800 38px/0.95 "Inter", system-ui, sans-serif; letter-spacing: -.03em; text-shadow: 0 2px 12px #000e; }
+#minimap .gps-speed { position: absolute; left: 50%; top: 13px; transform: translateX(-50%); text-align: center; pointer-events: none;
+  font: 900 40px/0.92 "Inter", system-ui, sans-serif; letter-spacing: -.04em;
+  background: linear-gradient(180deg, #ffffff 0%, #dbe4f0 55%, #a9b6c8 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 2px 1px #000c) drop-shadow(0 8px 18px #000b); }
 #minimap .gps-speed small { display: block; margin-top: 3px; font: 600 9px "Inter", system-ui, sans-serif; letter-spacing: .22em; color: #9fb0c6; }
 #minimap .gps-eta-chip { position: absolute; right: 12px; top: 58px; pointer-events: none; padding: 3px 7px; border-radius: 7px;
-  background: #1d1206e6; border: 1px solid #ff9d2a55; color: #ffb44d; font: 700 10px "Inter", system-ui, sans-serif;
+  background: linear-gradient(180deg, #2a1a08f2, #150d04f2); border: 1px solid #ff9d2a66; color: #ffc266;
+  box-shadow: 0 0 12px #ff8a0040, inset 0 1px 0 #ffffff1f; font: 800 10px "Inter", system-ui, sans-serif;
   font-variant-numeric: tabular-nums; white-space: nowrap; }
 #minimap .gps-turn { position: absolute; left: 12px; top: 58px; right: auto; max-width: 104px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   padding: 3px 8px; border-radius: 7px; background: #0b0f17cc; border: 1px solid #ffffff1a;
@@ -528,7 +540,8 @@ body.touch.spectating #board { top: calc(54px + env(safe-area-inset-top)); }
 #minimap .gps-turn i { font-style: normal; color: var(--dim); margin-left: 4px; }
 #minimap .gps-turn[hidden] { display: none; }
 #minimap .gps-pill { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); pointer-events: none;
-  padding: 4px 13px; border-radius: 999px; background: #0b1019e6; border: 1px solid #ffffff22; color: #e6eefb;
+  padding: 4px 13px; border-radius: 999px; background: linear-gradient(180deg, #131a26e6, #070b12e6); border: 1px solid #ffffff2e; color: #e6eefb;
+  backdrop-filter: blur(6px); box-shadow: 0 4px 14px #000a, inset 0 1px 0 #ffffff22;
   font: 600 11px "Inter", system-ui, sans-serif; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 #minimap .gps-pill::before { content: '▾ '; color: #9fb0c6; }
 /* footer is only used by the expanded map */
