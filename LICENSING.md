@@ -51,6 +51,8 @@ these files.
 - **City and garage models and textures adapted from CC0 originals** (Poly Haven, ambientCG): our processed versions are
   CC BY-NC 4.0; the originals remain CC0 at their sources.
 - **Fonts** (Barlow, Roboto): SIL Open Font License 1.1 (`web/public/fonts/LICENSE-Roboto-OFL.txt`).
+- **Project Chrono vehicle data** (`data/reference/chrono-vehicles/`, 546 verbatim files: the numeric JSON and `.tir` of its `data/vehicle`):
+  **BSD-3-Clause** (`LICENSE-projectchrono.txt`). Meshes, textures and the OpenCRG roads are not imported (docs/chrono-data.md).
 - **Fitted tyre file** `data/tires/audi_245_40R18_pac2002.tir`: Project Chrono, **BSD-3-Clause**
   (`data/tires/LICENSE-projectchrono.txt`).
 - **Basis Universal transcoder**, `web/public/libs/basis/`: Apache-2.0.

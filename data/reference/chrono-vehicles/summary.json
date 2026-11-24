@@ -1,0 +1,2016 @@
+{
+ "schema": "open-grid/chrono-vehicles-summary/1",
+ "generated_by": "tools/physics/check_chrono_vehicles.mjs --write",
+ "note": "A digest of the verbatim files next to it; the files are the source. Chrono chassis inertias are model values, mostly outside the NHTSA-measured range.",
+ "chassis": [
+  {
+   "file": "gator/json/Gator_Chassis.json",
+   "vehicle": "gator",
+   "mass_kg": 800,
+   "cg_z_m": 0.359,
+   "inertia_kgm2": [
+    107.7,
+    350.8,
+    457.7
+   ],
+   "k2": [
+    0.135,
+    0.439,
+    0.572
+   ]
+  },
+  {
+   "file": "Polaris/Polaris_Chassis.json",
+   "vehicle": "Polaris",
+   "mass_kg": 1105.5,
+   "cg_z_m": 0.767,
+   "inertia_kgm2": [
+    275.7,
+    853.4,
+    1200
+   ],
+   "k2": [
+    0.249,
+    0.772,
+    1.085
+   ]
+  },
+  {
+   "file": "audi/json/audi_Chassis.json",
+   "vehicle": "audi",
+   "mass_kg": 1550,
+   "cg_z_m": 0.55,
+   "inertia_kgm2": [
+    222.8,
+    944.1,
+    1053.5
+   ],
+   "k2": [
+    0.144,
+    0.609,
+    0.68
+   ]
+  },
+  {
+   "file": "sedan/chassis/Sedan_Chassis.json",
+   "vehicle": "sedan",
+   "mass_kg": 1550,
+   "cg_z_m": 0.7,
+   "inertia_kgm2": [
+    222.8,
+    944.1,
+    1053.5
+   ],
+   "k2": [
+    0.144,
+    0.609,
+    0.68
+   ]
+  },
+  {
+   "file": "Polaris/Polaris_Chassis_Variant.json",
+   "vehicle": "Polaris",
+   "mass_kg": 1835.8,
+   "cg_z_m": 0.03,
+   "inertia_kgm2": [
+    0.9,
+    2.9,
+    2.7
+   ],
+   "k2": [
+    0.001,
+    0.002,
+    0.001
+   ]
+  },
+  {
+   "file": "articulated_chassis/ACV_FrontChassis.json",
+   "vehicle": "articulated_chassis",
+   "mass_kg": 2000,
+   "cg_z_m": 0.4,
+   "inertia_kgm2": [
+    100,
+    400,
+    500
+   ],
+   "k2": [
+    0.05,
+    0.2,
+    0.25
+   ]
+  },
+  {
+   "file": "Nissan_Patrol/json/suv_Chassis.json",
+   "vehicle": "Nissan_Patrol",
+   "mass_kg": 2086.5,
+   "cg_z_m": 0.213,
+   "inertia_kgm2": [
+    1078.5,
+    2955.7,
+    3570.2
+   ],
+   "k2": [
+    0.517,
+    1.417,
+    1.711
+   ]
+  },
+  {
+   "file": "fmi/wheeled_vehicle/Chassis.json",
+   "vehicle": "fmi",
+   "mass_kg": 2086.5,
+   "cg_z_m": 0.213,
+   "inertia_kgm2": [
+    1078.5,
+    2955.7,
+    3570.2
+   ],
+   "k2": [
+    0.517,
+    1.417,
+    1.711
+   ]
+  },
+  {
+   "file": "fmi/wheeled_vehicle_ptrain/Chassis.json",
+   "vehicle": "fmi",
+   "mass_kg": 2086.5,
+   "cg_z_m": 0.213,
+   "inertia_kgm2": [
+    1078.5,
+    2955.7,
+    3570.2
+   ],
+   "k2": [
+    0.517,
+    1.417,
+    1.711
+   ]
+  },
+  {
+   "file": "generic/chassis/Chassis.json",
+   "vehicle": "generic",
+   "mass_kg": 2086.5,
+   "cg_z_m": 0.213,
+   "inertia_kgm2": [
+    1078.5,
+    2955.7,
+    3570.2
+   ],
+   "k2": [
+    0.517,
+    1.417,
+    1.711
+   ]
+  },
+  {
+   "file": "hmmwv/chassis/HMMWV_Chassis.json",
+   "vehicle": "hmmwv",
+   "mass_kg": 2086.5,
+   "cg_z_m": 0.213,
+   "inertia_kgm2": [
+    1078.5,
+    2955.7,
+    3570.2
+   ],
+   "k2": [
+    0.517,
+    1.417,
+    1.711
+   ]
+  },
+  {
+   "file": "VW_microbus/json/van_Chassis.json",
+   "vehicle": "VW_microbus",
+   "mass_kg": 2321,
+   "cg_z_m": 0.3,
+   "inertia_kgm2": [
+    785,
+    2612,
+    2761
+   ],
+   "k2": [
+    0.338,
+    1.125,
+    1.19
+   ]
+  },
+  {
+   "file": "uaz/chassis/UAZ469_Chassis.json",
+   "vehicle": "uaz",
+   "mass_kg": 2321,
+   "cg_z_m": 0.3,
+   "inertia_kgm2": [
+    785,
+    2612,
+    2761
+   ],
+   "k2": [
+    0.338,
+    1.125,
+    1.19
+   ]
+  },
+  {
+   "file": "uaz/chassis/UAZBUS_Chassis.json",
+   "vehicle": "uaz",
+   "mass_kg": 2321,
+   "cg_z_m": 0.3,
+   "inertia_kgm2": [
+    785,
+    2612,
+    2761
+   ],
+   "k2": [
+    0.338,
+    1.125,
+    1.19
+   ]
+  },
+  {
+   "file": "gclass/chassis/G500_Chassis.json",
+   "vehicle": "gclass",
+   "mass_kg": 2354,
+   "cg_z_m": 0.3,
+   "inertia_kgm2": [
+    785,
+    2612,
+    2761
+   ],
+   "k2": [
+    0.333,
+    1.11,
+    1.173
+   ]
+  },
+  {
+   "file": "mtv/chassis/FMTV_Chassis.json",
+   "vehicle": "mtv",
+   "mass_kg": 3946,
+   "cg_z_m": 0.667,
+   "inertia_kgm2": [
+    3228,
+    5232,
+    4498
+   ],
+   "k2": [
+    0.818,
+    1.326,
+    1.14
+   ]
+  },
+  {
+   "file": "duro/chassis/duro_chassis.json",
+   "vehicle": "duro",
+   "mass_kg": 4900,
+   "cg_z_m": 0.659,
+   "inertia_kgm2": [
+    2629,
+    13484,
+    13502
+   ],
+   "k2": [
+    0.537,
+    2.752,
+    2.756
+   ]
+  },
+  {
+   "file": "M113/chassis/M113_Chassis_box.json",
+   "vehicle": "M113",
+   "mass_kg": 5489.2,
+   "cg_z_m": 0.406,
+   "inertia_kgm2": [
+    1786.9,
+    10449.7,
+    10721.2
+   ],
+   "k2": [
+    0.326,
+    1.904,
+    1.953
+   ]
+  },
+  {
+   "file": "M113/chassis/M113_Chassis_mesh.json",
+   "vehicle": "M113",
+   "mass_kg": 5489.2,
+   "cg_z_m": 0.406,
+   "inertia_kgm2": [
+    1786.9,
+    10449.7,
+    10721.2
+   ],
+   "k2": [
+    0.326,
+    1.904,
+    1.953
+   ]
+  },
+  {
+   "file": "M113_RS/chassis/M113_Chassis.json",
+   "vehicle": "M113_RS",
+   "mass_kg": 5489.2,
+   "cg_z_m": 0.406,
+   "inertia_kgm2": [
+    1786.9,
+    10449.7,
+    10721.2
+   ],
+   "k2": [
+    0.326,
+    1.904,
+    1.953
+   ]
+  },
+  {
+   "file": "MAN/chassis/MAN_5t_Chassis.json",
+   "vehicle": "MAN",
+   "mass_kg": 7085,
+   "cg_z_m": 0.744,
+   "inertia_kgm2": [
+    3441,
+    28485,
+    29395
+   ],
+   "k2": [
+    0.486,
+    4.02,
+    4.149
+   ]
+  },
+  {
+   "file": "M113/chassis/M113_Chassis.json",
+   "vehicle": "M113",
+   "mass_kg": 7819.2,
+   "cg_z_m": 0.406,
+   "inertia_kgm2": [
+    13983.1,
+    27287.6,
+    28805.6
+   ],
+   "k2": [
+    1.788,
+    3.49,
+    3.684
+   ]
+  },
+  {
+   "file": "MAN/chassis/MAN_7t_Chassis.json",
+   "vehicle": "MAN",
+   "mass_kg": 8285,
+   "cg_z_m": 0.744,
+   "inertia_kgm2": [
+    4023,
+    33309,
+    34373
+   ],
+   "k2": [
+    0.486,
+    4.02,
+    4.149
+   ]
+  },
+  {
+   "file": "truck/json/truck_Chassis.json",
+   "vehicle": "truck",
+   "mass_kg": 8285,
+   "cg_z_m": 0.744,
+   "inertia_kgm2": [
+    4023,
+    33309,
+    34373
+   ],
+   "k2": [
+    0.486,
+    4.02,
+    4.149
+   ]
+  },
+  {
+   "file": "MAN/chassis/MAN_10t_Chassis.json",
+   "vehicle": "MAN",
+   "mass_kg": 10785,
+   "cg_z_m": 0.744,
+   "inertia_kgm2": [
+    5238,
+    43361,
+    44746
+   ],
+   "k2": [
+    0.486,
+    4.02,
+    4.149
+   ]
+  },
+  {
+   "file": "citybus/chassis/CityBus_Chassis.json",
+   "vehicle": "citybus",
+   "mass_kg": 13000,
+   "cg_z_m": 0.86,
+   "inertia_kgm2": [
+    13500,
+    13500,
+    115100
+   ],
+   "k2": [
+    1.038,
+    1.038,
+    8.854
+   ]
+  },
+  {
+   "file": "Marder/chassis/chassis.json",
+   "vehicle": "Marder",
+   "mass_kg": 25000,
+   "cg_z_m": 0,
+   "inertia_kgm2": [
+    13653.4,
+    98182.7,
+    101954.4
+   ],
+   "k2": [
+    0.546,
+    3.927,
+    4.078
+   ]
+  }
+ ],
+ "engines": [
+  {
+   "id": "M113:M113_EngineShafts",
+   "file": "M113/powertrain/M113_EngineShafts.json",
+   "kind": "shafts",
+   "torque_map_points": 9
+  },
+  {
+   "id": "M113:M113_EngineSimple",
+   "file": "M113/powertrain/M113_EngineSimple.json",
+   "kind": "simple",
+   "max_torque_nm": 610.12,
+   "max_power_kw": 156.597,
+   "max_speed_rad_s": 550
+  },
+  {
+   "id": "M113:M113_EngineSimpleMap",
+   "file": "M113/powertrain/M113_EngineSimpleMap.json",
+   "kind": "simple_map",
+   "units_rad_s": false,
+   "max_rpm": 3500,
+   "curve_rpm_nm": [
+    [
+     500,
+     610
+    ],
+    [
+     1000,
+     610
+    ],
+    [
+     1500,
+     603
+    ],
+    [
+     2000,
+     590
+    ],
+    [
+     2500,
+     556
+    ],
+    [
+     2800,
+     535
+    ],
+    [
+     3000,
+     515
+    ]
+   ],
+   "peak_torque_nm": 610,
+   "peak_torque_rpm": 500,
+   "peak_power_kw": 161.8,
+   "peak_power_rpm": 3000
+  },
+  {
+   "id": "M113_RS:M113_EngineShafts",
+   "file": "M113_RS/powertrain/M113_EngineShafts.json",
+   "kind": "shafts",
+   "torque_map_points": 9
+  },
+  {
+   "id": "M113_RS:M113_EngineSimple",
+   "file": "M113_RS/powertrain/M113_EngineSimple.json",
+   "kind": "simple",
+   "max_torque_nm": 610.12,
+   "max_power_kw": 156.597,
+   "max_speed_rad_s": 550
+  },
+  {
+   "id": "MAN:MAN_7t_EngineSimpleMap",
+   "file": "MAN/powertrain/MAN_7t_EngineSimpleMap.json",
+   "kind": "simple_map",
+   "units_rad_s": false,
+   "max_rpm": 2200,
+   "curve_rpm_nm": [
+    [
+     100,
+     300
+    ],
+    [
+     400,
+     500
+    ],
+    [
+     600,
+     600
+    ],
+    [
+     800,
+     800
+    ],
+    [
+     1000,
+     1200
+    ],
+    [
+     1200,
+     1250
+    ],
+    [
+     1400,
+     1250
+    ],
+    [
+     1600,
+     1150
+    ],
+    [
+     1800,
+     1000
+    ],
+    [
+     2000,
+     900
+    ],
+    [
+     2100,
+     820
+    ]
+   ],
+   "peak_torque_nm": 1250,
+   "peak_torque_rpm": 1200,
+   "peak_power_kw": 192.7,
+   "peak_power_rpm": 1600
+  },
+  {
+   "id": "Marder:Marder_EngineSimple",
+   "file": "Marder/powertrain/Marder_EngineSimple.json",
+   "kind": "simple",
+   "max_torque_nm": 2400,
+   "max_power_kw": 530,
+   "max_speed_rad_s": 10000
+  },
+  {
+   "id": "Marder:Marder_EngineSimpleMap",
+   "file": "Marder/powertrain/Marder_EngineSimpleMap.json",
+   "kind": "simple_map",
+   "units_rad_s": true,
+   "max_rpm": 3500,
+   "curve_rpm_nm": [
+    [
+     73.5133,
+     700
+    ],
+    [
+     115.087,
+     2044
+    ],
+    [
+     121.2655,
+     2149
+    ],
+    [
+     126.3967,
+     2250
+    ],
+    [
+     129.1195,
+     2350
+    ],
+    [
+     132.2611,
+     2450
+    ],
+    [
+     136.1357,
+     2545
+    ],
+    [
+     141.5811,
+     2628
+    ],
+    [
+     146.9218,
+     2683
+    ],
+    [
+     156.9749,
+     2702
+    ],
+    [
+     170.4838,
+     2683
+    ],
+    [
+     183.9926,
+     2650
+    ],
+    [
+     199.0723,
+     2569
+    ],
+    [
+     209.8584,
+     2472
+    ],
+    [
+     219.8068,
+     2386
+    ],
+    [
+     229.8599,
+     2298
+    ],
+    [
+     243.264,
+     2154
+    ]
+   ],
+   "peak_torque_nm": 2702,
+   "peak_torque_rpm": 156.9749,
+   "peak_power_kw": 55.3,
+   "peak_power_rpm": 229.8599
+  },
+  {
+   "id": "Nissan_Patrol:suv_EngineShafts",
+   "file": "Nissan_Patrol/json/suv_EngineShafts.json",
+   "kind": "shafts",
+   "torque_map_points": 20
+  },
+  {
+   "id": "Nissan_Patrol:suv_EngineSimple",
+   "file": "Nissan_Patrol/json/suv_EngineSimple.json",
+   "kind": "simple",
+   "max_torque_nm": 1000,
+   "max_power_kw": 110,
+   "max_speed_rad_s": 2000
+  },
+  {
+   "id": "Polaris:Polaris_EngineSimpleMap",
+   "file": "Polaris/Polaris_EngineSimpleMap.json",
+   "kind": "simple_map",
+   "units_rad_s": false,
+   "max_rpm": 2700,
+   "curve_rpm_nm": [
+    [
+     700,
+     200
+    ],
+    [
+     800,
+     208.3475306
+    ],
+    [
+     900,
+     229.1596487
+    ],
+    [
+     1000,
+     275.6342809
+    ],
+    [
+     1100,
+     320.3816972
+    ],
+    [
+     1200,
+     362.2937745
+    ],
+    [
+     1300,
+     379.0264092
+    ],
+    [
+     1400,
+     396.6246208
+    ],
+    [
+     1500,
+     397.0445784
+    ],
+    [
+     1600,
+     394.7468284
+    ],
+    [
+     1700,
+     393.6673876
+    ],
+    [
+     1800,
+     384.3584304
+    ],
+    [
+     1900,
+     376.029486
+    ],
+    [
+     2000,
+     358.4387209
+    ],
+    [
+     2100,
+     343.2256932
+    ],
+    [
+     2200,
+     337.3422633
+    ],
+    [
+     2300,
+     318.1802167
+    ],
+    [
+     2400,
+     299.3691472
+    ],
+    [
+     2500,
+     276.041792
+    ],
+    [
+     2600,
+     280
+    ],
+    [
+     2700,
+     250
+    ]
+   ],
+   "peak_torque_nm": 397.0445784,
+   "peak_torque_rpm": 1500,
+   "peak_power_kw": 77.7,
+   "peak_power_rpm": 2200
+  },
+  {
+   "id": "VW_microbus:van_EngineSimpleMap",
+   "file": "VW_microbus/json/van_EngineSimpleMap.json",
+   "kind": "simple_map",
+   "units_rad_s": false,
+   "max_rpm": 4600,
+   "curve_rpm_nm": [
+    [
+     1000,
+     94
+    ],
+    [
+     1500,
+     140
+    ],
+    [
+     1750,
+     145
+    ],
+    [
+     2000,
+     148
+    ],
+    [
+     2250,
+     146
+    ],
+    [
+     2500,
+     146
+    ],
+    [
+     2750,
+     142
+    ],
+    [
+     3000,
+     140
+    ],
+    [
+     3250,
+     136
+    ],
+    [
+     3500,
+     131
+    ],
+    [
+     3750,
+     127
+    ],
+    [
+     4000,
+     119
+    ],
+    [
+     4250,
+     109
+    ],
+    [
+     4500,
+     90
+    ]
+   ],
+   "peak_torque_nm": 148,
+   "peak_torque_rpm": 2000,
+   "peak_power_kw": 49.9,
+   "peak_power_rpm": 3750
+  },
+  {
+   "id": "articulated_chassis:ACV_EngineSimpleMap",
+   "file": "articulated_chassis/ACV_EngineSimpleMap.json",
+   "kind": "simple_map",
+   "units_rad_s": false,
+   "max_rpm": 2200,
+   "curve_rpm_nm": [
+    [
+     100,
+     300
+    ],
+    [
+     400,
+     500
+    ],
+    [
+     600,
+     600
+    ],
+    [
+     800,
+     800
+    ],
+    [
+     1000,
+     1200
+    ],
+    [
+     1200,
+     1250
+    ],
+    [
+     1400,
+     1250
+    ],
+    [
+     1600,
+     1150
+    ],
+    [
+     1800,
+     1000
+    ],
+    [
+     2000,
+     900
+    ],
+    [
+     2100,
+     820
+    ]
+   ],
+   "peak_torque_nm": 1250,
+   "peak_torque_rpm": 1200,
+   "peak_power_kw": 192.7,
+   "peak_power_rpm": 1600
+  },
+  {
+   "id": "audi:audi_EngineSimpleMap",
+   "file": "audi/json/audi_EngineSimpleMap.json",
+   "kind": "simple_map",
+   "units_rad_s": false,
+   "max_rpm": 6500,
+   "curve_rpm_nm": [
+    [
+     1000,
+     172.8
+    ],
+    [
+     1500,
+     250
+    ],
+    [
+     2000,
+     250
+    ],
+    [
+     2500,
+     250
+    ],
+    [
+     3000,
+     250
+    ],
+    [
+     3500,
+     250
+    ],
+    [
+     4000,
+     245.6
+    ],
+    [
+     4500,
+     232.3
+    ],
+    [
+     5000,
+     210.1
+    ],
+    [
+     5500,
+     191
+    ],
+    [
+     6000,
+     175.1
+    ],
+    [
+     6500,
+     145.4
+    ]
+   ],
+   "peak_torque_nm": 250,
+   "peak_torque_rpm": 1500,
+   "peak_power_kw": 110,
+   "peak_power_rpm": 6000
+  },
+  {
+   "id": "citybus:CityBus_EngineSimpleMap",
+   "file": "citybus/powertrain/CityBus_EngineSimpleMap.json",
+   "kind": "simple_map",
+   "units_rad_s": false,
+   "max_rpm": 2200,
+   "curve_rpm_nm": [
+    [
+     100,
+     300
+    ],
+    [
+     400,
+     500
+    ],
+    [
+     600,
+     600
+    ],
+    [
+     800,
+     800
+    ],
+    [
+     1000,
+     1200
+    ],
+    [
+     1200,
+     1250
+    ],
+    [
+     1400,
+     1250
+    ],
+    [
+     1600,
+     1150
+    ],
+    [
+     1800,
+     1000
+    ],
+    [
+     2000,
+     900
+    ],
+    [
+     2100,
+     820
+    ]
+   ],
+   "peak_torque_nm": 1250,
+   "peak_torque_rpm": 1200,
+   "peak_power_kw": 192.7,
+   "peak_power_rpm": 1600
+  },
+  {
+   "id": "duro:duro_engine_simple_map",
+   "file": "duro/powertrain/duro_engine_simple_map.json",
+   "kind": "simple_map",
+   "units_rad_s": false,
+   "max_rpm": 3300,
+   "curve_rpm_nm": [
+    [
+     800,
+     398
+    ],
+    [
+     1000,
+     438
+    ],
+    [
+     1200,
+     478
+    ],
+    [
+     1400,
+     500
+    ],
+    [
+     1600,
+     491
+    ],
+    [
+     1800,
+     478
+    ],
+    [
+     2000,
+     462
+    ],
+    [
+     2200,
+     447
+    ],
+    [
+     2400,
+     431
+    ],
+    [
+     2600,
+     414
+    ],
+    [
+     2800,
+     392
+    ],
+    [
+     3000,
+     360
+    ],
+    [
+     3200,
+     150
+    ]
+   ],
+   "peak_torque_nm": 500,
+   "peak_torque_rpm": 1400,
+   "peak_power_kw": 114.9,
+   "peak_power_rpm": 2800
+  },
+  {
+   "id": "fmi:EngineShafts",
+   "file": "fmi/powertrain/EngineShafts.json",
+   "kind": "shafts",
+   "torque_map_points": 20
+  },
+  {
+   "id": "fmi:EngineShafts",
+   "file": "fmi/wheeled_vehicle_ptrain/EngineShafts.json",
+   "kind": "shafts",
+   "torque_map_points": 20
+  },
+  {
+   "id": "gator:Gator_EngineSimple",
+   "file": "gator/json/Gator_EngineSimple.json",
+   "kind": "simple",
+   "max_torque_nm": 200,
+   "max_power_kw": 14,
+   "max_speed_rad_s": 360
+  },
+  {
+   "id": "gclass:G500_EngineSimpleMap",
+   "file": "gclass/powertrain/G500_EngineSimpleMap.json",
+   "kind": "simple_map",
+   "units_rad_s": false,
+   "max_rpm": 5900,
+   "curve_rpm_nm": [
+    [
+     1000,
+     400
+    ],
+    [
+     1500,
+     500
+    ],
+    [
+     1800,
+     550
+    ],
+    [
+     2250,
+     610
+    ],
+    [
+     4750,
+     610
+    ],
+    [
+     5250,
+     565
+    ],
+    [
+     5500,
+     539
+    ],
+    [
+     5800,
+     450
+    ]
+   ],
+   "peak_torque_nm": 610,
+   "peak_torque_rpm": 2250,
+   "peak_power_kw": 310.6,
+   "peak_power_rpm": 5250
+  },
+  {
+   "id": "generic:EngineShafts",
+   "file": "generic/powertrain/EngineShafts.json",
+   "kind": "shafts",
+   "torque_map_points": 20
+  },
+  {
+   "id": "generic:EngineSimple",
+   "file": "generic/powertrain/EngineSimple.json",
+   "kind": "simple",
+   "max_torque_nm": 330,
+   "max_power_kw": 110,
+   "max_speed_rad_s": 10000
+  },
+  {
+   "id": "hmmwv:HMMWV_EngineShafts",
+   "file": "hmmwv/powertrain/HMMWV_EngineShafts.json",
+   "kind": "shafts",
+   "torque_map_points": 20
+  },
+  {
+   "id": "hmmwv:HMMWV_EngineSimple",
+   "file": "hmmwv/powertrain/HMMWV_EngineSimple.json",
+   "kind": "simple",
+   "max_torque_nm": 330,
+   "max_power_kw": 110,
+   "max_speed_rad_s": 10000
+  },
+  {
+   "id": "hmmwv:HMMWV_EngineSimpleMap",
+   "file": "hmmwv/powertrain/HMMWV_EngineSimpleMap.json",
+   "kind": "simple_map",
+   "units_rad_s": false,
+   "max_rpm": 2600,
+   "curve_rpm_nm": [
+    [
+     800,
+     382
+    ],
+    [
+     900,
+     490
+    ],
+    [
+     1000,
+     579
+    ],
+    [
+     1100,
+     650
+    ],
+    [
+     1200,
+     706
+    ],
+    [
+     1300,
+     746
+    ],
+    [
+     1400,
+     774
+    ],
+    [
+     1500,
+     789
+    ],
+    [
+     1600,
+     793
+    ],
+    [
+     1700,
+     788
+    ],
+    [
+     1800,
+     774
+    ],
+    [
+     1900,
+     754
+    ],
+    [
+     2000,
+     728
+    ],
+    [
+     2100,
+     697
+    ],
+    [
+     2200,
+     664
+    ],
+    [
+     2300,
+     628
+    ],
+    [
+     2400,
+     593
+    ],
+    [
+     2500,
+     558
+    ]
+   ],
+   "peak_torque_nm": 793,
+   "peak_torque_rpm": 1600,
+   "peak_power_kw": 153.3,
+   "peak_power_rpm": 2100
+  },
+  {
+   "id": "mtv:FMTV_EngineShafts",
+   "file": "mtv/powertrain/FMTV_EngineShafts.json",
+   "kind": "shafts",
+   "torque_map_points": 12
+  },
+  {
+   "id": "sedan:Sedan_EngineShafts",
+   "file": "sedan/powertrain/Sedan_EngineShafts.json",
+   "kind": "shafts",
+   "torque_map_points": 22
+  },
+  {
+   "id": "sedan:Sedan_EngineSimpleMap",
+   "file": "sedan/powertrain/Sedan_EngineSimpleMap.json",
+   "kind": "simple_map",
+   "units_rad_s": false,
+   "max_rpm": 6500,
+   "curve_rpm_nm": [
+    [
+     1000,
+     236.8
+    ],
+    [
+     1200,
+     296
+    ],
+    [
+     1400,
+     338.3
+    ],
+    [
+     1500,
+     355.2
+    ],
+    [
+     1600,
+     370
+    ],
+    [
+     2000,
+     370
+    ],
+    [
+     2500,
+     370
+    ],
+    [
+     3000,
+     370
+    ],
+    [
+     3500,
+     370
+    ],
+    [
+     4000,
+     370
+    ],
+    [
+     4500,
+     370
+    ],
+    [
+     4600,
+     369.3
+    ],
+    [
+     4800,
+     364
+    ],
+    [
+     5000,
+     353.3
+    ],
+    [
+     5200,
+     339.7
+    ],
+    [
+     5500,
+     321.2
+    ],
+    [
+     5700,
+     309.9
+    ],
+    [
+     6000,
+     294.4
+    ],
+    [
+     6200,
+     280.4
+    ],
+    [
+     6500,
+     244.6
+    ]
+   ],
+   "peak_torque_nm": 370,
+   "peak_torque_rpm": 1600,
+   "peak_power_kw": 185,
+   "peak_power_rpm": 5500
+  },
+  {
+   "id": "truck:truck_EngineSimple",
+   "file": "truck/json/truck_EngineSimple.json",
+   "kind": "simple",
+   "max_torque_nm": 38270,
+   "max_power_kw": 256,
+   "max_speed_rad_s": 300
+  },
+  {
+   "id": "uaz:UAZBUS_EngineSimpleMap",
+   "file": "uaz/powertrain/UAZBUS_EngineSimpleMap.json",
+   "kind": "simple_map",
+   "units_rad_s": false,
+   "max_rpm": 4000,
+   "curve_rpm_nm": [
+    [
+     736.5,
+     174.4
+    ],
+    [
+     987.6,
+     182.7
+    ],
+    [
+     1238,
+     189.8
+    ],
+    [
+     1500,
+     195.7
+    ],
+    [
+     1724,
+     200.5
+    ],
+    [
+     1980,
+     205.2
+    ],
+    [
+     2188,
+     207.6
+    ],
+    [
+     2348,
+     208.1
+    ],
+    [
+     2492,
+     206.2
+    ],
+    [
+     2737,
+     206.2
+    ],
+    [
+     2992,
+     206.2
+    ],
+    [
+     3189,
+     206.4
+    ],
+    [
+     3487,
+     203.1
+    ],
+    [
+     3684,
+     199.5
+    ],
+    [
+     3908,
+     194.5
+    ]
+   ],
+   "peak_torque_nm": 208.1,
+   "peak_torque_rpm": 2348,
+   "peak_power_kw": 79.6,
+   "peak_power_rpm": 3908
+  }
+ ],
+ "suspensions": [
+  {
+   "file": "VW_microbus/json/van_DoubleWishboneFront.json",
+   "template": "DoubleWishbone",
+   "spring_n_per_m": 112912.1427,
+   "damper_ns_per_m": 43290.22357
+  },
+  {
+   "file": "VW_microbus/json/van_SemiTrailingArm.json",
+   "template": "SemiTrailingArm",
+   "spring_n_per_m": 55072.39256,
+   "damper_ns_per_m": 8263.762265
+  },
+  {
+   "file": "audi/json/audi_DoubleWishbone.json",
+   "template": "DoubleWishbone",
+   "spring_n_per_m": 500000,
+   "damper_ns_per_m": 10000
+  },
+  {
+   "file": "audi/json/audi_MultiLink.json",
+   "template": "MultiLink",
+   "spring_n_per_m": 167062,
+   "damper_ns_per_m": 7500
+  },
+  {
+   "file": "citybus/suspension/CityBus_LeafspringAxle.json",
+   "template": "LeafspringAxle",
+   "spring_n_per_m": 710402.01005,
+   "damper_ns_per_m": 76070.3517588
+  },
+  {
+   "file": "citybus/suspension/CityBus_SolidAxleFront.json",
+   "template": "SolidAxle",
+   "spring_n_per_m": 500000,
+   "damper_ns_per_m": 20000
+  },
+  {
+   "file": "citybus/suspension/CityBus_SolidAxleRear.json",
+   "template": "SolidAxle",
+   "spring_n_per_m": 900000,
+   "damper_ns_per_m": 35000
+  },
+  {
+   "file": "citybus/suspension/CityBus_ToeLeafspringAxle.json",
+   "template": "ToeBarLeafspringAxle",
+   "spring_n_per_m": 565480,
+   "damper_ns_per_m": 60552
+  },
+  {
+   "file": "duro/suspension/duro_dedion_axle.json",
+   "template": "DeDionAxle",
+   "spring_n_per_m": 102643.885771329,
+   "damper_ns_per_m": 16336.2817986669
+  },
+  {
+   "file": "duro/suspension/duro_toebar_dedion.json",
+   "template": "ToeBarDeDionAxle",
+   "spring_n_per_m": 166283.0949,
+   "damper_ns_per_m": 20792.69215
+  },
+  {
+   "file": "gclass/suspension/G500_FrontAxle.json",
+   "template": "ToeBarRigidPanhardAxle",
+   "spring_n_per_m": 94748.2022504578,
+   "damper_ns_per_m": 15079.644737231
+  },
+  {
+   "file": "gclass/suspension/G500_RearAxle.json",
+   "template": "RigidPanhardAxle",
+   "spring_n_per_m": 102643.885771329,
+   "damper_ns_per_m": 16336.2817986669
+  },
+  {
+   "file": "generic/suspension/DeDionAxle.json",
+   "template": "DeDionAxle",
+   "spring_n_per_m": 102643.885771329,
+   "damper_ns_per_m": 16336.2817986669
+  },
+  {
+   "file": "generic/suspension/DoubleWishbone.json",
+   "template": "DoubleWishbone",
+   "spring_n_per_m": 369149,
+   "damper_ns_per_m": 22459
+  },
+  {
+   "file": "generic/suspension/MacPhersonStrut.json",
+   "template": "MacPhersonStrut",
+   "spring_n_per_m": 369149,
+   "damper_ns_per_m": 22459
+  },
+  {
+   "file": "generic/suspension/MultiLink.json",
+   "template": "MultiLink",
+   "spring_n_per_m": 120000,
+   "damper_ns_per_m": 12000
+  },
+  {
+   "file": "generic/suspension/SemiTrailingArm.json",
+   "template": "SemiTrailingArm",
+   "spring_n_per_m": 350000,
+   "damper_ns_per_m": 20000
+  },
+  {
+   "file": "generic/suspension/SolidAxle.json",
+   "template": "SolidAxle",
+   "spring_n_per_m": 267062,
+   "damper_ns_per_m": 22459
+  },
+  {
+   "file": "generic/suspension/ToeBarDeDionAxle.json",
+   "template": "ToeBarDeDionAxle",
+   "spring_n_per_m": 166283.0949,
+   "damper_ns_per_m": 20792.69215
+  },
+  {
+   "file": "mtv/suspension/FMTV_ToeBarLeafSpringAxle.json",
+   "template": "ToeBarLeafspringAxle",
+   "spring_n_per_m": 420000,
+   "damper_ns_per_m": 48240.8
+  },
+  {
+   "file": "sedan/suspension/Sedan_DoubleWishbone.json",
+   "template": "DoubleWishbone",
+   "spring_n_per_m": 500000,
+   "damper_ns_per_m": 10000
+  },
+  {
+   "file": "sedan/suspension/Sedan_MultiLink.json",
+   "template": "MultiLink",
+   "spring_n_per_m": 167062,
+   "damper_ns_per_m": 15000
+  },
+  {
+   "file": "uaz/suspension/UAZ469_FrontLeafspringAxle.json",
+   "template": "ToeBarLeafspringAxle",
+   "spring_n_per_m": 102643.885771329,
+   "damper_ns_per_m": 16336.2817986669
+  },
+  {
+   "file": "uaz/suspension/UAZBUS_FrontLeafspringAxle.json",
+   "template": "ToeBarLeafspringAxle",
+   "spring_n_per_m": 102643.885771329,
+   "damper_ns_per_m": 16336.2817986669
+  },
+  {
+   "file": "uaz/suspension/UAZBUS_FrontPushPipeAxle.json",
+   "template": "ToeBarPushPipeAxle",
+   "spring_n_per_m": 102643.885771329,
+   "damper_ns_per_m": 16336.2817986669
+  },
+  {
+   "file": "uaz/suspension/UAZBUS_RearLeafspringAxle.json",
+   "template": "LeafspringAxle",
+   "spring_n_per_m": 102643.885771329,
+   "damper_ns_per_m": 16336.2817986669
+  },
+  {
+   "file": "uaz/suspension/UAZBUS_RearPushPipeAxle.json",
+   "template": "PushPipeAxle",
+   "spring_n_per_m": 102643.885771329,
+   "damper_ns_per_m": 16336.2817986669
+  },
+  {
+   "file": "ultra_tow/UT_LeafspringAxle.json",
+   "template": "LeafspringAxle",
+   "spring_n_per_m": 50000,
+   "damper_ns_per_m": 5000
+  },
+  {
+   "file": "utv_trailer/UTV_LeafspringAxle.json",
+   "template": "LeafspringAxle",
+   "spring_n_per_m": 70000,
+   "damper_ns_per_m": 2500
+  }
+ ],
+ "brakes": [
+  {
+   "file": "M113/brake/M113_TrackBrakeShafts.json",
+   "template": "TrackBrakeShafts",
+   "max_torque_nm": 10000
+  },
+  {
+   "file": "M113/brake/M113_TrackBrakeSimple.json",
+   "template": "TrackBrakeSimple",
+   "max_torque_nm": 10000
+  },
+  {
+   "file": "M113_RS/brake/M113_TrackBrakeShafts.json",
+   "template": "TrackBrakeShafts",
+   "max_torque_nm": 10000
+  },
+  {
+   "file": "M113_RS/brake/M113_TrackBrakeSimple.json",
+   "template": "TrackBrakeSimple",
+   "max_torque_nm": 10000
+  },
+  {
+   "file": "MAN/brake/MAN_5t_BrakeShafts.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 10000
+  },
+  {
+   "file": "MAN/brake/MAN_5t_BrakeSimple.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 10000
+  },
+  {
+   "file": "Marder/brake/brake_shafts.json",
+   "template": "TrackBrakeShafts",
+   "max_torque_nm": 30000
+  },
+  {
+   "file": "Marder/brake/brake_simple.json",
+   "template": "TrackBrakeSimple",
+   "max_torque_nm": 30000
+  },
+  {
+   "file": "Nissan_Patrol/json/suv_BrakeSimple_Front.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "Nissan_Patrol/json/suv_BrakeSimple_Rear.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "Polaris/Polaris_BrakeShafts.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 2000
+  },
+  {
+   "file": "Polaris/Polaris_BrakeSimple.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 820
+  },
+  {
+   "file": "VW_microbus/json/van_BrakeShafts_Front.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 3000
+  },
+  {
+   "file": "VW_microbus/json/van_BrakeShafts_Rear.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 3000
+  },
+  {
+   "file": "VW_microbus/json/van_BrakeSimple_Front.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 3000
+  },
+  {
+   "file": "VW_microbus/json/van_BrakeSimple_Rear.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 3000
+  },
+  {
+   "file": "articulated_chassis/ACV_BrakeSimple.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "audi/json/audi_BrakeShafts.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 800
+  },
+  {
+   "file": "audi/json/audi_BrakeSimple.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 900
+  },
+  {
+   "file": "citybus/brake/CityBus_BrakeShafts.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 10000
+  },
+  {
+   "file": "citybus/brake/CityBus_BrakeSimple.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 10000
+  },
+  {
+   "file": "duro/brakes/duro_brake_shafts.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "fmi/wheeled_vehicle/BrakeSimple_Front.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "fmi/wheeled_vehicle/BrakeSimple_Rear.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "fmi/wheeled_vehicle_ptrain/BrakeSimple_Front.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "fmi/wheeled_vehicle_ptrain/BrakeSimple_Rear.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "gator/json/Gator_BrakeShafts.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 800
+  },
+  {
+   "file": "gclass/brake/G500_BrakeShafts_Front.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 1600
+  },
+  {
+   "file": "gclass/brake/G500_BrakeShafts_Rear.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 1500
+  },
+  {
+   "file": "gclass/brake/G500_BrakeSimple_Front.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 1600
+  },
+  {
+   "file": "gclass/brake/G500_BrakeSimple_Rear.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 1500
+  },
+  {
+   "file": "generic/brake/BrakeShafts.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "generic/brake/BrakeSimple.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "hmmwv/brake/HMMWV_BrakeShafts_Front.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "hmmwv/brake/HMMWV_BrakeShafts_Rear.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "hmmwv/brake/HMMWV_BrakeSimple_Front.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "hmmwv/brake/HMMWV_BrakeSimple_Rear.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 4000
+  },
+  {
+   "file": "mtv/brake/FMTV_BrakeShafts.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 7500
+  },
+  {
+   "file": "sedan/brake/Sedan_BrakeShafts.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 2000
+  },
+  {
+   "file": "sedan/brake/Sedan_BrakeSimple.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 2000
+  },
+  {
+   "file": "truck/json/truck_BrakeSimple.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 10000
+  },
+  {
+   "file": "uaz/brake/UAZBUS_BrakeShafts_Front.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 3000
+  },
+  {
+   "file": "uaz/brake/UAZBUS_BrakeShafts_Rear.json",
+   "template": "BrakeShafts",
+   "max_torque_nm": 3000
+  },
+  {
+   "file": "uaz/brake/UAZBUS_BrakeSimple_Front.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 3000
+  },
+  {
+   "file": "uaz/brake/UAZBUS_BrakeSimple_Rear.json",
+   "template": "BrakeSimple",
+   "max_torque_nm": 3000
+  }
+ ],
+ "wheels": [
+  {
+   "file": "MAN/wheel/MAN_5t_Wheel.json",
+   "mass_kg": 18.8,
+   "inertia": [
+    0.6,
+    0.63,
+    0.6
+   ]
+  },
+  {
+   "file": "Nissan_Patrol/json/suv_Wheel.json",
+   "mass_kg": 18.8,
+   "inertia": [
+    0.46,
+    0.62,
+    0.46
+   ]
+  },
+  {
+   "file": "Polaris/Polaris_Wheel.json",
+   "mass_kg": 18.8,
+   "inertia": [
+    0.113,
+    0.113,
+    0.113
+   ]
+  },
+  {
+   "file": "VW_microbus/json/van_Wheel.json",
+   "mass_kg": 12,
+   "inertia": [
+    0.240642,
+    0.410903,
+    0.240642
+   ]
+  },
+  {
+   "file": "articulated_chassis/ACV_Wheel.json",
+   "mass_kg": 18,
+   "inertia": [
+    0.24,
+    0.42,
+    0.24
+   ]
+  },
+  {
+   "file": "audi/json/audi_Wheel.json",
+   "mass_kg": 11,
+   "inertia": [
+    0.24,
+    0.42,
+    0.24
+   ]
+  },
+  {
+   "file": "citybus/wheel/CityBus_Wheel.json",
+   "mass_kg": 30,
+   "inertia": [
+    0.6,
+    0.63,
+    0.6
+   ]
+  },
+  {
+   "file": "duro/wheels/duro_wheel.json",
+   "mass_kg": 25,
+   "inertia": [
+    0.94,
+    1.59,
+    0.94
+   ]
+  },
+  {
+   "file": "fmi/wheeled_vehicle/Wheel.json",
+   "mass_kg": 18.8,
+   "inertia": [
+    0.4634,
+    0.6243,
+    0.4634
+   ]
+  },
+  {
+   "file": "fmi/wheeled_vehicle_ptrain/Wheel.json",
+   "mass_kg": 18.8,
+   "inertia": [
+    0.4634,
+    0.6243,
+    0.4634
+   ]
+  },
+  {
+   "file": "gator/json/Gator_Wheel.json",
+   "mass_kg": 11,
+   "inertia": [
+    0.24,
+    0.42,
+    0.24
+   ]
+  },
+  {
+   "file": "gclass/wheel/G500_Wheel.json",
+   "mass_kg": 12,
+   "inertia": [
+    0.24,
+    0.42,
+    0.24
+   ]
+  },
+  {
+   "file": "generic/wheel/WheelSimple.json",
+   "mass_kg": 18,
+   "inertia": [
+    0.24,
+    0.42,
+    0.24
+   ]
+  },
+  {
+   "file": "hmmwv/wheel/HMMWV_Wheel.json",
+   "mass_kg": 18.8,
+   "inertia": [
+    0.4634,
+    0.6243,
+    0.4634
+   ]
+  },
+  {
+   "file": "mtv/wheel/FMTV_Wheel.json",
+   "mass_kg": 30,
+   "inertia": [
+    0.6,
+    0.63,
+    0.6
+   ]
+  },
+  {
+   "file": "sedan/wheel/Sedan_Wheel.json",
+   "mass_kg": 13.2,
+   "inertia": [
+    0.24,
+    0.42,
+    0.24
+   ]
+  },
+  {
+   "file": "truck/json/truck_Wheel.json",
+   "mass_kg": 18.8,
+   "inertia": [
+    0.6,
+    0.63,
+    0.6
+   ]
+  },
+  {
+   "file": "uaz/wheel/UAZBUS_Wheel.json",
+   "mass_kg": 12,
+   "inertia": [
+    0.24,
+    0.42,
+    0.24
+   ]
+  },
+  {
+   "file": "ultra_tow/UT_Wheel.json",
+   "mass_kg": 6,
+   "inertia": [
+    0.24,
+    0.42,
+    0.24
+   ]
+  }
+ ]
+}

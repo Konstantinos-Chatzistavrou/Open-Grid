@@ -1,0 +1,2739 @@
+{
+ "schema": "open-grid/chrono-vehicles/1",
+ "source": "https://github.com/projectchrono/chrono/tree/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle",
+ "commit": "e166f3e5a1383741e86cf1e195a46eba4a66473d",
+ "licence": "BSD-3-Clause (Project Chrono LICENSE, copied alongside); files are verbatim, byte for byte",
+ "note": "Model parameters published with the Chrono::Vehicle examples. Several are estimates or placeholders (see docs/chrono-data.md): treat as reference data of confidence low-medium, not as measurements.",
+ "files": [
+  {
+   "path": "articulated_chassis/ACV_AutomaticTransmissionSimpleMap.json",
+   "sha": "ef9452af735028185e378b813d3b774cc3cf90a8",
+   "bytes": 587
+  },
+  {
+   "path": "articulated_chassis/ACV_BrakeSimple.json",
+   "sha": "31c9c15cf60f1c351a1026923c453252a48d353d",
+   "bytes": 109
+  },
+  {
+   "path": "articulated_chassis/ACV_Connector.json",
+   "sha": "96c94df68f158bd5573371c5cc4fdaa505b82184",
+   "bytes": 151
+  },
+  {
+   "path": "articulated_chassis/ACV_Driveline2WD.json",
+   "sha": "193329179c9ff9526a67e2f14e58e90185202331",
+   "bytes": 390
+  },
+  {
+   "path": "articulated_chassis/ACV_EngineSimpleMap.json",
+   "sha": "50e71936713061f2ece3d3d03b5bb4f816469b1b",
+   "bytes": 1648
+  },
+  {
+   "path": "articulated_chassis/ACV_FrontChassis.json",
+   "sha": "ab9b1062295d7a11abdf622375564414acee5351",
+   "bytes": 1073
+  },
+  {
+   "path": "articulated_chassis/ACV_RearChassis.json",
+   "sha": "5826ee3c152f6d357d065f715cbf83e50a2b9e05",
+   "bytes": 1172
+  },
+  {
+   "path": "articulated_chassis/ACV_RigidSuspension.json",
+   "sha": "da0deb32c8d0b900c6c1a253e9c3da719c5f075b",
+   "bytes": 318
+  },
+  {
+   "path": "articulated_chassis/ACV_RigidTire.json",
+   "sha": "064c90c3591468bef373cd3f907632717456b767",
+   "bytes": 583
+  },
+  {
+   "path": "articulated_chassis/ACV_Vehicle.json",
+   "sha": "1e0a4ce1b7313fa1ab24073238bb6437a5b3b3b1",
+   "bytes": 1750
+  },
+  {
+   "path": "articulated_chassis/ACV_Wheel.json",
+   "sha": "0ea9b7c3b2217d2f731a9e02b15e807bd9030afc",
+   "bytes": 208
+  },
+  {
+   "path": "audi/json/audi_AutomaticTransmissionSimpleMap.json",
+   "sha": "5ff09ce13ed52a34ea0c9e73eb9470fdaa8e5401",
+   "bytes": 618
+  },
+  {
+   "path": "audi/json/audi_BrakeShafts.json",
+   "sha": "154bc8397a2c0f2bceffcec34c01734e5bc65b8c",
+   "bytes": 212
+  },
+  {
+   "path": "audi/json/audi_BrakeSimple.json",
+   "sha": "1b3a32b020241649d02b2ec69341bb13d5cbf394",
+   "bytes": 175
+  },
+  {
+   "path": "audi/json/audi_Chassis.json",
+   "sha": "8273210eb9c7027b868854b1cdfab3a234e9c7a5",
+   "bytes": 683
+  },
+  {
+   "path": "audi/json/audi_DoubleWishbone.json",
+   "sha": "a2887be216653a5f02902d6100c1597f020a46e5",
+   "bytes": 2216
+  },
+  {
+   "path": "audi/json/audi_Driveline2WD.json",
+   "sha": "bebf3ea879e835d8084879df4c647d3689e1e08c",
+   "bytes": 480
+  },
+  {
+   "path": "audi/json/audi_EngineSimpleMap.json",
+   "sha": "372d0d91b2f8728cdb6b5e8984273f963453f627",
+   "bytes": 1602
+  },
+  {
+   "path": "audi/json/audi_ManualTransmissionShafts.json",
+   "sha": "e5475fcd884eec37527dca6de21e02d6c748ecaf",
+   "bytes": 393
+  },
+  {
+   "path": "audi/json/audi_MultiLink.json",
+   "sha": "bd98a69e6808145efdbb92a399e09e407767662a",
+   "bytes": 2644
+  },
+  {
+   "path": "audi/json/audi_Pac02Tire.json",
+   "sha": "8cddf7090d8f780213d7f085e463706b9cc6084e",
+   "bytes": 454
+  },
+  {
+   "path": "audi/json/audi_Pac02Tire.tir",
+   "sha": "c710f15900784635692252e13e29441949718ea2",
+   "bytes": 12375
+  },
+  {
+   "path": "audi/json/audi_RackPinion.json",
+   "sha": "d53e1563c1ac3a9ab49c8e4c59f80a1f492ca424",
+   "bytes": 484
+  },
+  {
+   "path": "audi/json/audi_RigidTire.json",
+   "sha": "40ea4dca74206176a7cdde2ab5feeb173514befa",
+   "bytes": 742
+  },
+  {
+   "path": "audi/json/audi_TMeasyTire.json",
+   "sha": "66decbd4fb13efc7b895e6bb16260b88bc7ae2af",
+   "bytes": 1475
+  },
+  {
+   "path": "audi/json/audi_Vehicle.json",
+   "sha": "e9f422f9aa92cd1a0ad4de0edd3b420ee4c977a0",
+   "bytes": 1344
+  },
+  {
+   "path": "audi/json/audi_Wheel.json",
+   "sha": "b978a4a2154003996cb98a933c14dff65714120c",
+   "bytes": 348
+  },
+  {
+   "path": "audi/json/audi.json",
+   "sha": "a45eebb797860101de8eea19bd31a6589ff012d1",
+   "bytes": 706
+  },
+  {
+   "path": "citybus/brake/CityBus_BrakeShafts.json",
+   "sha": "872ef94a2457988c8cda6640ceb1844c743b670b",
+   "bytes": 217
+  },
+  {
+   "path": "citybus/brake/CityBus_BrakeSimple.json",
+   "sha": "844710e1cca0dc058a31e74c9de816e13c0509b9",
+   "bytes": 180
+  },
+  {
+   "path": "citybus/chassis/CityBus_Chassis.json",
+   "sha": "eaf341645bbfb30397d58be6070083217674fafd",
+   "bytes": 647
+  },
+  {
+   "path": "citybus/CityBus.json",
+   "sha": "4193b8b45cebef3cf43a39e6441204248fb0cf8c",
+   "bytes": 765
+  },
+  {
+   "path": "citybus/driveline/CityBus_Driveline2WD.json",
+   "sha": "68b946687667c8c9a3ed524e76e0d6b8bc2dc0ca",
+   "bytes": 483
+  },
+  {
+   "path": "citybus/powertrain/CityBus_AutomaticTransmissionSimpleMap.json",
+   "sha": "fac9b6a92864f5c4053c6e97a02f106fea84d055",
+   "bytes": 591
+  },
+  {
+   "path": "citybus/powertrain/CityBus_EngineSimpleMap.json",
+   "sha": "21a8c4c03f136bac6fb052276ef12d2a37de0b4d",
+   "bytes": 1652
+  },
+  {
+   "path": "citybus/steering/CityBus_RackPinion.json",
+   "sha": "24ca56d7d5dfa670f291a5e41663c4ad99f5d7c8",
+   "bytes": 484
+  },
+  {
+   "path": "citybus/steering/CityBus_RotaryArm.json",
+   "sha": "c3d3dc4c4e59b564de420af655cef6b1f4898bac",
+   "bytes": 663
+  },
+  {
+   "path": "citybus/suspension/CityBus_LeafspringAxle.json",
+   "sha": "208b89c145ca3f763400d5a51d0e29e31b7d3a82",
+   "bytes": 1342
+  },
+  {
+   "path": "citybus/suspension/CityBus_SolidAxleFront.json",
+   "sha": "03316c916dc547e4abe989c84115d084eb66a733",
+   "bytes": 2874
+  },
+  {
+   "path": "citybus/suspension/CityBus_SolidAxleRear.json",
+   "sha": "ea2fa26f6e8ed75f922068b5fb73e3723e6c4f91",
+   "bytes": 2877
+  },
+  {
+   "path": "citybus/suspension/CityBus_ToeLeafspringAxle.json",
+   "sha": "03228cf034eb6da497700f3da85cb976cf53bd7e",
+   "bytes": 2356
+  },
+  {
+   "path": "citybus/tire/CityBus_Pac02Tire.json",
+   "sha": "122cfb5bee6c1e271bc951b39f8f11c5f1f70d8e",
+   "bytes": 471
+  },
+  {
+   "path": "citybus/tire/CityBus_Pac02Tire.tir",
+   "sha": "e92f4470b0b719e68297db6b91b3c0efb96d137f",
+   "bytes": 18647
+  },
+  {
+   "path": "citybus/tire/CityBus_RigidTire.json",
+   "sha": "32cbacfb651d0976f387ae8d35373d29f64824c6",
+   "bytes": 763
+  },
+  {
+   "path": "citybus/tire/CityBus_TMeasyTire.json",
+   "sha": "75461dadd060c212a1826d8a3b81dd7cf2648f4e",
+   "bytes": 1329
+  },
+  {
+   "path": "citybus/vehicle/CityBus_Vehicle.json",
+   "sha": "9948bdbe67820dca2d69d7c1dc6338173f70549a",
+   "bytes": 1655
+  },
+  {
+   "path": "citybus/wheel/CityBus_Wheel.json",
+   "sha": "858e22e7b720a8d2506867020792c0695bd269ef",
+   "bytes": 354
+  },
+  {
+   "path": "cosim/curiosity/Curiosity_RigidTire_cyl.json",
+   "sha": "bdf4605bbbb969b92d0b1ef82c663c3f46ff40ea",
+   "bytes": 1055
+  },
+  {
+   "path": "cosim/curiosity/Curiosity_RigidTire_real.json",
+   "sha": "3aed4d31ee23e90f7bb220f3fb04e4d3dad3102c",
+   "bytes": 1058
+  },
+  {
+   "path": "cosim/terrain/granular_dem.json",
+   "sha": "27f8de9f3a096ece0bcfe3f03ae009bd801128bb",
+   "bytes": 1072
+  },
+  {
+   "path": "cosim/terrain/granular_omp.json",
+   "sha": "60da01742cd3c29464ceec4c90f35a8f3f399659",
+   "bytes": 1185
+  },
+  {
+   "path": "cosim/terrain/granular_sph_markers.json",
+   "sha": "81f894d9b31b079b1a15ad4c7ab40afd34b37f94",
+   "bytes": 1011
+  },
+  {
+   "path": "cosim/terrain/granular_sph.json",
+   "sha": "b1ba1d61424b019c8155768a3aaaaa3337d38dc5",
+   "bytes": 999
+  },
+  {
+   "path": "cosim/terrain/rigid.json",
+   "sha": "128887bc210dfb24246f74cc94b18853dab3571d",
+   "bytes": 769
+  },
+  {
+   "path": "cosim/terrain/scm_hard.json",
+   "sha": "5c3917ccab2b38a8cb47ce43cae6a7df9ba64c89",
+   "bytes": 572
+  },
+  {
+   "path": "cosim/terrain/scm_soft.json",
+   "sha": "4aa3b19eb0f8fd1483aecf0cd142b39309dcc56b",
+   "bytes": 572
+  },
+  {
+   "path": "cosim/tire/ReissnerTire_lugs.json",
+   "sha": "ce10f5e2abd26b3d9b9e1f0af7ddfb08b52d3fb8",
+   "bytes": 6985
+  },
+  {
+   "path": "cosim/tire/ReissnerTire.json",
+   "sha": "0b6f738d0fb035d8805e65d381d6af59b38090d4",
+   "bytes": 6278
+  },
+  {
+   "path": "cosim/tire/RigidTire_mesh_coarse.json",
+   "sha": "92b9b12b02f1ae19a7e585d8bcf9a6474b4f39ad",
+   "bytes": 1021
+  },
+  {
+   "path": "cosim/tire/RigidTire_mesh_fine.json",
+   "sha": "1e1769a83a1b688572e4f224f1d8e3a26e65f958",
+   "bytes": 1015
+  },
+  {
+   "path": "cosim/viper/Viper_RigidTire_cyl.json",
+   "sha": "aaafe3fa7077b5dcac79f319993843c017cc2725",
+   "bytes": 1027
+  },
+  {
+   "path": "cosim/viper/Viper_RigidTire_real.json",
+   "sha": "0106e3a208cb9ae52f70c3d06e5ee5fa8bad969b",
+   "bytes": 1030
+  },
+  {
+   "path": "duro/brakes/duro_brake_shafts.json",
+   "sha": "d2858fca1cebbb04e54860d11ae01ad41b9f6c5f",
+   "bytes": 219
+  },
+  {
+   "path": "duro/chassis/duro_chassis.json",
+   "sha": "c8cfdb5bbed2cb3a490433f46fd17fe441627946",
+   "bytes": 911
+  },
+  {
+   "path": "duro/drivelines/duro_driveline_4x4.json",
+   "sha": "270b584aa16cd0c82b90fef7c29b86858d06a054",
+   "bytes": 712
+  },
+  {
+   "path": "duro/powertrain/duro_automatic_transmission_simple_map.json",
+   "sha": "385926f5de88fe1fc6013bc5b5bfdc1a4ab0b44a",
+   "bytes": 388
+  },
+  {
+   "path": "duro/powertrain/duro_engine_simple_map.json",
+   "sha": "f310e50f5952b0475ae1bd0b8f5c9d5ae4084fc1",
+   "bytes": 851
+  },
+  {
+   "path": "duro/steering/duro_steering.json",
+   "sha": "e2702fbbb82ce682334dc3ea4f94157ac6551bcb",
+   "bytes": 497
+  },
+  {
+   "path": "duro/suspension/duro_dedion_axle.json",
+   "sha": "e54cef3a4c1b8a66e19b3990d142d29c990820cc",
+   "bytes": 2022
+  },
+  {
+   "path": "duro/suspension/duro_toebar_dedion.json",
+   "sha": "40bbb2511735d4965cd94649190e85d0195061d0",
+   "bytes": 2939
+  },
+  {
+   "path": "duro/tires/duro_rigid_tire.json",
+   "sha": "82d24bda086539769b2fb988835adf0f6a2fc191",
+   "bytes": 697
+  },
+  {
+   "path": "duro/tires/duro_tmeasy_tire.json",
+   "sha": "ea01b6a7b1eb2a9964a94ddbcfce0ac4f5794ad8",
+   "bytes": 1424
+  },
+  {
+   "path": "duro/vehicle/duro_vehicle.json",
+   "sha": "1ad36b41ff8da9ff4cc4e1d704602dd6b99c704b",
+   "bytes": 1358
+  },
+  {
+   "path": "duro/wheels/duro_wheel.json",
+   "sha": "d9709bf9680bcc8e9ddd8f618afa66fb59b0cd22",
+   "bytes": 232
+  },
+  {
+   "path": "feda/tires/335_65R22_5_G275MSA_40psi.tir",
+   "sha": "68c798abaa35f608a6c37d73befc3e8152c814e5",
+   "bytes": 15080
+  },
+  {
+   "path": "feda/tires/335_65R22_5_G275MSA_60psi.tir",
+   "sha": "53a0ef321707979c5aaa32f0b2c855701a248fce",
+   "bytes": 15859
+  },
+  {
+   "path": "feda/tires/335_65R22_5_G275MSA_70psi.tir",
+   "sha": "ba6a01deaafb74817dbfbaf566f572a375404a8f",
+   "bytes": 15093
+  },
+  {
+   "path": "feda/tires/335_65R22_5_G275MSA_95psi.tir",
+   "sha": "7e25c2db552ef74080294f7ce6d11e1207c59abf",
+   "bytes": 15091
+  },
+  {
+   "path": "fmi/handling_tire/TMeasyTire.json",
+   "sha": "fbfba415108b03ded62517dda6d45bfe9c59229d",
+   "bytes": 1044
+  },
+  {
+   "path": "fmi/powertrain/AutomaticTransmissionShafts.json",
+   "sha": "5783942a7feae0cb3d48860716202a9247c94325",
+   "bytes": 841
+  },
+  {
+   "path": "fmi/powertrain/EngineShafts.json",
+   "sha": "d688e7fda01a3dffa6a6dfb0a5c1ae42ee12ded3",
+   "bytes": 726
+  },
+  {
+   "path": "fmi/wheeled_vehicle_ptrain/AutomaticTransmissionShafts.json",
+   "sha": "5783942a7feae0cb3d48860716202a9247c94325",
+   "bytes": 841
+  },
+  {
+   "path": "fmi/wheeled_vehicle_ptrain/BrakeSimple_Front.json",
+   "sha": "61228e6f621b9f83738ac96085298a092448ddcb",
+   "bytes": 103
+  },
+  {
+   "path": "fmi/wheeled_vehicle_ptrain/BrakeSimple_Rear.json",
+   "sha": "5ca0a3021b355271feed5088e0bcfe72600bebef",
+   "bytes": 102
+  },
+  {
+   "path": "fmi/wheeled_vehicle_ptrain/Chassis.json",
+   "sha": "2f19e0b117295cbdbb8f49996dc4b0603b08f70d",
+   "bytes": 521
+  },
+  {
+   "path": "fmi/wheeled_vehicle_ptrain/DoubleWishboneFront.json",
+   "sha": "9c3d42e8b8a721c6b4a1afd6ecabf2d381be0ea7",
+   "bytes": 2363
+  },
+  {
+   "path": "fmi/wheeled_vehicle_ptrain/DoubleWishboneRear.json",
+   "sha": "cd9603a63ed09bbeb8daac37d28217fb2d87cb47",
+   "bytes": 2364
+  },
+  {
+   "path": "fmi/wheeled_vehicle_ptrain/Driveline2WD.json",
+   "sha": "d5c93119af3a1e4a7999a40c080c09d88dc05105",
+   "bytes": 343
+  },
+  {
+   "path": "fmi/wheeled_vehicle_ptrain/EngineShafts.json",
+   "sha": "d688e7fda01a3dffa6a6dfb0a5c1ae42ee12ded3",
+   "bytes": 726
+  },
+  {
+   "path": "fmi/wheeled_vehicle_ptrain/PitmanArm.json",
+   "sha": "f8563555536c7e4810786e517f7efb14ac771994",
+   "bytes": 1021
+  },
+  {
+   "path": "fmi/wheeled_vehicle_ptrain/Vehicle.json",
+   "sha": "d62ce7629e657b501bfc59a99e0dbe8e673a6f79",
+   "bytes": 1200
+  },
+  {
+   "path": "fmi/wheeled_vehicle_ptrain/Wheel.json",
+   "sha": "3468bb884c90bc008bc0d66559e3887377325d0f",
+   "bytes": 188
+  },
+  {
+   "path": "fmi/wheeled_vehicle/BrakeSimple_Front.json",
+   "sha": "61228e6f621b9f83738ac96085298a092448ddcb",
+   "bytes": 103
+  },
+  {
+   "path": "fmi/wheeled_vehicle/BrakeSimple_Rear.json",
+   "sha": "5ca0a3021b355271feed5088e0bcfe72600bebef",
+   "bytes": 102
+  },
+  {
+   "path": "fmi/wheeled_vehicle/Chassis.json",
+   "sha": "2f19e0b117295cbdbb8f49996dc4b0603b08f70d",
+   "bytes": 521
+  },
+  {
+   "path": "fmi/wheeled_vehicle/DoubleWishboneFront.json",
+   "sha": "9c3d42e8b8a721c6b4a1afd6ecabf2d381be0ea7",
+   "bytes": 2363
+  },
+  {
+   "path": "fmi/wheeled_vehicle/DoubleWishboneRear.json",
+   "sha": "cd9603a63ed09bbeb8daac37d28217fb2d87cb47",
+   "bytes": 2364
+  },
+  {
+   "path": "fmi/wheeled_vehicle/Driveline2WD.json",
+   "sha": "d5c93119af3a1e4a7999a40c080c09d88dc05105",
+   "bytes": 343
+  },
+  {
+   "path": "fmi/wheeled_vehicle/PitmanArm.json",
+   "sha": "f8563555536c7e4810786e517f7efb14ac771994",
+   "bytes": 1021
+  },
+  {
+   "path": "fmi/wheeled_vehicle/Vehicle.json",
+   "sha": "d62ce7629e657b501bfc59a99e0dbe8e673a6f79",
+   "bytes": 1200
+  },
+  {
+   "path": "fmi/wheeled_vehicle/Wheel.json",
+   "sha": "3468bb884c90bc008bc0d66559e3887377325d0f",
+   "bytes": 188
+  },
+  {
+   "path": "gator/json/Gator_AutomaticTransmissionSimpleMap.json",
+   "sha": "2c9064627d18e6f2b9e6087f9ffebc5242c4a627",
+   "bytes": 276
+  },
+  {
+   "path": "gator/json/Gator_BrakeShafts.json",
+   "sha": "b47ac896b7d910013468deb6761efce1354d6d4f",
+   "bytes": 213
+  },
+  {
+   "path": "gator/json/Gator_Chassis.json",
+   "sha": "967f598b47b7ea61a9c1ccb393243a7d9dacd015",
+   "bytes": 688
+  },
+  {
+   "path": "gator/json/Gator_Driveline2WD.json",
+   "sha": "ffd1c5e9c0ca47447064d4b8ae15a5d18fab0b28",
+   "bytes": 481
+  },
+  {
+   "path": "gator/json/Gator_EngineSimple.json",
+   "sha": "e2a6c17454fde83dd40c2cb812bf1422cac96010",
+   "bytes": 183
+  },
+  {
+   "path": "gator/json/Gator_RackPinion.json",
+   "sha": "f47bd7ba80ed30f5cfe05f0455b0d7549436d880",
+   "bytes": 478
+  },
+  {
+   "path": "gator/json/Gator_RigidSuspensionRear.json",
+   "sha": "9621f81e6fa93b54de052cca28243fd7db252701",
+   "bytes": 295
+  },
+  {
+   "path": "gator/json/Gator_SingleWishboneFront.json",
+   "sha": "b54c65101d0741eac1a5e32da7b1f4ddc8ea32d4",
+   "bytes": 1135
+  },
+  {
+   "path": "gator/json/Gator_TMeasyTireFront.json",
+   "sha": "38df9ee75ef270703c4d0f355510ac4336e39818",
+   "bytes": 1176
+  },
+  {
+   "path": "gator/json/Gator_TMeasyTireRear.json",
+   "sha": "25967a87015841dd2dca9dd1b2d0c281266ddd4f",
+   "bytes": 1175
+  },
+  {
+   "path": "gator/json/Gator_Vehicle.json",
+   "sha": "95cbfcd1be4713b8ace835c9f60316fa0e2b286b",
+   "bytes": 1369
+  },
+  {
+   "path": "gator/json/Gator_Wheel.json",
+   "sha": "f21474300351331e91e9e611ab76e9a1f9dc27d2",
+   "bytes": 122
+  },
+  {
+   "path": "gclass/brake/G500_BrakeShafts_Front.json",
+   "sha": "3cbd0da48f64734d4422050219b5b614220c114d",
+   "bytes": 132
+  },
+  {
+   "path": "gclass/brake/G500_BrakeShafts_Rear.json",
+   "sha": "82b7a233a51fb549d2c5d66b2b96461abae2451b",
+   "bytes": 131
+  },
+  {
+   "path": "gclass/brake/G500_BrakeSimple_Front.json",
+   "sha": "f0e96b1345eca666c6d0f33fdfe0dffe9664433e",
+   "bytes": 108
+  },
+  {
+   "path": "gclass/brake/G500_BrakeSimple_Rear.json",
+   "sha": "154c8e3544f0bcc71dbc1789affe1e15e919a4b7",
+   "bytes": 107
+  },
+  {
+   "path": "gclass/chassis/G500_Chassis.json",
+   "sha": "2f534cd88c2edd68313da51e7fdcea0c11633472",
+   "bytes": 590
+  },
+  {
+   "path": "gclass/driveline/G500_Driveline4WD.json",
+   "sha": "3cdd236f4944f7f00b2dd3f749cc27583bdbc30a",
+   "bytes": 718
+  },
+  {
+   "path": "gclass/powertrain/G500_AutomaticTransmissionSimpleMap.json",
+   "sha": "18d12df41b53bc84eee735240369dd2a4c4503a1",
+   "bytes": 497
+  },
+  {
+   "path": "gclass/powertrain/G500_EngineSimpleMap.json",
+   "sha": "07858507c94d6d4c9796a550902956c5f242de25",
+   "bytes": 713
+  },
+  {
+   "path": "gclass/steering/G500_RotaryArm.json",
+   "sha": "856d774c0a853199fe2be2a04adc237762a9ecd8",
+   "bytes": 498
+  },
+  {
+   "path": "gclass/suspension/G500_FrontAxle.json",
+   "sha": "f9dc3cf1840a76f9e263a4b3c3547355800a8bb5",
+   "bytes": 3059
+  },
+  {
+   "path": "gclass/suspension/G500_RearAxle.json",
+   "sha": "d5d52d8906b6ea7dc951da608e2320af4a399179",
+   "bytes": 2056
+  },
+  {
+   "path": "gclass/tire/G500_RigidTire.json",
+   "sha": "d29521bd8cbf8dbfd8a057043e8ae6b67e560f81",
+   "bytes": 512
+  },
+  {
+   "path": "gclass/tire/G500_TMeasyTire.json",
+   "sha": "1d2c283283c49dc66ce7a402f3ea82ee88860ba6",
+   "bytes": 1301
+  },
+  {
+   "path": "gclass/vehicle/G500_Vehicle.json",
+   "sha": "09824f6871ec80f2ca98a9b09f740aba0d6cdf7e",
+   "bytes": 1385
+  },
+  {
+   "path": "gclass/wheel/G500_Wheel.json",
+   "sha": "6c5b4808f1fc376ae6b3b49f1211f19769a4c412",
+   "bytes": 235
+  },
+  {
+   "path": "generic/antirollbar/AntirollBarRSD.json",
+   "sha": "fbafa3d426b5d50c841fe858cf44c1688c8bb554",
+   "bytes": 529
+  },
+  {
+   "path": "generic/brake/BrakeShafts.json",
+   "sha": "ab7a59748fc443845d79e7c1257b1ce556d5132b",
+   "bytes": 223
+  },
+  {
+   "path": "generic/brake/BrakeSimple.json",
+   "sha": "04498950c56d4142351e585454fb0952f9ec9a4a",
+   "bytes": 186
+  },
+  {
+   "path": "generic/chassis/Chassis.json",
+   "sha": "b1a21ae0b66e2150213da932334cfc579fdc3949",
+   "bytes": 576
+  },
+  {
+   "path": "generic/driveline/Driveline2WD.json",
+   "sha": "dc4c609cafb405b2a25ca5a31eaf5d8e73967d58",
+   "bytes": 483
+  },
+  {
+   "path": "generic/driveline/Driveline4WD.json",
+   "sha": "8632431a0b4249e8b8f3817c09c80287c201225e",
+   "bytes": 715
+  },
+  {
+   "path": "generic/driveline/DrivelineSimple.json",
+   "sha": "6de5c35fcce2b3dec4ee47412beccd464ee8941d",
+   "bytes": 282
+  },
+  {
+   "path": "generic/driver/SpeedController_ISO_double_lane_change.json",
+   "sha": "42b2af595c93aa3a67a5a51480ba7c5835ce4185",
+   "bytes": 77
+  },
+  {
+   "path": "generic/driver/SpeedController.json",
+   "sha": "279fd0640fbdc4ba2ef4111cd64fd6f75b2e9aff",
+   "bytes": 73
+  },
+  {
+   "path": "generic/driver/SteeringController_ISO_double_lane_change.json",
+   "sha": "4062916ee0edeab71c4c96a6b974cfbf1f4e26e5",
+   "bytes": 109
+  },
+  {
+   "path": "generic/driver/SteeringController.json",
+   "sha": "5bf4fea72a0f099726ec88a11464d8492b7363aa",
+   "bytes": 105
+  },
+  {
+   "path": "generic/driver/SteeringControllerXT.json",
+   "sha": "c90a6df7cd08b3db2a3cc3e0e691aa35630e0bc5",
+   "bytes": 291
+  },
+  {
+   "path": "generic/powertrain/AutomaticTransmissionShafts.json",
+   "sha": "a60d5765fb7423b6a51e3f75725bac2247592e05",
+   "bytes": 847
+  },
+  {
+   "path": "generic/powertrain/AutomaticTransmissionSimpleMap.json",
+   "sha": "a2d7d2a918d7ee2472b905314ef8dffff6101f87",
+   "bytes": 462
+  },
+  {
+   "path": "generic/powertrain/EngineShafts.json",
+   "sha": "749816d4d44fd21134e52f7f63559dd052060f25",
+   "bytes": 734
+  },
+  {
+   "path": "generic/powertrain/EngineSimple.json",
+   "sha": "773ae4ba48d626b88cb816f7cace49baa5661b71",
+   "bytes": 186
+  },
+  {
+   "path": "generic/steering/PitmanArm.json",
+   "sha": "9d8fce11471bb69014f19f56e1d0818a890f556c",
+   "bytes": 1314
+  },
+  {
+   "path": "generic/steering/RackPinion.json",
+   "sha": "f742a7526e190c69fec8d6f8857657477ecbf89e",
+   "bytes": 473
+  },
+  {
+   "path": "generic/suspension/DeDionAxle.json",
+   "sha": "647df626ddc205f9086aaf77f3a72b0a509817e6",
+   "bytes": 2025
+  },
+  {
+   "path": "generic/suspension/DoubleWishbone.json",
+   "sha": "e545e192a2afd2cf59e6753c713a58496d7c88e3",
+   "bytes": 2202
+  },
+  {
+   "path": "generic/suspension/DoubleWishboneCurve.json",
+   "sha": "65953d58abed93ba2f1df12b67244662d663aaee",
+   "bytes": 2799
+  },
+  {
+   "path": "generic/suspension/HendricksonPRIMAXX.json",
+   "sha": "9ae3ceca569e8dfce6e8b56c16a033db5786dc79",
+   "bytes": 2183
+  },
+  {
+   "path": "generic/suspension/MacPhersonStrut.json",
+   "sha": "c8b8511b2d9014d5b044d3cab08945bf08e7e5f4",
+   "bytes": 1923
+  },
+  {
+   "path": "generic/suspension/MultiLink.json",
+   "sha": "0b0eae1b6f60774a4133b55be7eff25d964faf29",
+   "bytes": 2738
+  },
+  {
+   "path": "generic/suspension/RigidPinnedAxle.json",
+   "sha": "a9b9188528dbc93ef66738d9c30699deea989c4f",
+   "bytes": 718
+  },
+  {
+   "path": "generic/suspension/RigidSuspension.json",
+   "sha": "b94bd77c57db3d53bbd6e29149922cf3a2e6e7fc",
+   "bytes": 467
+  },
+  {
+   "path": "generic/suspension/SemiTrailingArm.json",
+   "sha": "f2e4787fe607dfb0e9cef3242d776e61f33efabf",
+   "bytes": 1260
+  },
+  {
+   "path": "generic/suspension/SolidAxle.json",
+   "sha": "70cfde16d7a2dd678f6f8f2fbdf92090eac9ad2d",
+   "bytes": 3308
+  },
+  {
+   "path": "generic/suspension/ThreeLinkIRS.json",
+   "sha": "4b6ae9a504866f1a57644805ac9790cefce0b113",
+   "bytes": 1894
+  },
+  {
+   "path": "generic/suspension/ToeBarDeDionAxle.json",
+   "sha": "d9f86f2e7527b5b78a4ead3994903fd0f96bf636",
+   "bytes": 2942
+  },
+  {
+   "path": "generic/suspensionTest/STR_example.json",
+   "sha": "32a4b9861c581554c193b9c382bfb1394aba60ab",
+   "bytes": 291
+  },
+  {
+   "path": "generic/tire/FialaTire.json",
+   "sha": "00833a283b40d1a2985d5c730d68b7c3855b1707",
+   "bytes": 658
+  },
+  {
+   "path": "generic/tire/Generic_Pac02Tire.tir",
+   "sha": "bc6b6d50af7e808bcbdf99f65566b630feab6713",
+   "bytes": 18261
+  },
+  {
+   "path": "generic/tire/MagicFormula52_Parameters.json",
+   "sha": "5fbbebf95ee4cb2e12718d2d3c7dacab6e811026",
+   "bytes": 3792
+  },
+  {
+   "path": "generic/tire/MagicFormula61_Parameters.json",
+   "sha": "a4bbbf19436133ddb88c472116b1aae422b31b6f",
+   "bytes": 6227
+  },
+  {
+   "path": "generic/tire/MagicFormula62_Parameters.json",
+   "sha": "fa49aae07efcae53bcd3925554cbb222d85b4489",
+   "bytes": 6417
+  },
+  {
+   "path": "generic/tire/RigidTire.json",
+   "sha": "264f7fcf2b3e5c038bb405c66a353af1920c6cfe",
+   "bytes": 734
+  },
+  {
+   "path": "generic/vehicle_multisteer/Vehicle_DualFront_Independent.json",
+   "sha": "7986d7c27a9a9c3e1864897df0aba963939d8fc4",
+   "bytes": 1909
+  },
+  {
+   "path": "generic/vehicle_multisteer/Vehicle_DualFront_Shared.json",
+   "sha": "ef84c9883f7f2b35db99a92cae7efc08d92add03",
+   "bytes": 1761
+  },
+  {
+   "path": "generic/vehicle/Vehicle_DoubleWishbones_ARB.json",
+   "sha": "10f29e94070f2b320cd5b3eec360aab21e22a613",
+   "bytes": 1504
+  },
+  {
+   "path": "generic/vehicle/Vehicle_DoubleWishbones.json",
+   "sha": "aca7e11166982749311cd0935bb9bc4806d77d62",
+   "bytes": 1375
+  },
+  {
+   "path": "generic/vehicle/Vehicle_HendricksonPRIMAXX.json",
+   "sha": "8522b2c9919472469e42479c0072a053bdfa5aa5",
+   "bytes": 1390
+  },
+  {
+   "path": "generic/vehicle/Vehicle_MacPhersonStruts.json",
+   "sha": "8a1a34728a2dd7ecd7dcc91e96d7c28b46508453",
+   "bytes": 1373
+  },
+  {
+   "path": "generic/vehicle/Vehicle_MultiLinks.json",
+   "sha": "3115caf06270dc9e1421c89e91227016fb9e8286",
+   "bytes": 1355
+  },
+  {
+   "path": "generic/vehicle/Vehicle_RigidPinnedAxle.json",
+   "sha": "4a10e4978571c10e1cdb80f9b01b301dd89b8e92",
+   "bytes": 1376
+  },
+  {
+   "path": "generic/vehicle/Vehicle_RigidSuspension.json",
+   "sha": "23b80fd72509388ab41f3fd18ea8488c1e462629",
+   "bytes": 1376
+  },
+  {
+   "path": "generic/vehicle/Vehicle_SemiTrailingArm.json",
+   "sha": "f51eed40270419828a82fff54bcd96065bceb287",
+   "bytes": 1369
+  },
+  {
+   "path": "generic/vehicle/Vehicle_SolidAxles.json",
+   "sha": "2a45033073832e7e6e9c30c997e29fa9176b3718",
+   "bytes": 1338
+  },
+  {
+   "path": "generic/vehicle/Vehicle_ThreeAxles.json",
+   "sha": "7f7e49ca7e778510d5637a61a6b4599b932d1159",
+   "bytes": 1762
+  },
+  {
+   "path": "generic/vehicle/Vehicle_ThreeLinkIRS.json",
+   "sha": "649c016b3bb2bbb67037afebfdcf42a208fc89a5",
+   "bytes": 1366
+  },
+  {
+   "path": "generic/wheel/WheelSimple.json",
+   "sha": "502cacffda8c1675b66f2c0ddf34237e7fb6bed4",
+   "bytes": 342
+  },
+  {
+   "path": "hmmwv/brake/HMMWV_BrakeShafts_Front.json",
+   "sha": "79c74c1b6e4ffeaf33cc8015a3bb1229d8411aba",
+   "bytes": 220
+  },
+  {
+   "path": "hmmwv/brake/HMMWV_BrakeShafts_Rear.json",
+   "sha": "b0f9b2ffaaae8b25713a1f4829b7be68c3866336",
+   "bytes": 219
+  },
+  {
+   "path": "hmmwv/brake/HMMWV_BrakeSimple_Front.json",
+   "sha": "0aa8784f96d9fa7b67ad8b49afdab5684321a311",
+   "bytes": 183
+  },
+  {
+   "path": "hmmwv/brake/HMMWV_BrakeSimple_Rear.json",
+   "sha": "df5f786fe1de20dcec9bfaf7a1d15efccdb4b287",
+   "bytes": 182
+  },
+  {
+   "path": "hmmwv/chassis/HMMWV_Chassis.json",
+   "sha": "58ac13080f7bab5c6a802196186ffd026e98bf75",
+   "bytes": 707
+  },
+  {
+   "path": "hmmwv/driveline/HMMWV_Driveline2WD.json",
+   "sha": "5bb428e04dbd037e12f87532f678f96eea0b0781",
+   "bytes": 481
+  },
+  {
+   "path": "hmmwv/driveline/HMMWV_Driveline4WD.json",
+   "sha": "73426beba198749e929ee35d854c95f7742bc7f6",
+   "bytes": 713
+  },
+  {
+   "path": "hmmwv/driveline/HMMWV_DrivelineSimple.json",
+   "sha": "8b92d05c6c671439845403f704dd0ed64d4fd13a",
+   "bytes": 273
+  },
+  {
+   "path": "hmmwv/driver/HumanController.json",
+   "sha": "4a4618e6a4141f28479daaec3153ef3db642ce3b",
+   "bytes": 263
+  },
+  {
+   "path": "hmmwv/pactest.tir",
+   "sha": "dbfdfe0de840f8bfd7985e9db3414f6c4534b1d2",
+   "bytes": 16949
+  },
+  {
+   "path": "hmmwv/powertrain/HMMWV_AutomaticTransmissionShafts.json",
+   "sha": "a60d5765fb7423b6a51e3f75725bac2247592e05",
+   "bytes": 847
+  },
+  {
+   "path": "hmmwv/powertrain/HMMWV_AutomaticTransmissionSimpleCVT.json",
+   "sha": "38f0b5fb95a588d1e0c10a86c77a003506c013c9",
+   "bytes": 303
+  },
+  {
+   "path": "hmmwv/powertrain/HMMWV_AutomaticTransmissionSimpleMap.json",
+   "sha": "a0cf18565e0a5a11d8aa62f953c49000a3a5ed4d",
+   "bytes": 462
+  },
+  {
+   "path": "hmmwv/powertrain/HMMWV_EngineShafts.json",
+   "sha": "17c37554817b98756a95251dfb22160218459529",
+   "bytes": 732
+  },
+  {
+   "path": "hmmwv/powertrain/HMMWV_EngineSimple.json",
+   "sha": "773ae4ba48d626b88cb816f7cace49baa5661b71",
+   "bytes": 186
+  },
+  {
+   "path": "hmmwv/powertrain/HMMWV_EngineSimpleMap.json",
+   "sha": "7202f783cdcd531c02a3763f57eddefaca338cdc",
+   "bytes": 672
+  },
+  {
+   "path": "hmmwv/SpeedController.json",
+   "sha": "279fd0640fbdc4ba2ef4111cd64fd6f75b2e9aff",
+   "bytes": 73
+  },
+  {
+   "path": "hmmwv/steering/HMMWV_PitmanArm.json",
+   "sha": "ed963d83fd566be84a20abdf92f71d495d3840b7",
+   "bytes": 1350
+  },
+  {
+   "path": "hmmwv/steering/HMMWV_RackPinion.json",
+   "sha": "5fcc257909563a23ce029bf41ce976def1242aab",
+   "bytes": 471
+  },
+  {
+   "path": "hmmwv/SteeringController.json",
+   "sha": "5bf4fea72a0f099726ec88a11464d8492b7363aa",
+   "bytes": 105
+  },
+  {
+   "path": "hmmwv/SteeringControllerSR.json",
+   "sha": "92af376a16794fa85d6089c066d973ad89592939",
+   "bytes": 85
+  },
+  {
+   "path": "hmmwv/suspension/HMMWV_DoubleWishboneFront_bushings.json",
+   "sha": "1cd3e6907fae65876d73ff2f897e3a5f116cb41b",
+   "bytes": 3904
+  },
+  {
+   "path": "hmmwv/suspension/HMMWV_DoubleWishboneFront_mapShock.json",
+   "sha": "321ad5fc817a0240db8c3e2eb3fddaab7bf80e14",
+   "bytes": 2742
+  },
+  {
+   "path": "hmmwv/suspension/HMMWV_DoubleWishboneFront_replica.json",
+   "sha": "217ffa483772dd410bfaf21ba9538b986b53f80a",
+   "bytes": 5136
+  },
+  {
+   "path": "hmmwv/suspension/HMMWV_DoubleWishboneFront.json",
+   "sha": "0d9a449b197d0eb7c9c2eb7acf99ef9a8986b143",
+   "bytes": 2695
+  },
+  {
+   "path": "hmmwv/suspension/HMMWV_DoubleWishboneRear_bushings.json",
+   "sha": "af63d8e85a1252a76d4571fa68efca89efd391b2",
+   "bytes": 3904
+  },
+  {
+   "path": "hmmwv/suspension/HMMWV_DoubleWishboneRear_mapShock.json",
+   "sha": "e256f40d977ebf808739154dd7158aaead077d1d",
+   "bytes": 2736
+  },
+  {
+   "path": "hmmwv/suspension/HMMWV_DoubleWishboneRear.json",
+   "sha": "9b17e7656c8d0c076bff533f85184cb1d9f55cf0",
+   "bytes": 2696
+  },
+  {
+   "path": "hmmwv/suspension/HMMWV_DoubleWishboneReducedFront.json",
+   "sha": "aa515b77d692825d0ae914fb46f27078ca108ee5",
+   "bytes": 1542
+  },
+  {
+   "path": "hmmwv/suspension/HMMWV_DoubleWishboneReducedRear.json",
+   "sha": "b61f18fe81f1b11ee19977c9e0b739ac3871e02b",
+   "bytes": 1535
+  },
+  {
+   "path": "hmmwv/suspension/HMMWV_ThreeLinkIRS.json",
+   "sha": "1dfb0dd2cd9099b8fa6761aff271c9b4bb0e3f25",
+   "bytes": 1887
+  },
+  {
+   "path": "hmmwv/suspensionTest/HMMWV_ST_front_replica.json",
+   "sha": "5ca4618f546fea85d19b8cdabfbceac798443c66",
+   "bytes": 283
+  },
+  {
+   "path": "hmmwv/suspensionTest/HMMWV_ST_front.json",
+   "sha": "a354789efec00f0cd56bfc92ff077bb6623e0f79",
+   "bytes": 275
+  },
+  {
+   "path": "hmmwv/suspensionTest/HMMWV_ST_rear.json",
+   "sha": "e1dc9df9f9b80f992b171b9d89e62e1d339907e4",
+   "bytes": 238
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_ANCF4Tire_Lumped.json",
+   "sha": "6c54db32940a956f222ea71cf3757a791eb4eeae",
+   "bytes": 6158
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_ANCF4Tire.json",
+   "sha": "0aa14cf999bbacb0f3e33c125ee0877f977eca07",
+   "bytes": 6294
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_ANCF8Tire_Lumped.json",
+   "sha": "b6502d018c06d620997f3acf34fdc3109605148b",
+   "bytes": 6157
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_ANCF8Tire.json",
+   "sha": "68d2ff986e0af3ea40ca6d9f64434cfa258cc89a",
+   "bytes": 6287
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_Fiala_converted.json",
+   "sha": "b59eef0f16e583ea524498c238e1d795c65a7e9e",
+   "bytes": 801
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_FialaTire.json",
+   "sha": "d3fbb07877d1b4b76b537c525d59270f54e3c3ea",
+   "bytes": 1421
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_Pac02Tire.json",
+   "sha": "3ef21250a8eb0020069ff14dfa85de7f0fc70ab7",
+   "bytes": 469
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_Pac02Tire.tir",
+   "sha": "9b7bdcf2892616aa6c9e112a9c340f33b22e857c",
+   "bytes": 18485
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_Pac89Tire.json",
+   "sha": "99874758bdcd76ba2a0835312f2a3c68bc9e5df1",
+   "bytes": 4610
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_pacejka.tir",
+   "sha": "75adf67f5224fb77f0360b7a515574963e044d58",
+   "bytes": 16949
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_PacejkaTire.json",
+   "sha": "0209d5fb69f4f62e95b061e230098674355f8ca0",
+   "bytes": 441
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_ReissnerTire.json",
+   "sha": "fe8b5b9e357dbcd1d3ac4c2bd7e86a926e89a4da",
+   "bytes": 6985
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_RigidMeshTire_Coarse.json",
+   "sha": "398b8b3e9cdb2602bf2ae8afea2030e6b60746b5",
+   "bytes": 1023
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_RigidMeshTire_CoarseClosed.json",
+   "sha": "5a5736e751c89e545c3ffb71ecbd3da3b4cb030b",
+   "bytes": 1044
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_RigidMeshTire.json",
+   "sha": "b8345b72f2383df9cf237773745af58ec72a9b04",
+   "bytes": 1017
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_RigidTire.json",
+   "sha": "84e3115de259d86f8c19ec834111ea80885c9bf2",
+   "bytes": 734
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_SolidFEATire.json",
+   "sha": "82e0dc2bc435dd9853bbb6ef9df75a7fc6439d0d",
+   "bytes": 955
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_TMeasyTire.json",
+   "sha": "252f51a7fcb648ba5054229f8a1cda1e9b03acea",
+   "bytes": 1291
+  },
+  {
+   "path": "hmmwv/tire/HMMWV_TMsimpleTire.json",
+   "sha": "b15a52936e3dfbc09f2906a7909582ab5da26023",
+   "bytes": 1293
+  },
+  {
+   "path": "hmmwv/vehicle/HMMWV_Vehicle_4WD.json",
+   "sha": "c1e6e95771f9424aa9465e6edcdb06ac2153103c",
+   "bytes": 1464
+  },
+  {
+   "path": "hmmwv/vehicle/HMMWV_Vehicle_balanced.json",
+   "sha": "9fe9fd30b8042d8dd8262a75814a8b67c7ec308a",
+   "bytes": 1461
+  },
+  {
+   "path": "hmmwv/vehicle/HMMWV_Vehicle_bushings.json",
+   "sha": "3771724399c606ca458c94b5a5f05d72f18ee2c4",
+   "bytes": 1479
+  },
+  {
+   "path": "hmmwv/vehicle/HMMWV_Vehicle_mapShock.json",
+   "sha": "cf0c101fd9ccd010378e39d8cb08d63b75b33d50",
+   "bytes": 1479
+  },
+  {
+   "path": "hmmwv/vehicle/HMMWV_Vehicle_replica.json",
+   "sha": "01f47ebf72654cf4942a2cabf4bc5e74cc55799f",
+   "bytes": 1643
+  },
+  {
+   "path": "hmmwv/vehicle/HMMWV_Vehicle_simple.json",
+   "sha": "e5c5888b69c96cec8dc8764daa9397aa195e7a05",
+   "bytes": 1467
+  },
+  {
+   "path": "hmmwv/vehicle/HMMWV_Vehicle.json",
+   "sha": "9fe9fd30b8042d8dd8262a75814a8b67c7ec308a",
+   "bytes": 1461
+  },
+  {
+   "path": "hmmwv/wheel/HMMWV_Wheel.json",
+   "sha": "f18f48edbe652a2f4a3ca2aa905c3518119ca35c",
+   "bytes": 355
+  },
+  {
+   "path": "joystick/controller_Default.json",
+   "sha": "5d3448e1e5772516568b96ba7e2603192afd7125",
+   "bytes": 769
+  },
+  {
+   "path": "joystick/controller_LogitechRumblePad2.json",
+   "sha": "5d3448e1e5772516568b96ba7e2603192afd7125",
+   "bytes": 769
+  },
+  {
+   "path": "joystick/controller_WheelPedalsAndShifters.json",
+   "sha": "96c2c9efd2c946d4c0d80a4981cd6a09291c494d",
+   "bytes": 1185
+  },
+  {
+   "path": "joystick/controller_XboxOneForWindows.json",
+   "sha": "c7cbbae583d7e9fe7577f08baa91e04a8b59206b",
+   "bytes": 832
+  },
+  {
+   "path": "M113_RS/brake/M113_TrackBrakeShafts.json",
+   "sha": "bcdc89b1df880744b11128fa78d7796dbc80dd20",
+   "bytes": 231
+  },
+  {
+   "path": "M113_RS/brake/M113_TrackBrakeSimple.json",
+   "sha": "47a3a9ad350875d1b361f8963dbb127eb934c6ac",
+   "bytes": 194
+  },
+  {
+   "path": "M113_RS/chassis/M113_Chassis.json",
+   "sha": "88268c8250a7826d72789c8ca8ad63ffe61e8a6e",
+   "bytes": 2141
+  },
+  {
+   "path": "M113_RS/driveline/M113_SimpleTrackDriveline.json",
+   "sha": "f8f916125c91648ccc0e3e81852a3e2945ac28bc",
+   "bytes": 204
+  },
+  {
+   "path": "M113_RS/driveline/M113_TrackDrivelineBDS.json",
+   "sha": "61bd67937d4c73385bac43b292bf3aebbf69a6ac",
+   "bytes": 207
+  },
+  {
+   "path": "M113_RS/idler_wheel/M113_DoubleIdlerWheel_Left.json",
+   "sha": "5d1305e723f0b7592959ca498f3df14c4270870c",
+   "bytes": 852
+  },
+  {
+   "path": "M113_RS/idler_wheel/M113_DoubleIdlerWheel_Right.json",
+   "sha": "cdd186305380f482eae80544f05e238bca1bd43d",
+   "bytes": 853
+  },
+  {
+   "path": "M113_RS/idler/M113_DoubleIdler_Distance_Left.json",
+   "sha": "c70888335a6a2389107bd8bdbacf3322ab9551de",
+   "bytes": 634
+  },
+  {
+   "path": "M113_RS/idler/M113_DoubleIdler_Distance_Right.json",
+   "sha": "6a5024e5172573a5de6ccdbd9b3da5380d48ffad",
+   "bytes": 633
+  },
+  {
+   "path": "M113_RS/idler/M113_DoubleIdler_Translational_Left.json",
+   "sha": "f1c43dd7af28e0b5fc686901594015155600b7a8",
+   "bytes": 739
+  },
+  {
+   "path": "M113_RS/idler/M113_DoubleIdler_Translational_Right.json",
+   "sha": "1c27049ddee3399ef0be4b64c29513d70df417a8",
+   "bytes": 738
+  },
+  {
+   "path": "M113_RS/powertrain/M113_AutomaticTransmissionShafts.json",
+   "sha": "77c740dcc750606e97e2384c466b36caf709d660",
+   "bytes": 878
+  },
+  {
+   "path": "M113_RS/powertrain/M113_AutomaticTransmissionSimpleMap.json",
+   "sha": "f21def7a387e45c5f5791e36bae1810db2113971",
+   "bytes": 353
+  },
+  {
+   "path": "M113_RS/powertrain/M113_EngineShafts.json",
+   "sha": "30b09cec4fcc623ff41154d2598343434935da0c",
+   "bytes": 522
+  },
+  {
+   "path": "M113_RS/powertrain/M113_EngineSimple.json",
+   "sha": "cb244774fd7cc53695879026b3c7e61dd0ad0780",
+   "bytes": 186
+  },
+  {
+   "path": "M113_RS/powertrain/M113_EngineSimpleMap.json",
+   "sha": "e3dd1b173c874daf5321706fd0af4ba1694c9f36",
+   "bytes": 569
+  },
+  {
+   "path": "M113_RS/road_wheel/M113_DoubleRoadWheel_Left.json",
+   "sha": "532db30b6faa3ea9d8a755ce9b8804a68b2c4f14",
+   "bytes": 849
+  },
+  {
+   "path": "M113_RS/road_wheel/M113_DoubleRoadWheel_Right.json",
+   "sha": "5b99ed5f2b86e597c4dcf83e15773a9fc57a3d72",
+   "bytes": 850
+  },
+  {
+   "path": "M113_RS/sprocket/M113_SprocketSinglePin_Left.json",
+   "sha": "74de0c2a9e00b292d1c3527f8523875edc0cf8f0",
+   "bytes": 1066
+  },
+  {
+   "path": "M113_RS/sprocket/M113_SprocketSinglePin_Right.json",
+   "sha": "aca51755344cebf41ffc208d8056bd5c3f6af554",
+   "bytes": 1067
+  },
+  {
+   "path": "M113_RS/suspension/M113_TranslationalDamperSuspension_Left.json",
+   "sha": "7b9dfcc53d8b7fcadb86a4242c10d5248b62d4de",
+   "bytes": 1004
+  },
+  {
+   "path": "M113_RS/suspension/M113_TranslationalDamperSuspension_Right.json",
+   "sha": "e61711adfa344c9fe893e756159f2216ca5c7a46",
+   "bytes": 1001
+  },
+  {
+   "path": "M113_RS/track_assembly/M113_TrackAssemblySinglePin_Distance_Left.json",
+   "sha": "c190fdc45d9c1d82beccc2b036c1c393e1af94cc",
+   "bytes": 1846
+  },
+  {
+   "path": "M113_RS/track_assembly/M113_TrackAssemblySinglePin_Distance_Right.json",
+   "sha": "42d39f1922a862a161aa263ca69b865c7a16f223",
+   "bytes": 1855
+  },
+  {
+   "path": "M113_RS/track_assembly/M113_TrackAssemblySinglePin_Translational_Left.json",
+   "sha": "5698722b75b27dcf309215f52535749d7da8699d",
+   "bytes": 1856
+  },
+  {
+   "path": "M113_RS/track_assembly/M113_TrackAssemblySinglePin_Translational_Right.json",
+   "sha": "1acd594e7eea68387e9b9e4a8afc6358a21b5c2e",
+   "bytes": 1865
+  },
+  {
+   "path": "M113_RS/track_shoe/M113_TrackShoeSinglePin.json",
+   "sha": "1cdfd381fd098dde604dfdaf912762cb57ac1504",
+   "bytes": 6784
+  },
+  {
+   "path": "M113_RS/vehicle/M113_Vehicle_SinglePin_Distance_BDS.json",
+   "sha": "044dd70a9a8c25f21c77d0e2f4d24e0f7cc9810e",
+   "bytes": 750
+  },
+  {
+   "path": "M113_RS/vehicle/M113_Vehicle_SinglePin_Translational_BDS.json",
+   "sha": "aeb70fd92a305b25bfee177771e370aeb98940ea",
+   "bytes": 765
+  },
+  {
+   "path": "M113/brake/M113_TrackBrakeShafts.json",
+   "sha": "bcdc89b1df880744b11128fa78d7796dbc80dd20",
+   "bytes": 231
+  },
+  {
+   "path": "M113/brake/M113_TrackBrakeSimple.json",
+   "sha": "47a3a9ad350875d1b361f8963dbb127eb934c6ac",
+   "bytes": 194
+  },
+  {
+   "path": "M113/chassis/M113_Chassis_box.json",
+   "sha": "2694d02d5bc0ff533fe5e13d700689f52d076eb9",
+   "bytes": 2198
+  },
+  {
+   "path": "M113/chassis/M113_Chassis_mesh.json",
+   "sha": "d64cef1b94b1077ebcc9699488f9c90d9c789a03",
+   "bytes": 1399
+  },
+  {
+   "path": "M113/chassis/M113_Chassis.json",
+   "sha": "3baedd5567c6a269ad53a28377e5c8bd8d06c950",
+   "bytes": 1245
+  },
+  {
+   "path": "M113/driveline/M113_SimpleTrackDriveline.json",
+   "sha": "f8f916125c91648ccc0e3e81852a3e2945ac28bc",
+   "bytes": 204
+  },
+  {
+   "path": "M113/driveline/M113_TrackDrivelineBDS.json",
+   "sha": "61bd67937d4c73385bac43b292bf3aebbf69a6ac",
+   "bytes": 207
+  },
+  {
+   "path": "M113/idler_wheel/M113_DoubleIdlerWheel_Left.json",
+   "sha": "7cc6594e366ea1801b5cbd6454192f737b0b8d96",
+   "bytes": 942
+  },
+  {
+   "path": "M113/idler_wheel/M113_DoubleIdlerWheel_Right.json",
+   "sha": "8e4a7afb9716576941f904e57ff06de7b47ae38e",
+   "bytes": 943
+  },
+  {
+   "path": "M113/idler/M113_DoubleIdler_Left.json",
+   "sha": "37319076d1b829f8b223aa4ed770cd8e44d36586",
+   "bytes": 683
+  },
+  {
+   "path": "M113/idler/M113_DoubleIdler_Right.json",
+   "sha": "eaf081e005954a7992ded645e24d2821482cd68d",
+   "bytes": 681
+  },
+  {
+   "path": "M113/M113_TrackSystem.json",
+   "sha": "5eb3ca3ba4c622e96a63ba5f87f06a1720135f82",
+   "bytes": 1152
+  },
+  {
+   "path": "M113/M113_TrackVehicle.json",
+   "sha": "95032a583364a73f0cbf57ac7afd9450c501145f",
+   "bytes": 667
+  },
+  {
+   "path": "M113/powertrain/M113_AutomaticTransmissionShafts.json",
+   "sha": "77c740dcc750606e97e2384c466b36caf709d660",
+   "bytes": 878
+  },
+  {
+   "path": "M113/powertrain/M113_AutomaticTransmissionSimpleMap.json",
+   "sha": "f21def7a387e45c5f5791e36bae1810db2113971",
+   "bytes": 353
+  },
+  {
+   "path": "M113/powertrain/M113_EngineShafts.json",
+   "sha": "30b09cec4fcc623ff41154d2598343434935da0c",
+   "bytes": 522
+  },
+  {
+   "path": "M113/powertrain/M113_EngineSimple.json",
+   "sha": "cb244774fd7cc53695879026b3c7e61dd0ad0780",
+   "bytes": 186
+  },
+  {
+   "path": "M113/powertrain/M113_EngineSimpleMap.json",
+   "sha": "7ab1ab615847968d462374d64ec9c75a9434f285",
+   "bytes": 568
+  },
+  {
+   "path": "M113/road_wheel/M113_DoubleRoadWheel_Left.json",
+   "sha": "61fe4422c1f5f8ea9c912b01f9d7fb381c4dd480",
+   "bytes": 940
+  },
+  {
+   "path": "M113/road_wheel/M113_DoubleRoadWheel_Right.json",
+   "sha": "fdaf134e9a9ccfb2107aa5e0d09c3a6d37978b7e",
+   "bytes": 941
+  },
+  {
+   "path": "M113/sprocket/M113_SprocketBand_Left.json",
+   "sha": "910603cef676faa291521aee137b89fd36d20b42",
+   "bytes": 1267
+  },
+  {
+   "path": "M113/sprocket/M113_SprocketBand_Right.json",
+   "sha": "4234d4277219599334ab6709afe951238421df5f",
+   "bytes": 1268
+  },
+  {
+   "path": "M113/sprocket/M113_SprocketDoublePin_Left.json",
+   "sha": "8e37efb65876bf33fe1f3a491b571503ddd18481",
+   "bytes": 1113
+  },
+  {
+   "path": "M113/sprocket/M113_SprocketDoublePin_Right.json",
+   "sha": "3798bc1dde079646b21da5ed206c2931a152676c",
+   "bytes": 1114
+  },
+  {
+   "path": "M113/sprocket/M113_SprocketSinglePin_Left.json",
+   "sha": "643427cb06363527605a0eee62ebeea0c4af4d6e",
+   "bytes": 1168
+  },
+  {
+   "path": "M113/sprocket/M113_SprocketSinglePin_Right.json",
+   "sha": "52930a98fa867a9cf9f14e68cf400ad4317a8b55",
+   "bytes": 1169
+  },
+  {
+   "path": "M113/suspension/M113_TranslationalDamperSuspension_Left.json",
+   "sha": "170c09919c846224e9c96200af6189c4d0ee82eb",
+   "bytes": 1001
+  },
+  {
+   "path": "M113/suspension/M113_TranslationalDamperSuspension_Right.json",
+   "sha": "75b6d4dc3b65187b5d3c4b8c557405ab655511f9",
+   "bytes": 998
+  },
+  {
+   "path": "M113/TorsionArmSuspension.json",
+   "sha": "b74afaec34dae9a5dfa3e7ad20408b3043c4b35f",
+   "bytes": 420
+  },
+  {
+   "path": "M113/track_assembly/M113_TrackAssemblyBandANCF_Left.json",
+   "sha": "39b27aba418e5460c28f7a72b7923ec8d7f0f9da",
+   "bytes": 2155
+  },
+  {
+   "path": "M113/track_assembly/M113_TrackAssemblyBandANCF_Right.json",
+   "sha": "6b9356d6108d860a2cfcc6725a01f4c8acf9a034",
+   "bytes": 2162
+  },
+  {
+   "path": "M113/track_assembly/M113_TrackAssemblyBandBushing_Left.json",
+   "sha": "f040d11b366e3f048cce933521c894af179fdd54",
+   "bytes": 1696
+  },
+  {
+   "path": "M113/track_assembly/M113_TrackAssemblyBandBushing_Right.json",
+   "sha": "0a1ac0dbf3b318109ce2cce1651da16c1e5aced1",
+   "bytes": 1704
+  },
+  {
+   "path": "M113/track_assembly/M113_TrackAssemblyDoublePin_Left.json",
+   "sha": "ad674fe866e78b60f5c4cc84a31cba633fe89f30",
+   "bytes": 1797
+  },
+  {
+   "path": "M113/track_assembly/M113_TrackAssemblyDoublePin_Right.json",
+   "sha": "d4e51c21307c7b41d55e7ecd62f3c1b88f7fc5ff",
+   "bytes": 1805
+  },
+  {
+   "path": "M113/track_assembly/M113_TrackAssemblySinglePin_Left.json",
+   "sha": "7ff97c20ec1811602a873621fa5a0894ca3b860f",
+   "bytes": 1694
+  },
+  {
+   "path": "M113/track_assembly/M113_TrackAssemblySinglePin_Right.json",
+   "sha": "f6a53bb819f7eb17ac87e0208e29c5b1e5c9b13a",
+   "bytes": 1702
+  },
+  {
+   "path": "M113/track_shoe/M113_TrackShoeBandANCF.json",
+   "sha": "f9420eb2f4d2ddaa3ce7cf461f26c053ff05007a",
+   "bytes": 3005
+  },
+  {
+   "path": "M113/track_shoe/M113_TrackShoeBandBushing.json",
+   "sha": "5c33e91a7deb99226cc3b42fcd30947c5bea7539",
+   "bytes": 3278
+  },
+  {
+   "path": "M113/track_shoe/M113_TrackShoeDoublePin.json",
+   "sha": "942befec5bda96b3353dd14bdb84c8194bdf4931",
+   "bytes": 5017
+  },
+  {
+   "path": "M113/track_shoe/M113_TrackShoeSinglePin.json",
+   "sha": "5f55efb60ab3648693bbfcc2ef71f35f8a8d1e15",
+   "bytes": 6842
+  },
+  {
+   "path": "M113/TrackChain.json",
+   "sha": "7ccbea6d97d0816935a7f7487b0e79dc8b5a9e0e",
+   "bytes": 274
+  },
+  {
+   "path": "M113/vehicle/M113_Vehicle_BandANCF.json",
+   "sha": "42dc64264e140175ea297c7cba67ffebfa045dbd",
+   "bytes": 591
+  },
+  {
+   "path": "M113/vehicle/M113_Vehicle_BandBushing.json",
+   "sha": "edfffcde18248fb53f2e7b7bcd43467fc25f6a64",
+   "bytes": 600
+  },
+  {
+   "path": "M113/vehicle/M113_Vehicle_DoublePin_BDS.json",
+   "sha": "858062b7dae559eab5fbe0bcd24a59352edceeaf",
+   "bytes": 580
+  },
+  {
+   "path": "M113/vehicle/M113_Vehicle_DoublePin.json",
+   "sha": "1ace41d8bd737bf7f9aeab53590998546b07b7c1",
+   "bytes": 583
+  },
+  {
+   "path": "M113/vehicle/M113_Vehicle_SinglePin_BDS.json",
+   "sha": "f0db7148aeb512df75de1c66f811cf7aaa2907d5",
+   "bytes": 580
+  },
+  {
+   "path": "M113/vehicle/M113_Vehicle_SinglePin.json",
+   "sha": "777fe1b2c2c95ce4840a936777cc2172bd5951c2",
+   "bytes": 583
+  },
+  {
+   "path": "MAN/brake/MAN_5t_BrakeShafts.json",
+   "sha": "7752381c5f714dc67a407a386848d84b19e580d9",
+   "bytes": 223
+  },
+  {
+   "path": "MAN/brake/MAN_5t_BrakeSimple.json",
+   "sha": "e7b8d93c78cec5c589b1dd63db16569e6df249bd",
+   "bytes": 186
+  },
+  {
+   "path": "MAN/chassis/MAN_10t_Chassis.json",
+   "sha": "d2c7ef5bedce624e1e4ff4f7fa2ce3db34bba85b",
+   "bytes": 653
+  },
+  {
+   "path": "MAN/chassis/MAN_5t_Chassis.json",
+   "sha": "5e6de3b5ccf7ff4bda13643510aa1dc85bc0f9f4",
+   "bytes": 650
+  },
+  {
+   "path": "MAN/chassis/MAN_7t_Chassis.json",
+   "sha": "b28ab7433a65dc5bf0f540e64d60f4dad0552405",
+   "bytes": 650
+  },
+  {
+   "path": "MAN/driveline/MAN_5t_DrivelineSimple.json",
+   "sha": "29e667f16f9ee437abb8b65b2cd8a4655e6e4507",
+   "bytes": 275
+  },
+  {
+   "path": "MAN/driveline/MAN_5t_DrivelineSimpleXWD.json",
+   "sha": "4cf7fedd4a98adba20488501ee8c25bddf670148",
+   "bytes": 201
+  },
+  {
+   "path": "MAN/powertrain/MAN_7t_AutomaticTransmissionSimpleMap.json",
+   "sha": "ad3ea68c59e5c9a24a0115c615b454c8d80e7ef1",
+   "bytes": 503
+  },
+  {
+   "path": "MAN/powertrain/MAN_7t_EngineSimpleMap.json",
+   "sha": "4a15ee925f3d93015059281d30d05e8670f4743e",
+   "bytes": 1651
+  },
+  {
+   "path": "MAN/steering/MAN_10t_RotaryArm2.json",
+   "sha": "e5c833d9eb01593f332a2f01af12d072359e15b9",
+   "bytes": 680
+  },
+  {
+   "path": "MAN/steering/MAN_5t_RotaryArm.json",
+   "sha": "c12d781f3fdded3887ba5d32a62ae32f700965ad",
+   "bytes": 684
+  },
+  {
+   "path": "MAN/suspension/MAN_10t_Front1SolidThreeLinkAxle.json",
+   "sha": "731a2bb46492daaa48972e1f1ce228146c028713",
+   "bytes": 3381
+  },
+  {
+   "path": "MAN/suspension/MAN_10t_Front2SolidThreeLinkAxle.json",
+   "sha": "0fb63c92fca160d13d57218c7bbbe15ea7016051",
+   "bytes": 3381
+  },
+  {
+   "path": "MAN/suspension/MAN_5t_FrontSolidThreeLinkAxle.json",
+   "sha": "259966a5f3016c800ced6dbea3277f751bd3ca58",
+   "bytes": 3364
+  },
+  {
+   "path": "MAN/suspension/MAN_5t_RearSolidThreeLinkAxle.json",
+   "sha": "46c6419daef229998b88195313671eed7e0a60b1",
+   "bytes": 2576
+  },
+  {
+   "path": "MAN/suspension/MAN_7t_RearSolidThreeLinkAxle.json",
+   "sha": "7d1244569235b50db9f88f0890097dc62a89eeaf",
+   "bytes": 2582
+  },
+  {
+   "path": "MAN/tire/MAN_RigidMeshTire.json",
+   "sha": "1bc54dd8608d38c3e21eaf4e285294d62fe4ef54",
+   "bytes": 879
+  },
+  {
+   "path": "MAN/tire/MAN_TMeasyTire.json",
+   "sha": "ba4da154e1c1617ccea65b06a38c209f27ab73db",
+   "bytes": 1403
+  },
+  {
+   "path": "MAN/vehicle/MAN_10t_Vehicle_8WD.json",
+   "sha": "8a0ab2a472a00e8f77f4d4ea8c680b443938cd57",
+   "bytes": 2403
+  },
+  {
+   "path": "MAN/vehicle/MAN_5t_Vehicle_4WD.json",
+   "sha": "3f9a7ffb7e0be9364adda2613e67a423f843f881",
+   "bytes": 1406
+  },
+  {
+   "path": "MAN/vehicle/MAN_7t_Vehicle_6WD.json",
+   "sha": "0b4a68d9549428eb7e28125a9fb59f1b734b1900",
+   "bytes": 1816
+  },
+  {
+   "path": "MAN/wheel/MAN_5t_Wheel.json",
+   "sha": "9d2b1444e95484e5b322aec407def21bd6435e1b",
+   "bytes": 383
+  },
+  {
+   "path": "Marder/brake/brake_shafts.json",
+   "sha": "a86f54ac942605109a5bbf35790f608b0af4113c",
+   "bytes": 233
+  },
+  {
+   "path": "Marder/brake/brake_simple.json",
+   "sha": "e67e72b09c1596430f2ba1602a7ec55fd3ba65f8",
+   "bytes": 196
+  },
+  {
+   "path": "Marder/chassis/chassis.json",
+   "sha": "17801849adcdc30ea50194980ded98fc993f70b0",
+   "bytes": 635
+  },
+  {
+   "path": "Marder/driveline/simpleDriveline.json",
+   "sha": "b706dcfef52ac0776c899e238b4f7e6bb4bb1e03",
+   "bytes": 206
+  },
+  {
+   "path": "Marder/driver/SpeedController.json",
+   "sha": "90debbfdf8e7bf1448df362975dc613778ad3f12",
+   "bytes": 73
+  },
+  {
+   "path": "Marder/driver/SteeringController.json",
+   "sha": "1128182443ec801203a04a0203815e5114fe6eb1",
+   "bytes": 106
+  },
+  {
+   "path": "Marder/idler_wheel/doubleIdlerWheel0.json",
+   "sha": "16ac1d940d11a2fe97f42e49eed72e1d76b3672f",
+   "bytes": 853
+  },
+  {
+   "path": "Marder/idler_wheel/doubleIdlerWheel1.json",
+   "sha": "5ac385b94db59856ec327e0233f5c52c202e3d16",
+   "bytes": 855
+  },
+  {
+   "path": "Marder/idler/idler0.json",
+   "sha": "5ef87eef6b34acf6f388e5044e5919f998e3c8ca",
+   "bytes": 681
+  },
+  {
+   "path": "Marder/idler/idler1.json",
+   "sha": "c80f80fd541f5b31a93341ea21283290b0f0de2b",
+   "bytes": 888
+  },
+  {
+   "path": "Marder/powertrain/Marder_AutomaticTransmissionSimpleMap.json",
+   "sha": "fc2837afae468dbd78eec80b13071e7c42abc2b9",
+   "bytes": 421
+  },
+  {
+   "path": "Marder/powertrain/Marder_EngineSimple.json",
+   "sha": "e328dd41f9af293ed3e066e138410affa85500ee",
+   "bytes": 188
+  },
+  {
+   "path": "Marder/powertrain/Marder_EngineSimpleMap.json",
+   "sha": "31fde48114f6ca8f9874a5253600a95f4c585e70",
+   "bytes": 912
+  },
+  {
+   "path": "Marder/road_wheel/doubleRoadWheel0.json",
+   "sha": "efb1ffc172c4b99a6660fd9dfc85f037e04b8f63",
+   "bytes": 851
+  },
+  {
+   "path": "Marder/road_wheel/doubleRoadWheel1.json",
+   "sha": "a6ec19901a22fd8c9e5ac5d48a0517a45b38e901",
+   "bytes": 852
+  },
+  {
+   "path": "Marder/roller/roller.json",
+   "sha": "7e83eecd311bd1ff2a424c1a1d40789277efea82",
+   "bytes": 836
+  },
+  {
+   "path": "Marder/sprocket/sprocketSingle0.json",
+   "sha": "d09adac4b2230850c3f88ee402df162f8a31c906",
+   "bytes": 1072
+  },
+  {
+   "path": "Marder/sprocket/sprocketSingle1.json",
+   "sha": "9e2d526246fae03116549cbe66b382c55bb25149",
+   "bytes": 1073
+  },
+  {
+   "path": "Marder/suspension/translationalDamper0.json",
+   "sha": "7998750708b374a77ee220f333f72e0433d30f89",
+   "bytes": 1018
+  },
+  {
+   "path": "Marder/suspension/translationalDamper1.json",
+   "sha": "f9bb5b85fc9d32dc1a567c58353b7bc23423dc85",
+   "bytes": 1014
+  },
+  {
+   "path": "Marder/track_assembly/assembly_sp_bushings_shafts_0.json",
+   "sha": "eef44bbf828398ad89c917358bfd44b7f7a3ea6c",
+   "bytes": 2485
+  },
+  {
+   "path": "Marder/track_assembly/assembly_sp_bushings_shafts_1.json",
+   "sha": "eed82fcae4dd02e013870881120d0804ee1aa93b",
+   "bytes": 2487
+  },
+  {
+   "path": "Marder/track_assembly/assembly_sp_bushings_simple_0.json",
+   "sha": "b445029e1c23933a3562e21a4c4c8785c96bd868",
+   "bytes": 2485
+  },
+  {
+   "path": "Marder/track_assembly/assembly_sp_bushings_simple_1.json",
+   "sha": "5396213be8353494919e22c247418fae505dfdff",
+   "bytes": 2487
+  },
+  {
+   "path": "Marder/track_assembly/assembly_sp_joints_shafts_0.json",
+   "sha": "370f67d9f592990ca04946941daa81de114fcf70",
+   "bytes": 2206
+  },
+  {
+   "path": "Marder/track_assembly/assembly_sp_joints_shafts_1.json",
+   "sha": "e6a3431d5ee0a31b1ba778ec56f0058c99959a24",
+   "bytes": 2208
+  },
+  {
+   "path": "Marder/track_shoe/singlePin.json",
+   "sha": "07a1fd747b1e27e711222aaa54f829e0851dbdcc",
+   "bytes": 6774
+  },
+  {
+   "path": "Marder/vehicle/marder_sp_bushings_shafts.json",
+   "sha": "c014ede0590631746d89adc61265c8a5515a99d1",
+   "bytes": 671
+  },
+  {
+   "path": "Marder/vehicle/marder_sp_bushings_simple.json",
+   "sha": "7a31f55470d741d6f42012bd03f6b71c25b60a64",
+   "bytes": 671
+  },
+  {
+   "path": "Marder/vehicle/marder_sp_joints_shafts.json",
+   "sha": "7009ab563e89a1c1d0b16c890b96634a1a45cbfc",
+   "bytes": 675
+  },
+  {
+   "path": "mtv/brake/FMTV_BrakeShafts.json",
+   "sha": "c3c6f0a2d156aeb6f5ce4f90677895a5adfa891d",
+   "bytes": 213
+  },
+  {
+   "path": "mtv/chassis/FMTV_Chassis.json",
+   "sha": "9f0a797d66fdba61cdf26bf8d28431c2bf3056a9",
+   "bytes": 662
+  },
+  {
+   "path": "mtv/chassis/MTV_Balancer.json",
+   "sha": "ded5145fae9d456ed1e4ec43c6d010de5edf42a0",
+   "bytes": 363
+  },
+  {
+   "path": "mtv/chassis/MTV_ChassisConnector.json",
+   "sha": "cd45f87124992ce5d3867a8439a5853f2af3ddde",
+   "bytes": 141
+  },
+  {
+   "path": "mtv/chassis/MTV_RearChassis.json",
+   "sha": "5cf927a5e63b160a79c5d3ed250d1b5eb697f57d",
+   "bytes": 600
+  },
+  {
+   "path": "mtv/driveline/FMTV_Driveline4WD.json",
+   "sha": "b29c14dac02c87bb9bb3a6f012194fb598c3b4b2",
+   "bytes": 716
+  },
+  {
+   "path": "mtv/powertrain/FMTV_AutomaticTransmissionShafts.json",
+   "sha": "d4030774a7bc97731fcd0e4f10021855fc51e8ae",
+   "bytes": 1292
+  },
+  {
+   "path": "mtv/powertrain/FMTV_EngineShafts.json",
+   "sha": "374b76773af77c59e7983d1b5b12b3512403b7cc",
+   "bytes": 1113
+  },
+  {
+   "path": "mtv/SpeedController.json",
+   "sha": "279fd0640fbdc4ba2ef4111cd64fd6f75b2e9aff",
+   "bytes": 73
+  },
+  {
+   "path": "mtv/steering/FMTV_RotaryArm.json",
+   "sha": "8b97e14953ef86550af267c1b2fd3f50d2e364df",
+   "bytes": 675
+  },
+  {
+   "path": "mtv/SteeringController.json",
+   "sha": "5bf4fea72a0f099726ec88a11464d8492b7363aa",
+   "bytes": 105
+  },
+  {
+   "path": "mtv/suspension/FMTV_ToeBarLeafSpringAxle.json",
+   "sha": "97fd35a81504d56433f2ec5f65081ed52d02dd92",
+   "bytes": 2247
+  },
+  {
+   "path": "mtv/suspension/MTV_SolidThreeLinkAxleF.json",
+   "sha": "23e8ac9b944989ddb75578f6424feb86e6aaae40",
+   "bytes": 2533
+  },
+  {
+   "path": "mtv/suspension/MTV_SolidThreeLinkAxleR.json",
+   "sha": "bc4ac55e4a209057182029dee9a063f24463ed1d",
+   "bytes": 2532
+  },
+  {
+   "path": "mtv/suspensionTest/MTV_ST_rear.json",
+   "sha": "e53db7886af605b785046711a8ad635acd55698b",
+   "bytes": 285
+  },
+  {
+   "path": "mtv/tire/FMTV_TMeasyTire.json",
+   "sha": "0dc0b6beb5421b659d432846e80f42a788c7b6c8",
+   "bytes": 1448
+  },
+  {
+   "path": "mtv/vehicle/MTV_Vehicle_WalkingBeam.json",
+   "sha": "4053a2172dd15655e312eaffa5f1efa7b0c40be1",
+   "bytes": 2451
+  },
+  {
+   "path": "mtv/wheel/FMTV_Wheel.json",
+   "sha": "72b5b01772e253f36fd5158dd6d037bc4252ab96",
+   "bytes": 259
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_AutomaticTransmissionShafts.json",
+   "sha": "343e21e2c764cf266893b200f60373466246a73d",
+   "bytes": 848
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_AutomaticTransmissionSimpleMap.json",
+   "sha": "803e2bbd7bcb37b5a9fea2f3c99c52489e170857",
+   "bytes": 463
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_BrakeSimple_Front.json",
+   "sha": "49fbd9eccf94e01a3fc9675b6fce8cfa9a32fdcb",
+   "bytes": 181
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_BrakeSimple_Rear.json",
+   "sha": "8c03589ee0f21a7eb829e3748f76deb13aec149a",
+   "bytes": 180
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_Chassis.json",
+   "sha": "b0e787b8dfefe9a71d3c69e1352c351efcf90fa7",
+   "bytes": 704
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_DoubleWishboneFront.json",
+   "sha": "3d3c9beb7bd747e7c7fd092f844c4db00b0a8039",
+   "bytes": 2689
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_DoubleWishboneRear.json",
+   "sha": "90e3892c95cae72f1df9ef152a1b81d226c54044",
+   "bytes": 2636
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_Driveline2WD.json",
+   "sha": "ecd861ed7087bbc4c585b2cfff93590e899f55a3",
+   "bytes": 479
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_EngineShafts.json",
+   "sha": "15ec270c50c539cc0b9df200c5ca390612ac5a0b",
+   "bytes": 733
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_EngineSimple.json",
+   "sha": "c4a6460b03c0d35058edf99f1b9c62ef3b9863b5",
+   "bytes": 187
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_Pac02Tire.json",
+   "sha": "64d86012e1a11b567fbdbb27372e44ed89a7c788",
+   "bytes": 448
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_Pac02Tire.tir",
+   "sha": "ef696a6e8df0fd3bfd3654f186d8195159343a34",
+   "bytes": 15702
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_Pac89Tire.json",
+   "sha": "12dc417e5fbab2c0295c326c8a8bc9e02864cbd4",
+   "bytes": 4609
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_PitmanArm.json",
+   "sha": "750f2f98aeb5e4ef90d6558becb9a04fd22738d1",
+   "bytes": 1316
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_RigidTire.json",
+   "sha": "84e3115de259d86f8c19ec834111ea80885c9bf2",
+   "bytes": 734
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_TMeasyTire.json",
+   "sha": "0c109ef79185683ad097246f470d84d4086b4331",
+   "bytes": 1331
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_Vehicle.json",
+   "sha": "c102003dd9a4658a0bf50eaee51bc885501fe2cb",
+   "bytes": 1498
+  },
+  {
+   "path": "Nissan_Patrol/json/suv_Wheel.json",
+   "sha": "de01f410efaa199ee0611376afff7f9f42f5ad5e",
+   "bytes": 353
+  },
+  {
+   "path": "Nissan_Patrol/json/suv.json",
+   "sha": "06c5592af9f2f95b837597d6e7c9d1b44bfbc92a",
+   "bytes": 753
+  },
+  {
+   "path": "Polaris/Polaris_4WD.json",
+   "sha": "22a2ec28b230304e53e6f8e6bb70fdfa31f4fba2",
+   "bytes": 575
+  },
+  {
+   "path": "Polaris/Polaris_ANCF4Tire_Lumped.json",
+   "sha": "4123628c0d4f3ab363e6ee0a084495c9cdddbc6d",
+   "bytes": 6007
+  },
+  {
+   "path": "Polaris/Polaris_ANCF8Tire_Lumped.json",
+   "sha": "9a3e854482f4e8e957d2ad58fac6a7256b42ccb3",
+   "bytes": 6154
+  },
+  {
+   "path": "Polaris/Polaris_Antirollbar.json",
+   "sha": "08968424cc1a0ba4f4b04dd2af15e37d9b321c48",
+   "bytes": 398
+  },
+  {
+   "path": "Polaris/Polaris_AutomaticTransmissionSimpleMap.json",
+   "sha": "6f22af728b99c9c9939ac4718ab1041c4e46c671",
+   "bytes": 411
+  },
+  {
+   "path": "Polaris/Polaris_BrakeShafts.json",
+   "sha": "43c615ca7a005769370470a1f995aed077ec252e",
+   "bytes": 223
+  },
+  {
+   "path": "Polaris/Polaris_BrakeSimple.json",
+   "sha": "7d89da34cad48f78a92a8160061e0c365cfa4fd3",
+   "bytes": 111
+  },
+  {
+   "path": "Polaris/Polaris_Chassis_Variant.json",
+   "sha": "3215c9e96dd8fdf445117d37d93c445550881bb0",
+   "bytes": 623
+  },
+  {
+   "path": "Polaris/Polaris_Chassis.json",
+   "sha": "6d378fa164d10b5813695da4d7c5a0e87d1a3a16",
+   "bytes": 649
+  },
+  {
+   "path": "Polaris/Polaris_DrivelineSimple.json",
+   "sha": "da92c500ed5a0c7e63ac1a776d5ad20861294ae7",
+   "bytes": 278
+  },
+  {
+   "path": "Polaris/Polaris_EngineSimpleMap.json",
+   "sha": "214df97b9588351a4698575c83ec400f8b04ba0e",
+   "bytes": 948
+  },
+  {
+   "path": "Polaris/Polaris_Front_DoubleWishbone.json",
+   "sha": "7991b5fc363141584b1ef32b9299ee241b2b09d5",
+   "bytes": 2238
+  },
+  {
+   "path": "Polaris/Polaris_Pac02Tire.json",
+   "sha": "6a2d5bb5351883f8408c3cdef5a663216c6d490f",
+   "bytes": 451
+  },
+  {
+   "path": "Polaris/Polaris_Pac02Tire.tir",
+   "sha": "177ee826c4292a7f5fb90cd297060ec0a6997a9c",
+   "bytes": 15509
+  },
+  {
+   "path": "Polaris/Polaris_PitmanArm.json",
+   "sha": "181ec5d31ea778dec6d9db3f6376d754c5fed9c8",
+   "bytes": 970
+  },
+  {
+   "path": "Polaris/Polaris_Rear_TrailingArm.json",
+   "sha": "7df4750d37f210272664fdd576161d37056b6a2a",
+   "bytes": 1606
+  },
+  {
+   "path": "Polaris/Polaris_RigidMeshTire.json",
+   "sha": "dd7d330b0d9cdf0a0e6d8a30769c910d7193e8bb",
+   "bytes": 816
+  },
+  {
+   "path": "Polaris/Polaris_RigidTire.json",
+   "sha": "830a78e04d1b3d8ba34d4b64e671c069b34effd3",
+   "bytes": 686
+  },
+  {
+   "path": "Polaris/Polaris_TMeasyTire.json",
+   "sha": "5fb81ad78e7bc213acb610cb253a35213c5a1088",
+   "bytes": 1300
+  },
+  {
+   "path": "Polaris/Polaris_Wheel.json",
+   "sha": "259f403c270915d888c42dfe23e1d7ea2b12e890",
+   "bytes": 250
+  },
+  {
+   "path": "Polaris/Polaris.json",
+   "sha": "c8663ff8d8c0c5f9891352abc7857f2587b63a73",
+   "bytes": 1387
+  },
+  {
+   "path": "Polaris/suspensionTest/Polaris_ST_front.json",
+   "sha": "48fa1d77a014ecc48e374aea3de7401777726d62",
+   "bytes": 668
+  },
+  {
+   "path": "sedan/brake/Sedan_BrakeShafts.json",
+   "sha": "0e0448425bb6132ebbacf24f754909b2200ac343",
+   "bytes": 214
+  },
+  {
+   "path": "sedan/brake/Sedan_BrakeSimple.json",
+   "sha": "777336269a0a4aa27975f0dbac598d0c6d1b09ff",
+   "bytes": 177
+  },
+  {
+   "path": "sedan/chassis/Sedan_Chassis.json",
+   "sha": "632926382e33052fb38b8d8c41f7a399385e203e",
+   "bytes": 689
+  },
+  {
+   "path": "sedan/driveline/Sedan_Driveline2WD.json",
+   "sha": "2869f47e079c9ba75c75e2cf2403e6a9e740849c",
+   "bytes": 481
+  },
+  {
+   "path": "sedan/driver/Sedan_AIDriver.json",
+   "sha": "36f46e478a70eef3c344ed3786b2fc4d491b03d7",
+   "bytes": 462
+  },
+  {
+   "path": "sedan/powertrain/Sedan_AutomaticTransmissionSimpleMap.json",
+   "sha": "c2bfddbac2ed6bd62750c611b4839023afbcd8fe",
+   "bytes": 620
+  },
+  {
+   "path": "sedan/powertrain/Sedan_EngineShafts.json",
+   "sha": "b7406e0ec1d8b4f598e492c30e123435eb8feaf6",
+   "bytes": 718
+  },
+  {
+   "path": "sedan/powertrain/Sedan_EngineSimpleMap.json",
+   "sha": "abac968b874c5450391c0b19a448ef81a8f87552",
+   "bytes": 1851
+  },
+  {
+   "path": "sedan/powertrain/Sedan_ManualTransmissionShafts.json",
+   "sha": "f1449104796ef61eeb82773ee4efc83a8a3c63ee",
+   "bytes": 480
+  },
+  {
+   "path": "sedan/Sedan.json",
+   "sha": "59d30c68827c2ac88f130e305f8b92258262a0b7",
+   "bytes": 737
+  },
+  {
+   "path": "sedan/steering/Sedan_RackPinion.json",
+   "sha": "3258d6a3003cae98dca1643801b489c23469220b",
+   "bytes": 485
+  },
+  {
+   "path": "sedan/suspension/Sedan_DoubleWishbone.json",
+   "sha": "87e2b57118878f979b6821dadb6b98542eb50075",
+   "bytes": 2217
+  },
+  {
+   "path": "sedan/suspension/Sedan_MultiLink.json",
+   "sha": "62c85789804fece98c4c9e7d3ef22e78051f0e44",
+   "bytes": 2726
+  },
+  {
+   "path": "sedan/tire/Sedan_Pac02Tire.json",
+   "sha": "858afeb31e06ac272aa0b7907fe8bb40e523766d",
+   "bytes": 460
+  },
+  {
+   "path": "sedan/tire/Sedan_Pac02Tire.tir",
+   "sha": "c710f15900784635692252e13e29441949718ea2",
+   "bytes": 12375
+  },
+  {
+   "path": "sedan/tire/Sedan_RigidTire.json",
+   "sha": "391076b75d80743294ec3f74c9eab5b328709561",
+   "bytes": 738
+  },
+  {
+   "path": "sedan/tire/Sedan_TMeasyTire.json",
+   "sha": "3174df8d6ed5e07e53bb835a4e566a195e3c6d82",
+   "bytes": 1283
+  },
+  {
+   "path": "sedan/vehicle/Sedan_Vehicle.json",
+   "sha": "d52220b8eca9391609e6ab1e53af0063c384be21",
+   "bytes": 1402
+  },
+  {
+   "path": "sedan/wheel/Sedan_Wheel.json",
+   "sha": "bc888f2bf3205273b32f443d21b237289fc79e73",
+   "bytes": 351
+  },
+  {
+   "path": "terrain/RigidHeightMap.json",
+   "sha": "424a67c1de3d35e436192bdafb51f00ef8f782c8",
+   "bytes": 905
+  },
+  {
+   "path": "terrain/RigidMesh.json",
+   "sha": "c5df09b85aaabe0b00442640dd33b1230ead0556",
+   "bytes": 825
+  },
+  {
+   "path": "terrain/RigidObstacle1.json",
+   "sha": "2382c5e074ae30bb5c1be3dbd7d47ddb7297e390",
+   "bytes": 1555
+  },
+  {
+   "path": "terrain/RigidObstacle2.json",
+   "sha": "08813980dc20099690ac431f88a73cff0ea1e0e7",
+   "bytes": 1556
+  },
+  {
+   "path": "terrain/RigidObstacle3.json",
+   "sha": "d61d6f71c496a3b866c0000a42fa1667c75089d7",
+   "bytes": 1556
+  },
+  {
+   "path": "terrain/RigidObstacle4.json",
+   "sha": "01a33418fe439f81c4a15cc2a2c6c608db01a299",
+   "bytes": 1556
+  },
+  {
+   "path": "terrain/RigidObstacle5.json",
+   "sha": "4fb96b16c564c6610eceee29eb56a094ea8315c8",
+   "bytes": 1556
+  },
+  {
+   "path": "terrain/RigidPatches.json",
+   "sha": "398472df4a109409110c7073b0c84c47de98b876",
+   "bytes": 3051
+  },
+  {
+   "path": "terrain/RigidPlane.json",
+   "sha": "becf7b43e204b62dfe213b35bacd06b5caa2461e",
+   "bytes": 813
+  },
+  {
+   "path": "terrain/RigidRandom1.json",
+   "sha": "df04fa1cd6e7ff9d3f0d844bac5d79aa3d4543f6",
+   "bytes": 1559
+  },
+  {
+   "path": "terrain/RigidRandom2.json",
+   "sha": "de0c1f3ec63563d6493129d9423d306acb877ee2",
+   "bytes": 1560
+  },
+  {
+   "path": "terrain/RigidRandom3.json",
+   "sha": "f9ae71d0521a040ea1061216ef4106b66674d990",
+   "bytes": 1560
+  },
+  {
+   "path": "terrain/RigidRandom4.json",
+   "sha": "aab177bf788804560a925876df8ba09039f065c5",
+   "bytes": 1560
+  },
+  {
+   "path": "terrain/RigidSlope10.json",
+   "sha": "1f25a8bc2f799cab5396f0a6c413211b47207f75",
+   "bytes": 911
+  },
+  {
+   "path": "terrain/RigidSlope20.json",
+   "sha": "bb5087b9bf1f0700ba44b994b9a688abc4c69a64",
+   "bytes": 912
+  },
+  {
+   "path": "terrain/sph/S-lane_RMS/sph_params.json",
+   "sha": "564c38cf450390eaf70ae43a8670f27acef1b9d9",
+   "bytes": 842
+  },
+  {
+   "path": "truck/json/truck_AutomaticTransmissionSimpleMap.json",
+   "sha": "558606dedaad139badfbe07632edd42d5a286421",
+   "bytes": 480
+  },
+  {
+   "path": "truck/json/truck_BrakeSimple.json",
+   "sha": "de5adf3e7e81c407b393090aa8dee7fc3b839ba4",
+   "bytes": 129
+  },
+  {
+   "path": "truck/json/truck_Chassis.json",
+   "sha": "15fb28138f614eea8235a226791f9ebf43a424f5",
+   "bytes": 1200
+  },
+  {
+   "path": "truck/json/truck_DrivelineSimpleXWD.json",
+   "sha": "9d5794917ce5757c33d51f4352b4ed332d24289c",
+   "bytes": 146
+  },
+  {
+   "path": "truck/json/truck_EngineSimple.json",
+   "sha": "4feb2b99a9f4a70e83a99488b191d5002df938ef",
+   "bytes": 204
+  },
+  {
+   "path": "truck/json/truck_FrontSolidThreeLinkAxle.json",
+   "sha": "eca6f990eb0ead503848579284d816ef73a39b85",
+   "bytes": 2899
+  },
+  {
+   "path": "truck/json/truck_RearSolidThreeLinkAxle.json",
+   "sha": "96a8227fcdbabcbeaf687a5c9fb89f6519b2298e",
+   "bytes": 2193
+  },
+  {
+   "path": "truck/json/truck_RotaryArm.json",
+   "sha": "e9d273545dfeeb4b36d9e22d3e98a0355e65d0ce",
+   "bytes": 529
+  },
+  {
+   "path": "truck/json/truck_TMeasyTire.json",
+   "sha": "f7e799edf4d973ff3164a169245ea905c23f70be",
+   "bytes": 1457
+  },
+  {
+   "path": "truck/json/truck_Vehicle.json",
+   "sha": "fb171aa1620835517b84f6e58e0a4e5b9a9d59d3",
+   "bytes": 1791
+  },
+  {
+   "path": "truck/json/truck_Wheel.json",
+   "sha": "b2388dc8a8a5bbbfcd49e7bfddd27a18cb32cfc2",
+   "bytes": 249
+  },
+  {
+   "path": "truck/json/truck.json",
+   "sha": "598b7133288cc70098c5c147db784cb35f597253",
+   "bytes": 737
+  },
+  {
+   "path": "uaz/brake/UAZBUS_BrakeShafts_Front.json",
+   "sha": "4762749788e53d366e1853aa1fdc63caae6a443f",
+   "bytes": 222
+  },
+  {
+   "path": "uaz/brake/UAZBUS_BrakeShafts_Rear.json",
+   "sha": "25582760ce4276f8460623dce8a2d4921946b7a0",
+   "bytes": 221
+  },
+  {
+   "path": "uaz/brake/UAZBUS_BrakeSimple_Front.json",
+   "sha": "56e0220f7882ed245a2cc4e72f071c083ace68ff",
+   "bytes": 185
+  },
+  {
+   "path": "uaz/brake/UAZBUS_BrakeSimple_Rear.json",
+   "sha": "b5a93080213c85276593ff618a0adfb3b45b0fba",
+   "bytes": 184
+  },
+  {
+   "path": "uaz/chassis/UAZ469_Chassis.json",
+   "sha": "9de51a4d6cd15d35042e0b82c590be4a9131eeb9",
+   "bytes": 700
+  },
+  {
+   "path": "uaz/chassis/UAZBUS_Chassis.json",
+   "sha": "bb5dd1ca33b383f7136ad715a4b37d1664069f11",
+   "bytes": 699
+  },
+  {
+   "path": "uaz/driveline/UAZBUS_Driveline2WD.json",
+   "sha": "5bb428e04dbd037e12f87532f678f96eea0b0781",
+   "bytes": 481
+  },
+  {
+   "path": "uaz/driveline/UAZBUS_Driveline4WD.json",
+   "sha": "499612f38641ca821804e1484560b07b96cd1a7b",
+   "bytes": 717
+  },
+  {
+   "path": "uaz/powertrain/UAZBUS_AutomaticTransmissionSimpleMap.json",
+   "sha": "ce6b27528ab2d116d738c9b5bb8a23cec7034274",
+   "bytes": 384
+  },
+  {
+   "path": "uaz/powertrain/UAZBUS_EngineSimpleMap.json",
+   "sha": "9f5a4511709d76b2dcd1abb9956209951fe6f38e",
+   "bytes": 1136
+  },
+  {
+   "path": "uaz/steering/UAZ469_RotaryArm.json",
+   "sha": "1a593464a8ae2902d2efb2518ab1631e33cb88c2",
+   "bytes": 655
+  },
+  {
+   "path": "uaz/steering/UAZBUS_RotaryArm.json",
+   "sha": "32c27c5c63c595c93b0b3376b326bfd928f86f4d",
+   "bytes": 657
+  },
+  {
+   "path": "uaz/suspension/UAZ469_FrontLeafspringAxle.json",
+   "sha": "4b8192266d970408012bc7bf3ea36e3ed5c5aecc",
+   "bytes": 2440
+  },
+  {
+   "path": "uaz/suspension/UAZBUS_FrontLeafspringAxle.json",
+   "sha": "2e81dbb5c93c54cee99c591f1a2afef2a3ed4752",
+   "bytes": 2440
+  },
+  {
+   "path": "uaz/suspension/UAZBUS_FrontPushPipeAxle.json",
+   "sha": "2082a156005ab94f4b4acf1d5d5f9d9dc2c632f8",
+   "bytes": 2794
+  },
+  {
+   "path": "uaz/suspension/UAZBUS_FrontSAELeafspringAxle_replica.json",
+   "sha": "a2eb83ab1baadb7b62f6d31f0d8f74eba0a2a829",
+   "bytes": 12204
+  },
+  {
+   "path": "uaz/suspension/UAZBUS_FrontSAELeafspringAxle.json",
+   "sha": "01f64cdaf2a3b2383fedf395c3d217c74faf010d",
+   "bytes": 3724
+  },
+  {
+   "path": "uaz/suspension/UAZBUS_RearLeafspringAxle.json",
+   "sha": "6e9c1e9f4be147cfca22df4f8aed478e194a3159",
+   "bytes": 1425
+  },
+  {
+   "path": "uaz/suspension/UAZBUS_RearPushPipeAxle.json",
+   "sha": "bc7507c9941aebb734c4a7f95c82393cd5b603de",
+   "bytes": 1782
+  },
+  {
+   "path": "uaz/suspension/UAZBUS_RearSAELeafspringAxle.json",
+   "sha": "5de175c597e2793bd06d08846492aebc870e84b9",
+   "bytes": 2709
+  },
+  {
+   "path": "uaz/suspensionTest/UAZ_ST_front_replica.json",
+   "sha": "5c949f73af533bc660ea1cb9c04a882625f30a4f",
+   "bytes": 284
+  },
+  {
+   "path": "uaz/suspensionTest/UAZ_ST_front.json",
+   "sha": "fbfdc920e9884cee24da25d0efc561bbe62a9b0f",
+   "bytes": 276
+  },
+  {
+   "path": "uaz/suspensionTest/UAZ_ST_rear.json",
+   "sha": "c0e6523bcd19fe7373c4c17bdc1bf2de6bc9e9e9",
+   "bytes": 239
+  },
+  {
+   "path": "uaz/tire/UAZBUS_Pac02Tire.json",
+   "sha": "d6bca77b7fa973ee0c984740a82582dcc8c05e24",
+   "bytes": 427
+  },
+  {
+   "path": "uaz/tire/UAZBUS_Pac02Tire.tir",
+   "sha": "27e1485ecb10631c08ddad3337b4d240c675eb6d",
+   "bytes": 15668
+  },
+  {
+   "path": "uaz/tire/UAZBUS_TMeasyTireFront.json",
+   "sha": "58661e257ca49c18b31af9bd3a59bf52f42ae500",
+   "bytes": 1302
+  },
+  {
+   "path": "uaz/tire/UAZBUS_TMeasyTireRear.json",
+   "sha": "ff921021a2a231d5a4c209f6657ea81526e3f183",
+   "bytes": 1307
+  },
+  {
+   "path": "uaz/vehicle/UAZ469_Vehicle.json",
+   "sha": "7465bf87694097c7c46d17e3e975fadb78b00475",
+   "bytes": 1391
+  },
+  {
+   "path": "uaz/vehicle/UAZBUS_SAEVehicle_replica.json",
+   "sha": "ab0353f9359b886d2b76ccadb51e41f1ce4c2c30",
+   "bytes": 1405
+  },
+  {
+   "path": "uaz/vehicle/UAZBUS_SAEVehicle.json",
+   "sha": "eaa467a92a98c5ab283901c1e074073cc0fdffc9",
+   "bytes": 1397
+  },
+  {
+   "path": "uaz/vehicle/UAZBUS_Vehicle.json",
+   "sha": "55265a4cfcceb08d96cea82cb791551fbaeffe9f",
+   "bytes": 1391
+  },
+  {
+   "path": "uaz/vehicle/UAZBUS_VehicleT.json",
+   "sha": "6e15aec30433bd0bd57edc91b22194f7ef5c9c2b",
+   "bytes": 1387
+  },
+  {
+   "path": "uaz/wheel/UAZBUS_Wheel.json",
+   "sha": "ad7a6f3148c209dd94a6e316c534f0a726fb31eb",
+   "bytes": 380
+  },
+  {
+   "path": "ultra_tow/UT_Chassis.json",
+   "sha": "5b4bd498f2823c35c11c5f0d5cbe8dafa5294027",
+   "bytes": 1094
+  },
+  {
+   "path": "ultra_tow/UT_Hitch.json",
+   "sha": "930e2ef85aee12dc1e39073286105d7c6656679e",
+   "bytes": 105
+  },
+  {
+   "path": "ultra_tow/UT_LeafspringAxle.json",
+   "sha": "425c06c74e94f9a006294db77db00cee2bac99b6",
+   "bytes": 1226
+  },
+  {
+   "path": "ultra_tow/UT_RigidTire.json",
+   "sha": "5b371601c1b886b3e03d5fccbeacc453801eab8a",
+   "bytes": 731
+  },
+  {
+   "path": "ultra_tow/UT_TMeasyTire.json",
+   "sha": "aea754a201e06ce9b037c84fc879bfb8bd0b33cb",
+   "bytes": 1282
+  },
+  {
+   "path": "ultra_tow/UT_Trailer.json",
+   "sha": "ae55b0d02984a414a7c0aae0b07184f7d0963040",
+   "bytes": 578
+  },
+  {
+   "path": "ultra_tow/UT_Wheel.json",
+   "sha": "921a8be8168ac04deeb39f24456e3449e6b67954",
+   "bytes": 300
+  },
+  {
+   "path": "utv_trailer/UTV_LeafspringAxle.json",
+   "sha": "3e7e010bd74c318b81737eedee529fb54627b279",
+   "bytes": 750
+  },
+  {
+   "path": "utv_trailer/UTV_Trailer.json",
+   "sha": "29b75f28d7ed012d27b38aa84214d842316991d0",
+   "bytes": 643
+  },
+  {
+   "path": "utv_trailer/UTV_TrailerChassis.json",
+   "sha": "7f6079fba0645f94a107a93ee520df2a6271570c",
+   "bytes": 637
+  },
+  {
+   "path": "utv_trailer/UTV_TrailerHitch.json",
+   "sha": "6b97512fa49b40aff1b3b751c05e2bb2bb9f5979",
+   "bytes": 103
+  },
+  {
+   "path": "VW_microbus/json/mf_185_80R14.tir",
+   "sha": "757805def4ee997a106aab5752e9d5f6aa2c1e5b",
+   "bytes": 16998
+  },
+  {
+   "path": "VW_microbus/json/van_AntirollBarRSD.json",
+   "sha": "04bfa8647f4dfd0eeead61c3af41ffd704488fea",
+   "bytes": 530
+  },
+  {
+   "path": "VW_microbus/json/van_AutomaticTransmissionSimpleMap.json",
+   "sha": "f93ce549f53c330adb17aa9fdbb5e13beaeee483",
+   "bytes": 372
+  },
+  {
+   "path": "VW_microbus/json/van_BrakeShafts_Front.json",
+   "sha": "f0b21b79f8430528cdc61977be404dcf5152c182",
+   "bytes": 221
+  },
+  {
+   "path": "VW_microbus/json/van_BrakeShafts_Rear.json",
+   "sha": "a3a2b86373f07a7b6c3790f7961d50bb81d44b6b",
+   "bytes": 220
+  },
+  {
+   "path": "VW_microbus/json/van_BrakeSimple_Front.json",
+   "sha": "f0bb6909b851398083bd683d9cf74f33241c87b8",
+   "bytes": 184
+  },
+  {
+   "path": "VW_microbus/json/van_BrakeSimple_Rear.json",
+   "sha": "978c1c09d107a22e7b964629848b48f86604d2af",
+   "bytes": 183
+  },
+  {
+   "path": "VW_microbus/json/van_Chassis.json",
+   "sha": "f46e54f2b2333645d938d5afaf15e59dc471ff7b",
+   "bytes": 1436
+  },
+  {
+   "path": "VW_microbus/json/van_DoubleWishboneFront.json",
+   "sha": "fc99f2f5f8514925e800a463f8686a066c532dc6",
+   "bytes": 2321
+  },
+  {
+   "path": "VW_microbus/json/van_Driveline2WD.json",
+   "sha": "bef12aa9e6a7fb5e9bda2fcade2862835f9d6f9c",
+   "bytes": 482
+  },
+  {
+   "path": "VW_microbus/json/van_Driveline4WD.json",
+   "sha": "8599479d499a62acdf8bf6d67ddafec7b6c450d2",
+   "bytes": 718
+  },
+  {
+   "path": "VW_microbus/json/van_EngineSimpleMap.json",
+   "sha": "7b7ef5a23003720e9f7043287bede9a97a4bb9ba",
+   "bytes": 950
+  },
+  {
+   "path": "VW_microbus/json/van_Pac02Tire_extTIR.json",
+   "sha": "68351d662edda8aff205be7e0d72c8b4208c4425",
+   "bytes": 507
+  },
+  {
+   "path": "VW_microbus/json/van_Pac02Tire.json",
+   "sha": "091943a4f0a9a85d32ab3352e5518b36e167f3e4",
+   "bytes": 11544
+  },
+  {
+   "path": "VW_microbus/json/van_RackPinion.json",
+   "sha": "87b9e4ba420842c11e98113b89f3f2e0965b6bd8",
+   "bytes": 471
+  },
+  {
+   "path": "VW_microbus/json/van_SemiTrailingArm.json",
+   "sha": "4d7a532b30c4374eaa7b9b650f1233553bd3fb4b",
+   "bytes": 1275
+  },
+  {
+   "path": "VW_microbus/json/van_TMeasyTire.json",
+   "sha": "d14b720c629dddc42856ff55587ec23064801b56",
+   "bytes": 1318
+  },
+  {
+   "path": "VW_microbus/json/van_TMeasyTireFull.json",
+   "sha": "8a9efc4a1dc13aabb254a039c246e4724699ca84",
+   "bytes": 2533
+  },
+  {
+   "path": "VW_microbus/json/van_TMsimpleTire.json",
+   "sha": "98bdca6f8e08402029b173642ec9413fc1554710",
+   "bytes": 1322
+  },
+  {
+   "path": "VW_microbus/json/van_TMsimpleTireFull.json",
+   "sha": "29f81265ce53b9fb5e21426e71ba13d2cc03b040",
+   "bytes": 2075
+  },
+  {
+   "path": "VW_microbus/json/van_Vehicle.json",
+   "sha": "89e3727ce051ad844bf5e08a5151905659680d95",
+   "bytes": 1554
+  },
+  {
+   "path": "VW_microbus/json/van_Wheel.json",
+   "sha": "14bb7ba83c4a8b42ac5ae0e793cf42f8fbcc9c43",
+   "bytes": 403
+  },
+  {
+   "path": "VW_microbus/json/van.json",
+   "sha": "036126cc43bfc66735f01576896235c366cebe71",
+   "bytes": 744
+  }
+ ]
+}

@@ -1027,3 +1027,35 @@ RS_TEST(reference_data_inertia_yaw_response) {
         }
     }
 }
+
+// ---- every other full-throttle engine map in Project Chrono's vehicle data ----------------------------------------------------
+// data/reference/chrono-vehicles/summary.json digests the 546 verbatim files imported by tools/physics/import_chrono_vehicles.mjs.
+// Its simple-map engines (a rally-class V8 of 310 kW, a van, a UTV, a 4x4 diesel, the HMMWV, the M113's tracked-vehicle diesel...)
+// go through the same dyno pull as the four above; the maps already tested and the copies of them (ACV, MAN) are skipped, and the
+// Marder's, whose map is written in rad/s, is left out and flagged by the checker.
+RS_TEST(reference_data_chrono_engine_maps_all) {
+    const auto sum = read_json("reference/chrono-vehicles/summary.json");
+    const auto done = read_json("powertrain/reference-powertrains.json");
+    std::vector<std::pair<double, double>> seen;   // (peak torque, max rpm) of the maps already run
+    for (const auto& e : done.at("entries")) seen.push_back({e.at("engine").at("peak_torque_nm").get<double>(), e.at("engine").at("redline_rpm").get<double>()});
+    int n = 0;
+    for (const auto& e : sum.at("engines")) {
+        if (e.at("kind").get<std::string>() != "simple_map" || e.at("units_rad_s").get<bool>()) continue;
+        const double pt = e.at("peak_torque_nm").get<double>(), mr = e.at("max_rpm").get<double>();
+        if (std::any_of(seen.begin(), seen.end(), [&](const auto& s) { return std::abs(s.first - pt) < 1.0 && std::abs(s.second - mr) < 1.0; })) continue;
+        seen.push_back({pt, mr});
+        std::vector<std::array<double, 2>> pts;
+        for (const auto& p : e.at("curve_rpm_nm")) pts.push_back({p.at(0).get<double>(), p.at(1).get<double>()});
+        double pk = 0;
+        for (const auto& p : pts) pk = std::max(pk, p[0] * 2 * kPi / 60 * p[1]);
+        const std::string id = e.at("id").get<std::string>();
+        test::check_range((id + ": listed peak power vs its own curve").c_str(), e.at("peak_power_kw").get<double>() * 1000 / pk, 0.99, 1.01, "x");
+        const PullResult r = tall_gear_pull(pts, 800, mr, 4, pk);
+        std::printf("         %-34s map peak %.0f Nm at %.0f rpm / %.0f kW | body x%.1f | dyno: %d bins, mean est/map %.3f, worst %.1f %%\n", id.c_str(), r.t_peak, r.t_rpm, pk / 1000, r.scale, r.covered, r.mean, r.worst * 100);
+        test::check_range((id + ": rpm bins the pull covered").c_str(), r.covered, 4, 80, "bins");
+        test::check_range((id + ": mean crank-torque estimate vs the map").c_str(), r.mean, 0.95, 1.07, "x");
+        test::check_range((id + ": worst bin vs the map").c_str(), r.worst, 0, 0.12, "");
+        ++n;
+    }
+    test::check("at least five further Chrono engine maps were run", n >= 5);
+}

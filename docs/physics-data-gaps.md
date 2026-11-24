@@ -9,7 +9,7 @@ invented.
 | domain | where | source / licence | confidence | checker |
 |---|---|---|---|---|
 | Tyres, 14 sets | `data/tires/*.tir` | Project Chrono, **BSD-3** (verbatim) | high (published MF datasets) | `ctest -R tire` (14-file sweep) |
-| Engines + gearboxes, 4 | `data/powertrain/reference-powertrains.json` | Project Chrono JSON, **BSD-3** | **low-medium** (simplified maps) | `tools/physics/check_powertrain.mjs` |
+| Engines + gearboxes, 4 (and every other Chrono file: 546, see `docs/chrono-data.md`) | `data/powertrain/reference-powertrains.json`, `data/reference/chrono-vehicles/` | Project Chrono JSON, **BSD-3** | **low-medium** (simplified maps; chassis inertias mostly unrealistic) | `check_powertrain.mjs`, `check_chrono_vehicles.mjs`, `reference_data_chrono_engine_maps[_all]` |
 | Final drives, 1,699 configs | `data/powertrain/final-drives.json` | US EPA certification CSVs, **public domain** | high | same |
 | One measured engine curve | `data/physics/torque-reference.json` | Toyota 7A-FE, Zenodo, **CC BY 4.0** | measured, but ~10 % below factory rating; single engine | `tools/physics/torque_reference.mjs` |
 | Car drag areas, 3 cars | `data/cars/{vela_gt,hayate,kaze_kurogane}.json` | US EPA coast-down, **public domain** | medium (class proxy) | `validate_mod` |
