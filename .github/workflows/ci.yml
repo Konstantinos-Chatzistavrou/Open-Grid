@@ -68,6 +68,9 @@ jobs:
           node tools/physics/check_powertrain.mjs
           node tools/physics/aero_check.mjs
           node tools/physics/inertia_reference.mjs --check
+          node tools/physics/torque_reference.mjs --check
+          node tools/physics/brake_reference.mjs
+          node tools/physics/brake_reference.mjs --tracks data/validation/tracks-extra
           node tools/validation/track_sanity.mjs
       - name: Physics reference data (licence, units, physical plausibility)
         run: node tools/validate_physics_reference.mjs

@@ -29,3 +29,23 @@ JSON and in `docs/downforce-data.md`; they are assumptions, not measurements.
 1994/1996 Isuzu Trooper and 1996 Acura SLX: weight, roll inertia (Ixx), yaw inertia (Izz), CG height and SSF.
 Units: lb, slug*ft^2 (printed ft.lb.s^2), in; conversions in the JSON. See `docs/inertia-cg-data.md` for the
 full explanation, uncertainty and what we did **not** claim. Checked by `tools/physics/inertia_reference.mjs`.
+
+## Modern CG: 2020 NCAP SSF measurements (public domain)
+
+`inertia-reference.json` also holds `modernEntries`: 9 vehicles (2019-2021) measured by SEA, Ltd. for NHTSA's
+2020 NCAP, from docket NHTSA-2001-9663-0497 ("Rollover Stability Measurements for 2020 NCAP"). Fields: test
+weight, average track width, CG height, SSF (track/2h); **moments of inertia are not published in this source**.
+Licence: US Government work in a federal docket, treated as public domain (confirm contractor status before
+commercial redistribution). Archived PDF:
+<http://web.archive.org/web/20230802123148if_/https://downloads.regulations.gov/NHTSA-2001-9663-0497/attachment_1.pdf>.
+No modern two-door sports coupe is in the set; see `docs/inertia-cg-data.md`.
+
+## Aerodynamic axle balance reference (CC BY 4.0, CFD — not measured)
+
+`aero_reference.json` entries `energies2022_none`, `energies2022_rigid_closed`, `energies2022_inflated_open` are from
+**Piechna, J., "Towards Balanced Aerodynamic Axle Loading of a Car with Covered Wheels—Inflatable Splitter",
+Energies 2022, 15, 5543, Table 4 (pitch 0°)**, <https://doi.org/10.3390/en15155543>, **CC BY 4.0**. The paper reports
+CFD + fluid–structure interaction results for a DrivAer-type covered-wheel car: CD, CL, front/rear lift (CLf, CLr)
+and pitching moment (CM). `front_share_derived` is computed as |CLf|/(|CLf|+|CLr|) only where both axles carry
+downforce; it is **derived**, not printed by the authors. These are **not wind-tunnel measurements** and are labelled
+as such in the JSON and docs. The checker's 0.55–0.90 band is a class proxy (see docs/downforce-data.md).
