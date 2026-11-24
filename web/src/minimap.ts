@@ -16,6 +16,7 @@ export class Minimap {
   private cv = document.createElement('canvas');
   private ctx: CanvasRenderingContext2D;
   private banner = document.createElement('div');
+  private footScale: HTMLElement | null = null;
   private grid = new Map<string, Seg[]>();
   private drawStamp = 0;
   private named: { x: number; y: number; name: string }[] = [];
@@ -46,7 +47,11 @@ export class Minimap {
   constructor(parent: HTMLElement) {
     this.el.id = 'minimap';
     this.banner.className = 'gps-turn';
-    this.el.append(this.banner, this.cv);
+    const foot = document.createElement('div');
+    foot.className = 'gps-foot';
+    foot.innerHTML = '<span>GPS · NIGHT SHIFT</span><span class="gps-scale"><i class="gps-bar"></i><b>—</b></span>';
+    this.footScale = foot.querySelector('b');
+    this.el.append(this.banner, this.cv, foot);
     parent.appendChild(this.el);
     this.ctx = this.cv.getContext('2d')!;
     if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { this.sizeCache = 0; }).observe(this.el);
@@ -220,8 +225,18 @@ export class Minimap {
       c.translate(r, r);
       c.scale(k, -k);
     } else {
-      c.beginPath(); c.arc(r, r, r - 1, 0, Math.PI * 2); c.clip();
-      c.fillStyle = 'rgba(6, 9, 15, 0.82)'; c.fillRect(0, 0, size, size);
+      // rounded screen, not a circle
+      c.beginPath();
+      const rr = 10;
+      c.moveTo(rr, 0); c.lineTo(size - rr, 0); c.quadraticCurveTo(size, 0, size, rr);
+      c.lineTo(size, size - rr); c.quadraticCurveTo(size, size, size - rr, size);
+      c.lineTo(rr, size); c.quadraticCurveTo(0, size, 0, size - rr);
+      c.lineTo(0, rr); c.quadraticCurveTo(0, 0, rr, 0); c.closePath(); c.clip();
+      c.fillStyle = 'rgba(8, 12, 20, 0.92)'; c.fillRect(0, 0, size, size);
+      // faint screen grid: reads as a device display even where the street graph is sparse
+      c.strokeStyle = 'rgba(120, 200, 255, 0.055)'; c.lineWidth = 1; c.beginPath();
+      for (let g = 18; g < size; g += 18) { c.moveTo(g, 0); c.lineTo(g, size); c.moveTo(0, g); c.lineTo(size, g); }
+      c.stroke();
       // world -> canvas: translate to the car, rotate so the car points up, scale, flip y
       c.translate(r, r * 1.18);
       c.scale(k, -k);
@@ -250,7 +265,7 @@ export class Minimap {
           bucket.push(s);
         }
       }
-      c.strokeStyle = major ? 'rgba(180, 195, 220, 0.72)' : 'rgba(128, 140, 165, 0.44)';
+      c.strokeStyle = major ? 'rgba(190, 205, 230, 0.82)' : 'rgba(140, 152, 178, 0.56)';
       for (const [lw, bucket] of byWidth) {
         c.lineWidth = lw;
         c.beginPath();
@@ -352,6 +367,13 @@ export class Minimap {
       if (curStreet) txt = `<span>${esc(curStreet)}</span>`;
     }
     if (this.bannerHtml !== txt) { this.banner.innerHTML = this.bannerHtml = txt; this.banner.hidden = !txt; }
+    // scale bar: 34 css px of the bar at the current zoom, rounded to a readable distance
+    if (this.footScale) {
+      const m = 34 * this.zoom;
+      const nice = m >= 500 ? Math.round(m / 100) * 100 : m >= 100 ? Math.round(m / 50) * 50 : Math.round(m / 10) * 10;
+      const label = nice >= 1000 ? `${(nice / 1000).toFixed(1)} km` : `${nice} m`;
+      if (this.footScale.textContent !== label) this.footScale.textContent = label;
+    }
   }
 
   show(on: boolean) { this.visible = on; this.el.hidden = !on; }
