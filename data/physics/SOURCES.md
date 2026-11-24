@@ -13,3 +13,19 @@ Regenerate with:
 ```bash
 node tools/physics/naca.mjs data/physics/airfoils.json
 ```
+
+## Aero reference data (2026-11-24)
+
+`aero_reference.json` holds the legal reference coefficients used by `tools/physics/aero_check.mjs`:
+DrivAer fastback/notchback/estateback Cd from DrivAerNet++ (arXiv:2406.09624v1, Table 6, **CC BY 4.0**),
+the Ahmed body 25° Cd cited from Ahmed (1984, SAE 840300), and NACA 0012 wing data from Abbott & von Doenhoff
+(NACA Report 824, **public domain**). Assumptions (frontal area 1.8-2.2 m², wing area 1.0 m²) are stated in the
+JSON and in `docs/downforce-data.md`; they are assumptions, not measurements.
+
+## Inertia / CG reference (public domain)
+
+`inertia-reference.json` is transcribed from **Federal Register 62 FR 145 (29 July 1997), Tables 3-4**
+(NHTSA/VRTC, CU, CarT measurements; U.S. Government work, public domain), covering 12 configurations of the
+1994/1996 Isuzu Trooper and 1996 Acura SLX: weight, roll inertia (Ixx), yaw inertia (Izz), CG height and SSF.
+Units: lb, slug*ft^2 (printed ft.lb.s^2), in; conversions in the JSON. See `docs/inertia-cg-data.md` for the
+full explanation, uncertainty and what we did **not** claim. Checked by `tools/physics/inertia_reference.mjs`.

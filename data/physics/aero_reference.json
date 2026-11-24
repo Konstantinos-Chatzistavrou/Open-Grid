@@ -1,0 +1,79 @@
+{
+  "schema": "aero-reference-v1",
+  "notes": "Reference aerodynamic coefficients for validating Open Grid car configs. Values are reproduced from the cited sources; see data/physics/SOURCES.md and docs/downforce-data.md for licences and assumptions. Cl convention: positive = downforce. Our cars use ClA (downforce_area_m2) and CdA (drag_area_m2) directly.",
+  "air_density_kg_m3": 1.225,
+  "comparison_speed_kmh": 200,
+  "references": [
+    {
+      "id": "drivaer_fastback_smooth",
+      "vehicle": "DrivAer fastback, smooth underbody",
+      "cd": 0.243,
+      "source": "DrivAerNet++ (Elrefaie et al.), arXiv:2406.09624v1, Table 6 (experiment column)",
+      "url": "https://arxiv.org/abs/2406.09624",
+      "licence": "CC BY 4.0 (paper); values are measurements reported by the authors",
+      "kind": "wind-tunnel experiment",
+      "notes": "Full-scale car, closed test section; exact Re/yaw not restated here. Use as a passenger-car drag reference, not as a coefficient for our cars."
+    },
+    {
+      "id": "drivaer_fastback_detailed",
+      "vehicle": "DrivAer fastback, detailed underbody",
+      "cd": 0.275,
+      "source": "DrivAerNet++ (Elrefaie et al.), arXiv:2406.09624v1, Table 6 (experiment column)",
+      "url": "https://arxiv.org/abs/2406.09624",
+      "licence": "CC BY 4.0 (paper); values are measurements reported by the authors",
+      "kind": "wind-tunnel experiment",
+      "notes": "Detailed underbody raises drag 0.032 over the smooth fastback."
+    },
+    {
+      "id": "drivaer_notchback",
+      "vehicle": "DrivAer notchback",
+      "cd": 0.246,
+      "source": "DrivAerNet++ (Elrefaie et al.), arXiv:2406.09624v1, Table 6 (experiment column)",
+      "url": "https://arxiv.org/abs/2406.09624",
+      "licence": "CC BY 4.0 (paper); values are measurements reported by the authors",
+      "kind": "wind-tunnel experiment",
+      "notes": "Sedan-like roof/backlight transition."
+    },
+    {
+      "id": "drivaer_estateback",
+      "vehicle": "DrivAer estateback",
+      "cd": 0.292,
+      "source": "DrivAerNet++ (Elrefaie et al.), arXiv:2406.09624v1, Table 6 (experiment column)",
+      "url": "https://arxiv.org/abs/2406.09624",
+      "licence": "CC BY 4.0 (paper); values are measurements reported by the authors",
+      "kind": "wind-tunnel experiment",
+      "notes": "Wagon-like rear; highest drag of the three DrivAer backs."
+    },
+    {
+      "id": "ahmed_body_25deg",
+      "vehicle": "Ahmed body, 25 deg slant",
+      "cd": 0.285,
+      "source": "Ahmed, S.R., 'Some salient features of the time-averaged ground vehicle wake', SAE 840300 (1984), value as reported in the literature",
+      "url": "https://doi.org/10.4271/840300",
+      "licence": "value cited as a scientific fact; the paper itself is not redistributed",
+      "kind": "wind-tunnel experiment (canonical validation body)",
+      "notes": "Canonical automotive validation case; 25 deg is the drag-critical slant. Geometry is public and widely reproduced."
+    },
+    {
+      "id": "naca0012_wing",
+      "vehicle": "NACA 0012 aerofoil (wing-device data)",
+      "cl_alpha_per_deg": 0.1,
+      "cl_max": 1.4,
+      "cd_min": 0.006,
+      "source": "Abbott & von Doenhoff, Theory of Wing Sections, NACA Report 824 (1945), US Government work",
+      "url": "https://ntrs.nasa.gov/citations/19930090976",
+      "licence": "public domain (US Government work)",
+      "kind": "wind-tunnel aerofoil data",
+      "notes": "Used only as an upper-bound check for wing/device downforce, not as a car coefficient. Values are representative of the NACA 0012 family; exact Re/surface condition varies with the table."
+    }
+  ],
+  "assumptions": {
+    "frontal_area_m2": {
+      "low": 1.8,
+      "high": 2.2,
+      "note": "Assumed passenger-car frontal area for converting DrivAer Cd to a CdA band. The DrivAer reference area was not re-derived here; this is an explicit assumption, not a measured value."
+    },
+    "wing_area_m2_for_bound": 1.0,
+    "downforce_bound_note": "Upper bound for ClA = cl_max x 1.0 m^2 wing plus a modest underbody contribution; values above this need explicit evidence."
+  }
+}
