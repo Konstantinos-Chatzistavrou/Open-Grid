@@ -1,0 +1,363 @@
+{
+  "schema": "open-grid/powertrain-reference@1",
+  "note": "Reference engine and gearbox data for validation and scaling. Chrono maps are simplified examples, not measurements; see docs/powertrain-data.md.",
+  "licence": "BSD-3-Clause (Project Chrono)",
+  "commit": "e166f3e5a1383741e86cf1e195a46eba4a66473d",
+  "entries": [
+    {
+      "id": "audi",
+      "name": "Audi (Chrono example, 1.8T-like 250 Nm)",
+      "layout": "rwd",
+      "engine": {
+        "torque_curve": [
+          [
+            1000,
+            172.8
+          ],
+          [
+            1500,
+            250
+          ],
+          [
+            2000,
+            250
+          ],
+          [
+            2500,
+            250
+          ],
+          [
+            3000,
+            250
+          ],
+          [
+            3500,
+            250
+          ],
+          [
+            4000,
+            245.6
+          ],
+          [
+            4500,
+            232.3
+          ],
+          [
+            5000,
+            210.1
+          ],
+          [
+            5500,
+            191
+          ],
+          [
+            6000,
+            175.1
+          ],
+          [
+            6500,
+            145.4
+          ]
+        ],
+        "idle_rpm": 800,
+        "redline_rpm": 6500,
+        "peak_torque_nm": 250,
+        "peak_torque_rpm": 1500,
+        "peak_power_kw": 110,
+        "peak_power_rpm": 6000
+      },
+      "drivetrain": {
+        "gear_ratios": [
+          -3.6765,
+          0,
+          3.4014,
+          2.7473,
+          1.7699,
+          0.9302,
+          0.6998,
+          0.6596
+        ],
+        "ratio_convention": "chrono shaft-speed ratio (out/in) inverted to conventional gear ratio"
+      },
+      "source": {
+        "upstream": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/audi/json/audi_EngineSimpleMap.json",
+        "transmission": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/audi/json/audi_ManualTransmissionShafts.json",
+        "commit": "e166f3e5a1383741e86cf1e195a46eba4a66473d",
+        "licence": "BSD-3-Clause (Project Chrono)"
+      },
+      "confidence": "low-medium: simplified example maps in a BSD-3 reference simulator, NOT measured dyno data. Curve shape is plausible, absolute values are not certified for the named vehicle."
+    },
+    {
+      "id": "sedan",
+      "name": "Sedan (Chrono example, 370 Nm I6-like)",
+      "layout": "rwd",
+      "engine": {
+        "torque_curve": [
+          [
+            1000,
+            236.8
+          ],
+          [
+            1200,
+            296
+          ],
+          [
+            1400,
+            338.3
+          ],
+          [
+            1500,
+            355.2
+          ],
+          [
+            1600,
+            370
+          ],
+          [
+            2000,
+            370
+          ],
+          [
+            2500,
+            370
+          ],
+          [
+            3000,
+            370
+          ],
+          [
+            3500,
+            370
+          ],
+          [
+            4000,
+            370
+          ],
+          [
+            4500,
+            370
+          ],
+          [
+            4600,
+            369.3
+          ],
+          [
+            4800,
+            364
+          ],
+          [
+            5000,
+            353.3
+          ],
+          [
+            5200,
+            339.7
+          ],
+          [
+            5500,
+            321.2
+          ],
+          [
+            5700,
+            309.9
+          ],
+          [
+            6000,
+            294.4
+          ],
+          [
+            6200,
+            280.4
+          ],
+          [
+            6500,
+            244.6
+          ]
+        ],
+        "idle_rpm": 800,
+        "redline_rpm": 6500,
+        "peak_torque_nm": 370,
+        "peak_torque_rpm": 1600,
+        "peak_power_kw": 185,
+        "peak_power_rpm": 5500
+      },
+      "drivetrain": {
+        "gear_ratios": [
+          -3.003,
+          0,
+          3.7736,
+          2.045,
+          1.2755,
+          0.9407,
+          0.7837,
+          0.6671
+        ],
+        "ratio_convention": "chrono shaft-speed ratio (out/in) inverted to conventional gear ratio"
+      },
+      "source": {
+        "upstream": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/sedan/powertrain/Sedan_EngineSimpleMap.json",
+        "transmission": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/sedan/powertrain/Sedan_ManualTransmissionShafts.json",
+        "commit": "e166f3e5a1383741e86cf1e195a46eba4a66473d",
+        "licence": "BSD-3-Clause (Project Chrono)"
+      },
+      "confidence": "low-medium: simplified example maps in a BSD-3 reference simulator, NOT measured dyno data. Curve shape is plausible, absolute values are not certified for the named vehicle."
+    },
+    {
+      "id": "uazbus",
+      "name": "UAZ bus (Chrono example, diesel van)",
+      "layout": "rwd",
+      "engine": {
+        "torque_curve": [
+          [
+            988,
+            182.7
+          ],
+          [
+            1238,
+            189.8
+          ],
+          [
+            1500,
+            195.7
+          ],
+          [
+            1724,
+            200.5
+          ],
+          [
+            1980,
+            205.2
+          ],
+          [
+            2188,
+            207.6
+          ],
+          [
+            2348,
+            208.1
+          ],
+          [
+            2492,
+            206.2
+          ],
+          [
+            2737,
+            206.2
+          ],
+          [
+            2992,
+            206.2
+          ],
+          [
+            3189,
+            206.4
+          ],
+          [
+            3487,
+            203.1
+          ],
+          [
+            3684,
+            199.5
+          ],
+          [
+            3908,
+            194.5
+          ]
+        ],
+        "idle_rpm": 800,
+        "redline_rpm": 4000,
+        "peak_torque_nm": 208.1,
+        "peak_torque_rpm": 2348,
+        "peak_power_kw": 79.6,
+        "peak_power_rpm": 3908
+      },
+      "drivetrain": {
+        "gear_ratios": [
+          -5.2356,
+          0,
+          8,
+          4.1322,
+          2.6385,
+          1.5798,
+          1
+        ],
+        "ratio_convention": "chrono shaft-speed ratio (out/in) inverted to conventional gear ratio"
+      },
+      "source": {
+        "upstream": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/uaz/powertrain/UAZBUS_EngineSimpleMap.json",
+        "transmission": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/uaz/powertrain/UAZBUS_AutomaticTransmissionSimpleMap.json",
+        "commit": "e166f3e5a1383741e86cf1e195a46eba4a66473d",
+        "licence": "BSD-3-Clause (Project Chrono)"
+      },
+      "confidence": "low-medium: simplified example maps in a BSD-3 reference simulator, NOT measured dyno data. Curve shape is plausible, absolute values are not certified for the named vehicle."
+    },
+    {
+      "id": "citybus",
+      "name": "City bus (Chrono example, heavy diesel)",
+      "layout": "rwd",
+      "engine": {
+        "torque_curve": [
+          [
+            800,
+            800
+          ],
+          [
+            1000,
+            1200
+          ],
+          [
+            1200,
+            1250
+          ],
+          [
+            1400,
+            1250
+          ],
+          [
+            1600,
+            1150
+          ],
+          [
+            1800,
+            1000
+          ],
+          [
+            2000,
+            900
+          ],
+          [
+            2100,
+            820
+          ]
+        ],
+        "idle_rpm": 800,
+        "redline_rpm": 2200,
+        "peak_torque_nm": 1250,
+        "peak_torque_rpm": 1200,
+        "peak_power_kw": 192.7,
+        "peak_power_rpm": 1600
+      },
+      "drivetrain": {
+        "gear_ratios": [
+          -5,
+          0,
+          3.4483,
+          1.8519,
+          1.4085,
+          1,
+          0.7519,
+          0.6494
+        ],
+        "ratio_convention": "chrono shaft-speed ratio (out/in) inverted to conventional gear ratio"
+      },
+      "source": {
+        "upstream": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/citybus/powertrain/CityBus_EngineSimpleMap.json",
+        "transmission": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/citybus/powertrain/CityBus_AutomaticTransmissionSimpleMap.json",
+        "commit": "e166f3e5a1383741e86cf1e195a46eba4a66473d",
+        "licence": "BSD-3-Clause (Project Chrono)"
+      },
+      "confidence": "low-medium: simplified example maps in a BSD-3 reference simulator, NOT measured dyno data. Curve shape is plausible, absolute values are not certified for the named vehicle."
+    }
+  ]
+}

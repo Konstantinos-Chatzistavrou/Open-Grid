@@ -1,0 +1,66 @@
+{
+  "fetched": "2026-11-24T12:03:57.084Z",
+  "commit": "e166f3e5a1383741e86cf1e195a46eba4a66473d",
+  "inputs": [
+    {
+      "path": "data/vehicle/audi/json/audi_EngineSimpleMap.json",
+      "url": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/audi/json/audi_EngineSimpleMap.json",
+      "licence": "BSD-3-Clause (Project Chrono)",
+      "sha256": "415444cce13a433f6f1f47d5df77ef6782f6c225bb21842667fbb77e4d4d44dd"
+    },
+    {
+      "path": "data/vehicle/audi/json/audi_ManualTransmissionShafts.json",
+      "url": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/audi/json/audi_ManualTransmissionShafts.json",
+      "licence": "BSD-3-Clause (Project Chrono)",
+      "sha256": "c4d815c15c240422a64f78458124d203f106875dd2d418ba88e30b5f3ecdf91e"
+    },
+    {
+      "path": "data/vehicle/sedan/powertrain/Sedan_EngineSimpleMap.json",
+      "url": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/sedan/powertrain/Sedan_EngineSimpleMap.json",
+      "licence": "BSD-3-Clause (Project Chrono)",
+      "sha256": "2a84cf09889749fe4d3d6dbcf5e776673adf082f1137de2bc9a9bca5ce097b9b"
+    },
+    {
+      "path": "data/vehicle/sedan/powertrain/Sedan_ManualTransmissionShafts.json",
+      "url": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/sedan/powertrain/Sedan_ManualTransmissionShafts.json",
+      "licence": "BSD-3-Clause (Project Chrono)",
+      "sha256": "971af232884827a4ab1d287f76b39989a13efcd287911c0387e3ee7079be85e0"
+    },
+    {
+      "path": "data/vehicle/uaz/powertrain/UAZBUS_EngineSimpleMap.json",
+      "url": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/uaz/powertrain/UAZBUS_EngineSimpleMap.json",
+      "licence": "BSD-3-Clause (Project Chrono)",
+      "sha256": "60ee502f99f1ba9eade7b70df2e061ccdbf166e04685589f99428d4a65934b60"
+    },
+    {
+      "path": "data/vehicle/uaz/powertrain/UAZBUS_AutomaticTransmissionSimpleMap.json",
+      "url": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/uaz/powertrain/UAZBUS_AutomaticTransmissionSimpleMap.json",
+      "licence": "BSD-3-Clause (Project Chrono)",
+      "sha256": "421221edc4b8796741f76a5c19b28248b602e44bb2fa47e45584c1d5a19994f7"
+    },
+    {
+      "path": "data/vehicle/citybus/powertrain/CityBus_EngineSimpleMap.json",
+      "url": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/citybus/powertrain/CityBus_EngineSimpleMap.json",
+      "licence": "BSD-3-Clause (Project Chrono)",
+      "sha256": "dea7ff2b99274895dd9aea4763368afa5066716ded73cb3bdb6e5dd832e6e59c"
+    },
+    {
+      "path": "data/vehicle/citybus/powertrain/CityBus_AutomaticTransmissionSimpleMap.json",
+      "url": "https://raw.githubusercontent.com/projectchrono/chrono/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle/citybus/powertrain/CityBus_AutomaticTransmissionSimpleMap.json",
+      "licence": "BSD-3-Clause (Project Chrono)",
+      "sha256": "352c491d68bb094480d0aa350edc614e6bdbad1a7485e18de0e65dd52eb04e78"
+    },
+    {
+      "path": "/home/kochas23/Downloads/Racing Game/data/validation/.cache/epa-2015.csv",
+      "url": "https://www.epa.gov/compliance-and-fuel-economy-data/data-cars-used-testing-fuel-economy",
+      "licence": "public domain (US Government, 17 USC 105)",
+      "sha256": "4c574e42dead48c03688454228ded4418f321402e606b54aada5f8180086f8b3"
+    },
+    {
+      "path": "/home/kochas23/Downloads/Racing Game/data/validation/.cache/epa-2016.csv",
+      "url": "https://www.epa.gov/compliance-and-fuel-economy-data/data-cars-used-testing-fuel-economy",
+      "licence": "public domain (US Government, 17 USC 105)",
+      "sha256": "fcce2c57fb4a520c152b12e4627c86a3cf99bda8edb7bc1f68cb36ee053abce1"
+    }
+  ]
+}
