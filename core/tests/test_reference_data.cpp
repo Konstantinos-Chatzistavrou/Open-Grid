@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <string>
 #include <vector>
 #include "harness.hpp"
@@ -292,4 +293,236 @@ RS_TEST(reference_data_measured_engine_curve) {
     test::check_range("worst single bin vs the measured curve", worst, 0, 0.06, "");
     test::check_range("peak torque rpm vs the measured curve", est_rpm / t_rpm, 0.80, 1.25, "x");
     test::check_range("peak torque vs the measured curve", est_peak / t_peak, 0.97, 1.03, "x");
+}
+
+// ---- NHTSA static stability: the sim's own tilt table ----------------------------------------------------------------------
+// NHTSA's static stability factor is SSF = T / (2 H) (track over twice the measured CG height); a rigid car on a tilt table
+// lifts its high-side wheels at tan(phi) = SSF, and a real one a little earlier because the springs let the body roll toward
+// the low side. Here the car sits on a plane that is tilted slowly (3 deg/s to 30 deg, then 0.3 deg/s) about the car's long axis, on tyres grippy
+// enough not to slide (a tilt table has strapped or very high friction), and we note the angle at which the two high-side
+// wheels are unloaded. The CG heights come from the measured data (NHTSA/VRTC 1997 SUVs, NCAP 2020 cars).
+namespace {
+class TiltGround : public Ground {
+public:
+    double phi = 0;   // rad, the plane rises toward +y (the car's left)
+    WheelContact raycast(const WheelRay& ray) const override {
+        const Vec3 n{0, -std::sin(phi), std::cos(phi)};
+        WheelContact c;
+        const double denom = dot(ray.direction, n);
+        if (denom >= -1e-9) return c;
+        const double t = -dot(ray.origin, n) / denom;
+        if (t < 0 || t > ray.length) return c;
+        c.hit = true; c.distance = t; c.point = ray.origin + ray.direction * t; c.normal = n; c.surface = 0;
+        return c;
+    }
+};
+
+// tilt angle (rad) at which both high-side wheels carry < 2 % of their level load; -1 if the car slides / never lifts by 75 deg
+double tilt_lift_angle(CarConfig cfg) {
+    cfg.tire_front.mu_x *= 4; cfg.tire_front.mu_y *= 4; cfg.tire_rear.mu_x *= 4; cfg.tire_rear.mu_y *= 4;
+    auto ground = std::make_shared<TiltGround>();
+    Simulation s(cfg, ground);
+    s.dt = 1.0 / 240.0;
+    s.reset({}, 0, 0, 1);
+    s.settle(1.0);
+    double w0 = 0;
+    for (int i : {0, 2}) w0 += s.last.wheels[i].load;
+    DriverInput in;
+    in.handbrake = 0; in.brake = 0.0; in.throttle = 0; in.clutch = 1.0; in.gear = 1;
+    while (ground->phi < 75 * kPi / 180) {
+        // quickly to 30 deg (no car of this kind lifts before 40), then slowly enough to be quasi-static
+        ground->phi += (ground->phi < 30 * kPi / 180 ? 3.0 : 0.3) * kPi / 180 * s.dt;
+        s.step(in);
+        double hi = s.last.wheels[0].load + s.last.wheels[2].load;
+        if (s.time > 2.0 && hi < 0.02 * w0) return ground->phi;
+        if (std::abs(s.body.state.position.y) > 3.0) return -1;   // slid off
+    }
+    return -1;
+}
+}  // namespace
+
+RS_TEST(reference_data_nhtsa_tilt_table) {
+    const auto ref = read_json("physics/inertia-reference.json");
+    const CarConfig base = load_car_config(test::data_path("cars/vela_gt.json"));
+    const double track = 0.5 * (base.front.track + base.rear.track);
+    // the measured CG heights (m): modern cars and the 1990s SUVs
+    std::vector<std::pair<std::string, double>> cgs;
+    for (const auto& e : ref.at("modernEntries")) cgs.push_back({e.at("vehicle").get<std::string>(), e.at("cg_in").get<double>() * 0.0254});
+    for (const auto& e : ref.at("entries")) {
+        if (!e.contains("cg_in") || e.at("configuration").get<std::string>().find("outrigger") != std::string::npos) continue;
+        cgs.push_back({e.at("vehicle").get<std::string>() + " (" + e.at("configuration").get<std::string>() + ")", e.at("cg_in").get<double>() * 0.0254});
+    }
+    std::vector<double> done;   // one run per distinct CG height (several measured configurations share one to the millimetre)
+    for (const auto& [name, cg] : cgs) {
+        if (std::any_of(done.begin(), done.end(), [&](double d) { return std::abs(d - cg) < 0.002; })) continue;
+        done.push_back(cg);
+        CarConfig c = base;
+        c.cg_height = cg;
+        c.finalize();
+        const double ssf = track / (2 * cg);
+        const double phi = tilt_lift_angle(c);
+        const double ratio = phi > 0 ? std::tan(phi) / ssf : 0;
+        std::printf("         CG %.3f m (%s): SSF %.2f (track %.2f m) | sim lifts the high side at %.1f deg, tan = %.2f = %.2f x SSF\n", cg, name.c_str(), ssf, track, phi * 180 / kPi, std::tan(phi), ratio);
+        test::check_range(("CG " + std::to_string(cg).substr(0, 5) + " m: tilt-table lift vs track / 2H").c_str(), ratio, 0.85, 1.0, "x");
+    }
+    // all shipped cars at their own CG and track
+    for (const CarConfig& cfg : all_cars()) {
+        const double t = 0.5 * (cfg.front.track + cfg.rear.track), ssf = t / (2 * cfg.cg_height);
+        const double phi = tilt_lift_angle(cfg), ratio = phi > 0 ? std::tan(phi) / ssf : 0;
+        std::printf("         %-22s SSF %.2f | lifts at %.1f deg = %.2f x SSF\n", cfg.name.c_str(), ssf, phi * 180 / kPi, ratio);
+        test::check_range((cfg.name + ": tilt-table lift vs track / 2H").c_str(), ratio, 0.85, 1.0, "x");
+    }
+}
+
+// ---- Project Chrono engine maps (BSD-3) through the engine model and the dyno --------------------------------------------------
+// The same single-tall-gear pull as the 7A-FE test, for the four simple engine maps in data/powertrain/reference-powertrains.json
+// (a 110 kW petrol, a 185 kW petrol, an 80 kW truck engine, a 193 kW bus diesel with 1250 N m). The test car is the Mistra body
+// scaled to the engine (mass, inertia, springs, dampers, tyre inertia and drag area all by the same factor, so the power per
+// weight and the way it drives are the same for each) and the clutch sized for the torque. The estimate adds back the tyres'
+// rolling resistance at the cold-tyre coefficient; the sim lowers it as the tyres warm (pressure rises), so at the top of the
+// pull the estimate reads up to ~4 % high: that, not the engine map, is the spread here.
+namespace {
+CarConfig scaled_body(CarConfig c, double k) {
+    c.mass *= k; c.inertia_xx *= k; c.inertia_yy *= k; c.inertia_zz *= k;
+    for (AxleParams* a : {&c.front, &c.rear}) {
+        a->spring_rate *= k; a->bump_stop_rate *= k; a->damper_bump *= k; a->damper_rebound *= k; a->anti_roll_rate *= k;
+    }
+    c.tire_front.inertia *= k; c.tire_rear.inertia *= k;
+    c.aero.drag_area *= k; c.aero.lift_area *= k;
+    c.brake_torque_total *= k;
+    return c;
+}
+struct PullResult { int covered = 0; double mean = 0, worst = 0, est_peak = 0, est_rpm = 0, t_peak = 0, t_rpm = 0, scale = 1; };
+PullResult tall_gear_pull(const std::vector<std::array<double, 2>>& pts, double idle, double redline, int cyl, double peak_power_w) {
+    PullResult res;
+    double t_peak = 0, t_rpm = 0;
+    for (const auto& p : pts) if (p[1] > t_peak) { t_peak = p[1]; t_rpm = p[0]; }
+    res.t_peak = t_peak; res.t_rpm = t_rpm;
+    res.scale = std::max(1.0, peak_power_w / 56000.0);
+    CarConfig cfg = scaled_body(load_car_config(test::data_path("cars/mistra_200t.json")), res.scale);
+    cfg.engine.torque_curve = pts;
+    cfg.engine.idle_rpm = idle;
+    cfg.engine.redline_rpm = redline;
+    cfg.engine.cylinders = cyl;
+    cfg.engine.inertia = 0.25 * res.scale;
+    cfg.drivetrain.gear_ratios = {-3.2, 0.0, 1.0};
+    cfg.drivetrain.gear_teeth.clear();
+    cfg.drivetrain.final_drive_teeth = {0, 0};
+    cfg.drivetrain.clutch_max_torque = std::max(cfg.drivetrain.clutch_max_torque, 2.0 * t_peak);
+    const double r = cfg.tire_front.radius;
+    const double G = redline * 2 * kPi / 60 * r / 47.6;   // the redline at ~171 km/h
+    cfg.drivetrain.final_drive = G;
+    auto s = test::make_sim(cfg);
+    s->vehicle.assists().tc = false;
+    const double rpm0 = std::max(1.4 * pts.front()[0], 1.5 * idle);
+    s->reset({}, 0, rpm0 * 2 * kPi / 60 * r / G, 2);
+    DynoMeter meter(cfg);
+    while (s->time < 240) {
+        DriverInput in;
+        in.gear = 2; in.throttle = 1.0;
+        s->step(in);
+        meter.sample(s->last, s->vehicle.engine_rpm(), s->dt, 1.0);
+        if (s->vehicle.engine_rpm() > 0.985 * redline) break;
+    }
+    for (const auto& pt : meter.curve()) {
+        if (pt.rpm < rpm0 * 1.05 || pt.rpm > 0.93 * redline || pt.wheel_power_w <= 0) continue;
+        const double w_e = pt.rpm * 2 * kPi / 60, v = w_e / G * r;
+        const double p_rr = rolling_resistance_coeff(cfg.tire_front, v) * cfg.mass * kGravity * v;
+        const double est = (pt.wheel_power_w + p_rr) / (cfg.drivetrain.efficiency * w_e);
+        const double ref_nm = curve_at(pts, pt.rpm);
+        if (std::getenv("RS_DEBUG")) std::printf("           %5.0f rpm  dyno %7.1f Nm  map %7.1f Nm  ratio %.3f\n", pt.rpm, est, ref_nm, est / ref_nm);
+        res.worst = std::max(res.worst, std::abs(est / ref_nm - 1.0));
+        res.mean += est / ref_nm;
+        if (est > res.est_peak) { res.est_peak = est; res.est_rpm = pt.rpm; }
+        ++res.covered;
+    }
+    res.mean = res.covered ? res.mean / res.covered : 0;
+    return res;
+}
+}  // namespace
+
+RS_TEST(reference_data_chrono_engine_maps) {
+    const auto ref = read_json("powertrain/reference-powertrains.json");
+    for (const auto& e : ref.at("entries")) {
+        std::vector<std::array<double, 2>> pts;
+        for (const auto& p : e.at("engine").at("torque_curve")) pts.push_back({p.at(0).get<double>(), p.at(1).get<double>()});
+        const auto& en = e.at("engine");
+        // the file's own peak figures must be what its curve says (a bad import fails here, not in a race)
+        double pk = 0, pk_rpm = 0;
+        for (const auto& p : pts) { const double w = p[0] * 2 * kPi / 60 * p[1]; if (w > pk) { pk = w; pk_rpm = p[0]; } }
+        test::check_range((e.at("id").get<std::string>() + ": listed peak power vs its own curve").c_str(), en.at("peak_power_kw").get<double>() * 1000 / pk, 0.97, 1.03, "x");
+        const PullResult r = tall_gear_pull(pts, en.at("idle_rpm").get<double>(), en.at("redline_rpm").get<double>(), 4, pk);
+        std::printf("         %-7s map peak %.0f Nm at %.0f rpm / %.0f kW at %.0f rpm | body x%.1f | dyno: %d bins, mean est/map %.3f, worst %.1f %%, peak %.0f Nm at %.0f rpm\n",
+                    e.at("id").get<std::string>().c_str(), r.t_peak, r.t_rpm, pk / 1000, pk_rpm, r.scale, r.covered, r.mean, r.worst * 100, r.est_peak, r.est_rpm);
+        const std::string id = e.at("id").get<std::string>();
+        test::check_range((id + ": rpm bins the pull covered").c_str(), r.covered, 6, 80, "bins");
+        test::check_range((id + ": mean crank-torque estimate vs the map").c_str(), r.mean, 0.96, 1.06, "x");
+        test::check_range((id + ": worst bin vs the map").c_str(), r.worst, 0, 0.09, "");
+    }
+}
+
+// ---- EPA axle ratios --------------------------------------------------------------------------------------------------------
+// data/powertrain/final-drives.json: 1,699 certified configurations with their gear count and axle ratio (US EPA, public
+// domain). Every shipped car's final drive must be one a real car with that many gears ships with: inside the 5th..95th
+// percentile of the EPA cars with the same gear count (the extremes are trucks and economy specials).
+RS_TEST(reference_data_epa_final_drives) {
+    const auto ref = read_json("powertrain/final-drives.json");
+    std::map<int, std::vector<double>> by_gears;
+    for (const auto& r : ref.at("rows")) by_gears[r.at("gears").get<int>()].push_back(r.at("final_drive").get<double>());
+    for (auto& [g, v] : by_gears) std::sort(v.begin(), v.end());
+    for (const CarConfig& cfg : all_cars()) {
+        const int gears = static_cast<int>(cfg.drivetrain.gear_ratios.size()) - 2;
+        auto it = by_gears.find(gears);
+        test::check((cfg.name + ": EPA has cars with " + std::to_string(gears) + " gears").c_str(), it != by_gears.end() && it->second.size() >= 20);
+        if (it == by_gears.end()) continue;
+        const auto& v = it->second;
+        const double lo = v[static_cast<std::size_t>(0.05 * v.size())], hi = v[static_cast<std::size_t>(0.95 * v.size()) - 1];
+        const double fd = cfg.drivetrain.final_drive;
+        const std::size_t below = std::lower_bound(v.begin(), v.end(), fd) - v.begin();
+        std::printf("         %-22s %d gears, axle %.2f | EPA %d-gear cars: p5 %.2f median %.2f p95 %.2f | percentile %.0f\n", cfg.name.c_str(), gears, fd, gears, lo, v[v.size() / 2], hi, 100.0 * below / v.size());
+        test::check_range((cfg.name + ": axle ratio vs the EPA 5-95 % band").c_str(), fd, lo, hi, "");
+    }
+}
+
+// ---- aero data in the tyre loads -----------------------------------------------------------------------------------------------
+// The drag area and lift area in the car files (EPA coast-down / class references) must arrive in the simulation as forces:
+// at 200 km/h the tyres carry 1/2 rho ClA v^2 more load than at rest (ground effect and the ride-height balance move it by
+// a few per cent), split front / rear by the car's own aero balance, and the car decelerates by 1/2 rho CdA v^2 / m.
+RS_TEST(reference_data_aero_forces) {
+    for (const CarConfig& cfg : all_cars()) {
+        auto s = test::make_sim(cfg);
+        s->settle(1.0);
+        double w_static = 0, wf_static = 0;
+        for (int i = 0; i < 4; ++i) { w_static += s->last.wheels[i].load; if (i < 2) wf_static += s->last.wheels[i].load; }
+        const double v0 = 200 / 3.6;
+        s->reset({}, 0, v0, 1);
+        DriverInput in;
+        in.gear = 1; in.clutch = 1.0; in.throttle = 0;
+        double w = 0, wf = 0, a_sum = 0;
+        int n = 0;
+        for (int k = 0; k < 120; ++k) {
+            s->step(in);
+            if (k >= 60) {   // after the suspension has settled, a quarter second
+                double sum = 0, front = 0;
+                for (int i = 0; i < 4; ++i) { sum += s->last.wheels[i].load; if (i < 2) front += s->last.wheels[i].load; }
+                w += sum; wf += front; a_sum += s->accel_body().x; ++n;
+            }
+        }
+        w /= n; wf /= n; a_sum /= n;
+        const double v = test::speed(*s), q = 0.5 * cfg.aero.air_density * v * v;
+        const double down_expected = q * cfg.aero.lift_area, down_sim = w - w_static;
+        const double share_sim = down_sim > 200 ? (wf - wf_static) / down_sim : cfg.aero.front_balance;
+        // deceleration while coasting out of gear: aero drag + rolling resistance (+ drag of the idling engine through the wheels: none, neutral)
+        const double drag_expected = q * cfg.aero.drag_area / cfg.mass + 0.011 * kGravity;
+        std::printf("         %-22s downforce at 200 km/h: expected %5.0f N, tyres carry %5.0f N (%.2f) | front share %.2f vs balance %.2f | decel %.2f vs %.2f m/s^2\n", cfg.name.c_str(),
+                    down_expected, down_sim, down_expected > 1 ? down_sim / down_expected : 1.0, share_sim, cfg.aero.front_balance, -a_sum, drag_expected);
+        if (down_expected > 300) {
+            test::check_range((cfg.name + ": extra tyre load at 200 km/h vs 1/2 rho ClA v^2").c_str(), down_sim / down_expected, 0.85, 1.30, "x");
+        }
+        // the split is only readable where there is something to split (the low-wing cars carry ~340 N: a few tens of newtons of
+        // rolling-resistance load transfer is then a tenth of the share); the nose-down pitch under load moves it forward a little
+        if (down_expected > 600)
+            test::check_range((cfg.name + ": front share of the extra load vs the aero balance").c_str(), share_sim - cfg.aero.front_balance, -0.05, 0.10, "");
+        test::check_range((cfg.name + ": coasting deceleration vs 1/2 rho CdA v^2 / m + rolling").c_str(), -a_sum / drag_expected, 0.85, 1.20, "x");
+    }
 }
