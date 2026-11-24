@@ -1,0 +1,117 @@
+{
+  "schema": "track-validation/1",
+  "generated": "2026-11-24T11:55:12.701Z",
+  "dataset": {
+    "name": "TUMFTM/racetrack-database",
+    "license": "LGPL-3.0",
+    "url": "https://github.com/TUMFTM/racetrack-database",
+    "files": "Monza.csv, BrandsHatch.csv (unmodified)"
+  },
+  "assumptions": {
+    "mu": 1.3,
+    "length_tolerance": 0.02,
+    "note": "published lap distance vs centre line; mu is a plausibility bound only"
+  },
+  "tracks": [
+    {
+      "track": "Monza",
+      "points": 1159,
+      "length_m": 5790.2,
+      "published_length_m": 5793,
+      "published_source": "monzanet.it (circuit length 5,793 m)",
+      "length_error_pct": 0.05,
+      "closure_gap_m": 5,
+      "min_radius_m": 16.14,
+      "min_radius_index": 187,
+      "width_min_m": 7.52,
+      "width_max_m": 12.42,
+      "corner_speed_kmh_at_mu": 51.6,
+      "mu_assumed": 1.3,
+      "checks": [
+        {
+          "name": "closed-loop gap < 50 m",
+          "ok": true,
+          "value": 5
+        },
+        {
+          "name": "min radius > 5 m",
+          "ok": true,
+          "value": 16.1
+        },
+        {
+          "name": "corner speed < 400 km/h",
+          "ok": true,
+          "value": 51.6
+        },
+        {
+          "name": "width 1-30 m",
+          "ok": true,
+          "value": [
+            7.5,
+            12.4
+          ]
+        },
+        {
+          "name": "length within 2% of published",
+          "ok": true,
+          "value": {
+            "length_m": 5790.2,
+            "published_m": 5793,
+            "error_pct": 0.05
+          }
+        }
+      ],
+      "sha256": "4b5993986e67950df1b89efa03a4df02127f07b7213985917f0bad27ad3d48b6"
+    },
+    {
+      "track": "BrandsHatch",
+      "points": 781,
+      "length_m": 3904.5,
+      "published_length_m": 3916,
+      "published_source": "brandshatch.co.uk (GP circuit 3.916 km)",
+      "length_error_pct": 0.29,
+      "closure_gap_m": 5,
+      "min_radius_m": 25.66,
+      "min_radius_index": 124,
+      "width_min_m": 7.45,
+      "width_max_m": 12.07,
+      "corner_speed_kmh_at_mu": 65.1,
+      "mu_assumed": 1.3,
+      "checks": [
+        {
+          "name": "closed-loop gap < 50 m",
+          "ok": true,
+          "value": 5
+        },
+        {
+          "name": "min radius > 5 m",
+          "ok": true,
+          "value": 25.7
+        },
+        {
+          "name": "corner speed < 400 km/h",
+          "ok": true,
+          "value": 65.1
+        },
+        {
+          "name": "width 1-30 m",
+          "ok": true,
+          "value": [
+            7.5,
+            12.1
+          ]
+        },
+        {
+          "name": "length within 2% of published",
+          "ok": true,
+          "value": {
+            "length_m": 3904.5,
+            "published_m": 3916,
+            "error_pct": 0.29
+          }
+        }
+      ],
+      "sha256": "9c69b09cef717d8abffc7c9450e59d7e339ac0dd0c7ed8121d73fe2f373145bb"
+    }
+  ]
+}
