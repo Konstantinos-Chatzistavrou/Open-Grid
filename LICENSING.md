@@ -35,6 +35,9 @@ these files.
 - the "Open Grid" logo and title artwork (as artwork only: see **Name and logo** below)
 
 **Third-party material keeps its own licence** (details and attributions in [`CREDITS.md`](CREDITS.md)):
+- **Validation track geometry**: `data/validation/racetrack-database/` is TUMFTM/racetrack-database under
+  **LGPL-3.0** (licence text in that folder). It is third-party data, not covered by either licence above; keep its
+  notice with it and do not present it as CC BY-NC 4.0 or as Apache-2.0.
 - **Map data**: `web/public/assets/nyc/`, `web/public/assets/cities/`, `data/tracks/{nyc,london,paris,tokyo,losangeles}_route.json`
   are built from OpenStreetMap, © OpenStreetMap contributors, **Open Database Licence 1.0** (ODbL: the derived database
   stays ODbL, the attribution "© OpenStreetMap contributors" must be shown), plus NYC Open Data (public domain) for New York.
