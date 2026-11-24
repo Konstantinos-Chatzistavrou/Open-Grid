@@ -72,3 +72,6 @@ __pycache__/
 !/assets_source/masters/kit/*/evidence/
 # Unreal kit exports are generated locally from the masters (tools/assets/build_kit_*.py)
 /ue5/SourceArt/Kit/
+
+# EPA import cache (downloaded CSVs, not data to commit)
+data/validation/.cache/

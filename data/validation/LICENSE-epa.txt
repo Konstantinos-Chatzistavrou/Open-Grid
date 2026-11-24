@@ -1,0 +1,5 @@
+US EPA Test Car List Data (coast-down coefficients)
+
+Source: https://www.epa.gov/compliance-and-fuel-economy-data/data-cars-used-testing-fuel-economy
+US Government work — public domain (17 U.S.C. §105). Retrieved 2026-11-24.
+Values are reproduced verbatim (imperial) with an SI conversion added.
