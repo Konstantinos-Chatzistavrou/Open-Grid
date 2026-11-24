@@ -25,9 +25,9 @@ Code: `web/src/minimap.ts` (state + renderer), `web/src/navUi.ts` (themes, turn 
   the speed bubble, which turns red over the limit. Off the route it shows the clock, heading and street instead.
 - **Speed limits are real where OSM has them**: every edge of `tiles/map.json` carries `ms` (km/h), the `maxspeed` tag of the
   nearest way of the same street (matched within 8 m, name and class preferred), else the typical limit of that road class in
-  the city's country (NYC: the 25 mph citywide default). Tagged share per city: Amsterdam 100 %, Paris 99 %, Berlin 98 %,
-  London 97 %, Singapore 97 %, Barcelona 94 %, Melbourne 82 %, Toronto 79 %, NYC 68 %, Madrid 62 %, Miami 53 %, San Francisco
-  52 %, Los Angeles 36 %, Tokyo 33 %, Lisbon 11 %, Chicago 10 %, Seoul 5 %, Crete 0 % (its sources are not in the repo).
+  the city's country (NYC: the 25 mph citywide default). Tagged share per city (after the matcher fix below): Amsterdam 100 %, Paris 99 %, Berlin 98 %, London 97 %, Singapore 97 %, Barcelona 94 %, Melbourne 82 %, Toronto 78 %, NYC 68 %, Madrid 62 %, Miami 53 %, San Francisco 52 %, Los Angeles 35 %, Tokyo 33 %, Lisbon 11 %, Chicago 9 %, Seoul 5 %, Crete 0 % (its sources are not in the repo).
+  The matcher once let a candidate of another road class win (a freeway viaduct took the limit of the surface street under it); it now takes
+  a way of the same class or the same named street only.
 - **Traffic** is the game's own, not a feed: the hour's traffic density (`WorldClock.trafficDensity`, heaviest 22:00-01:00,
   empty before dawn) spread over the arterials and highways in smooth patches of ~260 m that are the same every time you look,
   plus a jam around every AI car that is crawling or stopped on the road (under 3.5 m/s, not parked, not waiting on the grid;
@@ -59,7 +59,10 @@ expanded)`; the canvas is `window.mm.cv` (`mm.cv.toDataURL()` for a full-resolut
 `areas.json` (2 m simplification, areas under 400 m2 dropped, 2.3 MB for the 17 cities). Both are derived databases of
 OpenStreetMap and stay under the ODbL (CREDITS.md, LICENSING.md).
 
+## Checked against the world (`tools/validation/gps_layers_check.mjs`, in CI)
+All 17 cities: every area ring valid, every area >= 400 m2 and inside the built area, every edge limit an integer 5-140 km/h, and the median limit rising from local to collector to arterial to motorway; well-known parks and rivers (Central Park, the Hudson and East River, the Serpentine, Green Park, Tuileries, the Seine at the Pont des Arts, Yoyogi, Tiergarten, Vondelpark, the IJ, Ciutadella, Retiro, Eduardo VII, the Royal Botanic Gardens) fall inside a green or water area. 102,407 checks. The check found **the Thames missing**: the London extract is clipped, so the river's multipolygon cannot be assembled; it is a listed known gap (the 109 London water areas are docks, basins and lakes). The check also caught two of its own wrong coordinates (a point on Roosevelt Island, a point on the Serpentine) before they were taken for data errors.
+
 ## Not done
 - Rail, lane guidance, POI icons; real traffic (there is no feed: the traffic above is the game's own simulation).
-- Crete has no area layers and class-default limits (its OSM extract is not in `assets_source`).
+- London has no Thames (see above), and Crete has no area layers and class-default limits (its OSM extract is not in `assets_source`).
 - Tokyo, Lisbon, Chicago and Seoul have few `maxspeed` tags in OSM; their limits are mostly the country default.

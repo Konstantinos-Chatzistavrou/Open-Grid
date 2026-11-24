@@ -26,7 +26,8 @@ chassis 20, driveline 19, steering 14, wheel 8, terrain 7, and tracked-vehicle p
 | 14 `.tir` tyres | `tire_library`, `tire`, `tire_patch`, `tire_symmetry` and the ADAC / ISO suites (core `ctest`) |
 | engine maps | `reference_data_chrono_engine_maps` (audi, sedan, uaz, citybus) and `..._all` (M113, Polaris, VW van, Duro, G500, HMMWV): each full-throttle map through engine, clutch, driveline and the chassis dyno on a body scaled to the engine: mean within 2.2-4.8 % of the map. ACV and MAN are copies of the city bus map; the Marder map is written in rad/s and is left out (flagged); `M113_RS` is malformed upstream; 8 `EngineShafts` / `EngineSimple` files have no full-throttle curve to compare |
 | chassis mass / inertia | `check_chrono_vehicles.mjs` against the measured NHTSA/VRTC radii of gyration (below) |
-| suspensions (29 with spring + damper rates), brakes (45), wheels (19), steering, driveline, tyre models TMeasy / Fiala / ANCF / Reissner | imported and parsed, field-checked (finite, positive); **not run through the sim**: our suspension is described by wheel rates and hardpoints in our own schema, Chrono's rates are at the spring (motion ratio needed), and the other tyre models are not ours |
+| suspensions, brakes, wheels, steering, driveline, gearbox, chassis, tyre, vehicle assembly of the **Audi, HMMWV and Nissan Patrol** (both axles double wishbone) | converted to cars of our schema by `tools/physics/chrono_to_cars.mjs` (wheel rate = spring rate x the motion ratio measured on the hardpoints squared) and run through the sim by `reference_data_chrono_vehicles` (static, heave, braking, tilt, full-lock turning radius, 0-100, yaw, solver motion ratio): see docs/physics-data-gaps.md |
+| the other suspensions (solid axle, leaf spring, multi-link, trailing arm), brakes / wheels of those vehicles, tracked vehicles, TMeasy / Fiala / ANCF / Reissner tyres | imported and parsed, field-checked (finite, positive); no counterpart in our model |
 
 ## Defects found in Chrono's own data
 
@@ -37,6 +38,12 @@ chassis 20, driveline 19, steering 14, wheel 8, terrain 7, and tracked-vehicle p
   violate the triangle inequality every rigid body obeys.
 - Inside Chrono the HMMWV has two different engines (`EngineSimple` 330 Nm / 110 kW, `EngineSimpleMap` 793 Nm / 153 kW); the Marder's map is in rad/s.
 - Three files are not valid JSON even for Chrono's tolerant parser.
+
+## What converting the Chrono cars showed
+- Our kinematics solver agrees with a hand lever calculation of the motion ratio on Chrono's hardpoints to 1-10 %.
+- Chrono's Audi tie-rod hardpoints give **-36 deg/m bump steer** (a road car: under 2); the HMMWV and Patrol -7 deg/m front. They are example geometries, not tuned vehicles.
+- Chrono's Audi has COM 0.74 m above the road and a wheelbase of 2.921 m from its axle positions while its own file says 2.776 m.
+- Carrying our Vela's steering compliance (0.12 deg/kN) and anti-roll bar into the conversion made the converted cars understeer and overshoot; Chrono specifies neither, so they are zero in the converted cars.
 
 ## Honest summary
 We now hold every numeric vehicle file Chrono ships for cars and trucks, byte for byte, and the parts our simulator can consume (tyres, engine

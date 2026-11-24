@@ -454,7 +454,7 @@
     ],
     "final_drive": 3.6,
     "efficiency": 0.92,
-    "clutch_max_torque_nm": 900,
+    "clutch_max_torque_nm": 1050,
     "driveline_inertia_kgm2": 0.06,
     "rear_diff": {
       "type": "lsd",

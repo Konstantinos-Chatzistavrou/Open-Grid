@@ -71,6 +71,8 @@ jobs:
           node tools/physics/torque_reference.mjs --check
           node tools/physics/import_chrono_vehicles.mjs --verify
           node tools/physics/check_chrono_vehicles.mjs
+          node tools/physics/check_epa_rows.mjs
+          node tools/validation/gps_layers_check.mjs
           node tools/physics/brake_reference.mjs
           node tools/physics/brake_reference.mjs --tracks data/validation/tracks-extra
           node tools/validation/track_sanity.mjs

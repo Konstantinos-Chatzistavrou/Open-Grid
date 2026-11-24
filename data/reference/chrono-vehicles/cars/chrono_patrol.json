@@ -1,0 +1,525 @@
+{
+  "schema": "car/1",
+  "name": "Chrono Nissan Patrol",
+  "notes": "Converted by tools/physics/chrono_to_cars.mjs from Project Chrono Nissan_Patrol/json/suv_Vehicle.json (BSD-3, data/reference/chrono-vehicles, pinned commit). Mass, inertia and CG are Chrono's chassis plus wheels, tyres and suspension parts; wheel rates are the spring rate x the measured motion ratio squared (front 0.474, rear 0.474); aero is the Vela's class value (Chrono has none). Reference data, not a game car.",
+  "chassis": {
+    "mass_kg": 2481.6,
+    "cg_height_m": 0.527,
+    "weight_front": 0.5316,
+    "wheelbase_m": 3.3455,
+    "inertia_roll_kgm2": 1377.1,
+    "inertia_pitch_kgm2": 4051.8,
+    "inertia_yaw_kgm2": 4945.2
+  },
+  "front_axle": {
+    "track_m": 1.92,
+    "spring_rate_n_per_m": 99117,
+    "spring_rest_length_m": 0.3,
+    "max_compression_m": 0.1,
+    "bump_stop_rate_n_per_m": 300000,
+    "damper_bump_ns_per_m": 3369,
+    "damper_rebound_ns_per_m": 3369,
+    "anti_roll_rate_n_per_m": 0,
+    "roll_centre_height_m": 0.06,
+    "max_steer_deg": 30.23,
+    "ackermann": 0.5,
+    "static_camber_deg": -1.5,
+    "camber_gain_deg_per_m": -45,
+    "caster_deg": 6.8,
+    "kpi_deg": 7,
+    "handbrake_torque_nm": 0,
+    "steer_compliance_deg_per_kn": 0,
+    "static_toe_deg": -0.05,
+    "bump_steer_deg_per_m": 0.3,
+    "anti_pitch": 0,
+    "camber_gain2_deg_per_m2": -230,
+    "roll_centre_gain": -1.8,
+    "damper_knee_mps": 10,
+    "damper_high_speed_ratio": 1,
+    "kinematics": {
+      "type": "double_wishbone",
+      "lca_front": [
+        0.263,
+        0.357,
+        0.435
+      ],
+      "lca_rear": [
+        -0.183,
+        0.357,
+        0.435
+      ],
+      "lca_outer": [
+        0.0040000000000000036,
+        0.837,
+        0.31699999999999995
+      ],
+      "uca_front": [
+        -0.008,
+        0.496,
+        0.6799999999999999
+      ],
+      "uca_rear": [
+        -0.228,
+        0.528,
+        0.631
+      ],
+      "uca_outer": [
+        -0.012999999999999998,
+        0.766,
+        0.6499999999999999
+      ],
+      "tie_inner": [
+        -0.21,
+        0.498,
+        0.489
+      ],
+      "tie_outer": [
+        -0.13599999999999998,
+        0.871,
+        0.419
+      ],
+      "shock_lower": [
+        0.137,
+        0.593,
+        0.38799999999999996
+      ],
+      "shock_upper": [
+        0.144,
+        0.56,
+        0.632
+      ]
+    }
+  },
+  "rear_axle": {
+    "track_m": 2.02,
+    "spring_rate_n_per_m": 133085,
+    "spring_rest_length_m": 0.3,
+    "max_compression_m": 0.1,
+    "bump_stop_rate_n_per_m": 300000,
+    "damper_bump_ns_per_m": 8250,
+    "damper_rebound_ns_per_m": 8250,
+    "anti_roll_rate_n_per_m": 0,
+    "roll_centre_height_m": 0.1,
+    "static_camber_deg": -1.6,
+    "camber_gain_deg_per_m": -45,
+    "handbrake_torque_nm": 1500,
+    "static_toe_deg": 0.15,
+    "bump_steer_deg_per_m": 1.5,
+    "anti_pitch": 0,
+    "camber_gain2_deg_per_m2": -230,
+    "roll_centre_gain": -1.5,
+    "damper_knee_mps": 10,
+    "damper_high_speed_ratio": 1,
+    "kinematics": {
+      "type": "double_wishbone",
+      "lca_front": [
+        0.187,
+        0.357,
+        0.435
+      ],
+      "lca_rear": [
+        -0.259,
+        0.357,
+        0.435
+      ],
+      "lca_outer": [
+        0,
+        0.837,
+        0.31699999999999995
+      ],
+      "uca_front": [
+        0.313,
+        0.512,
+        0.663
+      ],
+      "uca_rear": [
+        0.041,
+        0.512,
+        0.659
+      ],
+      "uca_outer": [
+        0,
+        0.766,
+        0.651
+      ],
+      "tie_inner": [
+        0.187,
+        0.466,
+        0.494
+      ],
+      "tie_outer": [
+        0.134,
+        0.871,
+        0.426
+      ],
+      "shock_lower": [
+        -0.133,
+        0.593,
+        0.38799999999999996
+      ],
+      "shock_upper": [
+        -0.13999999999999999,
+        0.552,
+        0.6910000000000001
+      ]
+    },
+    "steer_compliance_deg_per_kn": 0
+  },
+  "tire_front": {
+    "compound": "road",
+    "size": "245/35 R19",
+    "radius_m": 0.409,
+    "inertia_kgm2": 1.299,
+    "fz0_n": 7043.5,
+    "vertical_stiffness_n_per_m": 248320,
+    "longitudinal": {
+      "C": 1.839,
+      "mu": 1.1387,
+      "load_sensitivity": -0.10537,
+      "camber_sensitivity": -0.000022142,
+      "E": 0.62727,
+      "pEx2": -0.12336,
+      "pEx3": -0.03448,
+      "pEx4": -0.000015066,
+      "slip_stiffness_per_load": 18.886,
+      "pKx2": -3.988,
+      "pKx3": 0.21542,
+      "pTx1": 1.85,
+      "pTx2": 0.000109,
+      "pTx3": 0.101,
+      "pPx1": -0.3485,
+      "pPx2": 0.37824,
+      "pPx3": -0.09603,
+      "pPx4": 0.06518
+    },
+    "lateral": {
+      "C": 1.3223,
+      "mu": 1.0141,
+      "load_sensitivity": -0.12103,
+      "camber_sensitivity": -1.0426,
+      "E": -0.63772,
+      "pEy2": -0.050782,
+      "pEy3": 0,
+      "pEy4": -8.3143,
+      "cornering_stiffness_per_fz0": 19.797,
+      "cornering_stiffness_peak_load": 1.7999,
+      "camber_stiffness_factor": 0.0095418,
+      "pHy1": 0,
+      "pHy2": 0,
+      "pHy3": 0.044112,
+      "pVy1": 0,
+      "pVy2": 0,
+      "pVy3": 0.092912,
+      "pVy4": 0.27907,
+      "pTy1": 1.9,
+      "pTy2": 2.25,
+      "pPy1": -0.6255,
+      "pPy2": -0.06523,
+      "pPy3": -0.16666,
+      "pPy4": 0.2811
+    },
+    "combined": {
+      "rBx1": 12,
+      "rBx2": 10,
+      "rCx1": 1,
+      "rEx1": -0.05,
+      "rEx2": -0.02,
+      "rBy1": 10,
+      "rBy2": 10,
+      "rCy1": 1,
+      "rEy1": -0.05,
+      "rEy2": -0.02,
+      "rVy3": -0.15,
+      "rVy4": 14,
+      "rVy5": 1.9,
+      "rVy6": 10
+    },
+    "aligning": {
+      "qBz1": 7.5088,
+      "qBz2": -1.9428,
+      "qBz3": 0.61681,
+      "qBz4": 0,
+      "qBz5": 0.50016,
+      "qCz1": 1.2237,
+      "qDz1": 0.062582,
+      "qDz2": 0.00052585,
+      "qDz3": 0,
+      "qDz4": 8.634,
+      "qEz1": -5.3971,
+      "qEz2": 1.1207,
+      "qEz3": 0,
+      "qEz4": 0,
+      "qEz5": -1.1429,
+      "qHz1": 0,
+      "qHz2": 0,
+      "qHz3": 0.065953,
+      "qHz4": 0.11393,
+      "qBz9": 5.5144,
+      "qBz10": 0,
+      "qDz6": 0,
+      "qDz7": 0,
+      "qDz8": 0.11032,
+      "qDz9": -0.021277,
+      "sSz1": 0,
+      "sSz2": 0.024754,
+      "sSz3": -0.0014697,
+      "sSz4": -0.0014801,
+      "qTz1": 0.2
+    },
+    "relaxation_length_long_m": 0.12,
+    "relaxation_length_lat_m": 0.35,
+    "rolling_resistance": 0.012,
+    "rolling_resistance_v2": 0.001,
+    "source": "suv_Pac02Tire.tir (PAC2002): fitted Magic Formula + Simcenter 2606 / MF 6.2 carcass, converted by tools/tir2car.mjs",
+    "vertical_damping_ns_per_m": 500,
+    "breff": 6.1,
+    "dreff": 0.45,
+    "freff": 0.01,
+    "pfz1": 0.72,
+    "section_width_m": 0.265,
+    "aspect_ratio": 0.7,
+    "mbelt_kg": 4.9
+  },
+  "tire_rear": {
+    "compound": "road",
+    "size": "245/35 R19",
+    "radius_m": 0.409,
+    "inertia_kgm2": 1.299,
+    "fz0_n": 7043.5,
+    "vertical_stiffness_n_per_m": 248320,
+    "longitudinal": {
+      "C": 1.839,
+      "mu": 1.1387,
+      "load_sensitivity": -0.10537,
+      "camber_sensitivity": -0.000022142,
+      "E": 0.62727,
+      "pEx2": -0.12336,
+      "pEx3": -0.03448,
+      "pEx4": -0.000015066,
+      "slip_stiffness_per_load": 18.886,
+      "pKx2": -3.988,
+      "pKx3": 0.21542,
+      "pTx1": 1.85,
+      "pTx2": 0.000109,
+      "pTx3": 0.101,
+      "pPx1": -0.3485,
+      "pPx2": 0.37824,
+      "pPx3": -0.09603,
+      "pPx4": 0.06518
+    },
+    "lateral": {
+      "C": 1.3223,
+      "mu": 1.0141,
+      "load_sensitivity": -0.12103,
+      "camber_sensitivity": -1.0426,
+      "E": -0.63772,
+      "pEy2": -0.050782,
+      "pEy3": 0,
+      "pEy4": -8.3143,
+      "cornering_stiffness_per_fz0": 19.797,
+      "cornering_stiffness_peak_load": 1.7999,
+      "camber_stiffness_factor": 0.0095418,
+      "pHy1": 0,
+      "pHy2": 0,
+      "pHy3": 0.044112,
+      "pVy1": 0,
+      "pVy2": 0,
+      "pVy3": 0.092912,
+      "pVy4": 0.27907,
+      "pTy1": 1.9,
+      "pTy2": 2.25,
+      "pPy1": -0.6255,
+      "pPy2": -0.06523,
+      "pPy3": -0.16666,
+      "pPy4": 0.2811
+    },
+    "combined": {
+      "rBx1": 12,
+      "rBx2": 10,
+      "rCx1": 1,
+      "rEx1": -0.05,
+      "rEx2": -0.02,
+      "rBy1": 10,
+      "rBy2": 10,
+      "rCy1": 1,
+      "rEy1": -0.05,
+      "rEy2": -0.02,
+      "rVy3": -0.15,
+      "rVy4": 14,
+      "rVy5": 1.9,
+      "rVy6": 10
+    },
+    "aligning": {
+      "qBz1": 7.5088,
+      "qBz2": -1.9428,
+      "qBz3": 0.61681,
+      "qBz4": 0,
+      "qBz5": 0.50016,
+      "qCz1": 1.2237,
+      "qDz1": 0.062582,
+      "qDz2": 0.00052585,
+      "qDz3": 0,
+      "qDz4": 8.634,
+      "qEz1": -5.3971,
+      "qEz2": 1.1207,
+      "qEz3": 0,
+      "qEz4": 0,
+      "qEz5": -1.1429,
+      "qHz1": 0,
+      "qHz2": 0,
+      "qHz3": 0.065953,
+      "qHz4": 0.11393,
+      "qBz9": 5.5144,
+      "qBz10": 0,
+      "qDz6": 0,
+      "qDz7": 0,
+      "qDz8": 0.11032,
+      "qDz9": -0.021277,
+      "sSz1": 0,
+      "sSz2": 0.024754,
+      "sSz3": -0.0014697,
+      "sSz4": -0.0014801,
+      "qTz1": 0.2
+    },
+    "relaxation_length_long_m": 0.12,
+    "relaxation_length_lat_m": 0.35,
+    "rolling_resistance": 0.012,
+    "rolling_resistance_v2": 0.001,
+    "source": "suv_Pac02Tire.tir (PAC2002): fitted Magic Formula + Simcenter 2606 / MF 6.2 carcass, converted by tools/tir2car.mjs",
+    "vertical_damping_ns_per_m": 500,
+    "breff": 6.1,
+    "dreff": 0.45,
+    "freff": 0.01,
+    "pfz1": 0.72,
+    "section_width_m": 0.265,
+    "aspect_ratio": 0.7,
+    "mbelt_kg": 4.9
+  },
+  "brakes": {
+    "max_total_torque_nm": 16000,
+    "bias_front": 0.5
+  },
+  "engine": {
+    "torque_curve": [
+      [
+        1592,
+        660
+      ],
+      [
+        3183,
+        330
+      ],
+      [
+        4775,
+        220
+      ],
+      [
+        6366,
+        165
+      ],
+      [
+        7958,
+        132
+      ],
+      [
+        9549,
+        110
+      ],
+      [
+        11141,
+        94.3
+      ],
+      [
+        12732,
+        82.5
+      ],
+      [
+        14324,
+        73.3
+      ],
+      [
+        15915,
+        66
+      ],
+      [
+        17507,
+        60
+      ],
+      [
+        19099,
+        55
+      ]
+    ],
+    "idle_rpm": 800,
+    "redline_rpm": 19099,
+    "inertia_kgm2": 0.25,
+    "friction_const_nm": 20,
+    "friction_linear_nm_per_radps": 0.03
+  },
+  "drivetrain": {
+    "layout": "fwd",
+    "gear_ratios": [
+      -6.6225,
+      0,
+      5.8548,
+      3.5829,
+      2.3708,
+      1.6069,
+      0.983,
+      0.651
+    ],
+    "gear_teeth_note": "Parallel-shaft 6-speed helical gearset [driven, drive] (tooth sums 65-66 across shared shaft center distance; R uses reverse idler): R -48/15=-3.200, N 0/0, 1st 51/15=3.400, 2nd 46/20=2.300, 3rd 41/24=1.708, 4th 37/28=1.321, 5th 34/31=1.097, 6th 31/35=0.886; hypoid ring/pinion 36/10=3.600",
+    "final_drive": 5,
+    "efficiency": 0.92,
+    "clutch_max_torque_nm": 1320,
+    "driveline_inertia_kgm2": 0.06,
+    "clutch": {
+      "bite_point": 0.65,
+      "full_engage_point": 0.15,
+      "effective_radius_m": 0.105,
+      "num_surfaces": 2,
+      "mu_static": 0.42,
+      "mu_kinetic": 0.34,
+      "thermal_capacity_j_per_k": 1600,
+      "input_shaft_inertia_kgm2": 0.008
+    },
+    "synchro": {
+      "mu_sync": 0.12,
+      "shift_fork_force_n": 350,
+      "cone_radius_m": 0.038,
+      "cone_angle_deg": 7,
+      "num_cones": 2,
+      "engage_tol_rads": 42
+    },
+    "rear_diff": {
+      "type": "lsd",
+      "preload_nm": 60,
+      "power_ramp": 0.35,
+      "coast_ramp": 0.2
+    }
+  },
+  "aero": {
+    "drag_area_m2": 0.643,
+    "downforce_area_m2": 0.35,
+    "front_balance": 0.45,
+    "ground_effect_per_m": 2,
+    "pitch_balance_per_m": 1.2,
+    "notes": "Vela class value: Chrono has no aero data"
+  },
+  "surface_grip": {
+    "asphalt": 1,
+    "kerb": 0.92,
+    "pavement": 0.85,
+    "grass": 0.6,
+    "wall": 0.5
+  },
+  "reference": {
+    "source": "Nissan_Patrol/json/suv_Vehicle.json",
+    "motion_ratio_from_hardpoints": [
+      0.4739,
+      0.474
+    ],
+    "minimum_turning_radius_m": 7.62,
+    "chrono_wheelbase_m": 3.34545
+  }
+}

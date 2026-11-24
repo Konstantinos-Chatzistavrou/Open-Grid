@@ -3,7 +3,7 @@
 
 For each city in tools/nyc/cities.json (or the ids given on the command line):
   * tiles/map.json   every edge gets `ms`: the speed limit in km/h. From the OSM `maxspeed` tag of the nearest way of the same
-                     street where one is tagged (matched by position, 8 m, name and class preferred), else the typical limit of
+                     street where one is tagged (matched by position within 8 m, same road class or same named street), else the typical limit of
                      that road class in the city's country (COUNTRY_LIMITS below). The share of tagged edges is printed.
   * tiles/areas.json water and green areas (parks, grass, cemeteries, pitches, woods) from derived/areas.ndjson, clipped to the
                      built area, simplified to 2 m, areas under 400 m2 dropped. {"v":1,"water":[A,...],"green":[A,...]},
@@ -166,7 +166,12 @@ def process(cid):
                 d = g.distance(p)
                 if d > 8.0:
                     continue
-                score = d + (0 if name and name == e.get("name") else 4) + (0 if TIER.get(hw) == tier else 3)
+                same_name = bool(name) and name == e.get("name")
+                # a candidate of another road class counts only if it is the same named street: a freeway viaduct must not take the
+                # limit of the surface street running right under it (found by tools/validation/gps_layers_check.mjs: San Francisco)
+                if TIER.get(hw) != tier and not same_name:
+                    continue
+                score = d + (0 if same_name else 4)
                 if best is None or score < best[0]:
                     best = (score, ms)
             if best and best[0] < 9.0:

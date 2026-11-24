@@ -1,0 +1,22 @@
+{
+  "schema": "open-grid/gt3-lap-references/1",
+  "about": "Published lap times of real GT3 cars at two of the five circuits we hold the geometry of. Facts (a time at a circuit), not a dataset: INDICATIVE, from news and results pages that are not the series' own timing, in qualifying trim. Used only as a lower bound: our Tornado GT3 must not lap faster than a real GT3 (0.95 x allows for the circuit length and line differences). Retrieved 2026-11-24.",
+  "licence": "Facts (lap times) with their sources; no text reproduced.",
+  "laps": [
+    {
+      "track": "Spa-Francorchamps",
+      "time_s": 136.984,
+      "what": "Sandy Mitchell, Lamborghini Huracan GT3 Evo, British GT qualifying: 2:16.984, reported as a British GT qualifying record",
+      "source": "https://www.agcc.co.uk/news-article/sandy-mitchell-re-writes-record-books-at-spa-with-lamborghini-barwell-and-black-bull",
+      "confidence": "low-medium: a single news report, national series, qualifying"
+    },
+    {
+      "track": "Brands Hatch GP",
+      "time_s": 83.617,
+      "what": "BMW M4 GT3 EVO, GT World Challenge Europe Sprint Cup qualifying: 1:23.617",
+      "source": "https://oversteer48.com/brands-hatch-lap-record/",
+      "confidence": "low-medium: a fan-run lap-record page citing the series, qualifying"
+    }
+  ],
+  "not_found": "No GT3 time was found for Monza, Silverstone or Suzuka (only GT4 and simulator times turned up); none is used."
+}
