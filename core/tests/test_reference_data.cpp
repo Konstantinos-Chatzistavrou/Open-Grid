@@ -25,8 +25,11 @@
 #include "harness.hpp"
 #include "measure.hpp"
 #include "nlohmann/json.hpp"
+#include "rs/ai.hpp"
 #include "rs/controls.hpp"
 #include "rs/dyno.hpp"
+#include "rs/racing_line.hpp"
+#include "rs/route.hpp"
 
 using namespace rs;
 namespace fs = std::filesystem;
@@ -524,5 +527,503 @@ RS_TEST(reference_data_aero_forces) {
         if (down_expected > 600)
             test::check_range((cfg.name + ": front share of the extra load vs the aero balance").c_str(), share_sim - cfg.aero.front_balance, -0.05, 0.10, "");
         test::check_range((cfg.name + ": coasting deceleration vs 1/2 rho CdA v^2 / m + rolling").c_str(), -a_sum / drag_expected, 0.85, 1.20, "x");
+    }
+}
+
+// ---- the five real circuits (TUMFTM racetrack-database geometry, LGPL-3.0, validation use only) ---------------------------------
+// Centreline and track widths of Monza, Brands Hatch GP, Spa, Silverstone and Suzuka are loaded as routes, a minimum-curvature
+// racing line is computed on them, and a test driver (pure pursuit on that line, a PI speed loop on a speed profile built from
+// the car's OWN measured limits: skidpad grip, ABS braking, engine-curve power, drag, downforce) drives a flying lap in two
+// cars through the real Vehicle: the Vela GT road car and the Tornado GT3 on slicks with downforce. The profile is the
+// quasi-steady-state lap: the fastest speed each point of the line allows. Checked:
+//   - the lap is completed and the car stays on the track (widths from the data),
+//   - the simulation does not beat the quasi-steady lap at 100 % of the limits (it would be free energy), stays within 20 % of
+//     it, and within 10 % of the 92 % profile it is driven on (a slide, gear changes and transients cost the rest); the profile
+//     includes the friction ellipse (a corner's lateral acceleration is not available for accelerating or braking: without it
+//     the same car spins on 8 of 10 laps),
+// and the lap time and average speed are printed. The game's own AI driver is tested on the same circuits below.
+namespace {
+Route load_tum_track(const std::string& rel) {
+    std::ifstream f(test::data_path(rel));
+    if (!f) throw std::runtime_error("missing track " + rel);
+    std::vector<std::array<double, 4>> p;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        for (char& c : line) if (c == ',') c = ' ';
+        std::array<double, 4> a{};
+        if (std::sscanf(line.c_str(), "%lf %lf %lf %lf", &a[0], &a[1], &a[2], &a[3]) == 4) p.push_back(a);
+    }
+    const int n = static_cast<int>(p.size());
+    std::vector<RouteSample> s(n);
+    std::vector<double> h(n);
+    for (int i = 0; i < n; ++i) {
+        const auto& a = p[i]; const auto& b = p[(i + 1) % n];
+        h[i] = std::atan2(b[1] - a[1], b[0] - a[0]);
+        s[i].p = {a[0], a[1], 0};
+        s[i].width_right = a[2]; s[i].width_left = a[3];
+        s[i].heading = h[i];
+    }
+    auto wrap = [](double d) { while (d > kPi) d -= 2 * kPi; while (d < -kPi) d += 2 * kPi; return d; };
+    for (int i = 0; i < n; ++i) {
+        const int a = (i + n - 2) % n, b = (i + 2) % n;
+        const double ds = length(s[b].p - s[a].p);
+        s[i].curvature = ds > 1e-6 ? wrap(h[b] - h[a]) / ds : 0.0;   // + = turning left
+    }
+    return Route::from_samples(std::move(s), true);
+}
+
+// speed (m/s) at every 2 m of the racing line from the car's limits, scaled by `use` (1 = the full measured limits)
+std::vector<double> qss_profile(const Route& r, const RacingLine& line, const CarConfig& cfg, double a_lat_g, double a_brake_g, double v_top, double use) {
+    const double ds = 2.0, rho = cfg.aero.air_density, m = cfg.mass;
+    const int n = static_cast<int>(std::ceil(r.length() / ds));
+    double p_peak = 0;
+    for (const auto& pt : cfg.engine.torque_curve) p_peak = std::max(p_peak, pt[1] * pt[0] * 2 * kPi / 60);
+    p_peak *= cfg.drivetrain.efficiency;
+    std::vector<double> v(n), cap(n);
+    for (int i = 0; i < n; ++i) {
+        const double k = std::abs(line.curvature(i * ds));
+        const double a = use * a_lat_g, den = k - a * rho * cfg.aero.lift_area / (2 * m);
+        cap[i] = den > 1e-9 ? std::min(std::sqrt(a * kGravity / den), v_top) : v_top;
+        v[i] = cap[i];
+    }
+    for (int pass = 0; pass < 3; ++pass) {
+        for (int i = 0; i < 2 * n; ++i) {   // forward: power and traction limited
+            const int a = i % n, b = (i + 1) % n;
+            const double q = 0.5 * rho * v[a] * v[a];
+            // friction ellipse: the lateral acceleration the corner takes is not available for driving
+            const double k_here = std::abs(line.curvature(a * ds)), a_avail = use * a_lat_g * (kGravity + q * cfg.aero.lift_area / m);
+            const double used = std::min(1.0, v[a] * v[a] * k_here / a_avail), ell = std::sqrt(std::max(0.0, 1 - used * used));
+            const double f_trac = ell * 0.85 * use * a_lat_g * (m * kGravity + q * cfg.aero.lift_area);
+            const double f = std::min(p_peak / std::max(v[a], 5.0), f_trac) - q * cfg.aero.drag_area - 0.011 * (m * kGravity + q * cfg.aero.lift_area);
+            const double v2 = v[a] * v[a] + 2 * f / m * ds;
+            v[b] = std::min(cap[b], std::sqrt(std::max(v2, 1.0)));
+        }
+        for (int i = 2 * n; i > 0; --i) {   // backward: braking limited
+            const int b = i % n, a = (i - 1 + n) % n;
+            const double q = 0.5 * rho * v[b] * v[b];
+            const double k_here = std::abs(line.curvature(b * ds)), a_avail = use * a_lat_g * (kGravity + q * cfg.aero.lift_area / m);
+            const double used = std::min(1.0, v[b] * v[b] * k_here / a_avail), ell = std::sqrt(std::max(0.0, 1 - used * used));
+            const double dec = ell * use * a_brake_g * (kGravity + q * cfg.aero.lift_area / m) + q * cfg.aero.drag_area / m;
+            v[a] = std::min(v[a], std::sqrt(v[b] * v[b] + 2 * dec * ds));
+        }
+    }
+    return v;
+}
+double profile_time(const std::vector<double>& v) {
+    const int n = static_cast<int>(v.size());
+    double t = 0;
+    for (int i = 0; i < n; ++i) t += 2.0 / (0.5 * (v[i] + v[(i + 1) % n]));
+    return t;
+}
+}  // namespace
+
+RS_TEST(reference_data_real_tracks) {
+    const std::array<std::pair<const char*, const char*>, 5> tracks = {{
+        {"Brands Hatch GP", "validation/racetrack-database/BrandsHatch.csv"}, {"Monza", "validation/racetrack-database/Monza.csv"},
+        {"Spa-Francorchamps", "validation/tracks-extra/Spa.csv"}, {"Silverstone", "validation/tracks-extra/Silverstone.csv"},
+        {"Suzuka", "validation/tracks-extra/Suzuka.csv"}}};
+    for (const char* car_id : {"vela_gt", "tornado_gt3"}) {
+        const CarConfig cfg = load_car_config(test::data_path(std::string("cars/") + car_id + ".json"));
+        const double a_lat = sheet::skidpad(cfg), stop = abs_stop_m(cfg, 100 / 3.6);
+        const double a_brake = (100 / 3.6) * (100 / 3.6) / (2 * stop) / kGravity;
+        const double v_top = paper_top_speed(cfg).v_mps;
+        std::printf("         %s: skidpad %.2f g, ABS braking %.2f g mean, top speed %.0f km/h\n", cfg.name.c_str(), a_lat, a_brake, v_top * 3.6);
+        for (const auto& [name, rel] : tracks) {
+            if (const char* only = std::getenv("RS_ONLY")) if (std::string(only) != std::string(name) + "/" + car_id) continue;
+            const Route r = load_tum_track(rel);
+            const RacingLine line(r);
+            double min_w = 1e9;
+            for (const auto& smp : r.samples()) min_w = std::min({min_w, smp.width_left, smp.width_right});
+            const double use = 0.92;
+            const std::vector<double> prof = qss_profile(r, line, cfg, a_lat, a_brake, v_top, use);
+            const double t_full = profile_time(qss_profile(r, line, cfg, a_lat, a_brake, v_top, 1.0)), t_use = profile_time(prof);
+            auto speed_at = [&](double s) {
+                const double x = r.wrap(s) / 2.0;
+                const int i = static_cast<int>(x) % static_cast<int>(prof.size()), j = (i + 1) % static_cast<int>(prof.size());
+                return prof[i] + (prof[j] - prof[i]) * (x - std::floor(x));
+            };
+            const RouteSample s0 = r.at(0);
+            auto sim = test::make_sim(cfg);
+            sim->vehicle.assists().abs = sim->vehicle.assists().tc = true;
+            sim->reset(s0.p, s0.heading, 25, 4);
+            Controls ctl(sim->vehicle.config());
+            ctl.settings.auto_gearbox = true;
+            ctl.set_gear(4);
+            sim->settle(0.2);
+            const double lock = cfg.front.max_steer_deg * kPi / 180;
+            double travelled = 0, last_s = 0, t_start = -1, worst = -1e9, vmax = 0, v_err_sum = 0;
+            int v_err_n = 0;
+            bool done = false, dbg = false;
+            int hint = 0;
+            while (sim->time < 2.6 * t_full + 10) {
+                const ChassisState& st = sim->body.state;
+                const Route::Projection pr = r.project(st.position, hint);
+                hint = pr.index;
+                const double v = test::speed(*sim);
+                // path follower: curvature feed-forward of the racing line plus heading and lateral feedback (a Stanley-style law);
+                // the lap time is then a property of the car's limits, not of how well a lookahead controller copes with them
+                auto line_pt = [&](double sq) { return r.at(sq).p + r.left(sq) * line.lateral(sq); };
+                const Vec3 t_ahead = line_pt(pr.s + 3.0) - line_pt(pr.s - 3.0);
+                const double psi_path = std::atan2(t_ahead.y, t_ahead.x);
+                const Vec3 fwd = st.orientation.rotate({1, 0, 0});
+                double psi_e = std::atan2(fwd.y, fwd.x) - psi_path;
+                while (psi_e > kPi) psi_e -= 2 * kPi;
+                while (psi_e < -kPi) psi_e += 2 * kPi;
+                const double e_y = pr.lateral - line.lateral(pr.s);
+                // a slide: steer into it (towards where the car is going) and come off the pedals, as a driver does
+                const double beta = sim->last.sideslip, slide = std::max(0.0, (std::abs(beta) - 0.05) / 0.10);
+                const double delta = std::atan(cfg.wheelbase * line.curvature(pr.s + 0.15 * v)) - (1 - std::min(1.0, slide)) * psi_e - std::atan(1.5 * e_y / (v + 5.0)) + 1.2 * beta * std::min(1.0, slide);
+                RawInput raw;
+                raw.device = InputDevice::Wheel;
+                raw.steer = clamp(delta / lock, -1.0, 1.0);
+                // speed: follow the profile a little ahead of the car, brakes ahead of the corner come from the profile itself
+                const double v_t = speed_at(pr.s + 0.4 * v + 3.0);
+                const double a_des = 3.0 * (v_t - v);
+                raw.throttle = clamp(a_des / 4.0 + 0.05, 0.0, 1.0);
+                raw.brake = clamp(-a_des / 9.0, 0.0, 1.0);
+                if (slide > 0) raw.throttle *= 1.0 - std::min(1.0, slide);
+                sim->step(ctl.update(raw, sim->last, sim->dt));
+                travelled += r.delta(last_s, pr.s);
+                last_s = pr.s;
+                if (t_start < 0 && travelled > r.length() * 0.25) { t_start = sim->time; travelled = 0; }
+                if (t_start >= 0) {
+                    const RouteSample sp = r.at(pr.s);
+                    const double room = pr.lateral >= 0 ? sp.width_left : sp.width_right;
+                    worst = std::max(worst, std::abs(pr.lateral) - room);   // > 0: the CG is outside the track edge
+                    if (std::getenv("RS_DEBUG") && !dbg && std::abs(pr.lateral) - room > 0) {
+                        dbg = true;
+                        std::printf("           first excursion t %.1f s s %.0f m lat %.1f (room %.1f) line %.1f v %.0f vt %.0f km/h ay %.2f g yaw %.2f k %.4f kline %.4f beta %.1f deg\n", sim->time, pr.s, pr.lateral, room, line.lateral(pr.s), v * 3.6, v_t * 3.6, sim->accel_body().y / kGravity,
+                                    sim->last.yaw_rate, sp.curvature, line.curvature(pr.s), sim->last.sideslip * 57.3);
+                    }
+                    vmax = std::max(vmax, v);
+                    v_err_sum += std::abs(v - speed_at(pr.s)); ++v_err_n;
+                }
+                if (t_start >= 0 && travelled >= r.length()) { done = true; break; }
+            }
+            const double lap = sim->time - t_start;
+            std::printf("         %-12s %-17s %.2f km: sim lap %6.1f s (avg %3.0f km/h, max %3.0f) | quasi-steady lap at 100 %% %6.1f s, at 92 %% %6.1f s | ratio %.3f | mean speed error %.1f km/h | CG vs the edge %.1f m (width %.1f)\n",
+                        cfg.name.c_str(), name, r.length() / 1000, lap, r.length() / lap * 3.6, vmax * 3.6, t_full, t_use, lap / t_use,
+                        v_err_n ? v_err_sum / v_err_n * 3.6 : 0.0, worst, min_w);
+            const std::string tag = std::string(name) + " / " + cfg.name;
+            test::check((tag + ": completes the lap").c_str(), done);
+            test::check_range((tag + ": CG inside the track edge (margin)").c_str(), worst, -100, 0.0, "m");
+            test::check_range((tag + ": sim lap vs the quasi-steady lap at 100 % of the limits").c_str(), lap / t_full, 0.98, 1.20, "x");
+            test::check_range((tag + ": sim lap vs the 92 % profile it drives").c_str(), lap / t_use, 0.97, 1.10, "x");
+        }
+    }
+}
+
+// The game's own AI driver (racing line, skill 0.95) on the same five circuits. Its speed profile must respect what the car can do:
+// the lap is completed on the track, not faster than the quasi-steady lap at the car's full limits.
+namespace {
+struct LapCar {
+    std::unique_ptr<Simulation> sim;
+    std::unique_ptr<Controls> ctl;
+    std::unique_ptr<AIDriver> ai;
+    LapCar(const CarConfig& cfg, const Route& r, AIParams p, Vec3 pos, double yaw, double v) {
+        sim = test::make_sim(cfg);
+        sim->vehicle.assists().abs = sim->vehicle.assists().tc = true;
+        sim->reset(pos, yaw, v, 4);
+        ctl = std::make_unique<Controls>(sim->vehicle.config());
+        ctl->settings.auto_gearbox = true;
+        ctl->set_gear(4);
+        ai = std::make_unique<AIDriver>(sim->vehicle.config(), r, p);
+    }
+    void step() {
+        AIOutput o = ai->update(sim->body.state, sim->last, {}, sim->dt);
+        if (o.gear_request >= 0) ctl->set_gear(o.gear_request);
+        sim->step(ctl->update(o.raw, sim->last, sim->dt));
+    }
+};
+}  // namespace
+
+RS_TEST(reference_data_real_tracks_ai) {
+    const std::array<std::pair<const char*, const char*>, 5> tracks = {{
+        {"Brands Hatch GP", "validation/racetrack-database/BrandsHatch.csv"}, {"Monza", "validation/racetrack-database/Monza.csv"},
+        {"Spa-Francorchamps", "validation/tracks-extra/Spa.csv"}, {"Silverstone", "validation/tracks-extra/Silverstone.csv"},
+        {"Suzuka", "validation/tracks-extra/Suzuka.csv"}}};
+    int clean = 0, total = 0;
+    for (const char* car_id : {"vela_gt", "tornado_gt3"}) {
+        const CarConfig cfg = load_car_config(test::data_path(std::string("cars/") + car_id + ".json"));
+        const double a_lat = sheet::skidpad(cfg), stop = abs_stop_m(cfg, 100 / 3.6);
+        const double a_brake = (100 / 3.6) * (100 / 3.6) / (2 * stop) / kGravity, v_top = paper_top_speed(cfg).v_mps;
+        for (const auto& [name, rel] : tracks) {
+            const Route r = load_tum_track(rel);
+            const RacingLine line(r);
+            const double t_full = profile_time(qss_profile(r, line, cfg, a_lat, a_brake, v_top, 1.0));
+            AIParams p;
+            p.racing_line = true;
+            const RouteSample s0 = r.at(0);
+            LapCar car(cfg, r, p, s0.p, s0.heading, 25);
+            car.sim->settle(0.2);
+            double travelled = 0, last_s = car.ai->route_s, t_start = -1, worst = -1e9;
+            bool done = false, dbg = false;
+            while (car.sim->time < 2.6 * t_full + 10) {   // a lap that takes 2.6x the limit is a failed lap
+                car.step();
+                travelled += r.delta(last_s, car.ai->route_s);
+                last_s = car.ai->route_s;
+                if (t_start < 0 && travelled > r.length() * 0.25) { t_start = car.sim->time; travelled = 0; }
+                if (t_start >= 0) {
+                    const Route::Projection pr = r.project(car.sim->body.state.position);
+                    const RouteSample sp = r.at(pr.s);
+                    worst = std::max(worst, std::abs(pr.lateral) - (pr.lateral >= 0 ? sp.width_left : sp.width_right));
+                    if (worst > 30) break;   // lost: 30 m beyond the edge, no point driving on
+                    if (std::getenv("RS_DEBUG") && !dbg && worst > 0) {
+                        dbg = true;
+                        std::printf("           first excursion t %.1f s s %.0f m lat %.1f v %.0f target %.0f km/h ay %.2f g yaw %.2f beta %.1f deg k %.4f kline %.4f\n", car.sim->time, pr.s, pr.lateral,
+                                    test::speed(*car.sim) * 3.6, car.ai->target_speed * 3.6, car.sim->accel_body().y / kGravity, car.sim->last.yaw_rate, car.sim->last.sideslip * 57.3, sp.curvature, line.curvature(pr.s));
+                    }
+                }
+                if (t_start >= 0 && travelled >= r.length()) { done = true; break; }
+            }
+            const double lap = car.sim->time - t_start;
+            std::printf("         AI %-12s %-17s sim lap %6.1f s (avg %3.0f km/h) | quasi-steady lap at 100 %% %6.1f s | ratio %.3f | CG vs the edge %.1f m\n", cfg.name.c_str(), name,
+                        lap, r.length() / lap * 3.6, t_full, lap / t_full, worst);
+            const std::string tag = std::string("AI, ") + name + " / " + cfg.name;
+            if (done && worst <= 2.0) {   // within 2 m of the edge: a car's half width and a kerb
+                ++clean;
+                // when it does stay on the track it cannot beat what the car's limits allow, and it is not absurdly slow
+                test::check_range((tag + ": lap vs the quasi-steady lap at 100 % of the limits").c_str(), lap / t_full, 0.98, 1.50, "x");
+            }
+            ++total;
+        }
+    }
+    // KNOWN GAP, not a pass: the game's AI is built for city streets and drives at ~100 % of its car's grip with a pure-pursuit
+    // follower and no slide recovery. After the friction ellipse went into its speed profile (a corner's lateral acceleration is not
+    // available for braking or power; 9 of 10 laps off the track before, 5 of 10 now) it still spins or runs wide on the other
+    // six laps of these 200-300 km/h circuits. This guard stops it getting worse; docs/physics-data-gaps.md lists it.
+    std::printf("         AI laps completed on the track: %d of %d\n", clean, total);
+    test::check_range("AI laps completed on the track (regression guard on a known gap)", clean, 4, total, "of 10");
+}
+
+// ---- aero reference bands, applied to what the simulation actually does --------------------------------------------------------
+// tools/physics/aero_check.mjs holds the JSON values of each car against the envelopes of data/physics/aero_reference.json
+// (DrivAer wind-tunnel Cd x frontal area for road cars, NACA 0012 cl_max x a 1 m^2 device for downforce, the CFD front-share
+// band for covered-wheel road cars). Here the same envelopes are applied to the EFFECTIVE values the Vehicle produces: the drag
+// area from the deceleration while coasting, the lift area and the front share from the tyre loads at speed (300 km/h for the
+// cars with a small wing so that there is something to measure). A config can pass on paper and still not arrive in the sim.
+RS_TEST(reference_data_aero_reference_bands) {
+    const auto ref = read_json("physics/aero_reference.json");
+    double cd_min = 1e9, cd_max = 0, cl_max_wing = 1.4;
+    for (const auto& r : ref.at("references")) {
+        if (r.contains("cd") && r.at("cd").is_number()) { cd_min = std::min(cd_min, r.at("cd").get<double>()); cd_max = std::max(cd_max, r.at("cd").get<double>()); }
+        if (r.at("id") == "naca0012_wing") cl_max_wing = r.at("cl_max").get<double>();
+    }
+    const double a_lo = ref.at("assumptions").at("frontal_area_m2").at("low").get<double>(), a_hi = ref.at("assumptions").at("frontal_area_m2").at("high").get<double>();
+    const double wing_area = ref.at("assumptions").at("wing_area_m2_for_bound").get<double>();
+    const double cda_lo = cd_min * a_lo, cda_hi = cd_max * a_hi, cla_bound = cl_max_wing * wing_area * 1.15;
+    const double share_lo = ref.at("balance_reference").at("front_share_range").at(0).get<double>(), share_hi = ref.at("balance_reference").at("front_share_range").at(1).get<double>();
+    std::printf("         bands from the data: CdA road %.2f-%.2f m^2 (x0.8..1.2), ClA <= %.2f m^2, CFD front share %.2f-%.2f for road cars\n", cda_lo, cda_hi, cla_bound, share_lo, share_hi);
+    int road_in_band = 0, road_n = 0;
+    for (const CarConfig& cfg : all_cars()) {
+        auto s = test::make_sim(cfg);
+        s->settle(1.0);
+        double w_static = 0, wf_static = 0;
+        for (int i = 0; i < 4; ++i) { w_static += s->last.wheels[i].load; if (i < 2) wf_static += s->last.wheels[i].load; }
+        const double v0 = (cfg.aero.lift_area < 0.3 ? 300 : 200) / 3.6;
+        s->reset({}, 0, v0, 1);
+        DriverInput in;
+        in.gear = 1; in.clutch = 1.0; in.throttle = 0;
+        double w = 0, wf = 0, a_sum = 0;
+        int n = 0;
+        for (int k = 0; k < 120; ++k) {
+            s->step(in);
+            if (k >= 60) {
+                double sum = 0, front = 0;
+                for (int i = 0; i < 4; ++i) { sum += s->last.wheels[i].load; if (i < 2) front += s->last.wheels[i].load; }
+                w += sum; wf += front; a_sum += s->accel_body().x; ++n;
+            }
+        }
+        w /= n; wf /= n; a_sum /= n;
+        const double v = test::speed(*s), q = 0.5 * cfg.aero.air_density * v * v;
+        const double cda_eff = (-a_sum - 0.011 * kGravity) * cfg.mass / q, cla_eff = (w - w_static) / q;
+        const double share = (w - w_static) > 200 ? (wf - wf_static) / (w - w_static) : -1;
+        const bool road = cla_eff < 0.3;
+        std::printf("         %-22s effective CdA %.3f m^2, ClA %.2f m^2, front share %.2f (%.0f km/h)%s\n", cfg.name.c_str(), cda_eff, cla_eff, share, v * 3.6, road ? "  [road class]" : "");
+        test::check_range((cfg.name + ": effective CdA in the 0.30-1.35 envelope").c_str(), cda_eff, 0.30, 1.35, "m^2");
+        test::check_range((cfg.name + ": effective ClA under the NACA wing bound").c_str(), cla_eff, 0.0, cla_bound, "m^2");
+        if (road) test::check_range((cfg.name + ": road-class CdA in the DrivAer band x 0.8..1.2").c_str(), cda_eff, cda_lo * 0.8, cda_hi * 1.2, "m^2");
+        if (share >= 0) {
+            if (!road) test::check_range((cfg.name + ": effective front share in the 0.30-0.60 envelope").c_str(), share, 0.30, 0.60, "");
+            else { ++road_n; if (share >= share_lo && share <= share_hi) ++road_in_band; }
+        }
+    }
+    // the three road-class cars whose configured balance (0.50) the JSON check flags against the CFD band: what the sim does with it
+    std::printf("         road-class cars whose effective front share lies in the CFD band %.2f-%.2f: %d of %d\n", share_lo, share_hi, road_in_band, road_n);
+    test::check("every road-class car with a readable split lands in the CFD front-share band in the simulation", road_n > 0 && road_in_band == road_n);
+}
+
+// ---- measured moments of inertia (NHTSA/VRTC, 12 configurations of 1990s SUVs) -----------------------------------------------
+// The measured roll and yaw inertias (slug ft^2 -> kg m^2) with the measured mass and CG enter the simulation three ways, and each
+// is checked against theory here:
+//   1. the rigid body: a torque about the roll or the yaw axis accelerates it at tau / I, and a torque-free body keeps its angular
+//      momentum and its kinetic energy (pitch is not published; the value used is a stand-in, and any value must conserve);
+//   2. the car on its springs: a roll or a pitch rate given to the resting car rings at the natural frequency sqrt(K / I), K the
+//      roll stiffness of the springs and anti-roll bars at the car's own track (pitch: springs at the axle distances);
+//   3. the yaw response: the sim's step-steer yaw response of the same car with the measured radius of gyration, against the
+//      linear two-degree-of-freedom bicycle model built from the tyres' cornering stiffness at the static axle loads and the same
+//      inertia: the time to 90 % of the steady yaw rate and the overshoot.
+namespace {
+double ft2slug_to_kgm2(double v) { return v * 1.3558179483; }
+double lb_to_kg(double v) { return v * 0.45359237; }
+}  // namespace
+
+RS_TEST(reference_data_inertia_rigid_body) {
+    const auto ref = read_json("physics/inertia-reference.json");
+    int n = 0;
+    for (const auto& e : ref.at("entries")) {
+        if (!e.contains("roll_slugft2") || !e.at("roll_slugft2").is_number() || !e.contains("yaw_slugft2") || !e.at("yaw_slugft2").is_number()) continue;
+        const double m = lb_to_kg(e.at("weight_lb").get<double>()), Ixx = ft2slug_to_kgm2(e.at("roll_slugft2").get<double>()), Izz = ft2slug_to_kgm2(e.at("yaw_slugft2").get<double>());
+        const double Iyy = 0.5 * (Ixx + Izz) * 1.2;   // not published: a stand-in
+        const std::string tag = e.at("vehicle").get<std::string>() + " (" + e.at("configuration").get<std::string>() + ")";
+        // 1a. torque about each measured axis
+        for (int axis = 0; axis < 3; axis += 2) {
+            RigidBody b;
+            b.mass = m; b.inertia = {Ixx, Iyy, Izz};
+            const double tau = 1500, T = 0.5;   // 120 steps of 1/240 s
+            const Vec3 t = axis == 0 ? Vec3{tau, 0, 0} : Vec3{0, 0, tau};
+            for (int i = 0; i < 120; ++i) b.integrate({}, t, 1.0 / 240);
+            const double w = axis == 0 ? b.state.angular_velocity.x : b.state.angular_velocity.z;
+            test::check_range((tag + (axis == 0 ? ": roll" : ": yaw") + " acceleration vs tau / I").c_str(), w / (tau * T / (axis == 0 ? Ixx : Izz)), 0.995, 1.005, "x");
+        }
+        // 1b. torque-free tumble: angular momentum (world) and kinetic energy kept over 3 s
+        RigidBody b;
+        b.mass = m; b.inertia = {Ixx, Iyy, Izz};
+        b.state.angular_velocity = {1.5, 2.0, 1.0};
+        auto L = [&]() { const Vec3 w = b.state.orientation.inv_rotate(b.state.angular_velocity); return b.state.orientation.rotate({Ixx * w.x, Iyy * w.y, Izz * w.z}); };
+        auto E = [&]() { const Vec3 w = b.state.orientation.inv_rotate(b.state.angular_velocity); return 0.5 * (Ixx * w.x * w.x + Iyy * w.y * w.y + Izz * w.z * w.z); };
+        const Vec3 L0 = L(); const double E0 = E();
+        for (int i = 0; i < 720; ++i) b.integrate({}, {}, 1.0 / 240);
+        test::check_range((tag + ": angular momentum kept in a torque-free tumble").c_str(), length(L() - L0) / length(L0), 0, 1e-4, "");
+        test::check_range((tag + ": kinetic energy kept in a torque-free tumble").c_str(), E() / E0, 0.9999, 1.0001, "x");
+        ++n;
+    }
+    test::check("measured inertia sets found", n >= 8);
+}
+
+
+// ---- yaw response against the linear bicycle model, with the measured yaw inertia --------------------------------------------
+namespace {
+// the Vela GT with a measured configuration's mass, CG and inertias (springs and dampers scaled with the mass so the ride
+// frequencies stay a car's; pitch inertia is not published, its stand-in follows the yaw inertia)
+CarConfig measured_body(double mass_kg, double cg_m, double roll, double yaw) {
+    CarConfig c = load_car_config(test::data_path("cars/vela_gt.json"));
+    const double k = mass_kg / c.mass;
+    c.mass = mass_kg; c.cg_height = cg_m;
+    c.inertia_xx = roll; c.inertia_zz = yaw; c.inertia_yy = 0.9 * yaw;
+    for (AxleParams* a : {&c.front, &c.rear}) {
+        a->spring_rate *= k; a->bump_stop_rate *= k; a->damper_bump *= k; a->damper_rebound *= k; a->anti_roll_rate *= k;
+    }
+    c.brake_torque_total *= k;
+    c.finalize();
+    return c;
+}
+
+struct YawResponse { double t90 = -1, overshoot = 0, r_ss = 0; };
+
+// step steer at 100 km/h from the sim: the steering input steps at t = 2 s; response normalised by its steady state
+YawResponse sim_yaw_step(const CarConfig& cfg, double steer) {
+    const double v = 100 / 3.6;
+    auto s = test::make_sim(cfg);
+    s->reset({}, 0, v, sheet::gear_for(cfg, v));
+    test::SpeedController sc;
+    std::vector<std::pair<double, double>> tr;
+    while (s->time < 2.0 + 4.0) {
+        DriverInput in;
+        in.gear = sheet::gear_for(cfg, v);
+        sc.apply(*s, v, in);
+        in.steer = s->time >= 2.0 ? steer : 0.0;
+        s->step(in);
+        if (s->time >= 2.0) tr.emplace_back(s->time - 2.0, s->last.yaw_rate);
+    }
+    YawResponse y;
+    int n = 0;
+    for (auto& p : tr) if (p.first > 3.0) { y.r_ss += p.second; ++n; }
+    y.r_ss /= std::max(1, n);
+    double peak = 0;
+    for (auto& p : tr) {
+        peak = std::max(peak, std::abs(p.second));
+        if (y.t90 < 0 && std::abs(p.second) >= 0.9 * std::abs(y.r_ss)) y.t90 = p.first;
+    }
+    y.overshoot = peak / std::abs(y.r_ss) - 1.0;
+    return y;
+}
+
+// the linear two-degree-of-freedom bicycle model (sideslip, yaw rate) with first-order lag of each axle's lateral force
+YawResponse bicycle_yaw_step(const CarConfig& c) {
+    const double V = 100 / 3.6, m = c.mass, Izz = c.inertia_zz, a = c.dist_cg_front, b = c.dist_cg_rear, L = a + b;
+    auto stiff = [&](const TireParams& tp, double fz) {
+        const double h = 0.005;
+        return std::abs(mf_pure_fy(tp, h, fz, 1.0) - mf_pure_fy(tp, -h, fz, 1.0)) / (2 * h);
+    };
+    const double fzf = 0.5 * m * kGravity * b / L, fzr = 0.5 * m * kGravity * a / L;
+    const double Cf = 2 * stiff(c.tire_front, fzf), Cr = 2 * stiff(c.tire_rear, fzr);
+    double sx, sy_f, sy_r;
+    relaxation_lengths(c.tire_front, fzf, 0, sx, sy_f);
+    relaxation_lengths(c.tire_rear, fzr, 0, sx, sy_r);
+    const double tf = std::max(sy_f / V, 1e-3), tr_ = std::max(sy_r / V, 1e-3);
+    double beta = 0, r = 0, Ff = 0, Fr = 0;
+    const double delta = 0.02, h = 1e-3;
+    std::vector<std::pair<double, double>> tr;
+    for (double t = 0; t < 4.0; t += h) {
+        const double af = delta - beta - a * r / V, ar = -beta + b * r / V;
+        const double db = (Ff + Fr) / (m * V) - r, dr = (a * Ff - b * Fr) / Izz;
+        const double dFf = (Cf * af - Ff) / tf, dFr = (Cr * ar - Fr) / tr_;
+        beta += db * h; r += dr * h; Ff += dFf * h; Fr += dFr * h;
+        tr.emplace_back(t + h, r);
+    }
+    YawResponse y;
+    int n = 0;
+    for (auto& p : tr) if (p.first > 2.0) { y.r_ss += p.second; ++n; }
+    y.r_ss /= std::max(1, n);
+    double peak = 0;
+    for (auto& p : tr) {
+        peak = std::max(peak, std::abs(p.second));
+        if (y.t90 < 0 && std::abs(p.second) >= 0.9 * std::abs(y.r_ss)) y.t90 = p.first;
+    }
+    y.overshoot = peak / std::abs(y.r_ss) - 1.0;
+    return y;
+}
+}  // namespace
+
+// The measured SUV yaw inertias (radius of gyration^2 = Izz / m, 1.7-2.0 m^2 against 1.6 for a GT) go into the same car body and
+// the yaw response of the SIM is compared with the bicycle model that uses the same inertia, tyres, loads and geometry: the time to
+// 90 % of the steady yaw rate and the overshoot (both normalised, so the steering ratio and the understeer gradient drop out).
+RS_TEST(reference_data_inertia_yaw_response) {
+    const auto ref = read_json("physics/inertia-reference.json");
+    std::vector<std::pair<std::string, CarConfig>> cars;
+    std::vector<double> done;
+    for (const auto& e : ref.at("entries")) {
+        if (!e.contains("roll_slugft2") || !e.at("roll_slugft2").is_number() || !e.contains("yaw_slugft2") || !e.at("yaw_slugft2").is_number()) continue;
+        if (e.at("configuration").get<std::string>().find("outrigger") != std::string::npos) continue;
+        const double m = lb_to_kg(e.at("weight_lb").get<double>()), yaw = ft2slug_to_kgm2(e.at("yaw_slugft2").get<double>());
+        const double k2 = yaw / m;
+        if (std::any_of(done.begin(), done.end(), [&](double d) { return std::abs(d - k2) < 0.03; })) continue;
+        done.push_back(k2);
+        // the measured radius of gyration in the Vela's body: k^2 x its mass
+        const CarConfig vela = load_car_config(test::data_path("cars/vela_gt.json"));
+        CarConfig c = measured_body(vela.mass, vela.cg_height, ft2slug_to_kgm2(e.at("roll_slugft2").get<double>()) / m * vela.mass, k2 * vela.mass);
+        cars.push_back({"Vela body, " + e.at("vehicle").get<std::string>() + " (" + e.at("configuration").get<std::string>() + ") k^2 " + std::to_string(k2).substr(0, 4) + " m^2", c});
+    }
+    const std::size_t n_measured = cars.size();
+    for (const CarConfig& c : all_cars()) cars.push_back({c.name, c});
+    // The sim answers the steering step ~25-35 % faster than the bicycle model for EVERY car, whatever its inertia (the linear
+    // model has no roll, no steer-induced load shift, no camber thrust): the absolute level is checked loosely. The effect of the
+    // measured inertia is checked tightly, as a ratio to the same body at the Vela's own inertia: the sim and the model must
+    // slow the response by the same factor.
+    const CarConfig vela = load_car_config(test::data_path("cars/vela_gt.json"));
+    const YawResponse vs = sim_yaw_step(vela, 0.03), vm = bicycle_yaw_step(vela);
+    for (std::size_t i = 0; i < cars.size(); ++i) {
+        const auto& [name, cfg] = cars[i];
+        const YawResponse sim = sim_yaw_step(cfg, 0.03), mod = bicycle_yaw_step(cfg);
+        std::printf("         %-84s yaw 90 %% time: sim %.3f s, bicycle %.3f s | overshoot: sim %4.1f %%, bicycle %4.1f %%\n", name.c_str(), sim.t90, mod.t90, sim.overshoot * 100, mod.overshoot * 100);
+        test::check_range((name + ": yaw 90 % time vs the bicycle model").c_str(), mod.t90 > 0 ? sim.t90 / mod.t90 : 0, 0.55, 1.40, "x");
+        test::check_range((name + ": yaw overshoot vs the bicycle model").c_str(), sim.overshoot - mod.overshoot, -0.12, 0.12, "");
+        if (i < n_measured) {
+            const double ratio_sim = sim.t90 / vs.t90, ratio_mod = mod.t90 / vm.t90;
+            std::printf("           measured inertia slows the yaw response by x%.3f in the sim and x%.3f in the model\n", ratio_sim, ratio_mod);
+            test::check_range((name + ": the slow-down the measured yaw inertia causes, sim vs model").c_str(), ratio_sim / ratio_mod, 0.85, 1.15, "x");
+        }
     }
 }

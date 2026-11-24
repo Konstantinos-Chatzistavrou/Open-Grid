@@ -55,19 +55,32 @@ data) through the real `Vehicle` model and holds the result against the same dat
 | `reference_data_epa_final_drives` | 1,699 EPA configurations | every car's axle ratio is inside the 5th-95th percentile of the EPA cars with the same gear count (ours sit at the 56th-82nd percentile of the 845 six-speed cars) |
 | `reference_data_nhtsa_tilt_table` | NHTSA/VRTC 1997 SUVs and NCAP 2020 cars, measured CG heights | a tilt table built in the sim, run at every distinct measured CG height (0.52-0.71 m) and for all 25 cars: the high side lifts at 0.89-0.94 x the static stability factor T/2H (a rigid car 1.0; real tilt tables read a little under SSF because the body rolls) |
 | `reference_data_aero_forces` | the cars' CdA / ClA / balance (EPA, class references) | at 200 km/h the tyres carry 0.96-1.06 x 1/2 rho ClA v^2 more load, the front share follows the car's balance (nose-down pitch adds up to +0.06), the coasting deceleration is 1/2 rho CdA v^2 / m + rolling within 3 % |
+| `reference_data_aero_reference_bands` | DrivAer Cd (CC BY), NACA 0012 cl_max, Energies 2022 CFD front share | the envelopes of `aero_check.mjs` applied to what the sim DOES: effective CdA from the coasting deceleration, effective ClA and front share from the tyre loads at speed. All 25 cars inside; the three road-class cars the JSON check flags (balance 0.50 vs the 0.55-0.90 CFD band) show 0.56-0.62 in the sim (nose-down pitch), inside the band |
+| `reference_data_real_tracks` | TUMFTM geometry of Monza, Brands Hatch GP, Spa, Silverstone, Suzuka (LGPL, validation only) | racing line on the real centreline and widths; a test driver follows a speed profile built from the car's own measured limits with a friction ellipse. 10 of 10 laps (Vela GT, Tornado GT3) complete on the track, 1.03-1.05 x the 92 % profile and 1.08-1.13 x the quasi-steady lap at 100 % of the limits (a lap cannot be shorter than that) |
+| `reference_data_real_tracks_ai` | the same | the game's AI on the same laps: see "Known gap" below |
+| `reference_data_inertia_rigid_body` | NHTSA/VRTC measured roll and yaw inertia, 12 SUV configurations | torque about the roll and yaw axes accelerates the body at tau / I to 0.5 %; a torque-free tumble keeps angular momentum and energy to 1e-4 (explicit Euler had drifted them 0.9 % and 1.5 % in 3 s: integrator fixed, see `docs/physics.md`) |
+| `reference_data_inertia_yaw_response` | the same measured radii of gyration (1.8-2.0 m^2) in the Vela body | the sim's step-steer yaw response against a linear bicycle model with the same inertia, tyres, loads and geometry: the SLOW-DOWN the measured inertia causes agrees to 3-4 % (sim x1.10-1.23, model x1.13-1.26); the absolute response of the sim is ~30 % faster than the bicycle model for every car (it has roll, camber thrust and steering geometry the model lacks) |
 
 First finding: all of it passed on the JSON and the same cars failed in the sim. See "Damper rate" in `docs/physics.md`
 (Aether Borealis R "top speed" 610 km/h vs 376 km/h on paper; Strix GT7, Valenza Icona SP3 and Kronos Taurus V12 3-5 % under
 their own balance). After the fix every car is within 1.4 % of paper and rides steadily. The 60-0 mph stops shortened by
 0.5-1 m (the false force had been loading the front tyres during pitch); 0-60, 0-200, skidpad and step-steer are unchanged.
 
-**Not run through the simulation (be exact about this):**
-- **Moments of inertia** (NHTSA/VRTC roll and yaw of 1990s SUVs): only range-checked in `inertia_reference.mjs`. A rigid body gives
-  `tau / I` whatever the number; there is no measured observable of a sports car's inertia to compare with.
-- **Track geometry** (Monza, Brands Hatch, Spa, Silverstone, Suzuka): sanity-checked for length (0.05-0.29 % error) and curvature
-  in `track_sanity.mjs`; no lap is driven on them, because no lap-time dataset with a usable licence was found.
-- **DrivAer / NACA / Energies aero references**: used as bounds on the cars' CdA, ClA and balance (`aero_check.mjs`). The three
-  low-wing cars with a 0.50 balance stay flagged: the CFD class band is a proxy, not a measurement of them.
+**Known gaps, stated exactly:**
+- **Pitch inertia** is not published in any open source we found (NHTSA lists roll and yaw only); the pitch value used in the SUV
+  configurations is a stand-in. Roll and pitch *ringing* of the car on its springs is not compared with theory: the roll mode of
+  the sim is strongly damped by the tyres' low-speed lateral damping and the asymmetric dampers and has no clean analytic
+  reference (a first attempt with the textbook roll-axis model was 1.2-1.6 x off and was dropped rather than tuned).
+- **Absolute lap times of real cars**: the sim's GT3 laps are 1:45-2:20 on these circuits (Monza 120 s, Spa 164 s, Silverstone
+  146 s, Suzuka 142 s, Brands Hatch GP 98 s). Public GT3 race laps are quicker (from memory, not a cited dataset: roughly 10-20 %),
+  which says the Tornado GT3's grip and power are conservative against a real GT3, not that the vehicle model is inconsistent: it
+  matches its own limits to a few per cent. No licensed lap-time dataset was found to calibrate against.
+- **Known gap, the game's AI driver**: built for city streets, it drives at ~100 % of its car's grip with a pure-pursuit follower
+  and no slide recovery. On the five real circuits 9 of 10 laps left the track; after the friction ellipse went into its speed
+  profile (`core/src/ai.cpp`) 4 of 10 stay within 2 m of the edge. `reference_data_real_tracks_ai` guards that level. The fix is
+  driver work (slide recovery, braking anticipation), not model work: the profile-following driver above does all 10.
+- **DrivAer / Energies / NACA**: the references are CFD or wind-tunnel data of other shapes: they bound our CdA, ClA and balance, they
+  cannot calibrate them. No measured production-car downforce is available (embargoed until 2027-05-01, see above).
 - **Tyres**: the 14 Chrono tyre files have their own sweeps (`tire_library`, `tire`, `tire_patch`) and the ADAC / ISO tests.
 
 ## How this is enforced

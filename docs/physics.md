@@ -34,6 +34,11 @@ Z up. Body frame (ISO 8855): +X forward, +Y left, +Z up, origin at the centre of
 - Simplification: wheels/unsprung mass are massless (no wheel hop). Revisit if kerb behaviour
   needs it.
 
+Rigid body (`RigidBody::integrate`): Euler's equations in body axes with RK4 for the gyroscopic coupling and a second-order
+orientation update (the orientation turns by the mean body rate of the step). Explicit Euler had put 1.5 % kinetic energy into a 3 s
+tumble at 2.7 rad/s and drifted the angular momentum 0.9 % (`reference_data_inertia_rigid_body`); a driven car's yaw / roll
+coupling is so small that no handling number changed to the third digit.
+
 ## 3. Load transfer (emerges, nothing is scripted)
 - Longitudinal: tyre forces act at the contact patch -> pitch moment -> springs.
   Theory `dFz_front = m a h / L`. Test: measured/theory = 0.98.

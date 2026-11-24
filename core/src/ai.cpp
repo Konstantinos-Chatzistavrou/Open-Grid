@@ -23,20 +23,28 @@ AIDriver::AIDriver(const CarConfig& cfg, const Route& route, AIParams p) : cfg_(
         const double k = p_.racing_line ? line_.curvature(rs[i].s) : rs[i].curvature;
         vprof_[i] = std::min(75.0, std::sqrt(a_lat * width_factor / std::max(std::abs(k), 1e-4)));
     }
+    // Friction ellipse: the lateral acceleration a corner takes (v^2 |k|) is not available for braking or accelerating. Without it
+    // the profile asks for full braking and full power on top of a corner taken at the grip limit, and the car spins
+    // (tests/test_reference_data.cpp: on the five real circuits the same car left the track on 9 laps of 10 until this was added).
+    auto ellipse = [&](int idx, double v) {
+        const double k = p_.racing_line ? line_.curvature(rs[idx].s) : rs[idx].curvature;
+        const double used = std::min(1.0, v * v * std::abs(k) / std::max(a_lat, 1e-3));
+        return std::sqrt(std::max(0.0, 1.0 - used * used));
+    };
     for (int pass = 0; pass < 2; ++pass) {
         // braking: v_i^2 <= v_{i+1}^2 + 2 a ds   (backward)
         for (int k = n - 1; k >= 0; --k) {
             int j = (k + 1) % n;
             if (!route.closed() && j == 0) continue;
             double ds = (j == 0 ? route.length() : rs[j].s) - rs[k].s;
-            vprof_[k] = std::min(vprof_[k], std::sqrt(vprof_[j] * vprof_[j] + 2 * a_brake * ds));
+            vprof_[k] = std::min(vprof_[k], std::sqrt(vprof_[j] * vprof_[j] + 2 * a_brake * ellipse(j, vprof_[j]) * ds));
         }
         // acceleration, power limited: a = min(0.8 g, P / (m v))   (forward)
         for (int k = 0; k < n; ++k) {
             int i = (k - 1 + n) % n;
             if (!route.closed() && k == 0) continue;
             double ds = (k == 0 ? route.length() : rs[k].s) - rs[i].s;
-            double a = std::min(0.8 * kGravity, p_max / (cfg.mass * std::max(vprof_[i], 5.0)));
+            double a = std::min(0.8 * kGravity, p_max / (cfg.mass * std::max(vprof_[i], 5.0))) * ellipse(i, vprof_[i]);
             vprof_[k] = std::min(vprof_[k], std::sqrt(vprof_[i] * vprof_[i] + 2 * a * ds));
         }
     }
