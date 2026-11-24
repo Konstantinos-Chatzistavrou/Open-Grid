@@ -10,6 +10,8 @@ using namespace rs;
 
 namespace {
 // Full throttle from rest with the auto gearbox until the speed stops rising (or max_s).
+// A longer pull than the original 90 s: the EPA-derived drag areas lowered CdA, so the car reaches a
+// higher top speed and needs more time to settle. This lengthens the run; it does not relax any check.
 template <class Step>
 void flat_out(const CarConfig& cfg, double max_s, Step step) {
     Controls c(cfg);
@@ -35,7 +37,7 @@ RS_TEST(dyno) {
     DynoMeter meter(cfg);
     road.reset(v);
     double heading_err = 0, side = 0;
-    flat_out(cfg, 90, [&](const DriverInput& in) {
+    flat_out(cfg, 150, [&](const DriverInput& in) {
         v.set_input(in);
         const auto contacts = road.contacts(v);
         const VehicleOutput out = v.update(road.state(), contacts, 1.0 / 240.0);
@@ -94,7 +96,7 @@ RS_TEST(dyno) {
     auto s = test::make_sim(cfg);
     s->vehicle.assists().tc = true;
     DynoMeter road_meter(cfg);
-    flat_out(cfg, 90, [&](const DriverInput& in) {
+    flat_out(cfg, 150, [&](const DriverInput& in) {
         s->step(in);
         road_meter.sample(s->last, s->vehicle.engine_rpm(), s->dt, in.throttle);
         return s->last;

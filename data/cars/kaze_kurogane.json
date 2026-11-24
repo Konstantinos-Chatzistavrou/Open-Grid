@@ -1,7 +1,7 @@
 {
   "schema": "car/1",
   "name": "Kaze Kurogane 7R",
-  "notes": "Kaze Kurogane 7R: ingested via OpenGrid pipeline from base 'vela_gt'.",
+  "notes": "Kaze Kurogane 7R: ingested via OpenGrid pipeline from base 'vela_gt'. Aero drag area (0.66 -> 0.611 m^2) set 2026-11-24 from US EPA coast-down data (public domain, 17 USC 105): 2015 SUBARU BRZ, test DBF-MP52, C=0.01681 lbf/mph^2 -> CdA=0.611 m^2. CLASS PROXY (a measured car of the same class, not this car); confidence: medium. See docs/data-sources.md.",
   "chassis": {
     "mass_kg": 1190.0,
     "cg_height_m": 0.47,
@@ -521,7 +521,7 @@
     }
   },
   "aero": {
-    "drag_area_m2": 0.66,
+    "drag_area_m2": 0.611,
     "downforce_area_m2": 0.35,
     "front_balance": 0.45,
     "ground_effect_per_m": 2,

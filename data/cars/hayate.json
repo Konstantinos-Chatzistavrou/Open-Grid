@@ -1,7 +1,7 @@
 {
   "schema": "car/1",
   "name": "Hayate",
-  "notes": "Hayate: vela_gt suspension and tyre model with this car's own mass, weight split, engine and aero; wheelbase, track and tyre radii measured on the model (Generic Coupe \"Azura\" by mk2design, CC BY 4.0). Starting values: tune with feel.",
+  "notes": "Hayate: vela_gt suspension and tyre model with this car's own mass, weight split, engine and aero; wheelbase, track and tyre radii measured on the model (Generic Coupe \"Azura\" by mk2design, CC BY 4.0). Starting values: tune with feel. Aero drag area (0.66 -> 0.635 m^2) set 2026-11-24 from US EPA coast-down data (public domain, 17 USC 105): 2015 SUBARU WRX, test FBF-TF74, C=0.01748 lbf/mph^2 -> CdA=0.635 m^2. CLASS PROXY (a measured car of the same class, not this car); confidence: medium. See docs/data-sources.md.",
   "chassis": {
     "mass_kg": 1390,
     "cg_height_m": 0.5,
@@ -510,7 +510,7 @@
     }
   },
   "aero": {
-    "drag_area_m2": 0.66,
+    "drag_area_m2": 0.635,
     "downforce_area_m2": 0.18,
     "front_balance": 0.5,
     "ground_effect_per_m": 2,
