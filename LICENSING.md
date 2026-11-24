@@ -35,6 +35,9 @@ these files.
 - the "Open Grid" logo and title artwork (as artwork only: see **Name and logo** below)
 
 **Third-party material keeps its own licence** (details and attributions in [`CREDITS.md`](CREDITS.md)):
+- **Physics reference data**: `data/powertrain/` (Project Chrono BSD-3; EPA final drives public domain) and
+  `data/physics/{airfoils,aero_reference,inertia-reference}.json` (NACA and NHTSA public domain; DrivAer values
+  CC BY 4.0) keep their own licences. They are reference/validation data, not part of our CC BY-NC 4.0 set.
 - **Validation track geometry**: `data/validation/racetrack-database/` is TUMFTM/racetrack-database under
   **LGPL-3.0** (licence text in that folder). It is third-party data, not covered by either licence above; keep its
   notice with it and do not present it as CC BY-NC 4.0 or as Apache-2.0.
