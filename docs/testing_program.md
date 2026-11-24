@@ -11,10 +11,10 @@ with dwell, and ~70 component tests. Next, in order:
 | # | test | standard / source | what it tells us | status |
 |---|---|---|---|---|
 | 1 | Second reference car: a front-drive hot hatch (VW Golf GTI Mk7 PP → Mistra 200T: 0-60, 0-100, 60-0, skidpad, top speed, understeer balance) | magazine data (`test_reference_fwd.cpp`) | whether the model generalises or was tuned to one car | **done** (pass) |
-| 2 | Steady-state circular test: understeer gradient (deg/g) and sideslip vs lateral acceleration | ISO 4138 | the car's balance as a curve, not one number | to do |
-| 3 | Step steer: yaw-rate response time, overshoot | ISO 7401 | turn-in feel, damping | running between our cars; add target ranges from published road-car data |
-| 4 | Double lane change at increasing speed | ISO 3888-2 | transient stability, how assists help | to do |
-| 5 | Braking in a turn: yaw response when you brake mid-corner | ISO 7975 | lift-off and trail-brake behaviour | to do |
+| 2 | Steady-state circular test: understeer gradient (deg/g) and sideslip vs lateral acceleration | ISO 4138 | the car's balance as a curve, not one number | **done** (`test_iso_handling.cpp`, 4 cars; ranges from textbooks, not measured on real cars) |
+| 3 | Step steer: yaw-rate response time, overshoot | ISO 7401 | turn-in feel, damping | **done** (`iso7401_step_steer`, 3 cars; target ranges from literature) |
+| 4 | Double lane change at increasing speed | ISO 3888-2 | transient stability, how assists help | written (`iso3888_moose_test`) but **not enabled**: our test driver clips the cones at 70 km/h in both cars, which says more about the driver than the cars. Fix the driver first |
+| 5 | Braking in a turn: yaw response when you brake mid-corner | ISO 7975 | lift-off and trail-brake behaviour | **done** (`iso7975_braking_in_turn`, one car, ABS+ESC and ABS only) |
 | 6 | Tyre curves: our Magic Formula vs an independent implementation with the same `.tir` file, Fx/Fy/Mz over slip, load and camber (`tools/tyre/crosscheck_vdsim.py`, `core/tools/mf_dump.cpp`) | [VDSim](https://github.com/Onlyti/VDSim) (Apache-2.0), Project Chrono PAC2002 `.tir` (BSD-3) | that the tyre maths is implemented right, independent of tuning | **done** (0.000% symmetrized RMSE on Fx/Fy/Mz; caught & fixed `qEz4`/`qEz5` sign bug in `tir2car.mjs`) |
 | 7 | Dry & wet braking + aquaplaning: dry 100-0 km/h spread, wet 80-0 km/h EU Class A–E spread, wet/dry 100-0 km/h ratio, 7 mm float speed (`test_adac_braking.cpp`) | ADAC 2024/2025 summer tests, EU 2020/740 / UNECE R117 | the dry/wet tyre grip & aquaplaning model | **done** (19/19 checks pass) |
 

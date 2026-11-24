@@ -1,4 +1,4 @@
-# OpenGrid BSD-3 Tyre Dataset Catalog
+# Open Grid BSD-3 Tyre Dataset Catalog
 
 All `.tir` property files in `data/tires/` are stored **verbatim** from [Project Chrono](https://github.com/projectchrono/chrono) under the **BSD-3-Clause** licence (Copyright (c) 2016, Project Chrono Development Team; full licence text in `data/tires/LICENSE-projectchrono.txt`).
 
@@ -8,7 +8,7 @@ These datasets cover six distinct vehicle/tyre archetypes — Sport GT, Passenge
 
 ## Dataset provenance & format
 
-| Local file (`data/tires/`) | Project Chrono upstream path (`main`) | Tyre size / label | Format | `FITTYP` | `TYRESIDE` | Intended OpenGrid vehicle class |
+| Local file (`data/tires/`) | Project Chrono upstream path (`main`) | Tyre size / label | Format | `FITTYP` | `TYRESIDE` | Intended Open Grid vehicle class |
 |---|---|---|---|---|---|---|
 | `audi_245_40R18_pac2002.tir` | `data/vehicle/audi/json/audi_Pac02Tire.tir` | 245/40 R18 | `PAC2002` | *(omitted / PAC2002)* | `LEFT` | **Sport GT** (baseline for Vela GT / modern coupes & hot hatches) |
 | `sedan_pac2002.tir` | `data/vehicle/sedan/tire/Sedan_Pac02Tire.tir` | 245/40 R18 | `PAC2002` | *(omitted / PAC2002)* | `LEFT` | **Passenger Sedan** *(identical upstream fit to `audi_245_40R18_pac2002.tir`)* |
@@ -26,7 +26,7 @@ These datasets cover six distinct vehicle/tyre archetypes — Sport GT, Passenge
 
 ## Dimensions & nominal performance at `FNOMIN`
 
-Evaluated with OpenGrid's raw `tools/tir2car.mjs` -> `rs::magic_formula` pipeline (isothermal, nominal pressure, `mu_surface = 1.0`, `camber = 0°`, no per-car friction boost). When `LFZO != 1`, the effective Magic Formula reference load is `Fz0' = FNOMIN * LFZO`; peak `mu_x` / `mu_y` and cornering stiffness `C_alpha` below are evaluated at `Fz = FNOMIN` (with `Fz0'` shown alongside).
+Evaluated with Open Grid's raw `tools/tir2car.mjs` -> `rs::magic_formula` pipeline (isothermal, nominal pressure, `mu_surface = 1.0`, `camber = 0°`, no per-car friction boost). When `LFZO != 1`, the effective Magic Formula reference load is `Fz0' = FNOMIN * LFZO`; peak `mu_x` / `mu_y` and cornering stiffness `C_alpha` below are evaluated at `Fz = FNOMIN` (with `Fz0'` shown alongside).
 
 | File | `R0` (m) | Width (m) | Aspect | `FNOMIN` (N) | `LFZO` | `Fz0'` (N) | `K_v` (N/m) | Pressure (kPa) | Peak `mu_x` @ `FNOMIN` | Peak `mu_y` @ `FNOMIN` | `C_alpha` @ `FNOMIN` (N/rad) | `C_alpha / FNOMIN` (1/rad) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -48,7 +48,7 @@ Evaluated with OpenGrid's raw `tools/tir2car.mjs` -> `rs::magic_formula` pipelin
 
 ## Cross-check vs live VDSim C++ (`docs/tyre_library_crosscheck.csv`)
 
-Every dataset was evaluated across all 6 standard load/camber sweeps (`Fz in {2000, 4000, 6000} N` × `camber in {0°, -2°}`, `kappa in [-0.30, +0.30]`, `alpha in [-20°, +20°]`) comparing OpenGrid (`tools/tir2car.mjs` -> `core/build/mf_dump --mode nominal`) against live compiled **VDSim** (`core/src/magic_formula_tire.cpp`, commit `0534695d48afab8041008e556a5264ff7f450976`). Values below are the worst-case (maximum) RMSE across the 6 load/camber cases in **symmetrized** mode (the 17 left-tyre-only ply-steer/conicity/mirror-asymmetry terms zeroed in both evaluators):
+Every dataset was evaluated across all 6 standard load/camber sweeps (`Fz in {2000, 4000, 6000} N` × `camber in {0°, -2°}`, `kappa in [-0.30, +0.30]`, `alpha in [-20°, +20°]`) comparing Open Grid (`tools/tir2car.mjs` -> `core/build/mf_dump --mode nominal`) against live compiled **VDSim** (`core/src/magic_formula_tire.cpp`, commit `0534695d48afab8041008e556a5264ff7f450976`). Values below are the worst-case (maximum) RMSE across the 6 load/camber cases in **symmetrized** mode (the 17 left-tyre-only ply-steer/conicity/mirror-asymmetry terms zeroed in both evaluators):
 
 | File | Format | Sym `Fx` RMSE @ 0° cam | Sym `Fx` Max RMSE (all 6 cases) | Sym `Fy` Max RMSE (all 6 cases) | Sym `Mz` Max RMSE (all 6 cases) |
 |---|---|---:|---:|---:|---:|
@@ -62,12 +62,12 @@ Every dataset was evaluated across all 6 standard load/camber sweeps (`Fz in {20
 | `feda_335_65R22_5_70psi.tir` | `MF_05` (`FITTYP=5`) | 0.000 N (0.0000%) | 21.422 N (0.3943%)* | 0.003 N (0.0001%) | 0.0000 N·m (0.0001%) |
 | `feda_335_65R22_5_95psi.tir` | `MF_05` (`FITTYP=5`) | 0.001 N (0.0000%) | 284.808 N (5.3171%)* | 0.001 N (0.0000%) | 0.0000 N·m (0.0000%) |
 
-*\*FEDA `MF_05` (`FITTYP = 5`) sign-convention note*: TNO MF-Tyre 5.0 stores `PDY1 < 0` alongside `PKY1 < 0` (`-0.7098`, `-0.7424`, `-1.1188` for 40/70/95 psi). At `camber = 0°`, OpenGrid matches VDSim to **0.0000% RMSE** on `Fx`, `Fy`, and `Mz` for all three FEDA files, and `Fy` / `Mz` also match to **<= 0.0003% RMSE** at `camber = -2°`. At `camber = -2°` during pure longitudinal slip, `tools/tir2car.mjs` passes signed `PDY1 < 0` verbatim as `lateral.mu < 0`, so `core/src/tire.cpp`'s friction-ellipse guard (`dy_max = std::max({Dy, std::abs(fy0), 1e-6})`) falls back to `|fy0|` instead of `|Dy|` and trims `Fx` by 0.39–6.93%. Normalizing `lateral.mu = Math.abs(PDY1 * LMUY)` (as done in `core/tests/test_tire_library.cpp`) or taking `std::abs(Dy)` in the ellipse guard eliminates this difference completely while leaving `Fy0` mathematically unchanged.
+*\*FEDA `MF_05` (`FITTYP = 5`) sign-convention note*: TNO MF-Tyre 5.0 stores `PDY1 < 0` alongside `PKY1 < 0` (`-0.7098`, `-0.7424`, `-1.1188` for 40/70/95 psi). At `camber = 0°`, Open Grid matches VDSim to **0.0000% RMSE** on `Fx`, `Fy`, and `Mz` for all three FEDA files, and `Fy` / `Mz` also match to **<= 0.0003% RMSE** at `camber = -2°`. At `camber = -2°` during pure longitudinal slip, `tools/tir2car.mjs` passes signed `PDY1 < 0` verbatim as `lateral.mu < 0`, so `core/src/tire.cpp`'s friction-ellipse guard (`dy_max = std::max({Dy, std::abs(fy0), 1e-6})`) falls back to `|fy0|` instead of `|Dy|` and trims `Fx` by 0.39–6.93%. Fixed: the ellipse guard in `core/src/tire.cpp` now uses `std::abs(Dx)` and `std::abs(Dy)`, which removes the difference while leaving `Fy0` unchanged.
 
 ## Reproducing checks
 
 ```bash
-# Convert any .tir file to OpenGrid car/1 tyre JSON
+# Convert any .tir file to Open Grid car/1 tyre JSON
 node tools/tir2car.mjs data/tires/classic_185_80R14_pac2002.tir
 
 # Cross-check against standalone PAC2002 reference (or add --vdsim-dir /path/to/VDSim for live VDSim C++)

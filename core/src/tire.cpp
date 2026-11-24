@@ -189,9 +189,10 @@ inline CellForceUnit eval_cell_mf_unit(const TireParams& p, const PatchMFPrecomp
     double fy_no_svyk = fy0 * gyk;
     double fy = fy_no_svyk + svyk;
 
-    // Friction-ellipse envelope protection (Dugoff / MF combined saturation bound)
-    const double dx_max = std::max({Dx, std::abs(fx0), 1e-6});
-    const double dy_max = std::max({Dy, std::abs(fy0), 1e-6});
+    // Friction-ellipse envelope protection (Dugoff / MF combined saturation bound). |Dx|, |Dy|: MF_05 files carry
+    // PDY1 < 0, and a signed Dy made this guard fall back to |fy0| and trim Fx by 0.4-6.9% (docs/tyre_library_crosscheck.csv).
+    const double dx_max = std::max({std::abs(Dx), std::abs(fx0), 1e-6});
+    const double dy_max = std::max({std::abs(Dy), std::abs(fy0), 1e-6});
     const double ex_r = fx / dx_max, ey_r = fy / dy_max;
     const double e2 = ex_r * ex_r + ey_r * ey_r;
     if (e2 > 1.0) {
