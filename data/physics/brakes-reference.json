@@ -1,0 +1,66 @@
+{
+  "schema": "opengrid-physics-reference-brakes/1",
+  "title": "Braking performance requirements (FMVSS 135) and derived deceleration bounds",
+  "source": {
+    "name": "FMVSS No. 135, Light Vehicle Brake Systems (49 CFR 571.135)",
+    "authority": "US National Highway Traffic Safety Administration (NHTSA), published in the eCFR",
+    "url": "https://www.ecfr.gov/current/title-49/subtitle-B/chapter-V/part-571/subpart-B/section-571.135",
+    "retrieved": "2026-11-24",
+    "licence": "US Government work - public domain (17 USC 105)",
+    "clauses": {
+      "cold": "S6.5.3.3: S <= 0.10*V + 0.0060*V^2 (S in metres, V in km/h) - normal (cold) effectiveness",
+      "hot": "S7.14.4: S <= 0.10*V + 0.0067*V^2 - hot performance",
+      "abs_failure": "S7.8: S <= 0.10*V + 0.0060*V^2 - antilock functional failure",
+      "degraded": "S7.10: S <= 0.10*V + 0.0100*V^2 - hydraulic circuit failure"
+    }
+  },
+  "formulas": {
+    "cold": "0.10*V + 0.0060*V^2",
+    "hot": "0.10*V + 0.0067*V^2",
+    "implied_mean_decel_mps2": "V_ms^2 / (2*S)",
+    "note": "The formula is a maximum stopping distance for a fully loaded vehicle in the standardised test; it is a legal floor for performance, not a measurement of any specific car."
+  },
+  "requirements": [
+    {
+      "v_kmh": 50,
+      "cold_max_stop_m": 20,
+      "hot_max_stop_m": 21.75,
+      "implied_mean_decel_cold_mps2": 4.82,
+      "implied_mean_decel_cold_g": 0.49
+    },
+    {
+      "v_kmh": 80,
+      "cold_max_stop_m": 46.4,
+      "hot_max_stop_m": 50.88,
+      "implied_mean_decel_cold_mps2": 5.32,
+      "implied_mean_decel_cold_g": 0.54
+    },
+    {
+      "v_kmh": 100,
+      "cold_max_stop_m": 70,
+      "hot_max_stop_m": 77,
+      "implied_mean_decel_cold_mps2": 5.51,
+      "implied_mean_decel_cold_g": 0.56
+    },
+    {
+      "v_kmh": 120,
+      "cold_max_stop_m": 98.4,
+      "hot_max_stop_m": 108.48,
+      "implied_mean_decel_cold_mps2": 5.65,
+      "implied_mean_decel_cold_g": 0.58
+    },
+    {
+      "v_kmh": 130,
+      "cold_max_stop_m": 114.4,
+      "hot_max_stop_m": 126.23,
+      "implied_mean_decel_cold_mps2": 5.7,
+      "implied_mean_decel_cold_g": 0.58
+    }
+  ],
+  "usage": "Report-only bound for the in-game check: a car whose friction-limited stop exceeds the cold requirement at its tyre grip is not credible. The check also reports the margin.",
+  "assumptions": [
+    "Both axles are assumed to brake at their tyre friction limit; a real car is limited by brake torque, ABS and load transfer, so the computed distance is a lower bound (best case).",
+    "Longitudinal tyre mu is used when present, otherwise the lateral mu as a proxy.",
+    "Mean deceleration is constant-speed averaged; real stops build deceleration over ~0.2-0.3 s."
+  ]
+}
