@@ -9,10 +9,14 @@ never in copied proprietary tables. This page tracks what is imported, what is a
 |---|---|---|---|
 | 9 PAC2002 tyre sets (HMMWV, FEDA 40/70/95 psi, sedan, SUV, Audi 245/40R18, classic 185, generic) | Project Chrono `data/vehicle/*/tire`, commit `e166f3e` | **BSD-3-Clause** | `data/tires/*.tir` + `LICENSE-projectchrono.txt` |
 | Audi + G500 vehicle reference (mass, inertia, wheelbase, wheels, engine torque curve, brakes) | Project Chrono `data/vehicle/audi/json`, `data/vehicle/gclass` | **BSD-3-Clause** | `data/reference/chrono/*.json` |
+| EPA coast-down / road-load, 2,816 vehicles MY2015–16 | US EPA *Test Car List Data* | **public domain** (17 U.S.C. §105) | `data/validation/epa_coastdown.json` + `LICENSE-epa.txt`; importer `tools/physics/import_epa_coastdown.mjs`; test `packages/vehicle-physics/test/epa-coastdown.test.mjs` |
 | Road network + track geometry (Manhattan, and the 1:1 city ports) | OpenStreetMap | **ODbL-1.0** (attribution + share-alike on derived DB) | `data/…` map pipeline; credit in-game |
 
 The Audi tyre in `data/tires/` is byte-identical to Chrono's `audi_Pac02Tire.tir` (sha256 prefix `ef4c08a3`),
 so there is no silent re-authoring.
+
+Dataset-by-dataset import log (what was downloaded, fields kept, and the tests that read them):
+[`docs/physics-data.md`](physics-data.md). This page is the licence/sources playbook; that page is the record.
 
 ## Verified licence patterns — usable, not yet imported
 
