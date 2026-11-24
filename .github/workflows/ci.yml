@@ -63,6 +63,8 @@ jobs:
         run: node tools/validate_mod.mjs --dir data/cars
       - name: Licence ledgers (kit and car assets) and the CREDITS.md "Kit assets" section
         run: node tools/assets/check_licences.mjs
+      - name: Physics reference data (licence, units, physical plausibility)
+        run: node tools/validate_physics_reference.mjs
       - name: "Vehicle physics package (open-grid-physics): handling checks and a bot race"
         working-directory: packages/vehicle-physics
         run: npm test

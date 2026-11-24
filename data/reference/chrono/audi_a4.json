@@ -1,0 +1,117 @@
+{
+  "schema": "opengrid.physics-reference/1",
+  "id": "audi_a4_chrono",
+  "name": "Audi (Project Chrono reference sedan)",
+  "class": "sedan",
+  "mass_kg": 1550,
+  "inertia_kgm2": [
+    222.8,
+    944.1,
+    1053.5
+  ],
+  "cg_m": [
+    0,
+    0,
+    0.55
+  ],
+  "wheelbase_m": 2.776,
+  "steering": {
+    "max_angle_deg": 25,
+    "min_turning_radius_m": 7.6
+  },
+  "wheels": {
+    "count": 4,
+    "mass_kg": 11,
+    "inertia_kgm2": [
+      0.24,
+      0.42,
+      0.24
+    ],
+    "radius_m": 0.3365,
+    "width_m": 0.205
+  },
+  "tire": {
+    "size": "245/40 R18",
+    "model": "PAC2002",
+    "unloaded_radius_m": 0.344,
+    "width_m": 0.245,
+    "rim_radius_m": 0.2286,
+    "rim_width_m": 0.2159,
+    "vertical_stiffness_n_m": 280835.2941,
+    "vertical_damping_ns_m": 2000,
+    "file": "data/tires/audi_245_40R18_pac2002.tir"
+  },
+  "brake": {
+    "model": "BrakeSimple",
+    "max_torque_nm": 900
+  },
+  "engine": {
+    "max_rpm": 6500,
+    "full_load_torque_nm": [
+      [
+        1000,
+        172.8
+      ],
+      [
+        1500,
+        250
+      ],
+      [
+        2000,
+        250
+      ],
+      [
+        2500,
+        250
+      ],
+      [
+        3000,
+        250
+      ],
+      [
+        3500,
+        250
+      ],
+      [
+        4000,
+        245.6
+      ],
+      [
+        4500,
+        232.3
+      ],
+      [
+        5000,
+        210.1
+      ],
+      [
+        5500,
+        191
+      ],
+      [
+        6000,
+        175.1
+      ],
+      [
+        6500,
+        145.4
+      ]
+    ],
+    "note": "EngineSimpleMap full-throttle curve; idle point [-100, 0] omitted. Values in Nm vs RPM."
+  },
+  "provenance": {
+    "source": "Project Chrono vehicle data",
+    "url": "https://github.com/projectchrono/chrono/tree/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle",
+    "license": "BSD-3-Clause",
+    "commit": "e166f3e5a1383741e86cf1e195a46eba4a66473d",
+    "retrieved": "2026-11-24",
+    "files": [
+      "audi/json/audi_Vehicle.json",
+      "audi/json/audi_Chassis.json",
+      "audi/json/audi_Wheel.json",
+      "audi/json/audi_EngineSimpleMap.json",
+      "audi/json/audi_BrakeSimple.json",
+      "audi/json/audi_Pac02Tire.tir"
+    ]
+  }
+}

@@ -132,6 +132,11 @@ represents or is endorsed by any real manufacturer.
   Team, BSD-3-Clause (`data/tires/LICENSE-projectchrono.txt`). Stored unchanged as `data/tires/audi_245_40R18_pac2002.tir`;
   converted into every car's tyre curves by `tools/tir2car.mjs` (sign conventions changed to ours, left-tyre-only and
   mirror-asymmetric terms zeroed, peak friction and stiffness scaled per car).
+- **Reference vehicle parameters** (Audi sedan: 1550 kg, inertia, 2.776 m wheelbase, 245/40R18 tyre, engine torque map,
+  brakes; G500 SUV: 2354 kg, inertia, 2.85 m wheelbase, tyre/suspension data), from Project Chrono
+  (https://github.com/projectchrono/chrono/tree/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle), Copyright (c) 2016,
+  Project Chrono Development Team, BSD-3-Clause. Extracted to `data/reference/chrono/` with the source commit recorded;
+  see `docs/physics-data-sources.md` for how the data may be used and what must not be imported.
 - MF 6.1 inflation-pressure and turn-slip coefficients: generic published values from H. B. Pacejka, *Tire and Vehicle
   Dynamics*, 3rd ed. (Table 4.2 example tyre, and the MF 6.1 defaults).
 

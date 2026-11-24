@@ -1,0 +1,75 @@
+{
+  "schema": "opengrid.physics-reference/1",
+  "id": "g500_chrono",
+  "name": "G-Class G500 (Project Chrono reference SUV)",
+  "class": "suv",
+  "mass_kg": 2354,
+  "inertia_kgm2": [
+    785,
+    2612,
+    2761
+  ],
+  "cg_m": [
+    -1.65,
+    0,
+    0.3
+  ],
+  "wheelbase_m": 2.85,
+  "axles": {
+    "front_location_m": [
+      0,
+      0,
+      0
+    ],
+    "rear_location_m": [
+      -2.85,
+      0,
+      0
+    ]
+  },
+  "wheels": {
+    "count": 4,
+    "mass_kg": 12,
+    "inertia_kgm2": [
+      0.24,
+      0.42,
+      0.24
+    ],
+    "rim_radius_m": 0.2032,
+    "width_m": 0.1524
+  },
+  "tire": {
+    "model": "TMeasy",
+    "unloaded_radius_m": 0.372,
+    "width_m": 0.228,
+    "mass_kg": 37.6,
+    "inertia_kgm2": [
+      3.84,
+      6.69,
+      3.84
+    ],
+    "friction_coefficient": 0.8,
+    "rolling_resistance": 0.015,
+    "rim_radius_m": 0.2032
+  },
+  "suspension": {
+    "front": "ToeBarRigidPanhardAxle",
+    "rear": "ToeBarRigidPanhardAxle",
+    "note": "Solid-axle reference; useful for validating axle modelling, not for independent suspension."
+  },
+  "provenance": {
+    "source": "Project Chrono vehicle data",
+    "url": "https://github.com/projectchrono/chrono/tree/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle",
+    "license": "BSD-3-Clause",
+    "commit": "e166f3e5a1383741e86cf1e195a46eba4a66473d",
+    "retrieved": "2026-11-24",
+    "files": [
+      "gclass/vehicle/G500_Vehicle.json",
+      "gclass/chassis/G500_Chassis.json",
+      "gclass/wheel/G500_Wheel.json",
+      "gclass/tire/G500_TMeasyTire.json",
+      "gclass/suspension/G500_FrontAxle.json",
+      "gclass/suspension/G500_RearAxle.json"
+    ]
+  }
+}
