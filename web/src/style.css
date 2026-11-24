@@ -522,10 +522,11 @@ body.touch.spectating #board { top: calc(54px + env(safe-area-inset-top)); }
 #minimap .gps-turn b { color: var(--accent); font-size: 15px; margin-right: 4px; }
 #minimap .gps-turn i { font-style: normal; color: var(--dim); margin-left: 6px; font-variant-numeric: tabular-nums; }
 #minimap .gps-turn[hidden] { display: none; }
-#minimap .gps-foot { position: absolute; left: 10px; right: 10px; bottom: 7px; display: flex; justify-content: space-between; align-items: center;
-  font: 700 9px "Inter", system-ui, sans-serif; letter-spacing: .16em; color: #7f8b9e; text-transform: uppercase; }
-#minimap .gps-foot .gps-scale { letter-spacing: .08em; color: #aab6c8; font-variant-numeric: tabular-nums; }
-#minimap .gps-foot .gps-bar { display: inline-block; height: 3px; width: 34px; margin-right: 6px; border-radius: 2px; background: #aab6c8; vertical-align: middle; opacity: .75; }
+#minimap .gps-foot { position: absolute; left: 12px; right: 12px; bottom: 8px; display: flex; justify-content: space-between; align-items: center;
+  font: 700 11px "Inter", system-ui, sans-serif; letter-spacing: .02em; color: #e8f4ff; }
+#minimap .gps-eta { color: #e8f4ff; font-variant-numeric: tabular-nums; }
+#minimap .gps-foot .gps-scale { letter-spacing: .02em; color: #e8f4ff; font-variant-numeric: tabular-nums; }
+#minimap .gps-foot .gps-bar { display: inline-block; height: 3px; width: 34px; margin-right: 6px; border-radius: 2px; background: #e8f4ff; vertical-align: middle; opacity: .85; }
 /* full-screen map mode (click the GPS): a square screen, north-up, click to drop a waypoint */
 #minimap.expanded { left: 50%; top: 50%; bottom: auto; width: 580px; height: 604px; transform: translate(-50%, -50%); pointer-events: auto;
   box-shadow: 0 0 0 1px #ffffff2a, 0 0 0 6px #05070c, 0 30px 80px #000d; }

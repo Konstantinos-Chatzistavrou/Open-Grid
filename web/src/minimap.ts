@@ -17,6 +17,7 @@ export class Minimap {
   private ctx: CanvasRenderingContext2D;
   private banner = document.createElement('div');
   private footScale: HTMLElement | null = null;
+  private footEta: HTMLElement | null = null;
   private grid = new Map<string, Seg[]>();
   private drawStamp = 0;
   private named: { x: number; y: number; name: string }[] = [];
@@ -49,8 +50,9 @@ export class Minimap {
     this.banner.className = 'gps-turn';
     const foot = document.createElement('div');
     foot.className = 'gps-foot';
-    foot.innerHTML = '<span>GPS · NIGHT SHIFT</span><span class="gps-scale"><i class="gps-bar"></i><b>—</b></span>';
+    foot.innerHTML = '<span class="gps-eta"></span><span class="gps-scale"><i class="gps-bar"></i><b>—</b></span>';
     this.footScale = foot.querySelector('b');
+    this.footEta = foot.querySelector('.gps-eta');
     this.el.append(this.banner, this.cv, foot);
     parent.appendChild(this.el);
     this.ctx = this.cv.getContext('2d')!;
@@ -278,7 +280,7 @@ export class Minimap {
     }
     // the GPS line: the whole route faint, the next 600 m bright
     if (this.route.length > 1) {
-      c.strokeStyle = 'rgba(255, 45, 85, 0.35)'; c.lineWidth = Math.max(4, 5 * this.zoom);
+      c.strokeStyle = 'rgba(255, 255, 255, 0.22)'; c.lineWidth = Math.max(6, 7 * this.zoom);
       c.beginPath();
       for (let i = 0; i < this.route.length; i++) { const p = this.route[i]; if (i) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); }
       if (this.routeClosed) c.closePath();
@@ -289,9 +291,9 @@ export class Minimap {
         // the glow: two wider translucent strokes under the line (was shadowBlur 8, a Gaussian blur of the canvas on
         // every draw); widths in css px times zoom, ~7 px and ~3.5 px of halo each side like the 8 px blur
         const lw = Math.max(5, 7 * this.zoom);
-        c.strokeStyle = 'rgba(255, 45, 85, 0.13)'; c.lineWidth = lw + 14 * this.zoom; c.stroke();
-        c.strokeStyle = 'rgba(255, 45, 85, 0.24)'; c.lineWidth = lw + 7 * this.zoom; c.stroke();
-        c.strokeStyle = 'rgba(255, 70, 110, 0.95)'; c.lineWidth = lw; c.stroke();
+        c.strokeStyle = 'rgba(43, 214, 255, 0.16)'; c.lineWidth = lw + 14 * this.zoom; c.stroke();
+        c.strokeStyle = 'rgba(43, 214, 255, 0.30)'; c.lineWidth = lw + 7 * this.zoom; c.stroke();
+        c.strokeStyle = '#3fe0ff'; c.lineWidth = lw; c.stroke();
       }
       // start / finish
       const s0 = this.route[0];
@@ -341,8 +343,9 @@ export class Minimap {
           c.fillText(lm.name, sx, sy - 8);
         }
       }
-      c.fillStyle = 'rgba(255,255,255,0.88)'; c.font = '700 11px Inter, system-ui, sans-serif';
-      c.textAlign = 'center'; c.fillText('N · CLICK TO SET GPS WAYPOINT · RIGHT-CLICK CLEAR · [TAB] CLOSE', r, 16);
+      c.save(); c.translate(size - 22, 22); c.fillStyle = '#e8f4ff'; c.font = '800 12px Inter, system-ui, sans-serif';
+      c.textAlign = 'center'; c.fillText('N', 0, 4);
+      c.strokeStyle = 'rgba(232, 244, 255, 0.5)'; c.lineWidth = 1.2; c.beginPath(); c.arc(0, 0, 11, 0, Math.PI * 2); c.stroke(); c.restore();
     } else {
       c.save(); c.translate(r, r); c.rotate(-(Math.PI / 2 - theta)); c.fillStyle = 'rgba(255,255,255,0.7)'; c.font = '700 10px Inter, system-ui, sans-serif';
       c.textAlign = 'center'; c.fillText('N', 0, -r + 13); c.restore();
@@ -367,6 +370,17 @@ export class Minimap {
       if (curStreet) txt = `<span>${esc(curStreet)}</span>`;
     }
     if (this.bannerHtml !== txt) { this.banner.innerHTML = this.bannerHtml = txt; this.banner.hidden = !txt; }
+    // OEM nav: remaining route distance and ETA, live from the route and the current speed
+    if (this.footEta) {
+      let eta = '';
+      if (this.waypoint) eta = 'WAYPOINT';
+      else if (routeS !== null && this.routeLen > 0) {
+        const remain = Math.max(0, this.routeLen - routeS);
+        const min = remain / Math.max(4, speed) / 60;
+        eta = remain > 950 ? `${(remain / 1000).toFixed(1)} km · ${Math.max(1, Math.round(min))} min` : `${Math.round(remain / 10) * 10} m`;
+      }
+      if (this.footEta.textContent !== eta) this.footEta.textContent = eta;
+    }
     // scale bar: 34 css px of the bar at the current zoom, rounded to a readable distance
     if (this.footScale) {
       const m = 34 * this.zoom;
