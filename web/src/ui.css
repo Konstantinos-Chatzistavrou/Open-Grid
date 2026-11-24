@@ -1040,7 +1040,7 @@ body.touch #zone-hud {
   #touch .pedals { gap: 6px; }
 }
 @media (max-height: 420px) {
-  body.touch #minimap { width: 88px; height: 88px; top: calc(102px + env(safe-area-inset-top)); }
+  body.touch #minimap { width: 144px; height: 144px; top: auto; bottom: calc(58px + env(safe-area-inset-bottom)); }
 }
 
 /* ---- CS2-Inspired Live Supply & Demand Auction House + Direct Garage Upgrades ---- */

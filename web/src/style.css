@@ -507,40 +507,66 @@ body.touch.spectating #board { top: calc(54px + env(safe-area-inset-top)); }
 #menu .lvup { color: var(--warn); font-weight: 900; letter-spacing: .12em; }
 #menu .big-lv { font-size: 22px; text-align: center; margin: 4px 0; }
 
-/* ---- GPS minimap ------------------------------------------------------------------------------------------ */
-#minimap { position: absolute; left: 16px; bottom: 46px; width: 292px; height: 210px; pointer-events: none;
-  border-radius: 14px; background: linear-gradient(180deg, #0a0f18, #05080e);
-  box-shadow: 0 0 0 1px #ffffff24, 0 0 0 5px #05070c, 0 14px 34px #000b;
-  display: flex; flex-direction: column; overflow: hidden; }
-/* the GPS screen: a rounded dark rectangle, not a circle */
-#minimap::before { content: ''; position: absolute; inset: 34px 10px 30px; border-radius: 10px; pointer-events: none;
-  background: radial-gradient(120% 90% at 50% 0%, #00e5ff10, transparent 62%); }
-#minimap canvas { width: 180px; height: 180px; margin: 34px auto 0; border-radius: 10px; display: block; pointer-events: auto; cursor: pointer;
-  box-shadow: 0 0 0 1px #ffffff1a, inset 0 0 24px #000a; }
-#minimap .gps-turn { position: absolute; left: 10px; right: 10px; top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  padding: 6px 10px; border-radius: 8px; background: #0b0f17d9; border: 1px solid #ffffff1c; font: 600 12px "Inter", system-ui, sans-serif; color: var(--fg); }
-#minimap .gps-turn b { color: var(--accent); font-size: 15px; margin-right: 4px; }
-#minimap .gps-turn i { font-style: normal; color: var(--dim); margin-left: 6px; font-variant-numeric: tabular-nums; }
+/* ---- GPS: circular watch-style nav (reference: car-GPS watch face) --------------------------------------- */
+#minimap { position: absolute; left: 16px; bottom: 46px; width: 238px; height: 238px; pointer-events: none;
+  border-radius: 50%; overflow: hidden;
+  background: radial-gradient(circle at 50% 28%, #141a25 0%, #070a10 62%, #03050a 100%);
+  box-shadow: 0 0 0 5px #0a0d13, 0 0 0 7px #20262f, 0 0 0 8px #000, 0 18px 40px #000d, inset 0 0 34px #000b; }
+#minimap canvas { position: absolute; left: 19px; top: 19px; width: 200px; height: 200px; border-radius: 50%; display: block;
+  pointer-events: auto; cursor: pointer; box-shadow: 0 0 0 1px #ffffff12, inset 0 0 26px #000d; }
+/* speed, like the watch face: big number over the map, unit under it */
+#minimap .gps-speed { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); text-align: center; pointer-events: none;
+  color: #fff; font: 800 38px/0.95 "Inter", system-ui, sans-serif; letter-spacing: -.03em; text-shadow: 0 2px 12px #000e; }
+#minimap .gps-speed small { display: block; margin-top: 3px; font: 600 9px "Inter", system-ui, sans-serif; letter-spacing: .22em; color: #9fb0c6; }
+#minimap .gps-eta-chip { position: absolute; right: 12px; top: 58px; pointer-events: none; padding: 3px 7px; border-radius: 7px;
+  background: #1d1206e6; border: 1px solid #ff9d2a55; color: #ffb44d; font: 700 10px "Inter", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+#minimap .gps-turn { position: absolute; left: 12px; top: 58px; right: auto; max-width: 104px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding: 3px 8px; border-radius: 7px; background: #0b0f17cc; border: 1px solid #ffffff1a;
+  font: 700 10px "Inter", system-ui, sans-serif; color: var(--fg); }
+#minimap .gps-turn b { color: var(--accent); font-size: 12px; margin-right: 3px; }
+#minimap .gps-turn i { font-style: normal; color: var(--dim); margin-left: 4px; }
 #minimap .gps-turn[hidden] { display: none; }
-#minimap .gps-foot { position: absolute; left: 12px; right: 12px; bottom: 8px; display: flex; justify-content: space-between; align-items: center;
-  font: 700 11px "Inter", system-ui, sans-serif; letter-spacing: .02em; color: #e8f4ff; }
-#minimap .gps-eta { color: #e8f4ff; font-variant-numeric: tabular-nums; }
-#minimap .gps-foot .gps-scale { letter-spacing: .02em; color: #e8f4ff; font-variant-numeric: tabular-nums; }
-#minimap .gps-foot .gps-bar { display: inline-block; height: 3px; width: 34px; margin-right: 6px; border-radius: 2px; background: #e8f4ff; vertical-align: middle; opacity: .85; }
-/* full-screen map mode (click the GPS): a square screen, north-up, click to drop a waypoint */
+#minimap .gps-pill { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); pointer-events: none;
+  padding: 4px 13px; border-radius: 999px; background: #0b1019e6; border: 1px solid #ffffff22; color: #e6eefb;
+  font: 600 11px "Inter", system-ui, sans-serif; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+#minimap .gps-pill::before { content: '▾ '; color: #9fb0c6; }
+/* footer is only used by the expanded map */
+#minimap .gps-foot { display: none; }
+/* expanded: the full map keeps its rectangular screen */
 #minimap.expanded { left: 50%; top: 50%; bottom: auto; width: 580px; height: 604px; transform: translate(-50%, -50%); pointer-events: auto;
+  border-radius: 16px; overflow: hidden; background: linear-gradient(180deg, #0a0f18, #05080e);
   box-shadow: 0 0 0 1px #ffffff2a, 0 0 0 6px #05070c, 0 30px 80px #000d; }
-#minimap.expanded canvas { width: 540px; height: 540px; margin: 34px auto 0; }
+#minimap.expanded canvas { position: static; width: 540px; height: 540px; margin: 34px auto 0; border-radius: 10px; }
+#minimap.expanded .gps-speed, #minimap.expanded .gps-eta-chip, #minimap.expanded .gps-pill { display: none; }
+#minimap.expanded .gps-turn { left: 10px; right: 10px; top: 8px; font-size: 12px; padding: 6px 10px; }
+#minimap.expanded .gps-foot { display: flex; position: absolute; left: 12px; right: 12px; bottom: 8px; justify-content: space-between;
+  font: 700 11px "Inter", system-ui, sans-serif; color: #e8f4ff; }
+#minimap .gps-eta { color: #e8f4ff; font-variant-numeric: tabular-nums; }
+#minimap .gps-foot .gps-scale { color: #e8f4ff; font-variant-numeric: tabular-nums; }
+#minimap .gps-foot .gps-bar { display: inline-block; height: 3px; width: 34px; margin-right: 6px; border-radius: 2px; background: #e8f4ff; vertical-align: middle; opacity: .85; }
 @media (max-width: 640px), (max-height: 700px) {
   #minimap.expanded { width: 96vw; height: 96vw; max-height: 86vh; }
   #minimap.expanded canvas { width: calc(96vw - 40px); height: calc(96vw - 40px); max-width: calc(86vh - 64px); max-height: calc(86vh - 64px); margin: 30px auto 0; }
 }
-/* phones: speedometer (top-left, 96 px), the GPS under it, its turn banner on top of the device; never overlapping */
-body.touch #minimap { left: calc(10px + env(safe-area-inset-left)); top: calc(106px + env(safe-area-inset-top)); bottom: auto; width: 158px; height: 122px; }
-@media (max-height: 360px) { body.touch #minimap { width: 136px; height: 104px; } body.touch #minimap canvas { width: 104px; height: 104px; margin-top: 22px; } }
-body.touch #minimap canvas { width: 112px; height: 112px; margin-top: 24px; }
-body.touch #minimap .gps-turn { top: 5px; left: 6px; right: 6px; padding: 3px 7px; font-size: 10px; }
-body.touch #minimap .gps-foot { display: none; }
+/* phones: a smaller round device under the speedometer */
+body.touch #minimap { left: calc(10px + env(safe-area-inset-left)); top: auto; bottom: calc(58px + env(safe-area-inset-bottom)); width: 144px; height: 144px; }
+body.touch #minimap canvas { left: 11px; top: 11px; width: 128px; height: 128px; }
+body.touch #minimap .gps-speed { top: 9px; font-size: 25px; }
+body.touch #minimap .gps-speed small { font-size: 7px; letter-spacing: .18em; margin-top: 1px; }
+body.touch #minimap .gps-eta-chip { top: 40px; right: 6px; font-size: 7px; padding: 2px 4px; }
+body.touch #minimap .gps-turn { display: none; }
+@media (max-width: 760px), (pointer: coarse) {
+  #minimap { left: calc(10px + env(safe-area-inset-left)); top: auto; bottom: calc(58px + env(safe-area-inset-bottom)); width: 144px; height: 144px; }
+  #minimap canvas { left: 11px; top: 11px; width: 128px; height: 128px; }
+  #minimap .gps-speed { top: 9px; font-size: 25px; }
+  #minimap .gps-speed small { font-size: 7px; letter-spacing: .18em; margin-top: 1px; }
+  #minimap .gps-eta-chip { top: 40px; right: 6px; font-size: 7px; padding: 2px 4px; }
+  #minimap .gps-turn { display: none; }
+  #minimap .gps-pill { display: none; }
+}
+body.touch #minimap .gps-pill { display: none; }
+body.touch #minimap.expanded { width: 94vw; height: 94vw; max-height: 84vh; }
 
 /* ---- username and friends (identity.ts, menu.ts profile) ---------------------------------------------------------- */
 #menu .me-chip { display: inline-flex; align-items: center; gap: 10px; margin: 10px 0 2px; padding: 6px 14px 6px 8px; border-radius: 999px;

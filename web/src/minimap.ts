@@ -18,6 +18,9 @@ export class Minimap {
   private banner = document.createElement('div');
   private footScale: HTMLElement | null = null;
   private footEta: HTMLElement | null = null;
+  private speedEl: HTMLElement | null = null;
+  private etaChip: HTMLElement | null = null;
+  private pillEl: HTMLElement | null = null;
   private grid = new Map<string, Seg[]>();
   private drawStamp = 0;
   private named: { x: number; y: number; name: string }[] = [];
@@ -53,7 +56,19 @@ export class Minimap {
     foot.innerHTML = '<span class="gps-eta"></span><span class="gps-scale"><i class="gps-bar"></i><b>—</b></span>';
     this.footScale = foot.querySelector('b');
     this.footEta = foot.querySelector('.gps-eta');
-    this.el.append(this.banner, this.cv, foot);
+    const speed = document.createElement('div');
+    speed.className = 'gps-speed';
+    speed.innerHTML = '<span>0</span><small>KM/H</small>';
+    this.speedEl = speed.querySelector('span');
+    const eta = document.createElement('div');
+    eta.className = 'gps-eta-chip';
+    eta.hidden = true;
+    this.etaChip = eta;
+    const pill = document.createElement('div');
+    pill.className = 'gps-pill';
+    pill.textContent = 'Centre vehicle';
+    this.pillEl = pill;
+    this.el.append(this.banner, this.cv, foot, speed, eta, pill);
     parent.appendChild(this.el);
     this.ctx = this.cv.getContext('2d')!;
     if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { this.sizeCache = 0; }).observe(this.el);
@@ -227,18 +242,9 @@ export class Minimap {
       c.translate(r, r);
       c.scale(k, -k);
     } else {
-      // rounded screen, not a circle
-      c.beginPath();
-      const rr = 10;
-      c.moveTo(rr, 0); c.lineTo(size - rr, 0); c.quadraticCurveTo(size, 0, size, rr);
-      c.lineTo(size, size - rr); c.quadraticCurveTo(size, size, size - rr, size);
-      c.lineTo(rr, size); c.quadraticCurveTo(0, size, 0, size - rr);
-      c.lineTo(0, rr); c.quadraticCurveTo(0, 0, rr, 0); c.closePath(); c.clip();
-      c.fillStyle = 'rgba(8, 12, 20, 0.92)'; c.fillRect(0, 0, size, size);
-      // faint screen grid: reads as a device display even where the street graph is sparse
-      c.strokeStyle = 'rgba(120, 200, 255, 0.055)'; c.lineWidth = 1; c.beginPath();
-      for (let g = 18; g < size; g += 18) { c.moveTo(g, 0); c.lineTo(g, size); c.moveTo(0, g); c.lineTo(size, g); }
-      c.stroke();
+      // round watch face
+      c.beginPath(); c.arc(r, r, r - 1, 0, Math.PI * 2); c.clip();
+      c.fillStyle = 'rgba(7, 11, 18, 0.94)'; c.fillRect(0, 0, size, size);
       // world -> canvas: translate to the car, rotate so the car points up, scale, flip y
       c.translate(r, r * 1.18);
       c.scale(k, -k);
@@ -280,7 +286,7 @@ export class Minimap {
     }
     // the GPS line: the whole route faint, the next 600 m bright
     if (this.route.length > 1) {
-      c.strokeStyle = 'rgba(255, 255, 255, 0.22)'; c.lineWidth = Math.max(6, 7 * this.zoom);
+      c.strokeStyle = 'rgba(0, 0, 0, 0.55)'; c.lineWidth = Math.max(8, 9 * this.zoom);
       c.beginPath();
       for (let i = 0; i < this.route.length; i++) { const p = this.route[i]; if (i) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); }
       if (this.routeClosed) c.closePath();
@@ -291,9 +297,9 @@ export class Minimap {
         // the glow: two wider translucent strokes under the line (was shadowBlur 8, a Gaussian blur of the canvas on
         // every draw); widths in css px times zoom, ~7 px and ~3.5 px of halo each side like the 8 px blur
         const lw = Math.max(5, 7 * this.zoom);
-        c.strokeStyle = 'rgba(43, 214, 255, 0.16)'; c.lineWidth = lw + 14 * this.zoom; c.stroke();
-        c.strokeStyle = 'rgba(43, 214, 255, 0.30)'; c.lineWidth = lw + 7 * this.zoom; c.stroke();
-        c.strokeStyle = '#3fe0ff'; c.lineWidth = lw; c.stroke();
+        c.strokeStyle = 'rgba(255, 255, 255, 0.18)'; c.lineWidth = lw + 14 * this.zoom; c.stroke();
+        c.strokeStyle = 'rgba(255, 255, 255, 0.35)'; c.lineWidth = lw + 7 * this.zoom; c.stroke();
+        c.strokeStyle = '#f2f7ff'; c.lineWidth = lw; c.stroke();
       }
       // start / finish
       const s0 = this.route[0];
@@ -362,7 +368,8 @@ export class Minimap {
       for (const t of this.turns) { let d = t.s - s; if (d < -5) d += this.routeLen; if (d >= -5 && d < dist) { dist = d; next = t; } }
       if (next && dist < 900) {
         const arrow = next.sharp ? (next.dir < 0 ? '↶' : '↷') : (next.dir < 0 ? '↰' : '↱');
-        txt = `<b>${arrow}</b> ${next.name ? `<span>${esc(next.name)}</span>` : (next.dir < 0 ? 'Turn left' : 'Turn right')} <i>${dist < 30 ? 'now' : `${Math.round(dist / 10) * 10} m`}</i>`;
+        // compact: arrow + distance; the street name lives in the pill below
+        txt = `<b>${arrow}</b> <i>${dist < 30 ? 'now' : `${Math.round(dist / 10) * 10} m`}</i>`;
       }
     }
     if (!txt) {
@@ -370,6 +377,20 @@ export class Minimap {
       if (curStreet) txt = `<span>${esc(curStreet)}</span>`;
     }
     if (this.bannerHtml !== txt) { this.banner.innerHTML = this.bannerHtml = txt; this.banner.hidden = !txt; }
+    // watch face: speed, ETA chip, current street pill
+    if (this.speedEl) this.speedEl.textContent = String(Math.round(Math.abs(speed) * 3.6));
+    const remain = routeS !== null && this.routeLen > 0 ? Math.max(0, this.routeLen - routeS) : null;
+    const mins = remain !== null ? Math.max(1, Math.round(remain / Math.max(4, speed) / 60)) : null;
+    if (this.etaChip) {
+      const etaTxt = remain === null ? '' : remain < 120 ? 'Arriving' : `${mins}m · ${(remain / 1000).toFixed(1)}km`;
+      this.etaChip.hidden = !etaTxt;
+      if (etaTxt && this.etaChip.textContent !== etaTxt) this.etaChip.textContent = etaTxt;
+    }
+    if (this.pillEl) {
+      const street = this.streetAt(cx, cy);
+      const pillTxt = street || 'Centre vehicle';
+      if (this.pillEl.textContent !== pillTxt) this.pillEl.textContent = pillTxt;
+    }
     // OEM nav: remaining route distance and ETA, live from the route and the current speed
     if (this.footEta) {
       let eta = '';
