@@ -154,8 +154,8 @@ export class CameraRig {
     if (cfg.kind === 'bumper') {
       const hood = this.mode === 'hood';
       const cockpit = this.mode === 'cockpit';
-      // cockpit: behind the wheel, so the dash-mounted nav screen is in frame
-      cam.position.copy(carPos).add(this.tmp.set(cockpit ? 0.33 : 0, cockpit ? 1.02 : hood ? 1.05 : 0.62, cockpit ? 0.02 : hood ? 0.95 : 0.25).applyQuaternion(carQuat));
+      // cockpit: behind the wheel at driver eye height (~1.1 m above the road: carPos is the body centre, ~0.45 m up), so the dash-mounted nav screen is in frame
+      cam.position.copy(carPos).add(this.tmp.set(cockpit ? 0.33 : 0, cockpit ? 0.66 : hood ? 1.05 : 0.62, cockpit ? 0.02 : hood ? 0.95 : 0.25).applyQuaternion(carQuat));
       cam.quaternion.copy(carQuat).multiply(this.bumperQ);
       if (cockpit) cam.quaternion.multiply(this.cockpitTilt);
       if (Math.abs(this.freeYaw) > 1e-4 || Math.abs(this.freePitch) > 1e-4) {

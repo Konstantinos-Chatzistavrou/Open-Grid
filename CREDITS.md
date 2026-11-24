@@ -188,6 +188,9 @@ represents or is endorsed by any real manufacturer.
 ## Fonts
 - **Barlow** and **Barlow Condensed** by Jeremy Tribby, SIL Open Font License 1.1
   (https://github.com/jpt/barlow). Latin subsets in `web/public/fonts/`, unmodified.
+- **Roboto** by The Roboto Project Authors, SIL Open Font License 1.1 (https://github.com/googlefonts/roboto-classic).
+  Latin 400 / 500 / 700 woff2 from the `@fontsource/roboto` 5.3.0 package in `web/public/fonts/`, unmodified, licence text
+  alongside. Used only for the in-car navigation screen.
 
 - **Valenza Corsa V12** (`web/public/assets/cars/v5/valenza_corsa_hero.glb`): modified from "Custom 2023 Ferrari 812 Competizione" by Jumping Jax, https://sketchfab.com/3d-models/custom-2023-ferrari-812-competizione-cebbf16094464063a9b6e5e882bb4600, licensed CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: OEM marks, badges, plates and internal OEM names removed; subtle ~2.5% GTA 6-style proportional restyling applied; 3D OpenGrid brand crests added; unified clearcoat paint material, 4 axle-centered spinning wheels, decimated, WebP textures and meshopt compression (`tools/pipeline/sketchfab_gta6_blender.py`). Licence evidence: `assets_source/licenses/downloaded_cars_2026-11-22/valenza_corsa.json`. Real manufacturer trademarks are not used.
 

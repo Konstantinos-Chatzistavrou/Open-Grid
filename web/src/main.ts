@@ -1706,12 +1706,14 @@ async function main() {
   // GPS minimap: the tiles' road graphs (loaded in the background), the race route, rivals / players & 1:1 city landmarks
   let lastNavTouch = 0;
   const minimap = new Minimap(document.getElementById('hud')!);
-  // a physical nav screen in the cabin, textured from the same GPS canvas
-  // in-car nav screen: opt-in until its texture upload is cheap enough (?navscreen=1)
-  const navScreen = params.get('navscreen') === '1' ? createNavScreen(minimap.cv) : null;
+  // a physical nav screen in the cabin, textured from the same GPS canvas; the texture is only re-uploaded while a camera
+  // that can see the dash is active (cockpit / hood / orbit). ?navscreen=0 leaves it out of the car.
+  const navScreen = params.get('navscreen') === '0' ? null : createNavScreen(minimap.cv);
   if (navScreen) { visual.model.add(navScreen.group); (g.__game as Record<string, unknown>).navScreen = navScreen; }
   minimap.setRoute(route.samples, route.closed !== false);
   minimap.setLandmarks(cityInfo.landmarks);
+  minimap.setTileBase(cityInfo.base);   // buildings for the 3D view stream from the city's tiles
+  { const gm = params.get('gps'); if (gm === 'day' || gm === 'night') minimap.themeMode = gm; }   // fixed colours for screenshots
   input.onMap = () => minimap.show(!minimap.visible);
   input.onFullMap = () => { if (driving()) minimap.toggleExpand(); };
   input.onVoicePtt = (down) => voice.setPushToTalk(down);
@@ -2201,6 +2203,7 @@ async function main() {
       setTreeCity(cityInfo.id);
       updateCreditsLine();
       minimap.setLandmarks(cityInfo.landmarks);
+      minimap.setTileBase(cityInfo.base);
 
       loader.text(`Loading ${cityInfo.name} street network…`, 22);
       const [newRoute, newMap] = await Promise.all([
@@ -3389,13 +3392,15 @@ async function main() {
         if (rb) blipsBuf.push({ x: rb.x, z: rb.z, color: pal.roadblock });
       }
       const L = lap?.routeLength ?? route.length_m;
+      minimap.clockSec = worldClock.gameSeconds;
       if (watching) minimap.update(now, specPos, mmFwd, specOut[OUT.speed], null, blipsBuf);
       else minimap.update(now, pos, mmFwd, Math.abs(car.out[OUT.speed]), lap ? ((lap.distance % L) + L) % L : null, blipsBuf);
       // the cabin screen mirrors the GPS canvas; dark in the menus (car off)
       if (navScreen) {
         navScreen.setVisible(menu.screen === 'none');
-        // 2 Hz upload: the cabin screen is read at a glance, not 60 times a second
-        if (now - lastNavTouch > 500) { lastNavTouch = now; navScreen.touch(); }
+        // 10 Hz upload, and only while a camera that can see the dash is active: the texture is ~1 MB
+        const dashInView = rig.mode === 'cockpit' || rig.mode === 'hood' || rig.mode === 'orbit';
+        if (dashInView && now - lastNavTouch > 100) { lastNavTouch = now; navScreen.touch(); }
       }
     }
     menuNav.paused = !!menu.ctl?.calibrating;

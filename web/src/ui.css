@@ -10,6 +10,9 @@
 @font-face { font-family: "Barlow"; font-weight: 500; font-display: swap; src: url(/fonts/Barlow-500.woff2) format("woff2"); }
 @font-face { font-family: "Barlow"; font-weight: 600; font-display: swap; src: url(/fonts/Barlow-600.woff2) format("woff2"); }
 @font-face { font-family: "Barlow"; font-weight: 700; font-display: swap; src: url(/fonts/Barlow-700.woff2) format("woff2"); }
+@font-face { font-family: "Roboto"; font-weight: 400; font-display: swap; src: url(/fonts/roboto-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Roboto"; font-weight: 500; font-display: swap; src: url(/fonts/roboto-latin-500-normal.woff2) format("woff2"); }
+@font-face { font-family: "Roboto"; font-weight: 700; font-display: swap; src: url(/fonts/roboto-latin-700-normal.woff2) format("woff2"); }
 @font-face { font-family: "Barlow Condensed"; font-weight: 600; font-display: swap; src: url(/fonts/BarlowCondensed-600.woff2) format("woff2"); }
 @font-face { font-family: "Barlow Condensed"; font-weight: 700; font-display: swap; src: url(/fonts/BarlowCondensed-700.woff2) format("woff2"); }
 @font-face { font-family: "Barlow Condensed"; font-weight: 700; font-style: italic; font-display: swap; src: url(/fonts/BarlowCondensed-700i.woff2) format("woff2"); }
@@ -289,7 +292,6 @@ html, body { font-family: var(--text); font-size: 15px; }
 #heat b { font-size: 15px; margin-left: 6px; }
 #cops { font: italic 800 17px/1.2 var(--display); letter-spacing: .14em; }
 #launch { font: italic 900 22px/1 var(--display); letter-spacing: .3em; }
-#minimap .gps-turn { border-radius: 0; font: 600 15px var(--display); letter-spacing: .04em; background: #080b12e6; }
 #spectate { border-radius: 0; font-family: var(--display); font-size: 16px; }
 #spectate button { border-radius: 0; font-family: var(--display); }
 #tags .tag { border-radius: 0; font: 700 14px var(--display); letter-spacing: .06em; }
@@ -482,11 +484,8 @@ body.photomode #hud, body.photomode #mirror, body.replaymode #hud, body.replaymo
 #minimap.expanded {
   position: fixed !important; left: 50% !important; top: 50% !important; bottom: auto !important;
   transform: translate(-50%, -50%) !important;
-  width: min(560px, 86vw) !important; height: min(560px, 86vh) !important;
-  z-index: 36 !important; border-radius: 6px !important;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.22);
+  z-index: 36 !important;
 }
-#minimap.expanded canvas { border-radius: 6px !important; }
 .daily-box {
   margin-top: 10px; padding: 10px 12px; background: rgba(6, 9, 16, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.12); border-left: 3px solid #ffba08;

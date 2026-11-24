@@ -1,0 +1,47 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>GPS preview (dev only)</title>
+<link rel="stylesheet" href="/src/style.css"><link rel="stylesheet" href="/src/ui.css">
+<style>html,body{margin:0;background:#2a2d33;height:100%;overflow:hidden} #hud{position:absolute;inset:0}</style></head>
+<body><div id="hud"></div>
+<script type="module">
+// Dev-only harness: the GPS alone on a grey page, driven along a route at a chosen speed, so the picture can be iterated
+// on in seconds without loading the game (http://127.0.0.1:5173/tools/gps-preview.html?city=nyc&s=300&v=18&gps=night&hour=22.5;
+// window.mm is the Minimap, window.drive(s0, speed, frames, expanded) moves it). Not part of the production build.
+import { Minimap } from '/src/minimap.ts';
+const q = new URLSearchParams(location.search);
+const city = q.get('city') || 'nyc';
+const base = city === 'nyc' ? '/assets/nyc/tiles/' : `/assets/cities/${city}/tiles/`;
+const hud = document.getElementById('hud');
+const mm = new Minimap(hud);
+const [map, route] = await Promise.all([
+  fetch(base + 'map.json').then((r) => r.json()),
+  fetch(`/data/tracks/${city}_route.json`).then((r) => r.json()),
+]);
+mm.addGraph(map);
+mm.setRoute(route.samples, route.closed !== false);
+mm.setTileBase(base);
+if (q.get('gps')) mm.themeMode = q.get('gps');
+mm.clockSec = (Number(q.get('hour') || 22.5)) * 3600;
+window.mm = mm;
+window.__game = {};
+const S = route.samples;
+// walk the route by index with the length of each step
+let acc = [0]; for (let i = 1; i < S.length; i++) acc.push(acc[i - 1] + Math.hypot(S[i].x - S[i - 1].x, S[i].y - S[i - 1].y));
+const total = acc[acc.length - 1];
+window.drive = async (s0, speed = 15, frames = 30, expand = false) => {
+  mm.toggleExpand(expand);
+  let s = s0;
+  for (let f = 0; f < frames; f++) {
+    s = (s + speed * 0.07) % total;
+    let i = acc.findIndex((v) => v > s); if (i < 1) i = 1;
+    const a = S[i - 1], b = S[i], t = (s - acc[i - 1]) / Math.max(1e-6, acc[i] - acc[i - 1]);
+    const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
+    const hx = b.x - a.x, hy = b.y - a.y, hl = Math.hypot(hx, hy) || 1;
+    mm.update(performance.now() + f * 70 + 100000 * (window.__n = (window.__n || 0) + 1), { x, z: -y }, { x: hx / hl, z: -hy / hl }, speed, s, []);
+    if (f % 5 === 0) await new Promise((r) => setTimeout(r, 40));
+  }
+  await new Promise((r) => setTimeout(r, 300));
+  return s;
+};
+await window.drive(Number(q.get('s') || 200), Number(q.get('v') || 15), 40);
+</script></body></html>

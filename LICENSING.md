@@ -50,7 +50,7 @@ these files.
   unmodified originals remain available from their authors under CC BY 4.0.
 - **City and garage models and textures adapted from CC0 originals** (Poly Haven, ambientCG): our processed versions are
   CC BY-NC 4.0; the originals remain CC0 at their sources.
-- **Fonts** (Barlow): SIL Open Font License 1.1.
+- **Fonts** (Barlow, Roboto): SIL Open Font License 1.1 (`web/public/fonts/LICENSE-Roboto-OFL.txt`).
 - **Fitted tyre file** `data/tires/audi_245_40R18_pac2002.tir`: Project Chrono, **BSD-3-Clause**
   (`data/tires/LICENSE-projectchrono.txt`).
 - **Basis Universal transcoder**, `web/public/libs/basis/`: Apache-2.0.

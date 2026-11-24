@@ -1,29 +1,52 @@
-// GPS minimap: the real streets (the tiles' road graphs) heading-up around the car, zooming out with speed; the race
-// route as the GPS line with the next stretch highlighted; rivals as dots; and a turn-by-turn banner ("↰ 7th Avenue ·
-// 250 m") from the route's corners and the street names in the graph. A 2D canvas redrawn ~15 times a second from a
-// spatial grid of road segments (a few hundred lines per frame).
+// In-car GPS: a rectangular navigation screen drawn like a modern phone/head-unit navigation app. A tilted 3D map, heading-up,
+// of the real streets (the tiles' road graphs) and the buildings (the tiles' footprints, extruded); the race route as the blue
+// guidance line; turn-by-turn on a green maneuver card with the next-but-one turn under it; remaining time / distance /
+// arrival clock on a bottom card; the current speed against the speed limit of the road under the car; day or night colours
+// from the in-game clock. Click (or Tab) expands it to a north-up overview where a click sets a GPS waypoint.
+// Everything is one 2D canvas (560 x 350 logical px, buffer scaled to the screen) redrawn ~15 times a second: the HUD device
+// shows it and so does the screen on the dash.
 // Frames: road graph and route = game frame (x east, y north); three.js = (x, y up, z = -y_game).
+import { NavBuildings } from './navBuildings';
+import {
+  DAY, NIGHT, type NavTheme, card, classifyTurn, compassButton, drawManeuver, roundButton, roundRect, speedBubbles, type ManeuverKind,
+} from './navUi';
 
-interface Seg { x0: number; y0: number; x1: number; y1: number; w: number; major: boolean; stamp: number }
-interface Turn { s: number; dir: -1 | 1; sharp: boolean; name: string }
+/** cls: 0 local, 1 collector (secondary / tertiary), 2 arterial (primary), 3 highway (trunk / motorway) */
+interface Seg { x0: number; y0: number; x1: number; y1: number; w: number; cls: number; stamp: number }
+interface Turn { s: number; dir: -1 | 1; ang: number; kind: ManeuverKind; name: string }
 interface Landmark { x: number; y: number; name: string }
+interface Named { x: number; y: number; name: string; cls: number }
 export interface Blip { x: number; z: number; color: string }
 
 const CELL = 100;
+export const NAV_W = 560, NAV_H = 350;
+const FONT = '"Roboto", "Barlow", system-ui, "Segoe UI", sans-serif';
+const CLS: Record<string, number> = {
+  living_street: 0, residential: 0, unclassified: 0, service: 0, road: 0,
+  tertiary: 1, tertiary_link: 1, secondary: 1, secondary_link: 1,
+  primary: 2, primary_link: 2,
+  trunk: 3, trunk_link: 3, motorway: 3, motorway_link: 3,
+};
+/** typical posted limit (km/h) by road class when the data has no maxspeed */
+const LIMIT = [30, 50, 60, 100];
+const MIN_PX = [1.5, 1.9, 2.6, 3.4];
+
+// the camera of the tilted view (logical px): focal length, where the optical axis meets the screen, and how steeply it looks down
+const FOCAL = 440, AXIS_X = NAV_W * 0.60, AXIS_Y = NAV_H * 0.42, DEPRESSION = 0.5, NEAR = 2;
+const COS_A = Math.cos(DEPRESSION), SIN_A = Math.sin(DEPRESSION);
+/** camera is this many camera-heights behind the car, so the car sits at ~70 % of the screen height */
+const BACK = 1.12;
+const CARD_W = 192;
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export class Minimap {
   readonly el = document.createElement('div');
   readonly cv = document.createElement('canvas');
   private ctx: CanvasRenderingContext2D;
-  private banner = document.createElement('div');
-  private footScale: HTMLElement | null = null;
-  private footEta: HTMLElement | null = null;
-  private speedEl: HTMLElement | null = null;
-  private etaChip: HTMLElement | null = null;
-  private pillEl: HTMLElement | null = null;
   private grid = new Map<string, Seg[]>();
+  private namedGrid = new Map<string, Named[]>();
   private drawStamp = 0;
-  private named: { x: number; y: number; name: string }[] = [];
   private landmarks: Landmark[] = [];
   private route: { x: number; y: number }[] = [];
   private routeClosed = true;
@@ -31,20 +54,38 @@ export class Minimap {
   private routeLen = 0;
   private turns: Turn[] = [];
   private last = 0;
-  private zoom = 1.6;   // m per css px
+  readonly buildings = new NavBuildings();
+  /** camera height above the road (m), eased with speed and with the next turn */
+  private camH = 64;
   private lastCar = { x: 0, z: 0 };
-  /** css size of the map, cached (reading clientWidth at 15 Hz forced a synchronous layout); 0 = read it again */
   private sizeCache = 0;
-  /** the banner html last written (reading innerHTML back re-serialized the DOM every draw) */
-  private bannerHtml = '';
-  /** road segments of one tier by stroke width: one path + one stroke per width instead of one per segment */
-  private byWidth = new Map<number, Seg[]>();
-  private segPool: Seg[][] = [];
+  /** road segments of one tier by stroke width: one path + one stroke per width */
+  private byWidth = new Map<number, number[]>();
+  private pool: number[][] = [];
+  private itD: number[] = [];
+  private itT: Float32Array[] = [];
+  private itO: number[] = [];
+  private itI: number[] = [];
   private rp = { x: 0, y: 0 };
+  private avgSpeed = 12;
+  private limit = 0;
+  private limitAt = 0;
+  private street = '';
+  private streetAt_ = 0;
+  // the view of the frame being drawn
+  private vx = 0; private vy = 0; private vhx = 1; private vhy = 0; private vH = 50; private vD = 57;
+  private flat = false; private flatK = 1 / 3.8;
+  private sx = 0; private sy = 0; private sz = 0;
+  /** colours: 'auto' follows the in-game clock (night 19:20 - 06:10) */
+  themeMode: 'auto' | 'day' | 'night' = 'auto';
+  /** in-game seconds since midnight, set by the game each frame (arrival clock, day / night) */
+  clockSec = 22.5 * 3600;
+  /** the game clock runs this many times faster than real time (the arrival time must agree with it) */
+  clockScale = 4;
   visible = true;
-  /** set when the canvas was redrawn: the in-car screen uploads its texture only then, not every frame */
+  /** set when the canvas was redrawn: the in-car screen uploads its texture only then */
   dirty = false;
-  /** Full-screen interactive map mode (toggled by clicking minimap or pressing Tab). */
+  /** Full-screen interactive overview (toggled by clicking the screen or pressing Tab). */
   expanded = false;
   /** Click-to-set GPS Waypoint in three.js world coordinates (x, z). */
   waypoint: { x: number; z: number } | null = null;
@@ -52,39 +93,24 @@ export class Minimap {
 
   constructor(parent: HTMLElement) {
     this.el.id = 'minimap';
-    this.banner.className = 'gps-turn';
-    const foot = document.createElement('div');
-    foot.className = 'gps-foot';
-    foot.innerHTML = '<span class="gps-eta"></span><span class="gps-scale"><i class="gps-bar"></i><b>—</b></span>';
-    this.footScale = foot.querySelector('b');
-    this.footEta = foot.querySelector('.gps-eta');
-    const speed = document.createElement('div');
-    speed.className = 'gps-speed';
-    speed.innerHTML = '<span>0</span><small>KM/H</small>';
-    this.speedEl = speed.querySelector('span');
-    const eta = document.createElement('div');
-    eta.className = 'gps-eta-chip';
-    eta.hidden = true;
-    this.etaChip = eta;
-    const pill = document.createElement('div');
-    pill.className = 'gps-pill';
-    pill.textContent = 'Centre vehicle';
-    this.pillEl = pill;
-    this.el.append(this.banner, this.cv, foot, speed, eta, pill);
+    const chin = document.createElement('div');
+    chin.className = 'gps-chin';
+    chin.innerHTML = '<i></i><i></i><i></i><b></b>';
+    this.el.append(this.cv, chin);
     parent.appendChild(this.el);
     this.ctx = this.cv.getContext('2d')!;
-    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { this.sizeCache = 0; }).observe(this.el);
+    this.cv.width = NAV_W; this.cv.height = NAV_H;
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { this.sizeCache = 0; }).observe(this.cv);
+    if (typeof document !== 'undefined' && document.fonts) for (const w of [400, 500, 700]) void document.fonts.load(`${w} 20px Roboto`).catch(() => {});
     this.cv.style.cursor = 'pointer';
     this.cv.addEventListener('click', (e) => {
       if (!this.expanded) { this.toggleExpand(true); return; }
       const rect = this.cv.getBoundingClientRect();
-      const sx = e.clientX - rect.left - rect.width / 2;
-      const sy = e.clientY - rect.top - rect.height / 2;
-      const fullZoom = 3.8;
-      // Expanded map is north-up centred on the player car:
-      // canvas +X = east (+x), canvas +Y = south (-y_game = +z_three)
-      const wx = this.lastCar.x + sx * fullZoom;
-      const wz = this.lastCar.z + sy * fullZoom;
+      const sx = ((e.clientX - rect.left) / rect.width) * NAV_W;
+      const sy = ((e.clientY - rect.top) / rect.height) * NAV_H;
+      // the overview is north-up and centred on the car: canvas +x = east, canvas +y = south (+z in three.js)
+      const wx = this.lastCar.x + (sx - NAV_W / 2) / this.flatK;
+      const wz = this.lastCar.z + (sy - NAV_H / 2) / this.flatK;
       if (Number.isFinite(wx) && Number.isFinite(wz)) {
         this.waypoint = { x: wx, z: wz };
         this.onWaypoint?.(this.waypoint);
@@ -101,34 +127,36 @@ export class Minimap {
   toggleExpand(force?: boolean) {
     this.expanded = force ?? !this.expanded;
     this.el.classList.toggle('expanded', this.expanded);
-    this.sizeCache = 0;   // the size changes with the class: read it on the redraw below, do not wait for the observer
-    this.last = 0; // force immediate redraw
+    this.sizeCache = 0;
+    this.last = 0;   // redraw at once
   }
+
+  /** The city's tile folder (the URL holding index.json and the tile files): the buildings stream from there. */
+  setTileBase(base: string) { this.buildings.setBase(base); }
 
   /** Road edges of one tile's graph (game frame). Note: `e.pts` in map.json are INTERIOR shape points between nodes[a] and nodes[b]! */
   addGraph(g: { nodes: number[][]; edges: { a: number; b: number; w: number; hw: string; name?: string; pts?: number[][] }[] }) {
     for (const e of g.edges) {
       const na = g.nodes[e.a], nb = g.nodes[e.b];
       if (!na || !nb) continue;
-      // Fix: always include both endpoint nodes[a] & nodes[b] around interior shape points `e.pts` so zero streets or intersections drop out!
       const pts = e.pts && e.pts.length > 0 ? [na, ...e.pts, nb] : [na, nb];
-      const major = ['primary', 'secondary', 'trunk', 'motorway', 'primary_link', 'trunk_link', 'motorway_link'].includes(e.hw);
+      const cls = CLS[e.hw] ?? 0;
       for (let i = 0; i + 1 < pts.length; i++) {
         const a = pts[i], b = pts[i + 1];
         if (!a || !b || !Number.isFinite(a[0]) || !Number.isFinite(a[1]) || !Number.isFinite(b[0]) || !Number.isFinite(b[1])) continue;
         if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.25) continue;
-        const s: Seg = { x0: a[0], y0: a[1], x1: b[0], y1: b[1], w: e.w || 6, major, stamp: 0 };
-        // Insert into EVERY grid cell overlapped by the segment's bounding box so long highways/bridges never vanish!
+        const s: Seg = { x0: a[0], y0: a[1], x1: b[0], y1: b[1], w: e.w || 6, cls, stamp: 0 };
+        // into EVERY grid cell the segment's bounding box overlaps, so long highways / bridges never vanish
         const gx0 = Math.floor(Math.min(s.x0, s.x1) / CELL), gx1 = Math.floor(Math.max(s.x0, s.x1) / CELL);
         const gy0 = Math.floor(Math.min(s.y0, s.y1) / CELL), gy1 = Math.floor(Math.max(s.y0, s.y1) / CELL);
-        for (let gx = gx0; gx <= gx1; gx++) {
-          for (let gy = gy0; gy <= gy1; gy++) {
-            const k = `${gx}_${gy}`;
-            (this.grid.get(k) ?? this.grid.set(k, []).get(k)!).push(s);
-          }
+        for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
+          const k = `${gx}_${gy}`;
+          (this.grid.get(k) ?? this.grid.set(k, []).get(k)!).push(s);
         }
         if (e.name && i === Math.floor((pts.length - 1) / 2)) {
-          this.named.push({ x: (s.x0 + s.x1) / 2, y: (s.y0 + s.y1) / 2, name: e.name });
+          const n: Named = { x: (s.x0 + s.x1) / 2, y: (s.y0 + s.y1) / 2, name: e.name, cls };
+          const k = `${Math.floor(n.x / CELL)}_${Math.floor(n.y / CELL)}`;
+          (this.namedGrid.get(k) ?? this.namedGrid.set(k, []).get(k)!).push(n);
         }
       }
     }
@@ -138,22 +166,21 @@ export class Minimap {
   /** Clear all loaded roads, route, waypoint and landmarks (used during seamless city switches). */
   clear() {
     this.grid.clear();
-    this.named = [];
+    this.namedGrid.clear();
     this.landmarks = [];
     this.route = [];
     this.routeS = [];
     this.routeLen = 0;
     this.turns = [];
     this.waypoint = null;
-    this.banner.textContent = '';
-    this.bannerHtml = '';
+    this.buildings.clear();
+    this.street = '';
+    this.limit = 0;
     this.last = 0;
   }
 
-  /** Set real-life city landmark labels (game frame x east, y north) shown on the expanded interactive map. */
-  setLandmarks(list: Landmark[]) {
-    this.landmarks = list;
-  }
+  /** Real-life city landmark labels (game frame x east, y north). */
+  setLandmarks(list: Landmark[]) { this.landmarks = list; }
 
   /** The race route (game frame samples; closed loop by default, or point-to-point when closed=false). */
   setRoute(samples: { x: number; y: number }[], closed = true) {
@@ -170,9 +197,15 @@ export class Minimap {
     this.turns = [];
   }
 
-  private streetAt(x: number, y: number) {
+  /** The nearest named street within 30 m of a point. */
+  private streetNear(x: number, y: number) {
     let best = '', bd = 30 * 30;
-    for (const n of this.named) { const d = (n.x - x) ** 2 + (n.y - y) ** 2; if (d < bd) { bd = d; best = n.name; } }
+    const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const list = this.namedGrid.get(`${gx + i}_${gy + j}`);
+      if (!list) continue;
+      for (const n of list) { const d = (n.x - x) ** 2 + (n.y - y) ** 2; if (d < bd) { bd = d; best = n.name; } }
+    }
     return best;
   }
 
@@ -188,13 +221,13 @@ export class Minimap {
       while (d < -Math.PI) d += 2 * Math.PI;
       if (Math.abs(d) > 0.7) {
         const after = R[(i + 8) % n];
-        this.turns.push({ s: this.routeS[(i + 1) % n], dir: d > 0 ? -1 : 1, sharp: Math.abs(d) > 2.6, name: this.streetAt(after.x, after.y) });   // sharp: hairpins only (> 150 deg)
+        this.turns.push({ s: this.routeS[(i + 1) % n], dir: d > 0 ? -1 : 1, ang: Math.abs(d), kind: classifyTurn(d), name: this.streetNear(after.x, after.y) });
         i += 8;
       } else i++;
     }
   }
 
-  /** Route point at arc length s, written into `out` (reused: 75 calls per draw). */
+  /** Route point at arc length s, written into `out` (reused). */
   private routeAt(s: number, out: { x: number; y: number }) {
     s = this.routeClosed ? ((s % this.routeLen) + this.routeLen) % this.routeLen : Math.max(0, Math.min(this.routeLen, s));
     let lo = 0, hi = this.routeS.length - 1;
@@ -205,6 +238,53 @@ export class Minimap {
     const t = l > 0 ? (s - this.routeS[lo]) / l : 0;
     out.x = a.x + (b.x - a.x) * t; out.y = a.y + (b.y - a.y) * t;
     return out;
+  }
+
+  /** World (game frame) + height -> logical screen px in this.sx / this.sy; this.sz = camera depth (> 0 in front). */
+  private proj(wx: number, wy: number, h: number) {
+    const dx = wx - this.vx, dy = wy - this.vy;
+    if (this.flat) {
+      this.sx = NAV_W / 2 + dx * this.flatK;
+      this.sy = NAV_H / 2 - dy * this.flatK;
+      this.sz = 1;
+      return;
+    }
+    const f = dx * this.vhx + dy * this.vhy, r = dx * this.vhy - dy * this.vhx;
+    const g = f + this.vD;
+    const z = g * COS_A + (this.vH - h) * SIN_A;
+    const y = g * SIN_A + (h - this.vH) * COS_A;
+    this.sz = z;
+    if (z < NEAR) { this.sx = this.sy = NaN; return; }
+    const k = FOCAL / z;
+    this.sx = AXIS_X + r * k;
+    this.sy = AXIS_Y - y * k;
+  }
+
+  private theme(): NavTheme {
+    if (this.themeMode === 'day') return DAY;
+    if (this.themeMode === 'night') return NIGHT;
+    const h = (this.clockSec / 3600) % 24;
+    return h < 6.2 || h >= 19.3 ? NIGHT : DAY;
+  }
+
+  /** Posted limit of the road under the car (km/h), from the nearest segment's class; refreshed twice a second. */
+  private limitUnder(x: number, y: number, now: number) {
+    if (now - this.limitAt < 500) return this.limit;
+    this.limitAt = now;
+    let best = 22 * 22, cls = -1;
+    const gx = Math.floor(x / CELL), gy = Math.floor(y / CELL);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const list = this.grid.get(`${gx + i}_${gy + j}`);
+      if (!list) continue;
+      for (const s of list) {
+        const ex = s.x1 - s.x0, ey = s.y1 - s.y0, l2 = ex * ex + ey * ey || 1;
+        const t = clamp(((x - s.x0) * ex + (y - s.y0) * ey) / l2, 0, 1);
+        const d = (s.x0 + ex * t - x) ** 2 + (s.y0 + ey * t - y) ** 2;
+        if (d < best) { best = d; cls = s.cls; }
+      }
+    }
+    this.limit = cls >= 0 ? LIMIT[cls] : 0;
+    return this.limit;
   }
 
   /**
@@ -222,231 +302,443 @@ export class Minimap {
       this.onWaypoint?.(null);
     }
     if (!this.turns.length && this.route.length) this.findTurns();
-    if (!this.sizeCache) this.sizeCache = this.el.clientWidth;
-    const dpr = Math.min(2, devicePixelRatio || 1), size = this.sizeCache || (this.expanded ? 540 : 180);
-    if (this.cv.width !== Math.round(size * dpr)) { this.cv.width = this.cv.height = Math.round(size * dpr); }
-    const c = this.ctx, r = size / 2;
-    const cx = car.x, cy = -car.z, hx = fwd.x, hy = -fwd.z;           // game frame
-    const theta = Math.atan2(hy, hx);
-    if (this.expanded) {
-      this.zoom = 3.8;
-    } else {
-      this.zoom += (Math.min(3.2, 1.3 + speed * 0.035) - this.zoom) * 0.15;   // zoom out at speed
+    // buffer size: the screen's pixels, at least the logical size so the cabin screen stays sharp
+    if (!this.sizeCache) this.sizeCache = this.cv.clientWidth || (this.expanded ? 900 : 372);
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    const bw = clamp(Math.round(this.sizeCache * dpr), NAV_W, 1280), bh = Math.round(bw * NAV_H / NAV_W);
+    if (this.cv.width !== bw) { this.cv.width = bw; this.cv.height = bh; }
+    const c = this.ctx, bs = bw / NAV_W;
+    const T = this.theme();
+
+    const cx = car.x, cy = -car.z;
+    let hx = fwd.x, hy = -fwd.z;
+    const hl = Math.hypot(hx, hy);
+    if (hl < 1e-6) { hx = this.vhx; hy = this.vhy; } else { hx /= hl; hy /= hl; }
+    const kmh = Math.abs(speed) * 3.6;
+    this.avgSpeed += (Math.max(speed, 5) - this.avgSpeed) * 0.012;
+
+    // ---- the next turns of the route (distance along it)
+    let next: Turn | null = null, dist = Infinity, then: Turn | null = null, thenGap = Infinity;
+    const remain = routeS !== null && this.routeLen > 0 ? (this.routeClosed ? this.routeLen - routeS : Math.max(0, this.routeLen - routeS)) : null;
+    if (routeS !== null && this.turns.length && !this.waypoint) {
+      const s = ((routeS % this.routeLen) + this.routeLen) % this.routeLen;
+      for (const t of this.turns) { let d = t.s - s; if (d < -5) d += this.routeLen; if (d >= -5 && d < dist) { dist = d; next = t; } }
+      if (next) {
+        for (const t of this.turns) {
+          if (t === next) continue;
+          let g = t.s - next.s; if (g < 1) g += this.routeLen;
+          if (g < thenGap) { thenGap = g; then = t; }
+        }
+      }
     }
-    const k = 1 / this.zoom;
-    c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.clearRect(0, 0, size, size);
+
+    // ---- camera: higher (looking further) with speed; a little closer when a turn is coming up
+    this.flat = this.expanded;
+    let target = clamp(60 + speed * 1.35, 60, 160);
+    if (next && dist < 260) target *= 0.78 + 0.22 * clamp((dist - 40) / 220, 0, 1);
+    this.camH += (target - this.camH) * 0.12;
+    this.vx = cx; this.vy = cy; this.vhx = hx; this.vhy = hy;
+    this.vH = this.camH; this.vD = this.camH * BACK;
+    this.flatK = 1 / 3.8;
+
+    c.setTransform(bs, 0, 0, bs, 0, 0);
+    c.clearRect(0, 0, NAV_W, NAV_H);
     c.save();
-    if (this.expanded) {
-      c.beginPath(); c.rect(0, 0, size, size); c.clip();
-      c.fillStyle = 'rgba(6, 9, 16, 0.94)'; c.fillRect(0, 0, size, size);
-      // North-up full map centred on the player
-      c.translate(r, r);
-      c.scale(k, -k);
-    } else {
-      // round watch face
-      c.beginPath(); c.arc(r, r, r - 1, 0, Math.PI * 2); c.clip();
-      const glass = c.createRadialGradient(r * 0.9, r * 0.6, 0, r, r, size * 0.72);
-      glass.addColorStop(0, '#121b2a'); glass.addColorStop(0.55, '#0a111c'); glass.addColorStop(1, '#04070c');
-      c.fillStyle = glass; c.fillRect(0, 0, size, size);
-      // world -> canvas: translate to the car, rotate so the car points up, scale, flip y
-      c.translate(r, r * 1.18);
-      c.scale(k, -k);
-      c.rotate(Math.PI / 2 - theta);
+    c.beginPath(); c.rect(0, 0, NAV_W, NAV_H); c.clip();
+    c.fillStyle = T.land; c.fillRect(0, 0, NAV_W, NAV_H);
+    this.drawRoads(c, T, cx, cy, hx, hy);
+    if (!this.flat && this.camH < 135) this.drawBuildings(c, T, cx, cy, hx, hy);
+    this.drawLabels(c, T, cx, cy, hx, hy);
+    this.drawRoute(c, T, routeS);
+    this.drawMarkers(c, T, cx, cy, others);
+    // haze into the distance
+    if (!this.flat) {
+      const g = c.createLinearGradient(0, 0, 0, NAV_H * 0.46);
+      g.addColorStop(0, T.haze); g.addColorStop(0.35, T.haze + 'cc'); g.addColorStop(1, T.haze + '00');
+      c.fillStyle = g; c.fillRect(0, 0, NAV_W, NAV_H * 0.46);
     }
-    c.translate(-cx, -cy);
-    const reach = (r * 1.7) * this.zoom, c0x = Math.floor((cx - reach) / CELL), c1x = Math.floor((cx + reach) / CELL);
-    const c0y = Math.floor((cy - reach) / CELL), c1y = Math.floor((cy + reach) / CELL);
+    this.drawPuck(c, T, cx, cy, hx, hy);
+    c.restore();
+    this.drawUi(c, T, now, cx, cy, hx, hy, kmh, routeS, remain, next, dist, then, thenGap);
+    this.dirty = true;
+  }
+
+  // ------------------------------------------------------------------ the map layers
+  private drawRoads(c: CanvasRenderingContext2D, T: NavTheme, cx: number, cy: number, hx: number, hy: number) {
+    // which grid cells can be on screen: a circle around the middle of the visible ground
+    let ccx = cx, ccy = cy, reach: number;
+    if (this.flat) { reach = (NAV_W / this.flatK) * 0.75; }
+    else {
+      const ahead = this.vH / Math.tan(Math.max(0.12, DEPRESSION - Math.atan(AXIS_Y / FOCAL))) - this.vD;
+      reach = ahead * 0.78;
+      ccx = cx + hx * ahead * 0.45; ccy = cy + hy * ahead * 0.45;
+    }
+    const c0x = Math.floor((ccx - reach) / CELL), c1x = Math.floor((ccx + reach) / CELL);
+    const c0y = Math.floor((ccy - reach) / CELL), c1y = Math.floor((ccy + reach) / CELL);
+    const byWidth = this.byWidth, pool = this.pool;
     c.lineCap = 'round'; c.lineJoin = 'round';
-    // minor streets first, then the major ones over them; within a tier one path per stroke width (same colour and
-    // width as one stroke per segment, without hundreds of separate stroke calls per draw)
-    const byWidth = this.byWidth, pool = this.segPool;
-    for (let tier = 0; tier < 2; tier++) {
-      const major = tier === 1;
-      const stamp = ++this.drawStamp, minW = (major ? 3.2 : 2.2) * this.zoom;
+    const rr = (reach + CELL * 0.75) ** 2;
+    for (let tier = 0; tier < 4; tier++) {
+      const stamp = ++this.drawStamp;
       for (let gx = c0x; gx <= c1x; gx++) for (let gy = c0y; gy <= c1y; gy++) {
+        if (((gx + 0.5) * CELL - ccx) ** 2 + ((gy + 0.5) * CELL - ccy) ** 2 > rr) continue;
         const list = this.grid.get(`${gx}_${gy}`);
         if (!list) continue;
         for (let i = 0; i < list.length; i++) {
           const s = list[i];
-          if (s.major !== major || s.stamp === stamp) continue;
+          if (s.cls !== tier || s.stamp === stamp) continue;
           s.stamp = stamp;
-          const lw = Math.max(s.w * 0.85, minW);
+          this.proj(s.x0, s.y0, 0); const ax = this.sx, ay = this.sy, az = this.sz;
+          this.proj(s.x1, s.y1, 0); let bx = this.sx, by = this.sy; const bz = this.sz;
+          let ux = ax, uy = ay;
+          if (!this.flat) {
+            if (!(az >= NEAR) && !(bz >= NEAR)) continue;
+            // clip the part behind the near plane
+            if (!(az >= NEAR) || !(bz >= NEAR)) {
+              const t = (NEAR - az) / (bz - az);
+              const nx = s.x0 + (s.x1 - s.x0) * t, ny = s.y0 + (s.y1 - s.y0) * t;
+              if (!(az >= NEAR)) { this.proj(nx, ny, 0); ux = this.sx; uy = this.sy; }
+              else { this.proj(nx, ny, 0); bx = this.sx; by = this.sy; }
+              if (Number.isNaN(ux + uy + bx + by)) continue;
+            }
+            if ((ux < -80 && bx < -80) || (ux > NAV_W + 80 && bx > NAV_W + 80) || (uy > NAV_H + 80 && by > NAV_H + 80) || (uy < -40 && by < -40)) continue;
+          }
+          const z = this.flat ? 1 : Math.max(NEAR, (az + bz) * 0.5);
+          const px = this.flat ? s.w * this.flatK : (s.w * 0.72 * FOCAL) / z;
+          const lw = Math.round(Math.max(px * 0.9, MIN_PX[tier]) * 2) / 2;
           let bucket = byWidth.get(lw);
           if (!bucket) byWidth.set(lw, (bucket = pool.pop() ?? []));
-          bucket.push(s);
+          bucket.push(ux, uy, bx, by);
         }
       }
-      const casing = major ? 'rgba(2, 5, 10, 0.9)' : 'rgba(2, 5, 10, 0.55)';
-      const fill = major ? 'rgba(232, 240, 252, 0.95)' : 'rgba(158, 172, 196, 0.66)';
-      for (const [lw, bucket] of byWidth) {
-        c.beginPath();
-        for (let i = 0; i < bucket.length; i++) { const s = bucket[i]; c.moveTo(s.x0, s.y0); c.lineTo(s.x1, s.y1); }
-        c.strokeStyle = casing; c.lineWidth = lw + Math.max(1.2, 1.6 * this.zoom); c.stroke();
-        c.strokeStyle = fill; c.lineWidth = lw; c.stroke();
-        bucket.length = 0;
-        pool.push(bucket);
+      // casings of the whole tier first, then the fills, so the junctions of one tier merge cleanly
+      for (let pass = 0; pass < 2; pass++) {
+        for (const [lw, b] of byWidth) {
+          c.beginPath();
+          for (let i = 0; i < b.length; i += 4) { c.moveTo(b[i], b[i + 1]); c.lineTo(b[i + 2], b[i + 3]); }
+          if (pass === 0) { c.strokeStyle = T.casing[tier]; c.lineWidth = lw + (tier === 3 ? 3.2 : 2.4); }
+          else { c.strokeStyle = T.road[tier]; c.lineWidth = lw; }
+          c.stroke();
+        }
       }
+      for (const b of byWidth.values()) { b.length = 0; pool.push(b); }
       byWidth.clear();
     }
-    // the GPS line: the whole route faint, the next 600 m bright
-    if (this.route.length > 1) {
-      c.strokeStyle = 'rgba(0, 0, 0, 0.55)'; c.lineWidth = Math.max(8, 9 * this.zoom);
-      c.beginPath();
-      for (let i = 0; i < this.route.length; i++) { const p = this.route[i]; if (i) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); }
-      if (this.routeClosed) c.closePath();
-      c.stroke();
-      if (routeS !== null) {
-        c.beginPath();
-        for (let d = 0; d <= 600; d += 8) { const p = this.routeAt(routeS + d, this.rp); if (d) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); }
-        // the glow: two wider translucent strokes under the line (was shadowBlur 8, a Gaussian blur of the canvas on
-        // every draw); widths in css px times zoom, ~7 px and ~3.5 px of halo each side like the 8 px blur
-        const lw = Math.max(5, 7 * this.zoom);
-        c.strokeStyle = 'rgba(255, 255, 255, 0.18)'; c.lineWidth = lw + 14 * this.zoom; c.stroke();
-        c.strokeStyle = 'rgba(255, 255, 255, 0.35)'; c.lineWidth = lw + 7 * this.zoom; c.stroke();
-        c.strokeStyle = '#f2f7ff'; c.lineWidth = lw; c.stroke();
+  }
+
+  private drawBuildings(c: CanvasRenderingContext2D, T: NavTheme, cx: number, cy: number, hx: number, hy: number) {
+    this.buildings.ensure(cx + hx * 150, cy + hy * 150, 330);
+    const camX = cx - hx * this.vD, camY = cy - hy * this.vD;
+    const maxD = 340 * 340;
+    // collect (parallel arrays, reused between frames), then far to near (painter's order)
+    const itD = this.itD, itT = this.itT, itO = this.itO;
+    let cnt = 0;
+    this.buildings.forEachTile((t) => {
+      for (let i = 0; i < t.n; i++) {
+        const o = i * 7;
+        const dx = t.d[o] - camX, dy = t.d[o + 1] - camY;
+        const d = dx * dx + dy * dy;
+        if (d > maxD) continue;
+        if (dx * hx + dy * hy < -30) continue;   // behind the camera
+        itD[cnt] = d; itT[cnt] = t.d; itO[cnt] = o; cnt++;
       }
-      // direction chevrons on the next stretch, like a real nav
-      if (routeS !== null && this.routeLen > 0) {
-        c.fillStyle = '#ffffff'; c.strokeStyle = 'rgba(2, 5, 10, 0.85)'; c.lineWidth = 1.1 * this.zoom;
-        const sz = 6.5 * this.zoom;
-        for (let d = 28; d <= 600; d += 58) {
-          const p = this.routeAt(routeS + d, { x: 0, y: 0 });
-          const q = this.routeAt(routeS + d + 7, { x: 0, y: 0 });
-          const a = Math.atan2(q.y - p.y, q.x - p.x);
-          c.save(); c.translate(p.x, p.y); c.rotate(a);
-          c.beginPath(); c.moveTo(sz, 0); c.lineTo(-sz * 0.65, sz * 0.72); c.lineTo(-sz * 0.2, 0); c.lineTo(-sz * 0.65, -sz * 0.72); c.closePath();
-          c.fill(); c.stroke(); c.restore();
-        }
+    });
+    if (!cnt) return;
+    const order = this.itI;
+    order.length = cnt;
+    for (let i = 0; i < cnt; i++) order[i] = i;
+    order.sort((a, b) => itD[b] - itD[a]);
+    const n = Math.min(cnt, 420);
+    const hCap = this.vH * 0.12;
+    const sxs = [0, 0, 0, 0], sys = [0, 0, 0, 0], txs = [0, 0, 0, 0], tys = [0, 0, 0, 0];
+    const wx = [0, 0, 0, 0], wy = [0, 0, 0, 0];
+    for (let k = cnt - n; k < cnt; k++) {
+      const t = itT[order[k]], o = itO[order[k]];
+      const bx = t[o], by = t[o + 1], ex = t[o + 2], ey = t[o + 3], co = t[o + 4], si = t[o + 5];
+      const h = Math.min(t[o + 6] * 0.4, hCap, 22);
+      // corners (local +x,+y ; -x,+y ; -x,-y ; +x,-y), rotated by yaw
+      let ok = true;
+      for (let i = 0; i < 4; i++) {
+        const lx = i === 0 || i === 3 ? ex : -ex, ly = i < 2 ? ey : -ey;
+        wx[i] = bx + lx * co - ly * si; wy[i] = by + lx * si + ly * co;
+        this.proj(wx[i], wy[i], 0); sxs[i] = this.sx; sys[i] = this.sy;
+        this.proj(wx[i], wy[i], h); txs[i] = this.sx; tys[i] = this.sy;
+        if (Number.isNaN(sxs[i] + sys[i] + txs[i] + tys[i])) ok = false;
       }
-      // start / finish
-      const s0 = this.route[0];
-      c.fillStyle = '#fff'; c.fillRect(s0.x - 4 * this.zoom, s0.y - 4 * this.zoom, 8 * this.zoom, 8 * this.zoom);
-      c.fillStyle = '#000'; c.fillRect(s0.x - 4 * this.zoom, s0.y - 4 * this.zoom, 4 * this.zoom, 4 * this.zoom); c.fillRect(s0.x, s0.y, 4 * this.zoom, 4 * this.zoom);
+      if (!ok) continue;
+      if (Math.max(sxs[0], sxs[1], sxs[2], sxs[3], txs[0], txs[1], txs[2], txs[3]) < -20 || Math.min(sxs[0], sxs[1], sxs[2], sxs[3], txs[0], txs[1], txs[2], txs[3]) > NAV_W + 20) continue;
+      // walls that face the camera
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) & 3;
+        const mx = (wx[i] + wx[j]) / 2, my = (wy[i] + wy[j]) / 2;
+        let nx = wy[j] - wy[i], ny = wx[i] - wx[j];   // outward normal of a counter-clockwise polygon
+        const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+        if (nx * (camX - mx) + ny * (camY - my) <= 0) continue;
+        c.fillStyle = nx * 0.6 + ny * 0.8 > 0 ? T.wallLit : T.wallDark;
+        c.beginPath(); c.moveTo(sxs[i], sys[i]); c.lineTo(sxs[j], sys[j]); c.lineTo(txs[j], tys[j]); c.lineTo(txs[i], tys[i]); c.closePath(); c.fill();
+      }
+      c.fillStyle = T.roof;
+      c.beginPath(); c.moveTo(txs[0], tys[0]); c.lineTo(txs[1], tys[1]); c.lineTo(txs[2], tys[2]); c.lineTo(txs[3], tys[3]); c.closePath(); c.fill();
+      c.strokeStyle = T.roofEdge; c.lineWidth = 0.8; c.stroke();
     }
-    // landmarks near the car as small points of interest
-    if (this.landmarks.length) {
-      c.save();
-      c.fillStyle = 'rgba(236, 244, 255, 0.85)'; c.strokeStyle = 'rgba(2, 5, 10, 0.8)'; c.lineWidth = 0.8 * this.zoom;
-      for (const lm of this.landmarks) {
-        if (Math.abs(lm.x - cx) > (r * 1.7) * this.zoom || Math.abs(lm.y - cy) > (r * 1.7) * this.zoom) continue;
-        c.beginPath(); c.arc(lm.x, lm.y, 2.1 * this.zoom, 0, Math.PI * 2); c.fill(); c.stroke();
+  }
+
+  private drawLabels(c: CanvasRenderingContext2D, T: NavTheme, cx: number, cy: number, hx: number, hy: number) {
+    const range = this.flat ? 900 : Math.min(420, this.vH * 4.5);
+    const gx0 = Math.floor((cx - range) / CELL), gx1 = Math.floor((cx + range) / CELL);
+    const gy0 = Math.floor((cy - range) / CELL), gy1 = Math.floor((cy + range) / CELL);
+    const cand: { n: Named; d: number }[] = [];
+    for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
+      const list = this.namedGrid.get(`${gx}_${gy}`);
+      if (!list) continue;
+      for (const n of list) {
+        const dx = n.x - cx, dy = n.y - cy;
+        const d = Math.hypot(dx, dy);
+        if (d > range) continue;
+        if (!this.flat && dx * hx + dy * hy < -20) continue;
+        // tilted view: the nearest first (major roads a bit earlier); overview: major roads first, spread over the whole map
+        cand.push({ n, d: this.flat ? -n.cls * 1000 + ((Math.imul(Math.round(n.x), 73856093) ^ Math.imul(Math.round(n.y), 19349663)) >>> 0) % 900 : d - n.cls * 70 });
       }
-      c.restore();
+    }
+    if (!cand.length) return;
+    cand.sort((a, b) => a.d - b.d);
+    const boxes: number[] = [];
+    const seen = new Set<string>();
+    let drawn = 0;
+    c.font = `500 11px ${FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.lineJoin = 'round'; c.lineWidth = 3.4;
+    for (const { n } of cand) {
+      if (drawn >= (this.flat ? 14 : 8)) break;
+      this.proj(n.x, n.y, 0);
+      const x = this.sx, y = this.sy;
+      if (seen.has(n.name)) continue;                                                       // one label per street
+      if (!(x > CARD_W + 30 && x < NAV_W - 52 && y > 120 && y < NAV_H - 14)) continue;   // clear of the cards, buttons and the haze
+      if (!this.flat && Math.abs(x - AXIS_X) < 34) continue;                              // not under the guidance line
+      const w = c.measureText(n.name).width + 6, h = 13;
+      let clash = false;
+      for (let i = 0; i < boxes.length; i += 4) if (Math.abs(x - boxes[i]) < (w + boxes[i + 2]) / 2 && Math.abs(y - boxes[i + 1]) < (h + boxes[i + 3]) / 2) { clash = true; break; }
+      if (clash) continue;
+      boxes.push(x, y, w, h);
+      seen.add(n.name);
+      c.strokeStyle = T.labelHalo; c.strokeText(n.name, x, y);
+      c.fillStyle = T.label; c.fillText(n.name, x, y);
+      drawn++;
+    }
+  }
+
+  private drawRoute(c: CanvasRenderingContext2D, T: NavTheme, routeS: number | null) {
+    if (this.route.length < 2) return;
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    if (this.flat) {
+      // the whole loop faint, the part ahead bright
+      c.beginPath();
+      for (let i = 0; i < this.route.length; i++) { const p = this.route[i]; this.proj(p.x, p.y, 0); if (i) c.lineTo(this.sx, this.sy); else c.moveTo(this.sx, this.sy); }
+      if (this.routeClosed) c.closePath();
+      c.strokeStyle = T.route + '55'; c.lineWidth = 5; c.stroke();
+    }
+    if (routeS === null) return;
+    // upcoming 1.5 km, in runs so the width follows the perspective
+    const step = 9, n = 170;
+    const px: number[] = [], py: number[] = [], pz: number[] = [];
+    for (let i = 0; i <= n; i++) {
+      const p = this.routeAt(routeS - 20 + i * step, this.rp);
+      this.proj(p.x, p.y, 0);
+      px.push(this.sx); py.push(this.sy); pz.push(this.sz);
+    }
+    const run = 6;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < n; i += run) {
+        const mid = pz[Math.min(n, i + (run >> 1))];
+        if (!this.flat && !(mid >= NEAR)) continue;
+        const w = this.flat ? 6.5 : clamp((7.5 * FOCAL) / Math.max(mid, NEAR), 3.4, 14);
+        c.beginPath();
+        let started = false;
+        for (let j = i; j <= Math.min(n, i + run); j++) {
+          if (Number.isNaN(px[j])) { started = false; continue; }
+          if (started) c.lineTo(px[j], py[j]); else { c.moveTo(px[j], py[j]); started = true; }
+        }
+        if (pass === 0) { c.strokeStyle = T.routeCasing; c.lineWidth = w + 3.6; }
+        else { c.strokeStyle = T.route; c.lineWidth = w; }
+        c.stroke();
+      }
+    }
+    // start / finish
+    const s0 = this.route[0];
+    this.proj(s0.x, s0.y, 0);
+    if (!Number.isNaN(this.sx) && this.sx > 0 && this.sx < NAV_W && this.sy > 0 && this.sy < NAV_H) {
+      const u = this.flat ? 6 : clamp((3.2 * FOCAL) / Math.max(this.sz, NEAR), 4, 14);
+      c.fillStyle = '#fff'; c.fillRect(this.sx - u, this.sy - u, 2 * u, 2 * u);
+      c.fillStyle = '#202124'; c.fillRect(this.sx - u, this.sy - u, u, u); c.fillRect(this.sx, this.sy, u, u);
+    }
+  }
+
+  private drawMarkers(c: CanvasRenderingContext2D, T: NavTheme, cx: number, cy: number, others: Blip[]) {
+    // landmarks as points of interest
+    if (this.landmarks.length) {
+      c.font = `500 10.5px ${FONT}`; c.textAlign = 'left'; c.textBaseline = 'middle'; c.lineWidth = 3; c.lineJoin = 'round';
+      let n = 0;
+      for (const lm of this.landmarks) {
+        if (Math.abs(lm.x - cx) > 700 || Math.abs(lm.y - cy) > 700) continue;
+        this.proj(lm.x, lm.y, 0);
+        if (!(this.sx > CARD_W + 30 && this.sx < NAV_W - 80 && this.sy > 120 && this.sy < NAV_H - 20)) continue;
+        c.fillStyle = T.poi; c.beginPath(); c.arc(this.sx, this.sy, 4.4, 0, Math.PI * 2); c.fill();
+        c.strokeStyle = T.labelHalo; c.strokeText(lm.name, this.sx + 8, this.sy); c.fillStyle = T.label; c.fillText(lm.name, this.sx + 8, this.sy);
+        if (++n >= 4) break;
+      }
     }
     // rivals / players
     for (const o of others) {
-      c.fillStyle = o.color; c.beginPath(); c.arc(o.x, -o.z, 4.2 * this.zoom, 0, Math.PI * 2); c.fill();
-      c.strokeStyle = '#000'; c.lineWidth = 1.2 * this.zoom; c.stroke();
+      this.proj(o.x, -o.z, 0);
+      if (Number.isNaN(this.sx) || this.sx < -10 || this.sx > NAV_W + 10 || this.sy < -10 || this.sy > NAV_H + 10) continue;
+      const r = this.flat ? 4.5 : clamp((2.2 * FOCAL) / Math.max(this.sz, NEAR), 3, 8);
+      c.fillStyle = o.color; c.beginPath(); c.arc(this.sx, this.sy, r, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = T.night ? '#0b0f15' : '#ffffff'; c.lineWidth = 1.6; c.stroke();
     }
-    // GPS Waypoint pin + straight-line guide
+    // destination pin of a GPS waypoint, with the straight guide to it
     if (this.waypoint) {
       const wx = this.waypoint.x, wy = -this.waypoint.z;
-      c.strokeStyle = 'rgba(255, 196, 0, 0.78)';
-      c.lineWidth = 2.6 * this.zoom;
-      c.setLineDash([8 * this.zoom, 6 * this.zoom]);
-      c.beginPath(); c.moveTo(cx, cy); c.lineTo(wx, wy); c.stroke();
-      c.setLineDash([]);
-      c.fillStyle = '#ffc400';
-      c.beginPath(); c.arc(wx, wy, 6.2 * this.zoom, 0, Math.PI * 2); c.fill();
-      c.strokeStyle = '#000'; c.lineWidth = 1.8 * this.zoom; c.stroke();
-    }
-    c.restore();
-    // the car: a soft heading cone, then the arrow (screen space)
-    c.save();
-    c.translate(r, this.expanded ? r : r * 1.18);
-    if (this.expanded) c.rotate(Math.PI / 2 - theta);
-    const cone = c.createRadialGradient(0, 0, 0, 0, 0, 54);
-    cone.addColorStop(0, 'rgba(96, 200, 255, 0.40)');
-    cone.addColorStop(0.5, 'rgba(96, 200, 255, 0.11)');
-    cone.addColorStop(1, 'rgba(96, 200, 255, 0)');
-    c.fillStyle = cone;
-    c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, 54, -Math.PI / 2 - 0.55, -Math.PI / 2 + 0.55); c.closePath(); c.fill();
-    c.restore();
-    c.save();
-    c.translate(r, this.expanded ? r : r * 1.18);
-    if (this.expanded) c.rotate(Math.PI / 2 - theta);
-    c.fillStyle = '#fff'; c.strokeStyle = 'rgba(0,0,0,0.8)'; c.lineWidth = 1.5;
-    c.beginPath(); c.moveTo(0, -9); c.lineTo(6.5, 7); c.lineTo(0, 3.5); c.lineTo(-6.5, 7); c.closePath(); c.fill(); c.stroke();
-    c.restore();
-    // north tick + real-life landmark labels on expanded map
-    if (this.expanded) {
-      if (this.landmarks.length) {
-        c.font = '700 10px Inter, system-ui, sans-serif';
-        c.textAlign = 'center';
-        for (const lm of this.landmarks) {
-          const sx = r + (lm.x - cx) * k;
-          const sy = r - (lm.y - cy) * k;
-          if (sx < 24 || sx > size - 24 || sy < 28 || sy > size - 16) continue;
-          c.fillStyle = 'rgba(0, 229, 255, 0.9)';
-          c.beginPath(); c.arc(sx, sy, 3.2, 0, Math.PI * 2); c.fill();
-          c.fillStyle = 'rgba(6, 9, 16, 0.75)';
-          const tw = c.measureText(lm.name).width + 8;
-          c.fillRect(sx - tw / 2, sy - 18, tw, 13);
-          c.fillStyle = '#e0f7ff';
-          c.fillText(lm.name, sx, sy - 8);
-        }
+      this.proj(cx, cy, 0); const x0 = this.sx, y0 = this.sy;
+      this.proj(wx, wy, 0);
+      if (!Number.isNaN(this.sx)) {
+        c.strokeStyle = T.route; c.lineWidth = 3; c.setLineDash([7, 7]); c.lineCap = 'butt';
+        c.beginPath(); c.moveTo(x0, y0); c.lineTo(this.sx, this.sy); c.stroke(); c.setLineDash([]);
+        const x = clamp(this.sx, CARD_W + 36, NAV_W - 60), y = clamp(this.sy, 110, NAV_H - 40);
+        c.fillStyle = '#ea4335'; c.strokeStyle = '#ffffff'; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(x, y); c.bezierCurveTo(x - 15, y - 14, x - 11, y - 34, x, y - 34); c.bezierCurveTo(x + 11, y - 34, x + 15, y - 14, x, y); c.fill(); c.stroke();
+        c.fillStyle = '#ffffff'; c.beginPath(); c.arc(x, y - 23, 4.2, 0, Math.PI * 2); c.fill();
       }
-      c.save(); c.translate(size - 22, 22); c.fillStyle = '#e8f4ff'; c.font = '800 12px Inter, system-ui, sans-serif';
-      c.textAlign = 'center'; c.fillText('N', 0, 4);
-      c.strokeStyle = 'rgba(232, 244, 255, 0.5)'; c.lineWidth = 1.2; c.beginPath(); c.arc(0, 0, 11, 0, Math.PI * 2); c.stroke(); c.restore();
-    } else {
-      c.save(); c.translate(r, r); c.rotate(-(Math.PI / 2 - theta)); c.fillStyle = 'rgba(255,255,255,0.7)'; c.font = '700 10px Inter, system-ui, sans-serif';
-      c.textAlign = 'center'; c.fillText('N', 0, -r + 13); c.restore();
     }
-    // turn-by-turn, active GPS Waypoint, or live current street name banner
-    const esc = (v: string) => v.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
-    let txt = '';
+  }
+
+  private drawPuck(c: CanvasRenderingContext2D, T: NavTheme, cx: number, cy: number, hx: number, hy: number) {
+    this.proj(cx, cy, 0);
+    const x = this.sx, y = this.sy;
+    if (Number.isNaN(x)) return;
+    c.save();
+    c.translate(x, y);
+    // the way the screen's "up" lines up with the car: flat map rotates the arrow, the tilted view keeps it upright
+    if (this.flat) c.rotate(Math.PI / 2 - Math.atan2(hy, hx));
+    const g = c.createRadialGradient(0, 0, 0, 0, 0, 34);
+    g.addColorStop(0, T.puck + '55'); g.addColorStop(1, T.puck + '00');
+    c.fillStyle = g; c.beginPath(); c.arc(0, 0, 34, 0, Math.PI * 2); c.fill();
+    c.shadowColor = 'rgba(0,0,0,0.55)'; c.shadowBlur = 7; c.shadowOffsetY = 2;
+    c.fillStyle = T.puck; c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.lineJoin = 'round';
+    c.beginPath(); c.moveTo(0, -17); c.lineTo(12.5, 13); c.lineTo(0, 6.5); c.lineTo(-12.5, 13); c.closePath(); c.stroke(); c.fill();
+    c.restore();
+  }
+
+  // ------------------------------------------------------------------ the cards and buttons on top
+  private fit(c: CanvasRenderingContext2D, text: string, maxW: number) {
+    if (c.measureText(text).width <= maxW) return text;
+    let t = text;
+    while (t.length > 3 && c.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+    return t.trimEnd() + '…';
+  }
+
+  private fmtDist(m: number) {
+    if (m < 1000) return `${m < 100 ? Math.max(10, Math.round(m / 10) * 10) : Math.round(m / 50) * 50} m`;
+    return `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
+  }
+
+  private clockText(sec: number) {
+    const s = ((sec % 86400) + 86400) % 86400;
+    return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}`;
+  }
+
+  private drawUi(c: CanvasRenderingContext2D, T: NavTheme, now: number, cx: number, cy: number, hx: number, hy: number, kmh: number,
+                 routeS: number | null, remain: number | null, next: Turn | null, dist: number, then: Turn | null, thenGap: number) {
+    const CW = CARD_W, X = 10;
+    // street under the car (refreshed twice a second)
+    if (now - this.streetAt_ > 500) { this.streetAt_ = now; this.street = this.streetNear(cx, cy); }
+    // ---- maneuver card
+    let title = '', sub = '', kind: ManeuverKind = 'straight', dir: -1 | 1 = 1, rot = 0;
     if (this.waypoint) {
-      const wd = Math.round(Math.hypot(this.waypoint.x - car.x, this.waypoint.z - car.z));
-      txt = `<b>📍</b> <span>GPS WAYPOINT</span> <i>${wd} m</i>`;
-    } else if (routeS !== null && this.turns.length) {
-      const s = ((routeS % this.routeLen) + this.routeLen) % this.routeLen;
-      let next: Turn | null = null, dist = Infinity;
-      for (const t of this.turns) { let d = t.s - s; if (d < -5) d += this.routeLen; if (d >= -5 && d < dist) { dist = d; next = t; } }
-      if (next && dist < 900) {
-        const arrow = next.sharp ? (next.dir < 0 ? '↶' : '↷') : (next.dir < 0 ? '↰' : '↱');
-        // compact: arrow + distance; the street name lives in the pill below
-        txt = `<b>${arrow}</b> <i>${dist < 30 ? 'now' : `${Math.round(dist / 10) * 10} m`}</i>`;
+      const dx = this.waypoint.x - this.lastCar.x, dz = this.waypoint.z - this.lastCar.z;
+      const wd = Math.hypot(dx, dz);
+      title = this.fmtDist(wd); sub = 'GPS waypoint';
+      // bearing of the waypoint relative to the car's heading (counter-clockwise positive; the canvas rotates clockwise)
+      rot = -(Math.atan2(-dz, dx) - Math.atan2(hy, hx));
+    } else if (next && routeS !== null && dist < 1200) {
+      kind = next.kind; dir = next.dir;
+      title = dist < 30 ? 'Now' : this.fmtDist(dist);
+      sub = next.name ? `onto ${next.name}` : (next.dir < 0 ? 'Turn left' : 'Turn right');
+    } else if (this.street) {
+      title = 'Continue'; sub = `on ${this.street}`;
+    }
+    if (title) {
+      const h = 104;
+      card(c, X, 10, CW, h, 14, T.maneuver, T.night);
+      c.save();
+      c.translate(X + 36, 10 + 46);
+      if (this.waypoint) { c.rotate(rot); drawManeuver(c, 'straight', 1, 52); }
+      else drawManeuver(c, kind, dir, 56);
+      c.restore();
+      c.fillStyle = '#ffffff'; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+      c.font = `500 32px ${FONT}`;
+      c.fillText(this.fit(c, title, CW - 80), X + 72, 10 + 52);
+      c.font = `400 15px ${FONT}`;
+      c.fillStyle = '#ffffffdd';
+      c.fillText(this.fit(c, sub, CW - 24), X + 14, 10 + 90);
+      // "Then" strip with the turn after that
+      if (then && next && thenGap < 320 && !this.waypoint && dist < 1200) {
+        const ty = 10 + h - 2;
+        c.fillStyle = T.maneuverDark;
+        roundRect(c, X, ty - 8, CW, 44, 14); c.fill();
+        c.fillStyle = T.maneuver; c.fillRect(X, ty - 8, CW, 12);
+        c.fillStyle = '#ffffffcc'; c.font = `500 15px ${FONT}`; c.textBaseline = 'middle';
+        c.fillText('Then', X + 14, ty + 18);
+        c.save(); c.translate(X + 72, ty + 17); drawManeuver(c, then.kind, then.dir, 26); c.restore();
       }
     }
-    if (!txt) {
-      const curStreet = this.streetAt(cx, cy);
-      if (curStreet) txt = `<span>${esc(curStreet)}</span>`;
-    }
-    if (this.bannerHtml !== txt) { this.banner.innerHTML = this.bannerHtml = txt; this.banner.hidden = !txt; }
-    this.dirty = true;
-    // watch face: speed, ETA chip, current street pill
-    if (this.speedEl) this.speedEl.textContent = String(Math.round(Math.abs(speed) * 3.6));
-    const remain = routeS !== null && this.routeLen > 0 ? Math.max(0, this.routeLen - routeS) : null;
-    const mins = remain !== null ? Math.max(1, Math.round(remain / Math.max(4, speed) / 60)) : null;
-    if (this.etaChip) {
-      const etaTxt = remain === null ? '' : remain < 120 ? 'Arriving' : `${mins}m · ${(remain / 1000).toFixed(1)}km`;
-      this.etaChip.hidden = !etaTxt;
-      if (etaTxt && this.etaChip.textContent !== etaTxt) this.etaChip.textContent = etaTxt;
-    }
-    if (this.pillEl) {
-      const street = this.streetAt(cx, cy);
-      const pillTxt = street || 'Centre vehicle';
-      if (this.pillEl.textContent !== pillTxt) this.pillEl.textContent = pillTxt;
-    }
-    // OEM nav: remaining route distance and ETA, live from the route and the current speed
-    if (this.footEta) {
-      let eta = '';
-      if (this.waypoint) eta = 'WAYPOINT';
-      else if (routeS !== null && this.routeLen > 0) {
-        const remain = Math.max(0, this.routeLen - routeS);
-        const min = remain / Math.max(4, speed) / 60;
-        eta = remain > 950 ? `${(remain / 1000).toFixed(1)} km · ${Math.max(1, Math.round(min))} min` : `${Math.round(remain / 10) * 10} m`;
+    // ---- bottom card: time, distance, arrival
+    {
+      const h = 70, y = NAV_H - h - 10;
+      card(c, X, y, CW, h, 14, T.card, T.night);
+      c.textBaseline = 'alphabetic'; c.textAlign = 'left';
+      // standing on the line of a loop before the first lap: not "arriving", just show the clock
+      const atStart = this.routeClosed && remain !== null && remain < 100 && kmh < 6;
+      if (remain !== null && !this.waypoint && !atStart) {
+        if (remain < 100) {
+          c.fillStyle = T.eta; c.font = `500 28px ${FONT}`; c.fillText('Arriving', X + 16, y + 42);
+        } else {
+          const sec = remain / Math.max(this.avgSpeed, 10);
+          const mins = Math.max(1, Math.round(sec / 60));
+          c.fillStyle = T.eta; c.font = `500 30px ${FONT}`;
+          c.fillText(mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`, X + 16, y + 37);
+          c.fillStyle = T.cardSub; c.font = `400 15px ${FONT}`;
+          c.fillText(`${this.fmtDist(remain)} · ${this.clockText(this.clockSec + sec * this.clockScale)}`, X + 16, y + 58);
+        }
+        roundButton(c, X + CW - 30, y + h / 2, 17, T, 'close');
+      } else if (this.waypoint) {
+        const wd = Math.hypot(this.waypoint.x - this.lastCar.x, this.waypoint.z - this.lastCar.z);
+        const sec = wd / Math.max(this.avgSpeed, 10);
+        c.fillStyle = T.eta; c.font = `500 30px ${FONT}`; c.fillText(`${Math.max(1, Math.round(sec / 60))} min`, X + 16, y + 38);
+        c.fillStyle = T.cardSub; c.font = `400 15px ${FONT}`;
+        c.fillText(`${this.fmtDist(wd)} · ${this.clockText(this.clockSec + sec * this.clockScale)}`, X + 16, y + 60);
+        roundButton(c, X + CW - 30, y + h / 2, 17, T, 'close');
+      } else {
+        c.fillStyle = T.cardText; c.font = `500 30px ${FONT}`; c.fillText(this.clockText(this.clockSec), X + 16, y + 38);
+        c.fillStyle = T.cardSub; c.font = `400 15px ${FONT}`;
+        const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const brg = (Math.PI / 2 - Math.atan2(hy, hx) + Math.PI * 2) % (Math.PI * 2);
+        c.fillText(`Heading ${dirs[Math.round(brg / (Math.PI / 4)) % 8]}${this.street ? ' · ' + this.fit(c, this.street, 100) : ''}`, X + 16, y + 60);
       }
-      if (this.footEta.textContent !== eta) this.footEta.textContent = eta;
     }
-    // scale bar: 34 css px of the bar at the current zoom, rounded to a readable distance
-    if (this.footScale) {
-      const m = 34 * this.zoom;
-      const nice = m >= 500 ? Math.round(m / 100) * 100 : m >= 100 ? Math.round(m / 50) * 50 : Math.round(m / 10) * 10;
-      const label = nice >= 1000 ? `${(nice / 1000).toFixed(1)} km` : `${nice} m`;
-      if (this.footScale.textContent !== label) this.footScale.textContent = label;
+    // ---- right: compass, sound, search
+    const bx = NAV_W - 30;
+    compassButton(c, bx, 34, 18, T, this.flat ? 0 : (Math.atan2(hy, hx) - Math.PI / 2));
+    roundButton(c, bx, 78, 18, T, 'speaker');
+    roundButton(c, bx, 122, 18, T, 'search');
+    // ---- bottom right: speed limit and speed
+    speedBubbles(c, NAV_W - 42, NAV_H - 42, kmh, this.limitUnder(cx, cy, now), T, FONT);
+    if (this.flat) {
+      // scale bar of the overview
+      const m = 80 / this.flatK, nice = m >= 500 ? Math.round(m / 100) * 100 : m >= 100 ? Math.round(m / 50) * 50 : Math.round(m / 10) * 10;
+      const wpx = nice * this.flatK, sx = NAV_W / 2 - wpx / 2, sy = NAV_H - 22;
+      c.fillStyle = T.card; c.globalAlpha = 0.85; roundRect(c, sx - 8, sy - 14, wpx + 16, 24, 8); c.fill(); c.globalAlpha = 1;
+      c.strokeStyle = T.cardText; c.lineWidth = 2; c.beginPath(); c.moveTo(sx, sy + 2); c.lineTo(sx, sy - 5); c.lineTo(sx + wpx, sy - 5); c.lineTo(sx + wpx, sy + 2); c.stroke();
+      c.fillStyle = T.cardText; c.font = `500 10px ${FONT}`; c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+      c.fillText(nice >= 1000 ? `${(nice / 1000).toFixed(1)} km` : `${nice} m`, NAV_W / 2, sy + 6);
     }
   }
 
