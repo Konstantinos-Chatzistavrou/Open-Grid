@@ -133,5 +133,41 @@
     ],
     "basis": "CFD (CC BY 4.0), not wind-tunnel measured",
     "note": "Use only as a class proxy. No measured front/rear balance under a reusable licence was found (see docs/downforce-data.md). The range spans the rigid-closed (0.676) and inflated-open (0.859) configurations; it is not a specification for our cars."
+  },
+  "race_car_downforce_evidence": {
+    "note": "The wing bound above (cl_max x 1 m^2 x 1.15) fits road cars and small wings. A race car also makes downforce with the floor, splitter and diffuser. A car listed in 'cars' may go up to bound_margin x the largest implied ClA of the evidence entries named for it. The implied ClA = downforce / (0.5 rho v^2) at the file's air density.",
+    "bound_margin": 1.1,
+    "entries": [
+      {
+        "id": "ferrari_296_challenge",
+        "vehicle": "Ferrari 296 Challenge (single-make race car, same family as the 296 GT3)",
+        "downforce_kg": 870,
+        "at_kmh": 250,
+        "condition": "spoiler at its maximum angle of attack",
+        "source": "Ferrari South Bay dealer page quoting the manufacturer figure",
+        "url": "https://www.ferrarisouthbay.com/new-vehicles/296-challenge",
+        "kind": "manufacturer claim",
+        "confidence": "low-medium: a dealer page repeating a manufacturer figure; a related race car, not an SRO GT3",
+        "implied_cla_m2": 2.89
+      },
+      {
+        "id": "porsche_992_gt3_rs_road",
+        "vehicle": "Porsche 992 GT3 RS (road car) - a floor for a race GT3",
+        "downforce_kg": 860,
+        "at_kmh": 285,
+        "condition": "manufacturer figure at 177 mph; 409 kg at 124 mph",
+        "source": "Excellence magazine, 992 GT3 and GT3 RS Aero Tech",
+        "url": "https://www.excellence-mag.com/issues/299/articles/992-gt3-gt3-rs-aero-tech",
+        "kind": "manufacturer figure (road car)",
+        "confidence": "medium for the road car; a race GT3 has more",
+        "implied_cla_m2": 2.2
+      }
+    ],
+    "cars": {
+      "Tornado GT3": [
+        "ferrari_296_challenge",
+        "porsche_992_gt3_rs_road"
+      ]
+    }
   }
 }

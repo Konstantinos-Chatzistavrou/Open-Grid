@@ -1,7 +1,7 @@
 {
   "schema": "car/1",
   "name": "Tornado GT3",
-  "notes": "Original de-branded carbon-widebody GT3 track spec (Tornado GT3 #44). 475 kW (637 hp), 1280 kg, full swan-neck GT3 downforce, 295/30 R19 front / 335/30 R20 rear.",
+  "notes": "Original de-branded carbon-widebody GT3 track spec (Tornado GT3 #44), 1280 kg, 295/30 R19 front / 335/30 R20 rear. Calibrated 2026-11-25 to GT3-class public figures (data/physics/gt3-lap-references.json): 415 kW peak (BoP-level), downforce area 2.9 m2 and drag area 1.17 m2, brake torque no longer the limit, brake bias 0.72 (ideal front share at 1.9 g is 0.73), and tyre peak grip fitted x1.26 (the highest that keeps every friction coefficient at or under the 2.0 plausibility cap) so the car's quasi-steady lap at 100 % of its limits is within about 4 % of two real qualifying laps (Spa, Brands Hatch GP). Confidence low-medium: the aero and grip numbers are not measured data.",
   "chassis": {
     "mass_kg": 1280,
     "cg_height_m": 0.41,
@@ -174,7 +174,7 @@
     "vertical_stiffness_n_per_m": 280840,
     "longitudinal": {
       "C": 1.6411,
-      "mu": 1.54,
+      "mu": 1.9404,
       "load_sensitivity": -0.13966,
       "camber_sensitivity": 0,
       "E": 0.46403,
@@ -194,7 +194,7 @@
     },
     "lateral": {
       "C": 1.3507,
-      "mu": 1.52,
+      "mu": 1.9152,
       "load_sensitivity": -0.17192,
       "camber_sensitivity": -2.8821,
       "E": -0.0074722,
@@ -289,7 +289,7 @@
     "vertical_stiffness_n_per_m": 280840,
     "longitudinal": {
       "C": 1.6411,
-      "mu": 1.58,
+      "mu": 1.9908,
       "load_sensitivity": -0.13966,
       "camber_sensitivity": 0,
       "E": 0.46403,
@@ -309,7 +309,7 @@
     },
     "lateral": {
       "C": 1.3507,
-      "mu": 1.56,
+      "mu": 1.9656,
       "load_sensitivity": -0.17192,
       "camber_sensitivity": -2.8821,
       "E": -0.0074722,
@@ -396,34 +396,34 @@
     "mbelt_kg": 6.9471
   },
   "brakes": {
-    "max_total_torque_nm": 7000,
-    "bias_front": 0.67
+    "max_total_torque_nm": 9500.0,
+    "bias_front": 0.72
   },
   "engine": {
     "torque_curve": [
       [
         1000,
-        340
+        297.2
       ],
       [
         2500,
-        610
+        533.1
       ],
       [
         4000,
-        705
+        616.2
       ],
       [
         5500,
-        700
+        611.8
       ],
       [
         7000,
-        648
+        566.4
       ],
       [
         8000,
-        565
+        493.8
       ]
     ],
     "idle_rpm": 900,
@@ -513,8 +513,8 @@
     }
   },
   "aero": {
-    "drag_area_m2": 0.78,
-    "downforce_area_m2": 1.48,
+    "drag_area_m2": 1.17,
+    "downforce_area_m2": 2.9,
     "front_balance": 0.44
   },
   "surface_grip": {

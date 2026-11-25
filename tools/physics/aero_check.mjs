@@ -38,6 +38,15 @@ const A = ref.assumptions.frontal_area_m2;
 const drivaerCdA = { low: cdMin * A.low, high: cdMax * A.high };
 const wing = ref.references.find((r) => r.id === 'naca0012_wing');
 const clMaxBound = (wing?.cl_max ?? 1.4) * (ref.assumptions.wing_area_m2_for_bound ?? 1.0) * 1.15; // +15% underbody allowance
+// Race cars also make downforce with the floor, splitter and diffuser. A car named in race_car_downforce_evidence.cars may go up to
+// bound_margin x the largest implied ClA of the published figures listed for it; every other car keeps the wing bound.
+const evid = ref.race_car_downforce_evidence;
+function clBoundFor(name) {
+  const ids = evid?.cars?.[name];
+  if (!ids) return clMaxBound;
+  const implied = ids.map((id) => evid.entries.find((e) => e.id === id)?.implied_cla_m2 ?? 0);
+  return Math.max(clMaxBound, (evid.bound_margin ?? 1.1) * Math.max(...implied));
+}
 
 let failures = 0, checked = 0, missing = 0, warns = 0;
 const rows = [];
@@ -79,7 +88,8 @@ for (const f of files) {
   const isRoad = clA < 0.3;
 
   if (cdA < 0.30 || cdA > 1.35) fail(name, `CdA ${cdA} outside 0.30..1.35 m^2`);
-  if (clA < 0 || clA > clMaxBound) fail(name, `ClA ${clA} outside 0..${clMaxBound.toFixed(2)} m^2 (wing-bound)`);
+  const clBound = clBoundFor(name);
+  if (clA < 0 || clA > clBound) fail(name, `ClA ${clA} outside 0..${clBound.toFixed(2)} m^2 (${clBound > clMaxBound ? 'published-downforce bound' : 'wing-bound'})`);
   if (ld < 0 || ld > 2.5) fail(name, `L/D ${ld.toFixed(2)} outside 0..2.5`);
   if (clA > 0.1 && (typeof a.front_balance !== 'number' || a.front_balance < 0.30 || a.front_balance > 0.60))
     fail(name, `front_balance ${a.front_balance} outside 0.30..0.60 with downforce`);

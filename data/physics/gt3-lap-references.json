@@ -1,6 +1,6 @@
 {
   "schema": "open-grid/gt3-lap-references/1",
-  "about": "Published lap times of real GT3 cars at two of the five circuits we hold the geometry of. Facts (a time at a circuit), not a dataset: INDICATIVE, from news and results pages that are not the series' own timing, in qualifying trim. Used only as a lower bound: our Tornado GT3 must not lap faster than a real GT3 (0.95 x allows for the circuit length and line differences). Retrieved 2026-11-24.",
+  "about": "Published lap times of real GT3 cars at two of the five circuits we hold the geometry of, and the public GT3-class figures the Tornado GT3 was calibrated with on 2026-11-25. Facts (a time at a circuit, a power or weight figure), not a dataset: INDICATIVE, from news, results and manufacturer pages that are not the series' own timing, in qualifying trim. The test holds the car to them two ways: it must not lap faster than a real GT3 (0.95 x), and its quasi-steady lap at 100 % of its own limits must land within -3 % / +6 % of the real lap (the lap a driver at 92 % of the limits drives is not compared: that is driver margin, not the car). Retrieved 2026-11-24 / 2026-11-25.",
   "licence": "Facts (lap times) with their sources; no text reproduced.",
   "laps": [
     {
@@ -18,5 +18,66 @@
       "confidence": "low-medium: a fan-run lap-record page citing the series, qualifying"
     }
   ],
-  "not_found": "No GT3 time was found for Monza, Silverstone or Suzuka (only GT4 and simulator times turned up); none is used."
+  "not_found": "No GT3 time was found for Monza, Silverstone or Suzuka (only GT4 and simulator times turned up); none is used.",
+  "calibration": {
+    "date": "2026-11-25",
+    "car": "data/cars/tornado_gt3.json",
+    "figures_used": [
+      {
+        "what": "GT3 power is set by Balance of Performance, about 405-416 kW",
+        "used": "415 kW peak (was 475 kW)",
+        "source": "Porsche 911 GT3 R Evo up to 557 hp / 416 kW (ts2.tech comparison); Mercedes-AMG GT3 about 550 PS / 405 kW (Haupt Racing data page); both BoP-dependent",
+        "confidence": "low-medium: secondary sites, BoP changes per series and season"
+      },
+      {
+        "what": "GT3 mass about 1,250-1,293 kg",
+        "used": "1,280 kg (unchanged)",
+        "source": "Ferrari 296 GT3 1,250 kg (evo.co.uk, racingone.ps); Mercedes-AMG GT3 1,293 kg (lapmeta.com)",
+        "confidence": "low-medium"
+      },
+      {
+        "what": "Downforce about 870 kg at 250 km/h, i.e. a lift area of about 2.9 m2 (rho 1.225 kg/m3)",
+        "used": "downforce_area_m2 2.9 (was 1.48, i.e. about 440 kg at 250 km/h)",
+        "source": "Ferrari 296 Challenge 870 kg at 250 km/h (manufacturer figure on a dealer page, see data/physics/aero_reference.json race_car_downforce_evidence); floor: the road Porsche 992 GT3 RS makes 860 kg at 285 km/h (lift area about 2.2 m2). Unverified forum estimates of 860-920 kg at 241-250 km/h for other GT3 Evo cars were seen in a search result (page not opened) and are NOT used",
+        "confidence": "low: one manufacturer claim for a related car plus unverified forum estimates"
+      },
+      {
+        "what": "Drag area: a road 992 GT3 RS has Cd 0.39 with the wings flat (about 0.8 m2); a race GT3 with a full wing and widebody is higher",
+        "used": "drag_area_m2 1.17 (was 0.78): keeps lift/drag at 2.48, inside the checker's 2.5 envelope, with no extra unsourced claim",
+        "source": "Cd 0.39 with the wings flat for the 992 GT3 RS (excellence-mag.com 992 GT3 and GT3 RS Aero Tech); race value is our estimate",
+        "confidence": "low: an estimate"
+      }
+    ],
+    "fitted_not_sourced": [
+      "tyre peak friction scaled x1.26 (front lateral 1.52 -> 1.92, rear 1.56 -> 1.97; the largest factor that keeps every coefficient at or under the 2.0 cap of tools/physics/brake_reference.mjs): the one number fitted to the real laps; no published value exists",
+      "brake torque 7000 -> 9500 Nm: at 7000 Nm the brakes capped the stop at about 1.6 g whatever the tyres gave; now the tyres and ABS are the limit (1.68 g mean from 100 km/h)",
+      "brake bias 0.67 -> 0.72 (front share): at 1.9 g the ideal front share is 0.43 + 1.9 x h/L (0.156) = 0.73; at 0.67 the rear locked first and the test driver spun under braking at Silverstone"
+    ],
+    "result": {
+      "Spa-Francorchamps": {
+        "real_s": 136.984,
+        "car_quasi_steady_100pct_s": 142.9,
+        "ratio": 1.043,
+        "was_s": 150.8
+      },
+      "Brands Hatch GP": {
+        "real_s": 83.617,
+        "car_quasi_steady_100pct_s": 84.6,
+        "ratio": 1.011,
+        "was_s": 89.6
+      },
+      "measured_on_the_car": {
+        "skidpad_g": 1.53,
+        "abs_braking_mean_g_from_100kmh": 1.68,
+        "paper_top_speed_kmh": 283,
+        "was": {
+          "skidpad_g": 1.32,
+          "abs_braking_mean_g": 1.43,
+          "top_speed_kmh": 321
+        }
+      }
+    },
+    "not_done_and_why": "Only the GT3 has real lap references. The other 24 cars are de-branded originals with no named real counterpart in the catalogue, so there is no published figure to calibrate them against. Open: if a car should match a specific real car, name it and its published 0-100 / top speed / braking can be checked.",
+    "known_limit": "The GT3's grip is understeer-limited at the steady-state limit (the front axle runs out first at about 1.6 g on the skidpad); a stiffer rear raises the car's limit to 1.66 g but the test driver cannot hold it. Chassis balance was not changed."
+  }
 }

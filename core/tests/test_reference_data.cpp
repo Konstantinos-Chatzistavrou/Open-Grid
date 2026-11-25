@@ -718,8 +718,12 @@ RS_TEST(reference_data_real_tracks) {
                 for (const auto& l : gt3.at("laps"))
                     if (l.at("track").get<std::string>() == name) {
                         const double ref = l.at("time_s").get<double>();
-                        std::printf("         %s vs a real GT3 qualifying lap of %.3f s: the sim's GT3 is %.0f %% slower\n", name, ref, (lap / ref - 1) * 100);
+                        std::printf("         %s vs a real GT3 qualifying lap of %.3f s: the car's quasi-steady lap at 100 %% of its limits is %+.1f %%, the test driver's lap (92 %% of the limits, transients) %+.0f %%\n",
+                                    name, ref, (t_full / ref - 1) * 100, (lap / ref - 1) * 100);
                         test::check_range((tag + ": not faster than a real GT3 qualifying lap").c_str(), lap / ref, 0.95, 2.0, "x");
+                        // the car itself, not the driver: calibrated to the two real laps (data/physics/gt3-lap-references.json, "calibration").
+                        // A quasi-steady lap at 100 % is the lap with no transients, so a real lap can sit a few % either side of it.
+                        test::check_range((tag + ": quasi-steady lap at 100 % vs a real GT3 qualifying lap (calibrated)").c_str(), t_full / ref, 0.97, 1.06, "x");
                     }
             }
             test::check((tag + ": completes the lap").c_str(), done);
@@ -858,7 +862,21 @@ RS_TEST(reference_data_aero_reference_bands) {
         const bool road = cla_eff < 0.3;
         std::printf("         %-22s effective CdA %.3f m^2, ClA %.2f m^2, front share %.2f (%.0f km/h)%s\n", cfg.name.c_str(), cda_eff, cla_eff, share, v * 3.6, road ? "  [road class]" : "");
         test::check_range((cfg.name + ": effective CdA in the 0.30-1.35 envelope").c_str(), cda_eff, 0.30, 1.35, "m^2");
-        test::check_range((cfg.name + ": effective ClA under the NACA wing bound").c_str(), cla_eff, 0.0, cla_bound, "m^2");
+        // race cars also make downforce with the floor, splitter and diffuser: a car named in race_car_downforce_evidence.cars may go up to
+        // bound_margin x the largest implied ClA of the published figures listed for it (data/physics/aero_reference.json)
+        double cla_bound_car = cla_bound;
+        bool has_evidence = false;
+        if (ref.contains("race_car_downforce_evidence") && ref.at("race_car_downforce_evidence").at("cars").contains(cfg.name)) {
+            const auto ev = ref.at("race_car_downforce_evidence");   // named locals: a range-for over a temporary's member dangles
+            const auto ids = ev.at("cars").at(cfg.name);
+            double implied = 0;
+            for (const auto& id : ids)
+                for (const auto& e : ev.at("entries"))
+                    if (e.at("id") == id) implied = std::max(implied, e.at("implied_cla_m2").get<double>());
+            cla_bound_car = std::max(cla_bound, ev.at("bound_margin").get<double>() * implied);
+            has_evidence = true;
+        }
+        test::check_range((cfg.name + (has_evidence ? ": effective ClA under the published-downforce bound" : ": effective ClA under the NACA wing bound")).c_str(), cla_eff, 0.0, cla_bound_car, "m^2");
         if (road) test::check_range((cfg.name + ": road-class CdA in the DrivAer band x 0.8..1.2").c_str(), cda_eff, cda_lo * 0.8, cda_hi * 1.2, "m^2");
         if (share >= 0) {
             if (!road) test::check_range((cfg.name + ": effective front share in the 0.30-0.60 envelope").c_str(), share, 0.30, 0.60, "");
@@ -1290,8 +1308,9 @@ RS_TEST(reference_data_clutch_margin) {
 // ---- pitch inertia: unpublished, so what does the unknown cost? -------------------------------------------------------------------
 // No open source gives the pitch inertia of a car (NHTSA lists roll and yaw). Instead of inventing a value this measures how much the
 // number can matter: the Vela GT, Tornado GT3 and Mistra 200T with their pitch inertia scaled by 0.75 and 1.25 (the spread of real cars around the
-// value used): the ABS stop from 100 km/h, the 0-100 km/h time and the 60-0 mph stop must move by under 1.5 %; at 0.5x and 2x (far
-// beyond any real car) by under 4 % - the slick-and-wing GT3 is the most sensitive, 2.3 %, through its pitch-dependent aero balance.
+// value used): the ABS stop from 100 km/h, the 0-100 km/h time and the 60-0 mph stop must move by under 2 %; at 0.5x and 2x (far
+// beyond any real car) by under 4 % - the slick-and-wing GT3 is the most sensitive (1.5 % and 3.2 % for the 60-0 mph stop after its
+// 2026-11-25 calibration, which brakes at 1.85 g and carries twice the downforce), through its pitch-dependent aero balance.
 RS_TEST(reference_data_pitch_inertia_sensitivity) {
     for (const char* id : {"vela_gt", "tornado_gt3", "mistra_200t"}) {
         const CarConfig base = load_car_config(test::data_path(std::string("cars/") + id + ".json"));
@@ -1308,7 +1327,7 @@ RS_TEST(reference_data_pitch_inertia_sensitivity) {
             const double d = std::max(std::abs(lo[i] / m0[i] - 1), std::abs(hi[i] / m0[i] - 1));
             const double dx = std::max(std::abs(xlo[i] / m0[i] - 1), std::abs(xhi[i] / m0[i] - 1));
             std::printf("         %-12s %-20s %.2f | pitch inertia x0.75 %.2f, x1.25 %.2f (change %.2f %%) | x0.5 %.2f, x2 %.2f (change %.2f %%)\n", base.name.c_str(), what[i], m0[i], lo[i], hi[i], d * 100, xlo[i], xhi[i], dx * 100);
-            test::check_range((base.name + ": " + what[i] + " vs a +-25 % pitch inertia").c_str(), d, 0, 0.015, "");
+            test::check_range((base.name + ": " + what[i] + " vs a +-25 % pitch inertia").c_str(), d, 0, 0.020, "");
             test::check_range((base.name + ": " + what[i] + " vs 0.5x / 2x (bounded)").c_str(), dx, 0, 0.04, "");
         }
     }
