@@ -58,6 +58,7 @@ inline void enable_game_models(rs::Vehicle& v) {
     if (on("ayc")) v.chassis_dynamics().active_yaw_control_enabled = true;
     if (on("active_aero")) v.chassis_dynamics().active_aero_enabled = true;
     if (on("brake_boil")) v.chassis_dynamics().brake_fluid_boil_enabled = true;
+    if (on("bushing")) v.chassis_dynamics().bushing_compliance_enabled = true;
     if (on("torsional")) v.engine_systems().torsional_compliance_enabled = true;
     if (on("dogbox")) v.engine_systems().dog_box_flat_shift_cut = true;
 }

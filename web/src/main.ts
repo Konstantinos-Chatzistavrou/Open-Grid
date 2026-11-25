@@ -3332,6 +3332,9 @@ async function main() {
         core.setAtmosphere(airC, trackC, 15, humidity);
         core.setRoadWater(worldClock.roadWaterMm);
         p2Core?.setRoadWater(worldClock.roadWaterMm);
+        const rainRate = worldClock.weather === 'rain' ? Math.max(4, worldClock.roadWaterMm * 14) : 0;
+        core.setStreetSurface(1, rainRate, true);
+        p2Core?.setStreetSurface(1, rainRate, true);
         setGroundWetness(worldClock.wetness);
       }
 

@@ -751,7 +751,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         tire_condition_[w].brake_disc_temp_c = disc_temp_[w];
         // grip_factor() already incorporates thermal window, greasiness, wear cliff, zone health (blister/grain/flat-spot/
         // sidewall damage/marbles) and sidewall rollover; flat_spot_grip_factor() adds the once-per-rev glazed dip.
-        k.mu = cfg_.grip_for_surface(c.surface) * tire_condition_[w].grip_factor(&cfg_.tire(w))
+        k.mu = cfg_.grip_for_surface(c.surface) * clamp(c.surface_mu_mult, 0.4, 1.25)
+             * tire_condition_[w].grip_factor(&cfg_.tire(w))
              * tire_condition_[w].flat_spot_grip_factor(wheel_angle_[w]) * damage_.grip[w] * wet_mu;
         // Dynamic inclination / camber angle gamma in the tyre frame (+ = top tilted toward +left):
         //   - Independent axles (DoubleWishbone, MacPherson, MultiLink): body roll + kinematic camber + bushing compliance + rollover.
@@ -964,6 +965,14 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
                                                 side_sign, drivetrain_.wheel_omega[w], wheel_angle_[w], h, &tp);
             } else {
                 tire_condition_[w].update(slip_power, k.load, std::hypot(k.vx, k.vy), h, &tp);
+            }
+            if (contacts[w].marble_density > 0.01) {
+                const double v_roll = std::hypot(k.vx, k.vy);
+                if (v_roll > 1.0) {
+                    const double stickiness = 0.30 + 0.70 * clamp((tire_condition_[w].surface_c - 40.0) / 50.0, 0.0, 1.0);
+                    const double pickup_rate = clamp(contacts[w].marble_density, 0.0, 1.0) * stickiness * v_roll * 0.028;
+                    tire_condition_[w].marble_pickup = clamp(tire_condition_[w].marble_pickup + pickup_rate * h, 0.0, 1.0);
+                }
             }
             tyre_t[w] = -f.fx * k.re;                                // road pushes back on the wheel
             double c_rr = rolling_resistance_coeff(tp, k.vx, op.dpi);

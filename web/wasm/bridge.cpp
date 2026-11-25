@@ -23,6 +23,7 @@
 #include "rs/damage.hpp"
 #include "rs/race.hpp"
 #include "rs/route.hpp"
+#include "rs/street_surface.hpp"
 #include "rs/vehicle.hpp"
 
 namespace {
@@ -70,6 +71,15 @@ struct Car {
     std::unique_ptr<rs::DynoRoad> dyno_road;     // garage dyno (rs/dyno.hpp): set between rs_dyno_begin / rs_dyno_end
     std::unique_ptr<rs::DynoMeter> dyno_meter;
     rs::InstrumentCluster cluster;               // dashboard needles (rs/cluster.hpp)
+    rs::StreetSurfaceEvolution street_evo{4000.0, 200, 6.75, 0.02};
+    rs::StreetMicroGround street_micro{};
+    bool street_evo_enabled = true;
+    bool street_micro_enabled = false;           // enabled on city streets via rs_set_street_surface (keeps flat dyno/FFB tests clean)
+    double rain_mm_per_hr = 0.0;
+    int weather_tick_counter = 0;
+    double weather_dt_accum = 0.0;
+    double last_street_rubber = 0.0;
+    double last_street_marbles = 0.0;
 };
 
 std::vector<std::unique_ptr<Car>> g_cars;
@@ -92,6 +102,7 @@ EMSCRIPTEN_KEEPALIVE int rs_create(const char* json) {
         c->vehicle->chassis_dynamics().active_yaw_control_enabled = true;
         c->vehicle->chassis_dynamics().active_aero_enabled = true;
         c->vehicle->chassis_dynamics().brake_fluid_boil_enabled = true;
+        c->vehicle->chassis_dynamics().bushing_compliance_enabled = true;
         c->vehicle->engine_systems().torsional_compliance_enabled = true;
         c->vehicle->engine_systems().dog_box_flat_shift_cut = true;
         // Street/GT cars without an explicit dog_box/dct spec run the physical H-pattern synchromesh cone clutch.
@@ -163,6 +174,16 @@ EMSCRIPTEN_KEEPALIVE double* rs_incandescence(double temp_c, double emissivity) 
 
 // Rain water film on the road in mm (wet grip + aquaplaning; 0 = dry). Puddles per contact add on top.
 EMSCRIPTEN_KEEPALIVE void rs_set_road_water(int id, double mm) { g_cars[id]->vehicle->road_water_mm = std::max(0.0, mm); }
+
+// Configure live city-street surface evolution & procedural ISO 8608 urban micro-roughness (manholes, crosswalks, crown).
+// road_class: 0=ClassA_Highway, 1=ClassB_CityAvenue, 2=ClassC_WornStreet, 3=ClassD_BrokenCobble.
+EMSCRIPTEN_KEEPALIVE void rs_set_street_surface(int id, int road_class, double rain_mm_hr, int enable_micro) {
+    Car& c = *g_cars[id];
+    const int rc = std::max(0, std::min(3, road_class));
+    c.street_micro.config().road_class = static_cast<rs::IsoRoadClass>(rc);
+    c.rain_mm_per_hr = std::max(0.0, rain_mm_hr);
+    c.street_micro_enabled = (enable_micro != 0);
+}
 
 EMSCRIPTEN_KEEPALIVE void rs_set_atmosphere(int id, double air_c, double track_c, double altitude_m, double humidity) {
     Car& c = *g_cars[id];
@@ -253,7 +274,57 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
 
     const rs::DriverInput di = c.controls->update(raw, c.out, dt);
     c.vehicle->set_input(di);
-    c.out = c.vehicle->update(c.cs, contacts, dt);
+
+    std::array<rs::WheelContact, 4> live_contacts = contacts;
+    const int asphalt_idx = c.cfg.surface_index("asphalt");
+    double rubber_sum = 0.0, marbles_sum = 0.0;
+    int asphalt_hits = 0;
+    if (!c.dyno_road && c.street_evo_enabled) {
+        c.weather_dt_accum += dt;
+        if (++c.weather_tick_counter >= 20) {
+            c.street_evo.step_weather(c.rain_mm_per_hr, c.vehicle->atmosphere().ambient_air_c, c.weather_dt_accum);
+            c.weather_dt_accum = 0.0;
+            c.weather_tick_counter = 0;
+        }
+        const rs::Vec3 body_fwd = c.cs.orientation.rotate({1, 0, 0});
+        const rs::Vec3 body_left = c.cs.orientation.rotate({0, 1, 0});
+        if (c.street_micro_enabled) {
+            c.street_micro.config().base_water_mm = std::max(0.0, c.vehicle->road_water_mm);
+        }
+        for (int w = 0; w < 4; ++w) {
+            if (!live_contacts[w].hit || live_contacts[w].surface != asphalt_idx) continue;
+            const rs::StreetSurfaceSample ss = c.street_evo.sample_world(live_contacts[w].point.x, live_contacts[w].point.y);
+            live_contacts[w].surface_mu_mult = ss.effective_mu_mult;
+            live_contacts[w].marble_density = ss.marbles_0_to_1;
+            live_contacts[w].water_depth_mm = std::max(live_contacts[w].water_depth_mm, ss.water_mm);
+            if (c.street_micro_enabled) {
+                const double half_w = 0.5 * c.cfg.tire(w).section_width_m;
+                c.street_micro.apply_micro_hazards(live_contacts[w].point, body_fwd, body_left, 0.085, half_w,
+                                                   std::max(live_contacts[w].water_depth_mm, c.vehicle->road_water_mm),
+                                                   live_contacts[w].patch_profile);
+            }
+            rubber_sum += ss.rubber_0_to_1;
+            marbles_sum += ss.marbles_0_to_1;
+            ++asphalt_hits;
+        }
+    }
+
+    c.out = c.vehicle->update(c.cs, live_contacts, dt);
+
+    if (!c.dyno_road && c.street_evo_enabled) {
+        const double v_car = rs::length(c.cs.velocity);
+        for (int w = 0; w < 4; ++w) {
+            if (!live_contacts[w].hit || live_contacts[w].surface != asphalt_idx || !c.out.wheels[w].contact) continue;
+            const double slip_p = std::abs(c.out.wheels[w].fx * c.out.wheels[w].slip_ratio * std::max(v_car, 1.0))
+                                + std::abs(c.out.wheels[w].fy * std::sin(c.out.wheels[w].slip_angle) * std::max(v_car, 1.0));
+            c.street_evo.deposit_wheel_world(live_contacts[w].point.x, live_contacts[w].point.y,
+                                             slip_p, v_car, c.out.wheels[w].load, dt);
+        }
+        if (asphalt_hits > 0) {
+            c.last_street_rubber = rubber_sum / asphalt_hits;
+            c.last_street_marbles = marbles_sum / asphalt_hits;
+        }
+    }
 
     // Dashboard (rs/cluster.hpp): needles as a real cluster shows them (CAN + stepper), lamps, indicated speed.
     // [420] tach pointer rpm [421] speedo pointer km/h (indicated) [422] limiter cut [423] tach dial max rpm
@@ -376,6 +447,13 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     b[279] = c.out.gear_grind ? 1.0 : 0.0;
     b[380] = c.out.roll_centre_front_m;
     b[381] = c.out.roll_centre_rear_m;
+    // Live 2D aero ride-height / pitch balance + dynamic street surface telemetry [386..391]
+    b[386] = c.out.front_ride_height_m;
+    b[387] = c.out.rear_ride_height_m;
+    b[388] = c.out.aero_balance_front;
+    b[389] = c.out.diffuser_stalled ? 1.0 : 0.0;
+    b[390] = c.last_street_rubber;
+    b[391] = c.last_street_marbles;
 }
 }  // namespace
 

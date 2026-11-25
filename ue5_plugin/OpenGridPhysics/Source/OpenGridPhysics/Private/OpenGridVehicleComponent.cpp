@@ -171,6 +171,7 @@ void UOpenGridVehicleComponent::ApplyFeatureFlags()
     Vehicle_->chassis_dynamics().active_yaw_control_enabled = true;
     Vehicle_->chassis_dynamics().active_aero_enabled = true;
     Vehicle_->chassis_dynamics().brake_fluid_boil_enabled = true;
+    Vehicle_->chassis_dynamics().bushing_compliance_enabled = true;
     Vehicle_->engine_systems().torsional_compliance_enabled = true;
     Vehicle_->engine_systems().dog_box_flat_shift_cut = true;
     Vehicle_->atmosphere().enabled = true;
@@ -505,6 +506,11 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     Cmd.settings.tc = bTractionControl;
     Cmd.settings.esc = bStabilityControl;
     Cmd.settings.auto_gearbox = bAutoGearbox;
+    Cmd.settings.street_surface_enabled = bEnableDynamicStreetSurface;
+    Cmd.settings.street_micro_roughness_enabled = bEnableUrbanMicroRoughness;
+    Cmd.settings.street_road_class = FMath::Clamp(UrbanRoadClass, 0, 3);
+    Cmd.settings.rain_mm_per_hr = FMath::Max(0.0f, RainRateMmPerHr);
+    Cmd.settings.road_water_mm = FMath::Max(0.0f, RoadWaterMm);
     if (Bridge_->submit_command(Cmd))
     {
         bShiftUpRequested_ = bShiftDownRequested_ = bRepairRequested_ = false;
@@ -635,6 +641,15 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
     bDrsActive = Out.drs_active;
     bAirbrakeActive = Out.airbrake_active;
     bFrontSplitterStalled = Out.front_splitter_stalled;
+    bDiffuserStalled = Out.diffuser_stalled;
+    FrontRideHeightCm = static_cast<float>(Out.front_ride_height_m * rs::ue5::kMetersToCm);
+    RearRideHeightCm = static_cast<float>(Out.rear_ride_height_m * rs::ue5::kMetersToCm);
+    AeroBalanceFront = static_cast<float>(Out.aero_balance_front);
+    if (Bridge_.IsValid())
+    {
+        StreetRubberAtCar = static_cast<float>(Bridge_->street_rubber_at_car());
+        StreetMarblesAtCar = static_cast<float>(Bridge_->street_marbles_at_car());
+    }
     AirDensityKgPerM3 = static_cast<float>(Out.air_density_kg_m3);
     BrakeVaporLockSponge = static_cast<float>(Out.brake_vapor_lock_sponge);
 

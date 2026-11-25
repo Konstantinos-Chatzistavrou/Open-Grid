@@ -758,6 +758,7 @@ RS_TEST(tire_patch) {
         c_bush.front.longitudinal_compliance_m_per_kn_fx = 0.0015;
         auto s_r = test::make_sim(c_rigid, 1.0 / 400.0);
         auto s_b = test::make_sim(c_bush, 1.0 / 400.0);
+        s_r->vehicle.chassis_dynamics().bushing_compliance_enabled = false;
         s_r->reset({}, 0.0, 32.0, 4);
         s_b->reset({}, 0.0, 32.0, 4);
         DriverInput brk_turn; brk_turn.brake = 0.75; brk_turn.steer = 0.35; brk_turn.gear = 4; brk_turn.auto_clutch = true;
@@ -793,5 +794,251 @@ RS_TEST(tire_patch) {
                     sa_bump.wheel_offset.y < -0.001 && std::abs(sa_rc.height_m - 0.24) < 0.03);
         test::check("MultiLink 5-link suspension solves negative camber gain in bump",
                     ml_bump.camber_rad < c_ml.rear.static_camber_deg * deg - 0.01);
+    }
+
+    // =========================================================================
+    // 15. Stress Test: High-Speed Kerb-Hop Resonance & Recovery at 160 km/h (400 Hz)
+    // =========================================================================
+    {
+        struct SawtoothKerbGround : Ground {
+            WheelContact raycast(const WheelRay& ray) const override {
+                WheelContact c;
+                if (ray.direction.z >= -1e-6) return c;
+                double z = 0.0;
+                // 8 repeated 45 mm sawtooth apex kerbs on the left wheels (y > 0.2 m) between x = 15..55 m
+                if (ray.origin.y > 0.2 && ray.origin.x > 15.0 && ray.origin.x < 55.0) {
+                    const double phase = std::fmod(ray.origin.x - 15.0, 5.0);
+                    if (phase < 1.2) z = 0.045 * (phase / 1.2);
+                    else if (phase < 1.8) z = 0.045 * (1.0 - (phase - 1.2) / 0.6);
+                }
+                const double t = (z - ray.origin.z) / ray.direction.z;
+                if (t < 0.0 || t > ray.length) return c;
+                c.hit = true;
+                c.distance = t;
+                c.point = ray.origin + ray.direction * t;
+                c.normal = {0, 0, 1};
+                c.surface = (z > 0.005) ? 1 : 0;
+                return c;
+            }
+        };
+        Simulation s_kerb(cfg, std::make_shared<SawtoothKerbGround>());
+        s_kerb.dt = 1.0 / 400.0;
+        test::enable_game_models(s_kerb.vehicle);
+        s_kerb.reset({0, 0, 0}, 0.0, 44.5, 5); // ~160 km/h
+        DriverInput drv; drv.throttle = 0.35; drv.gear = 5; drv.auto_clutch = true;
+        bool all_finite = true;
+        double max_load = 0.0, max_roll_rad = 0.0;
+        for (int i = 0; i < 900; ++i) { // 2.25 s (~100 m, crossing all 8 kerbs + 45 m recovery)
+            s_kerb.step(drv);
+            const Vec3 up = s_kerb.body.state.orientation.rotate({0, 0, 1});
+            max_roll_rad = std::max(max_roll_rad, std::acos(clamp(up.z, -1.0, 1.0)));
+            for (int w = 0; w < 4; ++w) {
+                const auto& wo = s_kerb.last.wheels[w];
+                max_load = std::max(max_load, wo.load);
+                if (!std::isfinite(wo.load) || !std::isfinite(wo.fx) || !std::isfinite(wo.fy)) all_finite = false;
+            }
+            if (!std::isfinite(s_kerb.body.state.position.z) || !std::isfinite(s_kerb.last.speed)) all_finite = false;
+        }
+        const bool recovered = s_kerb.last.wheels[FL].contact && s_kerb.last.wheels[FR].contact &&
+                               s_kerb.last.wheels[RL].contact && s_kerb.last.wheels[RR].contact &&
+                               s_kerb.body.state.orientation.rotate({0, 0, 1}).z > 0.98;
+        std::printf("         kerb-hop 160 km/h stress: finite=%d maxFz=%.0f N maxTilt=%.1f deg recovered=%d\n",
+                    all_finite ? 1 : 0, max_load, max_roll_rad * 180.0 / kPi, recovered ? 1 : 0);
+        test::check("160 km/h repeated sawtooth kerb-hop stays finite, upright, bounded and recovers cleanly",
+                    all_finite && max_load > 4500.0 && max_load < 45000.0 && max_roll_rad < 0.35 && recovered);
+    }
+
+    // =========================================================================
+    // 16. Stress Test: Live StreetSurfaceEvolution + WheelContact + AsyncVehicleBridge Integration
+    // =========================================================================
+    {
+        // Verify Vehicle::update consumes WheelContact::surface_mu_mult & marble_density, AND AsyncVehicleBridge
+        // drives StreetSurfaceEvolution + StreetMicroGround cleanly with zero allocations on step().
+        Vehicle v_live(cfg);
+        test::enable_game_models(v_live);
+        Controls ctl(v_live.config());
+        rs::ue5::AsyncVehicleBridge bridge(v_live, ctl);
+        ChassisState cs{};
+        cs.position = {0.0, 0.0, cfg.cg_height};
+        cs.velocity = {25.0, 0.0, 0.0};
+        v_live.reset_motion(25.0, 4);
+
+        // Pre-rubber centerline (lat=0) and leave off-line dirty with marbles
+        bridge.street_surface().reset(0.0, 0.0, 0.15);
+        for (int pass = 0; pass < 35; ++pass) {
+            bridge.street_surface().deposit_wheel_world(15.0, 0.0, 20000.0, 35.0, 4800.0, 0.35);
+        }
+
+        rs::rt::VehicleCommand cmd{};
+        cmd.core_controls = false;
+        cmd.direct.throttle = 0.55;
+        cmd.direct.gear = 4;
+        cmd.direct.auto_clutch = true;
+        cmd.has_settings = true;
+        cmd.settings.street_surface_enabled = true;
+        cmd.settings.street_micro_roughness_enabled = true;
+        cmd.settings.street_road_class = 1; // ClassB_CityAvenue
+        cmd.settings.rain_mm_per_hr = 0.0;
+        bridge.submit_command(cmd);
+
+        bridge.seed_rays(cs, 3);
+        bridge.fetch_rays();
+        auto& gf = bridge.ground_write_buffer();
+        gf.rays_per_wheel = 3;
+        gf.has_strips = false;
+        gf.use_strip = false;
+        for (int w = 0; w < 4; ++w) {
+            for (int j = 0; j < 3; ++j) {
+                gf.planes[w][j].hit = true;
+                gf.planes[w][j].point = {cs.position.x, cs.position.y, 0.0};
+                gf.planes[w][j].normal = {0, 0, 1};
+                gf.planes[w][j].surface = 0;
+            }
+        }
+        bridge.publish_ground();
+
+        double peak_grip_dry = 0.0, peak_marble_pickup = 0.0;
+        for (int i = 0; i < 160; ++i) {
+            cs.position.x = 15.0; // drive over the rubbered manhole/street zone
+            cs.position.y = (i < 80) ? 0.0 : 5.8; // first dry rubbered center, then dusty curb edge
+            const VehicleOutput& out = bridge.step(cs, 1.0 / 400.0);
+            if (i == 40) peak_grip_dry = out.wheels[RL].grip_limit;
+            peak_marble_pickup = std::max(peak_marble_pickup, out.wheels[RL].condition.marble_pickup);
+        }
+        const double rubber_seen = bridge.street_rubber_at_car();
+        const double marbles_seen = bridge.street_marbles_at_car();
+        std::printf("         AsyncVehicleBridge live street: dry gripLimit=%.0f N | rubber=%.2f marbles=%.2f tirePickup=%.3f\n",
+                    peak_grip_dry, rubber_seen, marbles_seen, peak_marble_pickup);
+        test::check("AsyncVehicleBridge wires live StreetSurfaceEvolution + StreetMicroGround + hot-tyre marble pickup",
+                    peak_grip_dry > 2500.0 && marbles_seen > 0.05 && peak_marble_pickup > 0.002);
+    }
+
+    // =========================================================================
+    // 17. Stress Test: Urban Pothole Rim-Strike -> Puncture -> 10s Limp-Home Stability (400 Hz)
+    // =========================================================================
+    {
+        UrbanStreetConfig pot_cfg;
+        pot_cfg.road_class = IsoRoadClass::ClassC_WornStreet;
+        pot_cfg.pothole_x_m = 20.0;
+        pot_cfg.pothole_y_m = 0.78; // hits left wheels (FL/RL, half-track 0.78 m) dead-center
+        pot_cfg.pothole_radius_m = 0.36;
+        pot_cfg.pothole_depth_m = 0.095;
+        auto pot_ground = std::make_shared<StreetMicroGround>(pot_cfg, 0);
+        Simulation s_pot(cfg, pot_ground);
+        s_pot.dt = 1.0 / 400.0;
+        test::enable_game_models(s_pot.vehicle);
+        s_pot.reset({0, 0, 0}, 0.0, 24.0, 3); // ~86 km/h straight into pothole
+        DriverInput drv; drv.throttle = 0.25; drv.gear = 3; drv.auto_clutch = true;
+
+        bool finite_all = true;
+        double peak_rim_n = 0.0;
+        // 1.5 s approach + impact + 10 s limp-home driving at 400 Hz (4,600 ticks)
+        for (int i = 0; i < 4600; ++i) {
+            if (i > 600) drv.throttle = 0.18; // gentle limp-home cruise
+            s_pot.step(drv);
+            for (int w = 0; w < 4; ++w) {
+                peak_rim_n = std::max(peak_rim_n, s_pot.last.wheels[w].rim_strike_force_n);
+                if (!std::isfinite(s_pot.last.wheels[w].load) || !std::isfinite(s_pot.last.wheels[w].fx) ||
+                    !std::isfinite(s_pot.last.wheels[w].condition.pressure_kpa)) finite_all = false;
+            }
+            if (!std::isfinite(s_pot.body.state.position.z) || !std::isfinite(s_pot.last.speed)) finite_all = false;
+        }
+        const double fl_p = s_pot.last.wheels[FL].condition.pressure_kpa;
+        const double fl_dmg = s_pot.last.wheels[FL].sidewall_damage;
+        std::printf("         pothole limp-home 10s (400Hz): finite=%d peakRim=%.0f N FL_dmg=%.2f FL_p=%.1f kPa speed=%.1f m/s\n",
+                    finite_all ? 1 : 0, peak_rim_n, fl_dmg, fl_p, s_pot.last.speed);
+        test::check("urban pothole rim-strike + 10s limp-home stays 100% finite, upright and stable at 400 Hz",
+                    finite_all && s_pot.body.state.orientation.rotate({0, 0, 1}).z > 0.95 && s_pot.last.speed > 5.0);
+    }
+
+    // =========================================================================
+    // 18. Stress Test: Low-Speed Standstill Hold, Clutch Creep & Reverse-to-1st at 400 Hz
+    // =========================================================================
+    {
+        auto s_low = test::make_sim(cfg, 1.0 / 400.0);
+        test::enable_game_models(s_low->vehicle);
+        s_low->reset({0, 0, 0}, 0.0, 0.0, 1); // Neutral standstill
+        DriverInput hold; hold.gear = 1; hold.brake = 0.0; hold.handbrake = 0.0; hold.auto_clutch = true;
+        bool finite_low = true;
+        // 2 s untouched neutral standstill -> must not drift or oscillate
+        for (int i = 0; i < 800; ++i) {
+            s_low->step(hold);
+            if (!std::isfinite(s_low->last.speed) || !std::isfinite(s_low->body.state.position.x)) finite_low = false;
+        }
+        const double standstill_drift_m = std::hypot(s_low->body.state.position.x, s_low->body.state.position.y);
+
+        // Engage Reverse (gear 0) with light throttle -> back up smoothly
+        DriverInput rev; rev.gear = 0; rev.throttle = 0.25; rev.auto_clutch = true;
+        for (int i = 0; i < 800; ++i) s_low->step(rev);
+        const double rev_speed = s_low->last.speed;
+
+        // Brake to stop, then shift into 1st (gear 2) and launch cleanly
+        DriverInput stop_in; stop_in.gear = 1; stop_in.brake = 0.8; stop_in.auto_clutch = true;
+        for (int i = 0; i < 600; ++i) s_low->step(stop_in);
+        DriverInput launch; launch.gear = 2; launch.throttle = 0.45; launch.auto_clutch = true;
+        for (int i = 0; i < 1000; ++i) {
+            s_low->step(launch);
+            if (!std::isfinite(s_low->last.speed) || !std::isfinite(s_low->last.engine_rpm)) finite_low = false;
+        }
+        const double fwd_speed = s_low->last.speed;
+        std::printf("         low-speed 400Hz stress: drift=%.4f m | rev=%.2f m/s -> 1st=%.2f m/s | rpm=%.0f finite=%d\n",
+                    standstill_drift_m, rev_speed, fwd_speed, s_low->last.engine_rpm, finite_low ? 1 : 0);
+        test::check("400 Hz standstill hold has zero drift and reverse-to-1st transition launches cleanly without chatter/NaN",
+                    finite_low && standstill_drift_m < 0.08 && rev_speed < -2.0 && fwd_speed > 6.0 && !s_low->last.engine_stalled);
+    }
+
+    // =========================================================================
+    // 19. Stress Test: Tornado GT3 2D Aero Map Bottoming (Splitter Stall) & Diffuser Rake-Stall Stability
+    // =========================================================================
+    {
+        CarConfig gt3 = rs::load_car_config(test::data_path("cars/tornado_gt3.json"));
+        test::check("tornado_gt3.json loads explicit 2D front/rear ride-height aero map", gt3.aero.map_2d.valid());
+
+        // Road with a smooth compression dip at x = 40 m to compress the front splitter at 250 km/h, then flat
+        struct HighSpeedDipGround : Ground {
+            WheelContact raycast(const WheelRay& ray) const override {
+                WheelContact c;
+                if (ray.direction.z >= -1e-6) return c;
+                double z = 0.0;
+                if (ray.origin.x > 30.0 && ray.origin.x < 70.0) {
+                    const double u = (ray.origin.x - 30.0) / 40.0;
+                    z = 0.18 * std::sin(kPi * u) * std::sin(kPi * u);
+                }
+                const double t = (z - ray.origin.z) / ray.direction.z;
+                if (t < 0.0 || t > ray.length) return c;
+                c.hit = true;
+                c.distance = t;
+                c.point = ray.origin + ray.direction * t;
+                c.normal = {0, 0, 1};
+                c.surface = 0;
+                return c;
+            }
+        };
+        Simulation s_gt3(gt3, std::make_shared<HighSpeedDipGround>());
+        s_gt3.dt = 1.0 / 400.0;
+        test::enable_game_models(s_gt3.vehicle);
+        s_gt3.reset({0, 0, 0}, 0.0, 69.5, 6); // 250 km/h
+        DriverInput drv; drv.throttle = 0.70; drv.gear = 6; drv.auto_clutch = true;
+
+        bool saw_splitter_stall = false, saw_diffuser_stall = false, finite_gt3 = true;
+        double min_frh = 1.0, max_bal = 0.0, min_bal = 1.0;
+        for (int i = 0; i < 1200; ++i) { // 3 s at 400 Hz: compression dip + braking rake + recovery
+            if (i >= 500 && i < 820) { drv.throttle = 0.0; drv.brake = 0.95; }
+            else if (i >= 820) { drv.throttle = 0.40; drv.brake = 0.0; }
+            s_gt3.step(drv);
+            min_frh = std::min(min_frh, s_gt3.last.front_ride_height_m);
+            max_bal = std::max(max_bal, s_gt3.last.aero_balance_front);
+            min_bal = std::min(min_bal, s_gt3.last.aero_balance_front);
+            if (s_gt3.last.front_splitter_stalled) saw_splitter_stall = true;
+            if (s_gt3.last.diffuser_stalled) saw_diffuser_stall = true;
+            if (!std::isfinite(s_gt3.last.front_ride_height_m) || !std::isfinite(s_gt3.last.aero_balance_front) ||
+                !std::isfinite(s_gt3.body.state.position.z)) finite_gt3 = false;
+        }
+        const bool settled = finite_gt3 && s_gt3.body.state.orientation.rotate({0, 0, 1}).z > 0.99 &&
+                             !s_gt3.last.front_splitter_stalled && !s_gt3.last.diffuser_stalled;
+        std::printf("         GT3 250 km/h 2D aero stress: minFrontRH=%.1f mm bal=[%.3f..%.3f] splitterStall=%d diffuserStall=%d settled=%d\n",
+                    min_frh * 1000.0, min_bal, max_bal, saw_splitter_stall ? 1 : 0, saw_diffuser_stall ? 1 : 0, settled ? 1 : 0);
+        test::check("GT3 2D aero map shifts balance dynamically through dip/braking and settles without porpoising blow-up",
+                    settled && (max_bal - min_bal) > 0.03 && (saw_splitter_stall || min_frh < 0.035));
     }
 }

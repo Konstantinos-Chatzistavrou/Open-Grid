@@ -515,7 +515,17 @@
   "aero": {
     "drag_area_m2": 1.17,
     "downforce_area_m2": 2.9,
-    "front_balance": 0.44
+    "front_balance": 0.44,
+    "static_ride_height_front_m": 0.068,
+    "static_ride_height_rear_m": 0.088,
+    "diffuser_stall_rake_m": 0.045,
+    "map_2d": {
+      "front_rh_m": [0.035, 0.068, 0.105],
+      "rear_rh_m": [0.055, 0.088, 0.125],
+      "cl_front": [1.44, 1.54, 1.62, 1.21, 1.276, 1.33, 0.96, 1.02, 1.06],
+      "cl_rear": [1.72, 1.64, 1.48, 1.68, 1.624, 1.46, 1.6, 1.54, 1.4],
+      "cd": [1.19, 1.21, 1.23, 1.16, 1.17, 1.19, 1.14, 1.15, 1.16]
+    }
   },
   "surface_grip": {
     "asphalt": 1,

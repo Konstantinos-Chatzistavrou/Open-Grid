@@ -12,10 +12,12 @@
 //   - Orientation quaternion (w, x, y, z):     ( w, -x,  y, -z)  (exact M * R_rs * M conjugation)
 #pragma once
 #include "rs/math.hpp"
+#include "rs/street_surface.hpp"
 #include "rs/vehicle.hpp"
 #include "rs/vehicle_runtime.hpp"
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <vector>
 
@@ -315,11 +317,70 @@ public:
 
         RayFrame& rf = rays_tb_.write_buffer();
         build_rays_into(chassis, per_wheel, rf);
-        const std::array<WheelContact, 4> contacts = resolve_contacts(rf, g, per_wheel);
+        std::array<WheelContact, 4> contacts = resolve_contacts(rf, g, per_wheel);
         rays_tb_.publish();
 
-        return runtime_.step(chassis, contacts, dt);
+        const rt::VehicleSettings& st = runtime_.current_command().settings;
+        const int asphalt_idx = vehicle_->config().surface_index("asphalt");
+        const Vec3 body_fwd = chassis.orientation.rotate({1, 0, 0});
+        const Vec3 body_left = chassis.orientation.rotate({0, 1, 0});
+        double rubber_sum = 0.0, marbles_sum = 0.0;
+        int asphalt_hits = 0;
+
+        if (st.street_surface_enabled) {
+            weather_dt_accum_ += dt;
+            if (++weather_tick_counter_ >= 20) {
+                street_evo_.step_weather(st.rain_mm_per_hr, vehicle_->atmosphere().ambient_air_c, weather_dt_accum_);
+                weather_dt_accum_ = 0.0;
+                weather_tick_counter_ = 0;
+            }
+            for (int w = 0; w < 4; ++w) {
+                if (!contacts[w].hit || contacts[w].surface != asphalt_idx) continue;
+                const StreetSurfaceSample ss = street_evo_.sample_world(contacts[w].point.x, contacts[w].point.y);
+                contacts[w].surface_mu_mult = ss.effective_mu_mult;
+                contacts[w].marble_density = ss.marbles_0_to_1;
+                contacts[w].water_depth_mm = std::max(contacts[w].water_depth_mm, ss.water_mm);
+                rubber_sum += ss.rubber_0_to_1;
+                marbles_sum += ss.marbles_0_to_1;
+                ++asphalt_hits;
+            }
+        }
+        if (st.street_micro_roughness_enabled) {
+            const int rc = std::max(0, std::min(3, st.street_road_class));
+            street_micro_.config().road_class = static_cast<IsoRoadClass>(rc);
+            street_micro_.config().base_water_mm = std::max(0.0, vehicle_->road_water_mm);
+            for (int w = 0; w < 4; ++w) {
+                if (!contacts[w].hit || contacts[w].surface != asphalt_idx) continue;
+                const double half_w = 0.5 * vehicle_->config().tire(w).section_width_m;
+                street_micro_.apply_micro_hazards(contacts[w].point, body_fwd, body_left, 0.085, half_w,
+                                                  std::max(contacts[w].water_depth_mm, vehicle_->road_water_mm),
+                                                  contacts[w].patch_profile);
+            }
+        }
+
+        const VehicleOutput& out = runtime_.step(chassis, contacts, dt);
+
+        if (st.street_surface_enabled) {
+            const double v_car = length(chassis.velocity);
+            for (int w = 0; w < 4; ++w) {
+                if (!contacts[w].hit || contacts[w].surface != asphalt_idx || !out.wheels[w].contact) continue;
+                const double slip_p = std::abs(out.wheels[w].fx * out.wheels[w].slip_ratio * std::max(v_car, 1.0))
+                                    + std::abs(out.wheels[w].fy * std::sin(out.wheels[w].slip_angle) * std::max(v_car, 1.0));
+                street_evo_.deposit_wheel_world(contacts[w].point.x, contacts[w].point.y,
+                                                slip_p, v_car, out.wheels[w].load, dt);
+            }
+            if (asphalt_hits > 0) {
+                last_street_rubber_.store(rubber_sum / asphalt_hits, std::memory_order_relaxed);
+                last_street_marbles_.store(marbles_sum / asphalt_hits, std::memory_order_relaxed);
+            }
+        }
+        return out;
     }
+
+    double street_rubber_at_car() const { return last_street_rubber_.load(std::memory_order_relaxed); }
+    double street_marbles_at_car() const { return last_street_marbles_.load(std::memory_order_relaxed); }
+    StreetSurfaceEvolution& street_surface() { return street_evo_; }
+    const StreetSurfaceEvolution& street_surface() const { return street_evo_; }
 
     const rt::RuntimeStats& stats() const { return runtime_.stats; }
     rt::VehicleRuntime<>& runtime() { return runtime_; }
@@ -387,6 +448,12 @@ private:
     // physics-thread only scratch (kept as members so resolve_contacts avoids recomputing rays)
     std::array<WheelContactPatchRays, 4> patch_rays_{};
     std::array<WheelFootprint16Rays, 4> footprint_rays_{};
+    StreetSurfaceEvolution street_evo_{4000.0, 200, 6.75, 0.02};
+    StreetMicroGround street_micro_{};
+    int weather_tick_counter_ = 0;
+    double weather_dt_accum_ = 0.0;
+    std::atomic<double> last_street_rubber_{0.0};
+    std::atomic<double> last_street_marbles_{0.0};
 };
 
 // ---- UE 5.8 Wheel State, Telemetry, Wheel Interpolation & Crash Morph-Target Helpers ----------------------------

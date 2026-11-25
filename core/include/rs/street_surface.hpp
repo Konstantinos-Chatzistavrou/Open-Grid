@@ -159,6 +159,26 @@ public:
         return out;
     }
 
+    // World-space helpers for open-city free roam when no route arc-length centerline is bound:
+    // maps world (x, y) onto a periodic street corridor without allocating.
+    void deposit_wheel_world(double x, double y, double slip_power_w, double speed_mps, double load_n, double dt) {
+        const double s_m = std::fmod(std::abs(x) + 0.15 * std::abs(y), length_m_);
+        const double lane_period = 2.0 * half_width_m_;
+        double lat_m = std::fmod(y, lane_period);
+        if (lat_m > half_width_m_) lat_m -= lane_period;
+        if (lat_m < -half_width_m_) lat_m += lane_period;
+        deposit_wheel(s_m, lat_m, slip_power_w, speed_mps, load_n, dt);
+    }
+
+    StreetSurfaceSample sample_world(double x, double y) const {
+        const double s_m = std::fmod(std::abs(x) + 0.15 * std::abs(y), length_m_);
+        const double lane_period = 2.0 * half_width_m_;
+        double lat_m = std::fmod(y, lane_period);
+        if (lat_m > half_width_m_) lat_m -= lane_period;
+        if (lat_m < -half_width_m_) lat_m += lane_period;
+        return sample(s_m, lat_m);
+    }
+
     int segment_count() const { return n_seg_; }
     double route_length_m() const { return length_m_; }
     double lane_center_m(int lane) const {
@@ -330,6 +350,7 @@ public:
         c.normal = normal_at(c.point.x, c.point.y);
         c.surface = surface_;
         c.water_depth_mm = water_depth_at(c.point.x, c.point.y);
+        fill_patch_profile(c.point, {1, 0, 0}, {0, 1, 0}, 0.085, 0.11, c.patch_profile);
         return c;
     }
 
@@ -349,6 +370,32 @@ public:
                 out.road_dz_m[idx] = dz;
                 out.mu_cell[idx] = mu;
                 out.contact_mask[idx] = true;
+                if (std::abs(dz) > 0.0015 || mu < 0.99) non_uniform = true;
+            }
+        }
+        out.has_height_map = non_uniform;
+    }
+
+    // Overlay relative ISO 8608 micro-roughness & wet iron/paint grip drops onto an existing 4x4 ContactPatchProfile
+    // (preserving 3D raycasted terrain/kerb heights from Chaos/Rapier while adding city-street micro-hazards).
+    void apply_micro_hazards(const Vec3& center_world, const Vec3& fwd, const Vec3& lat,
+                             double half_len_a, double half_wid_b, double water_mm,
+                             ContactPatchProfile& out) const {
+        constexpr double kXi[4] = {-0.75, -0.25, 0.25, 0.75};
+        constexpr double kEta[4] = {-0.75, -0.25, 0.25, 0.75};
+        const double z0 = height_at(center_world.x, center_world.y);
+        const double wet_blend = clamp(std::max(water_mm, water_depth_at(center_world.x, center_world.y)) / 0.5, 0.0, 1.0);
+        bool non_uniform = out.has_height_map;
+        for (int i = 0; i < kPatchRows; ++i) {
+            for (int j = 0; j < kPatchCols; ++j) {
+                const int idx = i * kPatchCols + j;
+                const Vec3 p = center_world + fwd * (kXi[i] * half_len_a) + lat * (kEta[j] * half_wid_b);
+                const double dz = clamp(height_at(p.x, p.y) - z0, -0.04, 0.04);
+                double mu = 1.0;
+                if (is_on_manhole(p.x, p.y)) mu = lerp(0.84, 0.44, wet_blend);
+                else if (is_on_crosswalk_paint(p.x, p.y)) mu = lerp(0.92, 0.58, wet_blend);
+                out.road_dz_m[idx] = clamp(out.road_dz_m[idx] + dz, -0.08, 0.08);
+                out.mu_cell[idx] *= mu;
                 if (std::abs(dz) > 0.0015 || mu < 0.99) non_uniform = true;
             }
         }

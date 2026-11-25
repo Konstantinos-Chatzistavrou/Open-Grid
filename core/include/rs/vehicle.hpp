@@ -79,6 +79,8 @@ struct WheelContact {
     std::array<double, 3> rib_contact_shares{1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0}; // 3D geometric normal load shares (Inner, Middle, Outer)
     double enveloping_slope_tan = 0.0; // Simcenter 2606 MF-Swift 3D tandem-cam obstacle enveloping road slope tan(beta_env)
     ContactPatchProfile patch_profile{}; // optional 4x4 multi-point road height / kerb / partial-contact profile
+    double surface_mu_mult = 1.0;        // dynamic street surface grip multiplier (rubbered dry > 1, wet rubber/marbles < 1)
+    double marble_density = 0.0;         // 0..1 off-line rubber marbles & street dust/grit density at this wheel
 };
 
 struct WheelOutput {

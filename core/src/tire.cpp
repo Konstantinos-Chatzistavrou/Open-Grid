@@ -490,7 +490,7 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
     // Off-line rubber marbles / street grit scrub off hot tyres over ~90 m of clean rolling
     if (marble_pickup > 0.0 && v > 1.0) {
         marble_pickup *= std::exp(-(v * dt) / 90.0);
-        if (marble_pickup < 1e-4) marble_pickup = 0.0;
+        if (marble_pickup < 1e-7) marble_pickup = 0.0;
     }
     // Ideal gas law directly from Node 3 (Inner Air temperature) & cavity air mass
     pressure_kpa = ideal_gas_pressure_kpa(p);

@@ -15,6 +15,7 @@ interface RsModule {
   _rs_reset_motion(id: number, speed: number, gear: number): void;
   _rs_set_atmosphere(id: number, airC: number, trackC: number, altitudeM: number, humidity: number): void;
   _rs_set_road_water(id: number, mm: number): void;
+  _rs_set_street_surface(id: number, roadClass: number, rainMmPerHr: number, enableMicro: number): void;
   _rs_dyno_begin(id: number): void;
   _rs_dyno_end(id: number): void;
   _rs_dyno_reset_meter(id: number): void;
@@ -116,6 +117,11 @@ export class CoreCar {
 
   /** Rain water film on the road (mm): wet grip and aquaplaning in the core (0 = dry). */
   setRoadWater(mm: number) { mod!._rs_set_road_water(this.id, mm); }
+
+  /** Live city-street evolution & ISO 8608 urban micro-roughness (0=Highway, 1=CityAvenue, 2=Worn, 3=Cobble). */
+  setStreetSurface(roadClass = 1, rainMmPerHr = 0, enableMicro = true) {
+    mod!._rs_set_street_surface(this.id, Math.max(0, Math.min(3, Math.round(roadClass))), Math.max(0, rainMmPerHr), enableMicro ? 1 : 0);
+  }
 
   /** Forced-induction turbo stage (0 = NA, 1..3 = Stage 1-3 turbocharger with spool & BOV flutter). */
   setTurboStage(stage: number) {
@@ -286,6 +292,13 @@ export const OUT = {
   rollCentreFront: 380,                 // dynamic front axle kinematic roll-centre height, m
   rollCentreRear: 381,                  // dynamic rear axle kinematic roll-centre height, m
   tireInnerAir: (i: number) => 382 + i, // cavity inner-air temperature (Node 3), C
+  // Live 2D aero ride-height / pitch balance + dynamic street surface telemetry [386..391]
+  frontRideHeight: 386,                 // live front splitter ride height, m
+  rearRideHeight: 387,                  // live rear diffuser ride height, m
+  aeroBalanceFront: 388,                // live front aerodynamic downforce balance share, 0..1
+  diffuserStalled: 389,                 // rear underbody diffuser rake-stall flag (0/1)
+  streetRubber: 390,                    // dynamic street rubber laydown under tyres, 0..1
+  streetMarbles: 391,                   // off-line rubber marbles & street grit under tyres, 0..1
 } as const;
 
 export interface LapInfo { laps: number; current: number; last: number; best: number; distance: number; position: number; finished: boolean; routeLength: number }

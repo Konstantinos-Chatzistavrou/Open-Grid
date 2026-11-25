@@ -328,6 +328,28 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Atmosphere")
     float RelativeHumidity = 0.45f;
 
+    // ---- Dynamic City-Street Surface & Urban Micro-Roughness --------------------------------------------------------
+
+    /** Enable live rubber laydown, off-line marbles/grit, rain wake drying & 2% crown gutter drainage. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|StreetSurface")
+    bool bEnableDynamicStreetSurface = true;
+
+    /** Enable procedural ISO 8608 urban roughness, wet cast-iron manholes & thermoplastic crosswalk stripes. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|StreetSurface")
+    bool bEnableUrbanMicroRoughness = true;
+
+    /** ISO 8608 urban road class (0 = Highway, 1 = CityAvenue, 2 = WornStreet, 3 = BrokenCobble). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|StreetSurface", meta=(ClampMin="0", ClampMax="3"))
+    int32 UrbanRoadClass = 1;
+
+    /** Live rainfall rate (mm/hr) feeding the dynamic street surface evolution grid. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|StreetSurface", meta=(ClampMin="0.0", ClampMax="80.0"))
+    float RainRateMmPerHr = 0.0f;
+
+    /** Ambient standing water film depth on the street (mm; 0 = dry, ~0.1 = damp, ~1.0+ = heavy rain). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|StreetSurface", meta=(ClampMin="0.0", ClampMax="12.0"))
+    float RoadWaterMm = 0.0f;
+
     // ---- Drivetrain and assists -------------------------------------------------------------------------------------
 
     /** Turbocharger stage (0 = naturally aspirated, 1 = 0.7 bar, 2 = 1.15 bar, 3 = 1.65 bar). */
@@ -509,6 +531,24 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     bool bFrontSplitterStalled = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    bool bDiffuserStalled = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float FrontRideHeightCm = 11.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float RearRideHeightCm = 12.5f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float AeroBalanceFront = 0.45f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float StreetRubberAtCar = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float StreetMarblesAtCar = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float AirDensityKgPerM3 = 1.225f;

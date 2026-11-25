@@ -530,6 +530,16 @@
     "front_balance": 0.42,
     "ground_effect_per_m": 2,
     "pitch_balance_per_m": 1.2,
+    "static_ride_height_front_m": 0.095,
+    "static_ride_height_rear_m": 0.11,
+    "diffuser_stall_rake_m": 0.055,
+    "map_2d": {
+      "front_rh_m": [0.05, 0.095, 0.14],
+      "rear_rh_m": [0.065, 0.11, 0.155],
+      "cl_front": [0.4, 0.425, 0.445, 0.34, 0.357, 0.375, 0.28, 0.295, 0.31],
+      "cl_rear": [0.535, 0.5, 0.45, 0.52, 0.493, 0.445, 0.485, 0.46, 0.415],
+      "cd": [0.795, 0.8, 0.81, 0.775, 0.78, 0.79, 0.765, 0.77, 0.78]
+    },
     "drs": true,
     "airbrake": true
   },

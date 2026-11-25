@@ -42,6 +42,11 @@ struct VehicleSettings {
     double humidity = 0.45;
     bool abs = true, tc = true, esc = true;
     bool auto_gearbox = true;
+    bool street_surface_enabled = false;
+    bool street_micro_roughness_enabled = false;
+    int street_road_class = 1;       // 0=ClassA_Highway, 1=ClassB_CityAvenue, 2=ClassC_WornStreet, 3=ClassD_BrokenCobble
+    double rain_mm_per_hr = 0.0;
+    double road_water_mm = 0.0;
 };
 
 /** Game / render thread -> physics thread. Levels (axes, settings) replace the previous command's; edges add up. */
@@ -113,6 +118,9 @@ inline StepRecord blend(const StepRecord& a, const StepRecord& b, double alpha) 
     r.out.turbo_surge = rs::lerp(a.out.turbo_surge, b.out.turbo_surge, t);
     r.out.roll_centre_front_m = rs::lerp(a.out.roll_centre_front_m, b.out.roll_centre_front_m, t);
     r.out.roll_centre_rear_m = rs::lerp(a.out.roll_centre_rear_m, b.out.roll_centre_rear_m, t);
+    r.out.front_ride_height_m = rs::lerp(a.out.front_ride_height_m, b.out.front_ride_height_m, t);
+    r.out.rear_ride_height_m = rs::lerp(a.out.rear_ride_height_m, b.out.rear_ride_height_m, t);
+    r.out.aero_balance_front = rs::lerp(a.out.aero_balance_front, b.out.aero_balance_front, t);
 
     for (std::size_t i = 0; i < 4; ++i) {
         WheelOutput& w = r.out.wheels[i];
@@ -267,6 +275,9 @@ private:
         a.tc = s.tc;
         a.esc = s.esc;
         controls_->settings.auto_gearbox = s.auto_gearbox;
+        if (s.street_surface_enabled || s.road_water_mm > 0.0) {
+            vehicle_->road_water_mm = std::max(0.0, s.road_water_mm);
+        }
     }
 
     Vehicle* vehicle_;
