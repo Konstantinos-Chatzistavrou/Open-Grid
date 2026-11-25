@@ -9,15 +9,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import ts from 'typescript';
+import { stripTypeScriptTypes } from 'node:module';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ffbtest-'));
 // transpile src/ffb/{report,drivers}.ts to ES modules (relative imports get .mjs)
 for (const f of ['report', 'drivers']) {
   const src = fs.readFileSync(path.join(here, '../src/ffb', f + '.ts'), 'utf8');
-  const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
-    .replace(/from '\.\/(\w+)'/g, "from './$1.mjs'");
+  // Node's own TypeScript transform (needs Node 22.13+): TypeScript 7 no longer ships the JavaScript API (transpileModule)
+  const js = stripTypeScriptTypes(src, { mode: 'transform' }).replace(/from '\.\/(\w+)'/g, "from './$1.mjs'");
   fs.writeFileSync(path.join(tmp, f + '.mjs'), js);
 }
 const R = await import(pathToFileURL(path.join(tmp, 'report.mjs')).href);
