@@ -9,7 +9,7 @@ on:
 
 jobs:
   cpp-core:
-    name: C++17 Physics Core + ASan/UBSan + CTest
+    name: C++17 Physics Core (Release) + CTest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -18,13 +18,19 @@ jobs:
           cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Release
           cmake --build core/build -j
       - name: Run All Physics & Telemetry CTests
-        run: ctest --test-dir core/build --output-on-failure
-      - name: Memory Leak & Undefined Behavior Check (ASan + UBSan)
+        run: ctest --test-dir core/build --output-on-failure --parallel "$(nproc)"
+
+  cpp-core-asan:
+    name: C++17 Physics Core (Debug ASan + UBSan) + CTest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Memory Leak & Undefined Behavior Check (ASan + UBSan, -O0 Debug)
         run: |
           cmake -S core -B core/build-asan -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           cmake --build core/build-asan -j
-          ctest --test-dir core/build-asan --output-on-failure
+          ctest --test-dir core/build-asan --output-on-failure --parallel "$(nproc)"
 
   core-windows:
     # Unreal on Windows compiles the core with MSVC, as one C++20 unit (ue5_plugin/.../RsCoreUnity.cpp). This job
@@ -38,7 +44,7 @@ jobs:
           cmake -S core -B core/build -A x64
           cmake --build core/build --config Release --parallel
       - name: Run All Physics & Telemetry CTests
-        run: ctest --test-dir core/build -C Release --output-on-failure
+        run: ctest --test-dir core/build -C Release --output-on-failure --parallel $env:NUMBER_OF_PROCESSORS
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Single-unit C++20 compile (same file list and order as RsCoreUnity.cpp)
         shell: pwsh
