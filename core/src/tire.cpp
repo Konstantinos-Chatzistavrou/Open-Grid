@@ -61,7 +61,8 @@ double mu_x_of(const TireParams& p, double dfz, double gamma, double mu_scale, d
            * std::max(0.2, 1.0 - p.pdx3 * gamma * gamma) * mu_scale;
 }
 double mu_y_of(const TireParams& p, double dfz, double gamma, double mu_scale, double dpi) {
-    return p.mu_y * std::max(0.2, 1.0 + p.pdy2 * dfz) * std::max(0.5, 1.0 + p.ppy3 * dpi + p.ppy4 * dpi * dpi)
+    return p.mu_y * std::max(0.2, 1.0 + p.pdy2 * dfz)
+           * std::max(0.5, 1.0 + p.ppy3 * dpi + p.ppy4 * dpi * dpi + p.ppy5 * dpi * gamma * gamma)
            * std::max(0.2, 1.0 - p.pdy3 * gamma * gamma) * mu_scale;
 }
 
@@ -111,7 +112,7 @@ inline PatchMFPrecomp make_patch_precomp(const TireParams& p, double gamma, doub
     c.ky_scale = p.pky1 * p.fz0 * c.press_ky * camber_ky;
     c.mu_x_base = p.mu_x * std::max(0.5, 1.0 + p.ppx3 * dpi + p.ppx4 * dpi * dpi)
                   * std::max(0.2, 1.0 - p.pdx3 * c.g2);
-    c.mu_y_base = p.mu_y * std::max(0.5, 1.0 + p.ppy3 * dpi + p.ppy4 * dpi * dpi)
+    c.mu_y_base = p.mu_y * std::max(0.5, 1.0 + p.ppy3 * dpi + p.ppy4 * dpi * dpi + p.ppy5 * dpi * c.g2)
                   * std::max(0.2, 1.0 - p.pdy3 * c.g2);
     c.rbx_g = p.rbx1 + p.rbx3 * c.g2;
     c.rby_g = p.rby1 + p.rby4 * c.g2;
@@ -155,7 +156,7 @@ inline CellForceUnit eval_cell_mf_unit(const TireParams& p, const PatchMFPrecomp
     const double shy = (p.phy1 + p.phy2 * dfz) + p.phy3 * gamma;
     const double svy = fz_eq * ((p.pvy1 + p.pvy2 * dfz) + (p.pvy3 + p.pvy4 * dfz) * gamma) * mu_scale;
     const double ay = eff_alpha + shy;
-    const double ey = (p.ey + p.pey2 * dfz) * (1.0 - (p.pey3 + p.pey4 * gamma) * sign(ay));
+    const double ey = (p.ey + p.pey2 * dfz) * (1.0 + p.pey5 * pre.g2 - (p.pey3 + p.pey4 * gamma) * sign(ay));
     const double fy0 = (ay != 0.0 ? mf(ay, By, p.cy, Dy, ey) : 0.0) + svy;
 
     // Combined-slip weighting functions Gxa, Gyk + kappa-induced side force SVyk (MF 5.2 eqs. 4.E50-4.E66)
@@ -352,6 +353,7 @@ void TireCondition::repair_structural(const TireParams* p) {
     puncture_leak_rate = 0.0;
     rim_strike_force_n = 0.0;
     carcass_hysteresis_w = 0.0;
+    marble_pickup = 0.0;
     pressure_kpa = ideal_gas_pressure_kpa(p);
 }
 
@@ -485,6 +487,11 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
         inner_air_c = clamp(tg + dtg * h, -25.0, 160.0);
     }
 
+    // Off-line rubber marbles / street grit scrub off hot tyres over ~90 m of clean rolling
+    if (marble_pickup > 0.0 && v > 1.0) {
+        marble_pickup *= std::exp(-(v * dt) / 90.0);
+        if (marble_pickup < 1e-4) marble_pickup = 0.0;
+    }
     // Ideal gas law directly from Node 3 (Inner Air temperature) & cavity air mass
     pressure_kpa = ideal_gas_pressure_kpa(p);
     // Keep contact_patch_length_m anchored to physical load & pressure while incorporating flexible-ring flattening
@@ -687,7 +694,8 @@ double TireCondition::zone_health_grip_factor() const {
     const double spread_loss = spread > 28.0 ? 0.04 * clamp((spread - 28.0) / 22.0, 0.0, 1.0) : 0.0;
     const double flat_steady_loss = 0.032 * clamp(flat_spot_depth_mm, 0.0, 3.0);
     const double sw_dmg_loss = 0.14 * clamp(sidewall_damage, 0.0, 1.0);
-    return clamp(1.0 - blister_loss - grain_loss - spread_loss - flat_steady_loss - sw_dmg_loss, 0.60, 1.0);
+    const double marble_loss = 0.08 * clamp(marble_pickup, 0.0, 1.0);
+    return clamp(1.0 - blister_loss - grain_loss - spread_loss - flat_steady_loss - sw_dmg_loss - marble_loss, 0.58, 1.0);
 }
 
 double TireCondition::wlf_rib_grip_factor(double rib_surface_c, const TireParams* p) const {
@@ -1130,7 +1138,8 @@ double effective_rolling_radius(const TireParams& p, double fz) {
     return clamp(p.radius - (comp_at_fz - comp_at_fz0), p.radius * 0.85, p.radius * 1.05);
 }
 
-double effective_rolling_radius_mf62(const TireParams& p, double fz, double gamma, double dpi, double wheel_omega_rads) {
+double effective_rolling_radius_mf62(const TireParams& p, double fz, double gamma, double dpi,
+                                     double wheel_omega_rads, double fx_n, double fy_n) {
     // 1. MF 6.2 / MF-Swift-style pressure-dependent vertical carcass stiffness C_Fz(p) = C_Fz0 * (1 + PFZ1 * dpi):
     const double press_stiff = clamp(1.0 + p.pfz1 * dpi, 0.55, 1.55);
     TireParams p_eff = p;
@@ -1144,7 +1153,14 @@ double effective_rolling_radius_mf62(const TireParams& p, double fz, double gamm
     const double s_g = std::sin(clamp(gamma, -0.45, 0.45));
     const double w_scale = clamp(p.section_width_m / 0.245, 0.75, 1.45);
     const double camber_delta = (re0 * 0.042 * s_g * s_g + 0.011 * std::abs(s_g)) * w_scale;
-    return clamp(re0 + centrifugal_growth - camber_delta, p.radius * 0.82, p.radius * 1.06);
+    // 4. MF 6.2 longitudinal/lateral force-coupled carcass radial compression (Q_FCX, Q_FCY):
+    // Steel belt is nearly inextensible, so effective rolling radius Re shifts by ~0.25 of vertical hub deflection rho.
+    const double fz0 = std::max(p.fz0, 100.0);
+    const double rho_fz0 = fz0 / p_eff.vertical_stiffness;
+    const double fx_nrm = std::max(0.0, std::abs(fx_n) / fz0 - 0.45);
+    const double fy_nrm = std::max(0.0, std::abs(fy_n) / fz0 - 0.45);
+    const double force_comp = clamp(0.12 * rho_fz0 * (p.qfcx * fx_nrm * fx_nrm + p.qfcy * fy_nrm * fy_nrm), 0.0, 0.003);
+    return clamp(re0 + centrifugal_growth - camber_delta - force_comp, p.radius * 0.82, p.radius * 1.06);
 }
 
 void relaxation_lengths(const TireParams& p, double fz, double gamma, double& sigma_x, double& sigma_y, double dpi) {
@@ -1208,47 +1224,61 @@ double mf_pure_fy(const TireParams& p, double alpha, double fz, double mu_scale,
     double shy = (p.phy1 + p.phy2 * dfz) + p.phy3 * gamma;
     double svy = fz * ((p.pvy1 + p.pvy2 * dfz) + (p.pvy3 + p.pvy4 * dfz) * gamma) * mu_scale;
     double ay = alpha + shy;
-    // Load- and camber-dependent curvature E_y (MF 5.2 eq. 4.E24):
-    double ey = (p.ey + p.pey2 * dfz) * (1.0 - (p.pey3 + p.pey4 * gamma) * sign(ay));
+    // Load- and camber-dependent curvature E_y (MF 6.2 eq. 4.E24):
+    double ey = (p.ey + p.pey2 * dfz) * (1.0 + p.pey5 * gamma * gamma - (p.pey3 + p.pey4 * gamma) * sign(ay));
     return mf(ay, B, p.cy, D, ey) + svy;
 }
 
+double mf_overturning_moment(const TireParams& p, double fz, double fy, double gamma, double dpi) {
+    if (fz <= 0.0) return 0.0;
+    // Pacejka MF 6.2 Overturning Couple Mx in ISO 8855 (+X fwd, +Y left, +Z up; 3rd ed. eq. 4.E69):
+    //   +gamma (top tilted left) loads left shoulder (+Y) -> (+y) x (+Fz) = +Mx (righting moment opposing left lean);
+    //   +Fy (road pushing tread left) shifts patch inward (+Y) relative to rim -> +Mx (overturning in a left turn).
+    const double fz0 = std::max(p.fz0, 100.0);
+    const double press_cam = clamp(1.0 + p.ppmx1 * dpi, 0.5, 1.5);
+    return p.radius * fz * (p.qsx1 + p.qsx2 * gamma * press_cam + p.qsx3 * (fy / fz0))
+         + p.radius * fy * p.qsx13;
+}
+
 double mf_aligning_torque(const TireParams& p, double kappa, double alpha, double fz, double mu_scale, double gamma,
-                          double fx, double fy_no_svyk, double* out_trail) {
+                          double fx, double fy_no_svyk, double* out_trail, double dpi) {
     if (fz <= 0) {
         if (out_trail) *out_trail = 0;
         return 0;
     }
     double dfz = dfz_of(p, fz);
     double mu_s = std::max(mu_scale, 0.1);
-    double kx = kx_of(p, fz, dfz);
-    double ky = std::max(ky_of(p, fz, gamma), 1.0);
+    double kx = kx_of(p, fz, dfz, dpi);
+    double ky = std::max(ky_of(p, fz, gamma, dpi), 1.0);
     double k_ratio = kx / ky;
 
-    // 1. Pneumatic trail t(alpha_t,eq) (MF 5.2 eqs. 4.E33-4.E42, 4.E73):
+    // 1. Pneumatic trail t(alpha_t,eq) (MF 6.2 eqs. 4.E33-4.E42, 4.E73 with pressure sensitivity pPz1):
     double sht = p.qhz1 + p.qhz2 * dfz + (p.qhz3 + p.qhz4 * dfz) * gamma;
     double alpha_t = alpha + sht;
     double tan_at = std::tan(clamp(alpha_t, -1.4, 1.4));
     double alpha_teq = std::atan(std::hypot(tan_at, k_ratio * kappa)) * (alpha_t >= 0 ? 1.0 : -1.0);
     double Bt = std::max(0.5, (p.qbz1 + p.qbz2 * dfz + p.qbz3 * dfz * dfz) * (1.0 + p.qbz4 * gamma + p.qbz5 * std::abs(gamma))) / mu_s;
     double Ct = p.qcz1;
-    double Dt = fz * (p.radius / std::max(p.fz0, 1.0)) * (p.qdz1 + p.qdz2 * dfz) * (1.0 + p.qdz3 * gamma + p.qdz4 * gamma * gamma);
+    double press_dt = clamp(1.0 + p.ppz1 * dpi, 0.5, 1.6);
+    double Dt = fz * (p.radius / std::max(p.fz0, 1.0)) * (p.qdz1 + p.qdz2 * dfz)
+              * (1.0 + p.qdz3 * gamma + p.qdz4 * gamma * gamma) * press_dt;
     double Et = (p.qez1 + p.qez2 * dfz + p.qez3 * dfz * dfz) *
                 (1.0 + (p.qez4 + p.qez5 * gamma) * (2.0 / kPi) * std::atan(Bt * Ct * alpha_teq));
     double trail = Dt * mf_cos(alpha_teq, Bt, Ct, Et) * std::cos(alpha);
     if (out_trail) *out_trail = trail;
 
-    // 2. Residual torque M_zr(alpha_r,eq) (MF 5.2 eqs. 4.E43-4.E47, 4.E74):
+    // 2. Residual torque M_zr(alpha_r,eq) (MF 6.2 eqs. 4.E43-4.E47, 4.E74 with pressure sensitivity pPz2):
     double shy = (p.phy1 + p.phy2 * dfz) + p.phy3 * gamma;
     double svy = fz * ((p.pvy1 + p.pvy2 * dfz) + (p.pvy3 + p.pvy4 * dfz) * gamma) * mu_scale;
     double shf = shy + svy / ky;
     double alpha_r = alpha + shf;
     double tan_ar = std::tan(clamp(alpha_r, -1.4, 1.4));
     double alpha_req = std::atan(std::hypot(tan_ar, k_ratio * kappa)) * (alpha_r >= 0 ? 1.0 : -1.0);
-    double mu_y = p.mu_y * std::max(0.2, 1.0 + p.pdy2 * dfz) * std::max(0.2, 1.0 - p.pdy3 * gamma * gamma) * mu_scale;
+    double mu_y = mu_y_of(p, dfz, gamma, mu_scale, dpi);
     double By = ky / (p.cy * mu_y * fz + 1e-9);
     double Br = p.qbz9 / mu_s + p.qbz10 * By * p.cy;
-    double Dr = fz * p.radius * ((p.qdz6 + p.qdz7 * dfz) + (p.qdz8 + p.qdz9 * dfz) * gamma) * mu_scale * std::cos(alpha);
+    double press_dr = clamp(1.0 + p.ppz2 * dpi, 0.4, 1.8);
+    double Dr = fz * p.radius * ((p.qdz6 + p.qdz7 * dfz) + (p.qdz8 + p.qdz9 * dfz) * gamma * press_dr) * mu_scale * std::cos(alpha);
     double mzr = Dr * std::cos(std::atan(Br * alpha_req));
 
     // 3. Moment arm s of longitudinal force Fx due to camber & lateral carcass deflection (MF 5.2 eq. 4.E76):
@@ -1585,7 +1615,7 @@ TireForces evaluate_contact_patch_grid(const TireParams& p, double kappa, double
 
     const double mu_eff_mean = mu_mean_weighted / fz;
     double trail_mf = 0.0;
-    const double mz_mf = mf_aligning_torque(p, kappa, alpha_center, fz, mu_eff_mean, gamma, fx_total, fy_nosvyk_total, &trail_mf);
+    const double mz_mf = mf_aligning_torque(p, kappa, alpha_center, fz, mu_eff_mean, gamma, fx_total, fy_nosvyk_total, &trail_mf, dpi);
     // Add the 4x4 grid's direct lateral-arm moment (-y_j * fx_ij: kerb pull, uneven rib scrub, camber conicity,
     // yaw-spin damping) and longitudinal centroid shift from uneven front/rear road height or yaw spin.
     const double delta_mz_lon = mz_lon_grid - flat_brush_xc * fy_nosvyk_total;
@@ -1593,6 +1623,7 @@ TireForces evaluate_contact_patch_grid(const TireParams& p, double kappa, double
     if (std::abs(fy_nosvyk_total) > 50.0) {
         out.pneumatic_trail = clamp(trail_mf - delta_mz_lon / fy_nosvyk_total, -a, a);
     }
+    out.mx = mf_overturning_moment(p, fz, fy_total, gamma, dpi);
     out.mz = mz_mf + mz_lat_arm + delta_mz_lon;
 
     if (op.enable_mf62_hybrid) {
@@ -1696,7 +1727,8 @@ TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, do
 
     out.fx = fx;
     out.fy = fy;
-    out.mz = mf_aligning_torque(p, kappa, alpha, fz, mu_scale, gamma, fx, fy_no_svyk, &out.pneumatic_trail);
+    out.mx = mf_overturning_moment(p, fz, fy, gamma, dpi);
+    out.mz = mf_aligning_torque(p, kappa, alpha, fz, mu_scale, gamma, fx, fy_no_svyk, &out.pneumatic_trail, dpi);
     if (op.enable_mf62_hybrid) {
         const double mz_conicity = -0.024 * fz * p.radius * std::sin(gamma) * std::cos(alpha);
         const double mz_3rib = rib_diff_torque_factor * 0.082 * fx;

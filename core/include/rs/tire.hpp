@@ -84,6 +84,7 @@ struct ContactPatchOutput {
 struct TireForces {
     double fx = 0;               // longitudinal force in the tyre frame (+ = forward), N
     double fy = 0;               // lateral force in the tyre frame (+ = left), N
+    double mx = 0;               // MF 6.2 overturning moment about longitudinal X axis (+ = rolling right), N m
     double mz = 0;               // self-aligning moment about contact normal (+ = CCW from above), N m
     double pneumatic_trail = 0;  // instantaneous pneumatic trail t, m
     double effective_rib_mu = 1; // load-weighted 3-rib (Inner/Middle/Outer) + WLF flash-temp grip multiplier
@@ -144,6 +145,7 @@ struct TireCondition {
     double rim_strike_force_n = 0.0;      // N, instantaneous rim-flange bottoming force on sharp kerb/pothole strikes
     double carcass_hysteresis_w = 0.0;    // W, viscoelastic flexing power from deformable carcass ring into bulk Node 2
     double brake_disc_temp_c = 30.0;      // C, adjacent brake rotor temperature for rim -> cavity air radiant heat soak
+    double marble_pickup = 0.0;           // 0..1 off-line rubber marbles / street grit stuck to hot tread (scrubs off on clean asphalt)
 
     // Internal change trackers (allows legacy tests that teleport temperature_c directly to stay consistent
     // while keeping continuous 3-node ODE integration pure during simulation).
@@ -235,13 +237,16 @@ TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, do
 double mf_pure_fx(const TireParams& p, double kappa, double fz, double mu_scale, double gamma = 0.0, double dpi = 0.0);
 double mf_pure_fy(const TireParams& p, double alpha, double fz, double mu_scale, double gamma = 0.0, double dpi = 0.0);
 double mf_aligning_torque(const TireParams& p, double kappa, double alpha, double fz, double mu_scale, double gamma,
-                          double fx, double fy_no_svyk, double* out_trail = nullptr);
+                          double fx, double fy_no_svyk, double* out_trail = nullptr, double dpi = 0.0);
+
+// MF 6.2 Overturning Moment Mx (Pacejka 3rd ed. eq. 4.E69: camber, lateral carcass shift, and inflation pressure).
+double mf_overturning_moment(const TireParams& p, double fz, double fy, double gamma, double dpi = 0.0);
 
 // Effective rolling radius R_e under vertical load Fz (Pacejka Ch. 4 BREFF/DREFF/FREFF) and MF 6.2/MF-Swift-style
-// camber-conicity, inflation-pressure stiffness PFZ1, and high-speed centrifugal steel-belt growth.
+// camber-conicity, inflation-pressure stiffness PFZ1, force coupling Q_FCX/Q_FCY, and high-speed centrifugal growth.
 double effective_rolling_radius(const TireParams& p, double fz);
 double effective_rolling_radius_mf62(const TireParams& p, double fz, double gamma, double dpi = 0.0,
-                                     double wheel_omega_rads = 0.0);
+                                     double wheel_omega_rads = 0.0, double fx_n = 0.0, double fy_n = 0.0);
 
 // Load-, camber-, and pressure-dependent transient relaxation lengths sigma_x(Fz), sigma_y(Fz, gamma) (Pacejka Ch. 7 + PTX/PTY).
 void relaxation_lengths(const TireParams& p, double fz, double gamma, double& sigma_x, double& sigma_y, double dpi = 0.0);

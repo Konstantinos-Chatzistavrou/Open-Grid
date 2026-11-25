@@ -104,8 +104,8 @@ KinematicSolver::KinematicSolver(const SuspensionHardpoints& hp) : hp_(hp) {
     lca_e1_ = lca_radius_ > 1e-9 ? r_l / lca_radius_ : Vec3{0.0, 1.0, 0.0};
     lca_e2_ = cross(lca_axis_, lca_e1_);
 
-    // Upper control arm circle (DoubleWishbone)
-    if (hp_.type == SuspensionType::DoubleWishbone) {
+    // Upper control arm circle (DoubleWishbone & MultiLink 5-link)
+    if (hp_.type == SuspensionType::DoubleWishbone || hp_.type == SuspensionType::MultiLink) {
         Vec3 uca_span = hp_.uca_front - hp_.uca_rear;
         if (length(uca_span) < 1e-6) uca_span = {1.0, 0.0, 0.0};
         uca_axis_ = normalized(uca_span);
@@ -119,12 +119,16 @@ KinematicSolver::KinematicSolver(const SuspensionHardpoints& hp) : hp_(hp) {
     // Reference static link lengths
     len_lca_f_ = length(hp_.lca_outer - hp_.lca_front);
     len_lca_r_ = length(hp_.lca_outer - hp_.lca_rear);
-    if (hp_.type == SuspensionType::DoubleWishbone) {
+    if (hp_.type == SuspensionType::DoubleWishbone || hp_.type == SuspensionType::MultiLink) {
         len_uca_f_ = length(hp_.uca_outer - hp_.uca_front);
         len_uca_r_ = length(hp_.uca_outer - hp_.uca_rear);
         len_ul_ = length(hp_.uca_outer - hp_.lca_outer);
         len_ut_ = length(hp_.tie_outer - hp_.uca_outer);
         kp0_ = normalized(hp_.uca_outer - hp_.lca_outer);
+    } else if (hp_.type == SuspensionType::SolidAxle) {
+        len_ul_ = 0.25;
+        len_ut_ = 0.25;
+        kp0_ = {0.0, 0.0, 1.0};
     } else {
         len_ul_ = length(hp_.strut_top - hp_.lca_outer);
         len_ut_ = length(hp_.tie_outer - hp_.strut_top);
@@ -159,8 +163,8 @@ KinematicSolver::KinematicSolver(const SuspensionHardpoints& hp) : hp_(hp) {
     const Vec3 wup0 = cross(fwd0, s0);
     cp_z_static_offset_ = hp_.wheel_center.z - wup0.z * hp_.tire_radius;
 
-    // Default shock mount on LCA when not explicitly provided (DoubleWishbone)
-    if (hp_.type == SuspensionType::DoubleWishbone) {
+    // Default shock mount on LCA when not explicitly provided (DoubleWishbone & MultiLink)
+    if (hp_.type == SuspensionType::DoubleWishbone || hp_.type == SuspensionType::MultiLink) {
         if (!hp_.has_shock_mounts) {
             hp_.shock_lower = lca_center_ + (hp_.lca_outer - lca_center_) * 0.72;
             hp_.shock_upper = hp_.shock_lower + Vec3{0.0, -0.10, 0.42};
@@ -180,7 +184,7 @@ KinematicPose KinematicSolver::pose_from_theta(double theta_l, double y_rack,
     p.lca_outer = lca_center_ + (lca_e1_ * cl + lca_e2_ * sl) * lca_radius_;
 
     Vec3 kp{};
-    if (hp_.type == SuspensionType::DoubleWishbone) {
+    if (hp_.type == SuspensionType::DoubleWishbone || hp_.type == SuspensionType::MultiLink) {
         if (!solve_circle_sphere(uca_center_, uca_e1_, uca_e2_, uca_radius_,
                                  p.lca_outer, len_ul_, prev_phi_u, out_phi_u)) {
             return p;
@@ -213,7 +217,7 @@ KinematicPose KinematicSolver::pose_from_theta(double theta_l, double y_rack,
     p.wheel_center = p.lca_outer + u1 * wheel_local_.x + v1 * wheel_local_.y + w1 * wheel_local_.z;
     p.spindle_out = normalized(u1 * spindle_local_.x + v1 * spindle_local_.y + w1 * spindle_local_.z);
 
-    if (hp_.type == SuspensionType::DoubleWishbone) {
+    if (hp_.type == SuspensionType::DoubleWishbone || hp_.type == SuspensionType::MultiLink) {
         const Vec3 e1_r = lca_e1_ * cl + lca_e2_ * sl;
         const Vec3 e2_r = lca_e2_ * cl - lca_e1_ * sl;
         p.shock_lower = lca_center_ + lca_axis_ * shock_lca_axial_ + e1_r * shock_lca_e1_ + e2_r * shock_lca_e2_;
@@ -269,6 +273,42 @@ KinematicPose KinematicSolver::solve_pose(double dz, double y_rack,
 WheelKinematicSample KinematicSolver::evaluate(double dz, double y_rack,
                                                double* io_theta_l, double* io_phi_u, double* io_psi) const {
     WheelKinematicSample s;
+    if (hp_.type == SuspensionType::SolidAxle) {
+        // Live solid-axle beam + Panhard rod kinematics:
+        //   - Panhard rod sweeps lateral arc dy = sqrt(L_p^2 - dz^2) - L_p under vertical heave dz
+        //   - Longitudinal trailing-arm arc dx = sqrt(L_t^2 - dz^2) - L_t
+        //   - Roll-centre FVIC sits on vehicle centerline at Panhard height z = panhard_height_m
+        //   - Single-wheel camber stays at static_camber_rad here; Vehicle::update adds exact beam roll atan2(dz_L - dz_R, track)
+        const double lp = std::max(0.45, hp_.panhard_length_m);
+        const double dz_c = clamp(dz, -0.45 * lp, 0.45 * lp);
+        const double dy_panhard = std::sqrt(std::max(0.0, lp * lp - dz_c * dz_c)) - lp;
+        const double l_trail = 0.58;
+        const double dx_trail = std::sqrt(std::max(0.0, l_trail * l_trail - dz_c * dz_c)) - l_trail;
+        s.wheel_offset = {dx_trail, dy_panhard, dz};
+        s.camber_rad = hp_.static_camber_rad;
+        s.dcamber_dz = 0.0;
+        s.toe_rad = hp_.static_toe_rad;
+        s.steer_rad = -hp_.static_toe_rad;
+        s.caster_rad = 0.0;
+        s.kpi_rad = 0.0;
+        s.scrub_radius_m = 0.0;
+        s.caster_trail_m = 0.0;
+        s.motion_ratio = 0.96;
+        s.cp_y = hp_.wheel_center.y + dy_panhard;
+        s.cp_z = dz;
+        // Projective FVIC at (y=0, z=panhard_height_m, w=1), normalized
+        Vec3 fvic{0.0, hp_.panhard_height_m, 1.0};
+        fvic = fvic / length(fvic);
+        s.fvic_y = fvic.x;
+        s.fvic_z = fvic.y;
+        s.fvic_w = fvic.z;
+        Vec3 svic{-l_trail, hp_.panhard_height_m, 1.0};
+        svic = svic / length(svic);
+        s.svic_x = svic.x;
+        s.svic_z = svic.y;
+        s.svic_w = svic.z;
+        return s;
+    }
     double th = io_theta_l ? *io_theta_l : (lca_radius_ > 1e-6 ? std::asin(clamp(dz / lca_radius_, -0.9, 0.9)) : 0.0);
     double fu = io_phi_u ? *io_phi_u : 0.0;
     double ps = io_psi ? *io_psi : 0.0;
@@ -308,7 +348,7 @@ WheelKinematicSample KinematicSolver::evaluate(double dz, double y_rack,
     const Vec3 n_l = cross(hp_.lca_front - p.lca_outer, hp_.lca_rear - p.lca_outer);
     const Vec3 line_l_fv{n_l.y, n_l.z, n_l.x * p.wheel_center.x - dot(n_l, p.lca_outer)};
     Vec3 line_u_fv{};
-    if (hp_.type == SuspensionType::DoubleWishbone) {
+    if (hp_.type == SuspensionType::DoubleWishbone || hp_.type == SuspensionType::MultiLink) {
         const Vec3 n_u = cross(hp_.uca_front - p.uca_outer, hp_.uca_rear - p.uca_outer);
         line_u_fv = {n_u.y, n_u.z, n_u.x * p.wheel_center.x - dot(n_u, p.uca_outer)};
     } else {
@@ -331,7 +371,7 @@ WheelKinematicSample KinematicSolver::evaluate(double dz, double y_rack,
     // Side-View Instant Centre (SVIC) in longitudinal plane y = wheel_center.y
     const Vec3 line_l_sv{n_l.x, n_l.z, n_l.y * p.wheel_center.y - dot(n_l, p.lca_outer)};
     Vec3 line_u_sv{};
-    if (hp_.type == SuspensionType::DoubleWishbone) {
+    if (hp_.type == SuspensionType::DoubleWishbone || hp_.type == SuspensionType::MultiLink) {
         const Vec3 n_u = cross(hp_.uca_front - p.uca_outer, hp_.uca_rear - p.uca_outer);
         line_u_sv = {n_u.x, n_u.z, n_u.y * p.wheel_center.y - dot(n_u, p.uca_outer)};
     } else {

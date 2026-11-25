@@ -98,6 +98,19 @@ struct TireParams {
     double ptx1 = 2.3657, ptx2 = 1.4112, ptx3 = 0.56626; // longitudinal relaxation length coefficients (PTX1..3)
     double pty1 = 2.1439, pty2 = 1.9829;                 // lateral relaxation length coefficients (PTY1..2)
     double qtz1 = 0.20;               // gyroscopic belt precession aligning torque constant (QTZ1)
+    // MF 6.2 additions: asymmetric pressure cornering stiffness, camber-squared curvature, pressure-dependent
+    // aligning trail/residual torque, force-coupled loaded-radius deflection, and overturning moment Mx (QSX1..14).
+    double ppy5 = 0.0;                // MF 6.2 asymmetric pressure scaling of lateral peak friction
+    double pey5 = 0.0;                // MF 6.2 camber-squared curvature term in Ey
+    double ppz1 = -0.45;              // MF 6.2 inflation-pressure dependency of pneumatic trail Dt (1 + pPz1 * dpi)
+    double ppz2 = 0.55;               // MF 6.2 inflation-pressure dependency of residual aligning torque Dr (1 + pPz2 * dpi)
+    double qfcx = 0.04;               // MF 6.2 longitudinal force-coupled radial carcass compression factor
+    double qfcy = 0.06;               // MF 6.2 lateral force-coupled radial carcass compression factor
+    double qsx1 = 0.0;                // MF 6.2 overturning moment Mx vertical/lateral offset
+    double qsx2 = 0.30;               // MF 6.2 overturning moment Mx camber righting term (+R0*Fz*qSx2*gamma in ISO)
+    double qsx3 = 0.012;              // MF 6.2 overturning moment Mx lateral force term (+R0*Fz*qSx3*Fy/Fz0 in ISO)
+    double qsx13 = 0.0;               // MF 6.2 optional alternate lateral-force arm (0 when qSx3 is active)
+    double ppmx1 = 0.15;              // MF 6.2 inflation-pressure sensitivity of Mx camber term
     double mbelt = 5.4;               // kg, steel tread belt mass (MBELT = 5.4 kg for 245/40 R18, scaled by tire width/radius)
     double section_width_m = 0.245;   // m, nominal tire section width (WIDTH)
     double aspect_ratio = 0.40;       // sidewall aspect ratio (ASPECT_RATIO, e.g. 0.40 for 245/40 R18)
@@ -150,6 +163,12 @@ struct AxleParams {
     // ---- dampers: digressive valving (firm at low shaft speed for body control, softer past the knee for bumps)
     double damper_knee_mps = 0.13;
     double damper_high_speed_ratio = 0.45;  // coefficient above the knee / below it
+    // ---- elastokinematic suspension bushing compliance (rubber street bushings vs spherical race bearings)
+    // Defaults to 0.0 so legacy configs keep exact rigid-hardpoint numbers; game/UE5 or JSON can enable compliance.
+    double toe_compliance_rad_per_kn_fx = 0.0;        // rad/kN: + = toe-in under braking (-Fx)
+    double toe_compliance_rad_per_kn_fy = 0.0;        // rad/kN: + = compliance toe-in under outward cornering Fy
+    double camber_compliance_rad_per_kn_fy = 0.0;     // rad/kN: + = loaded outer wheel loses negative camber under Fy
+    double longitudinal_compliance_m_per_kn_fx = 0.0; // m/kN: fore-aft hub recession under braking/kerb Fx
     // ---- optional explicit 3D suspension hardpoints (synthesized from parameters above if omitted in JSON)
     SuspensionHardpoints kinematics{};
 };
@@ -227,6 +246,23 @@ struct DrivetrainParams {
 inline constexpr double kDrsDragMult = 0.86, kDrsRearDownMult = 0.82;
 inline constexpr double kAirbrakeDragMult = 1.24, kAirbrakeRearDownMult = 1.22;
 
+// Optional 2D Front/Rear Ride-Height Aerodynamic Lookup Map (front_rh_m x rear_rh_m -> ClA_front, ClA_rear, CdA).
+// Captures non-linear ground-effect suction peak, pitch sensitivity, front splitter stall, and diffuser rake stall.
+struct AeroMap2D {
+    std::vector<double> front_rh_m;   // sorted ascending front ride heights (m)
+    std::vector<double> rear_rh_m;    // sorted ascending rear ride heights (m)
+    std::vector<double> cl_front;     // row-major [i_f * nr + i_r], front downforce area ClA_f (m^2)
+    std::vector<double> cl_rear;      // row-major [i_f * nr + i_r], rear downforce area ClA_r (m^2)
+    std::vector<double> cd;           // row-major [i_f * nr + i_r], total drag area CdA (m^2)
+
+    bool valid() const {
+        const std::size_t n = front_rh_m.size() * rear_rh_m.size();
+        return front_rh_m.size() >= 2 && rear_rh_m.size() >= 2 &&
+               cl_front.size() == n && cl_rear.size() == n && cd.size() == n;
+    }
+    void sample(double h_f, double h_r, double& out_clf, double& out_clr, double& out_cd) const;
+};
+
 struct AeroParams {
     bool drs = false;                 // the car has a DRS-style low-drag wing mode
     bool airbrake = false;            // the car has an airbrake wing mode
@@ -238,6 +274,10 @@ struct AeroParams {
     // aero balance forward. Changes per metre of mean / front-minus-rear compression from static.
     double ground_effect_per_m = 1.5;     // downforce * (1 + this * mean compression), clamped 0.6 .. 1.5
     double pitch_balance_per_m = 1.0;     // front balance + this * (front - rear compression)
+    double static_ride_height_front_m = 0.11; // m, static front splitter/undertray clearance
+    double static_ride_height_rear_m = 0.125; // m, static rear diffuser clearance
+    double diffuser_stall_rake_m = 0.065;     // m, excessive rear-high rake (h_r - h_f) where diffuser stalls
+    AeroMap2D map_2d;                         // optional explicit 2D ride-height aero table
 };
 
 struct CarConfig {

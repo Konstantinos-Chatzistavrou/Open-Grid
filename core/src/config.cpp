@@ -54,16 +54,29 @@ Vec3 vec3_req(const json& j, const char* key, const std::string& ctx) {
 
 SuspensionHardpoints parse_kinematics(const json& j, const std::string& ctx) {
     SuspensionHardpoints hp;
-    const std::string t = j.value("type", "");
+    const std::string t = j.value("type", "double_wishbone");
     if (t == "double_wishbone") hp.type = SuspensionType::DoubleWishbone;
     else if (t == "macpherson") hp.type = SuspensionType::MacPherson;
-    else throw std::runtime_error("car config: '" + ctx + ".type' must be double_wishbone|macpherson, got '" + t + "'");
+    else if (t == "multi_link") hp.type = SuspensionType::MultiLink;
+    else if (t == "solid_axle") hp.type = SuspensionType::SolidAxle;
+    else throw std::runtime_error("car config: '" + ctx + ".type' must be double_wishbone|macpherson|multi_link|solid_axle, got '" + t + "'");
+    if (hp.type == SuspensionType::SolidAxle) {
+        hp.panhard_height_m = num_or(j, "panhard_height_m", hp.panhard_height_m);
+        hp.panhard_length_m = num_or(j, "panhard_length_m", hp.panhard_length_m);
+        if (j.contains("lca_front")) hp.lca_front = vec3_req(j, "lca_front", ctx);
+        if (j.contains("lca_rear")) hp.lca_rear = vec3_req(j, "lca_rear", ctx);
+        if (j.contains("lca_outer")) hp.lca_outer = vec3_req(j, "lca_outer", ctx);
+        if (j.contains("tie_inner")) hp.tie_inner = vec3_req(j, "tie_inner", ctx);
+        if (j.contains("tie_outer")) hp.tie_outer = vec3_req(j, "tie_outer", ctx);
+        hp.explicit_in_config = true;
+        return hp;
+    }
     hp.lca_front = vec3_req(j, "lca_front", ctx);
     hp.lca_rear = vec3_req(j, "lca_rear", ctx);
     hp.lca_outer = vec3_req(j, "lca_outer", ctx);
     hp.tie_inner = vec3_req(j, "tie_inner", ctx);
     hp.tie_outer = vec3_req(j, "tie_outer", ctx);
-    if (hp.type == SuspensionType::DoubleWishbone) {
+    if (hp.type == SuspensionType::DoubleWishbone || hp.type == SuspensionType::MultiLink) {
         hp.uca_front = vec3_req(j, "uca_front", ctx);
         hp.uca_rear = vec3_req(j, "uca_rear", ctx);
         hp.uca_outer = vec3_req(j, "uca_outer", ctx);
@@ -106,6 +119,10 @@ AxleParams parse_axle(const json& j, const std::string& ctx) {
     a.anti_lift_rear_braking = num_or(j, "anti_lift_braking", a.anti_lift_rear_braking);
     a.damper_knee_mps = num_or(j, "damper_knee_mps", a.damper_knee_mps);
     a.damper_high_speed_ratio = num_or(j, "damper_high_speed_ratio", a.damper_high_speed_ratio);
+    a.toe_compliance_rad_per_kn_fx = num_or(j, "toe_compliance_deg_per_kn_fx", 0.0) * kPi / 180.0;
+    a.toe_compliance_rad_per_kn_fy = num_or(j, "toe_compliance_deg_per_kn_fy", 0.0) * kPi / 180.0;
+    a.camber_compliance_rad_per_kn_fy = num_or(j, "camber_compliance_deg_per_kn_fy", 0.0) * kPi / 180.0;
+    a.longitudinal_compliance_m_per_kn_fx = num_or(j, "longitudinal_compliance_mm_per_kn_fx", 0.0) * 1e-3;
     if (j.contains("kinematics")) a.kinematics = parse_kinematics(j.at("kinematics"), ctx + ".kinematics");
     return a;
 }
@@ -211,10 +228,24 @@ TireParams parse_tire(const json& j, const std::string& ctx) {
     t.ppy2 = num_or(la, "pPy2", t.ppy2);
     t.ppy3 = num_or(la, "pPy3", t.ppy3);
     t.ppy4 = num_or(la, "pPy4", t.ppy4);
+    t.ppy5 = num_or(la, "pPy5", t.ppy5);
+    t.pey5 = num_or(la, "pEy5", t.pey5);
     if (j.contains("aligning")) {
         const json& al = j.at("aligning");
         t.qtz1 = num_or(al, "qTz1", t.qtz1);
+        t.ppz1 = num_or(al, "pPz1", t.ppz1);
+        t.ppz2 = num_or(al, "pPz2", t.ppz2);
     }
+    if (j.contains("overturning")) {
+        const json& ov = j.at("overturning");
+        t.qsx1 = num_or(ov, "qSx1", t.qsx1);
+        t.qsx2 = num_or(ov, "qSx2", t.qsx2);
+        t.qsx3 = num_or(ov, "qSx3", t.qsx3);
+        t.qsx13 = num_or(ov, "qSx13", t.qsx13);
+        t.ppmx1 = num_or(ov, "pPmx1", t.ppmx1);
+    }
+    t.qfcx = num_or(j, "qFcx", t.qfcx);
+    t.qfcy = num_or(j, "qFcy", t.qfcy);
     t.mbelt = num_or(j, "mbelt_kg", t.mbelt);
     t.section_width_m = num_or(j, "section_width_m", t.section_width_m);
     t.aspect_ratio = num_or(j, "aspect_ratio", t.aspect_ratio);
@@ -384,6 +415,17 @@ CarConfig parse_car_config(const std::string& text) {
     c.aero.air_density = num_or(a, "air_density", 1.225);
     c.aero.ground_effect_per_m = num_or(a, "ground_effect_per_m", c.aero.ground_effect_per_m);
     c.aero.pitch_balance_per_m = num_or(a, "pitch_balance_per_m", c.aero.pitch_balance_per_m);
+    c.aero.static_ride_height_front_m = num_or(a, "static_ride_height_front_m", c.aero.static_ride_height_front_m);
+    c.aero.static_ride_height_rear_m = num_or(a, "static_ride_height_rear_m", c.aero.static_ride_height_rear_m);
+    c.aero.diffuser_stall_rake_m = num_or(a, "diffuser_stall_rake_m", c.aero.diffuser_stall_rake_m);
+    if (a.contains("map_2d")) {
+        const json& m2 = a.at("map_2d");
+        c.aero.map_2d.front_rh_m = m2.at("front_rh_m").get<std::vector<double>>();
+        c.aero.map_2d.rear_rh_m = m2.at("rear_rh_m").get<std::vector<double>>();
+        c.aero.map_2d.cl_front = m2.at("cl_front").get<std::vector<double>>();
+        c.aero.map_2d.cl_rear = m2.at("cl_rear").get<std::vector<double>>();
+        c.aero.map_2d.cd = m2.at("cd").get<std::vector<double>>();
+    }
 
     for (auto it = j.at("surface_grip").begin(); it != j.at("surface_grip").end(); ++it)
         c.surface_grip.push_back({it.key(), it.value().get<double>()});
@@ -402,6 +444,38 @@ CarConfig load_car_config(const std::string& path) {
     } catch (const nlohmann::json::exception& e) {
         throw std::runtime_error(std::string("car config ") + path + ": " + e.what());
     }
+}
+
+void AeroMap2D::sample(double h_f, double h_r, double& out_clf, double& out_clr, double& out_cd) const {
+    if (!valid()) { out_clf = out_clr = out_cd = 0.0; return; }
+    const std::size_t nr = rear_rh_m.size();
+    auto locate = [](const std::vector<double>& grid, double x, std::size_t& i0, std::size_t& i1, double& t) {
+        if (x <= grid.front()) { i0 = i1 = 0; t = 0.0; return; }
+        if (x >= grid.back()) { i0 = i1 = grid.size() - 1; t = 0.0; return; }
+        for (std::size_t i = 0; i + 1 < grid.size(); ++i) {
+            if (x >= grid[i] && x <= grid[i + 1]) {
+                i0 = i; i1 = i + 1;
+                const double span = grid[i + 1] - grid[i];
+                t = span > 1e-12 ? (x - grid[i]) / span : 0.0;
+                return;
+            }
+        }
+        i0 = i1 = grid.size() - 1; t = 0.0;
+    };
+    std::size_t f0 = 0, f1 = 0, r0 = 0, r1 = 0;
+    double tf = 0.0, tr = 0.0;
+    locate(front_rh_m, h_f, f0, f1, tf);
+    locate(rear_rh_m, h_r, r0, r1, tr);
+    auto bilerp = [&](const std::vector<double>& tab) {
+        const double v00 = tab[f0 * nr + r0], v01 = tab[f0 * nr + r1];
+        const double v10 = tab[f1 * nr + r0], v11 = tab[f1 * nr + r1];
+        const double v0 = v00 + (v01 - v00) * tr;
+        const double v1 = v10 + (v11 - v10) * tr;
+        return v0 + (v1 - v0) * tf;
+    };
+    out_clf = bilerp(cl_front);
+    out_clr = bilerp(cl_rear);
+    out_cd = bilerp(cd);
 }
 
 void CarConfig::finalize() {

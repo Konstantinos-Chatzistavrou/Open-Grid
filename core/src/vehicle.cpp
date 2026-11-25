@@ -670,22 +670,50 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     out.roll_centre_rear_m = axle_rch[1];
 
     std::array<Kin, 4> kin;
+    std::array<double, 4> hub_recession_m{};
     for (int w = 0; w < 4; ++w) {
         const int a = w < 2 ? 0 : 1;
         const bool left_wheel = (w % 2 == 0);
+        const double side = left_wheel ? -1.0 : 1.0;   // FL/RL = -1 (left), FR/RR = +1 (right)
         const AxleParams& ax = cfg_.axle(w);
+        const TireParams& tp = cfg_.tire(w);
         const WheelKinematicSample& ks = wheel_kin[w];
-        double d = ks.steer_rad + damage_.toe[w];
+
+        // Elastokinematic suspension bushing compliance (rubber street bushings vs spherical race bearings):
+        // Uses explicit AxleParams compliance if specified; otherwise falls back to realistic compound-matched
+        // compliance only when chassis_dyn_.bushing_compliance_enabled is ON (keeps rigid default tests unchanged).
+        double toe_fx_c = ax.toe_compliance_rad_per_kn_fx;
+        double toe_fy_c = ax.toe_compliance_rad_per_kn_fy;
+        double cam_fy_c = ax.camber_compliance_rad_per_kn_fy;
+        double lon_fx_c = ax.longitudinal_compliance_m_per_kn_fx;
+        if (chassis_dyn_.bushing_compliance_enabled && toe_fx_c == 0.0 && toe_fy_c == 0.0 && cam_fy_c == 0.0 && lon_fx_c == 0.0) {
+            const bool is_race_compound = (tp.temp_optimal_c >= 85.0 && tp.temp_window_c <= 18.0);
+            const double bushing_softness = is_race_compound ? 0.18 : 1.0;
+            toe_fx_c = (a == 0 ? 0.00055 : 0.00025) * bushing_softness; // braking (-Fx) -> slight stabilizing toe-in
+            toe_fy_c = (a == 0 ? 0.00040 : 0.00050) * bushing_softness; // lateral force -> compliance understeer / rear toe-in
+            cam_fy_c = 0.00135 * bushing_softness;                      // loaded outer tyre loses ~0.38 deg/5 kN on rubber bushings
+            lon_fx_c = 0.00110 * bushing_softness;                      // fore-aft hub recession under braking/kerb impacts
+        }
+        const double fx_kn = prev_fx_[w] * 1e-3;
+        const double fy_kn = prev_fy_[w] * 1e-3;
+        // Positive toe-in turns left wheel right (-steer) and right wheel left (+steer): steer_delta = side * toe_in
+        // Under braking (fx_kn < 0), positive toe_fx_c produces stabilizing toe-in (-fx_kn * toe_fx_c > 0).
+        // Under outward cornering force (left wheel pushed right: fy_kn < 0 -> side * fy_kn > 0), toe_fy_c toes in.
+        const double comp_toe_in = clamp((-fx_kn) * toe_fx_c + (side * fy_kn) * toe_fy_c, -0.025, 0.025);
+        // Outward cornering Fy tilts wheel top outward (reducing negative camber magnitude): delta_gamma = fy_kn * cam_fy_c
+        const double comp_camber = clamp(fy_kn * cam_fy_c, -0.045, 0.045);
+        hub_recession_m[w] = clamp(fx_kn * lon_fx_c, -0.018, 0.018);
+
+        double d = ks.steer_rad + side * comp_toe_in + damage_.toe[w];
         if (ax.max_steer_deg > 0) d -= ax.steer_compliance * prev_axle_fy_[a];
         out.wheels[w].steer_angle = d;
-        out.wheels[w].toe_angle = ks.toe_rad + (left_wheel ? -1.0 : 1.0) * damage_.toe[w];
+        out.wheels[w].toe_angle = ks.toe_rad + comp_toe_in + (left_wheel ? -1.0 : 1.0) * damage_.toe[w];
         out.wheels[w].caster_angle = ks.caster_rad + damage_.caster[w];
         out.wheels[w].kpi_angle = ks.kpi_rad;
         out.wheels[w].scrub_radius_m = ks.scrub_radius_m;
         out.wheels[w].motion_ratio = ks.motion_ratio;
         if (!touching[w]) continue;
         const WheelContact& c = contacts[w];
-        const TireParams& tp = cfg_.tire(w);
         Kin& k = kin[w];
         Vec3 heading = s.orientation.rotate({std::cos(d), std::sin(d), 0});
         k.fwd = normalized(heading - c.normal * dot(heading, c.normal));   // in the contact plane
@@ -722,21 +750,29 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         tire_condition_[w].enveloping_slope_tan = c.enveloping_slope_tan;
         tire_condition_[w].brake_disc_temp_c = disc_temp_[w];
         // grip_factor() already incorporates thermal window, greasiness, wear cliff, zone health (blister/grain/flat-spot/
-        // sidewall damage) and sidewall rollover; flat_spot_grip_factor() adds the instantaneous once-per-rev glazed dip.
+        // sidewall damage/marbles) and sidewall rollover; flat_spot_grip_factor() adds the once-per-rev glazed dip.
         k.mu = cfg_.grip_for_surface(c.surface) * tire_condition_[w].grip_factor(&cfg_.tire(w))
              * tire_condition_[w].flat_spot_grip_factor(wheel_angle_[w]) * damage_.grip[w] * wet_mu;
         // Dynamic inclination / camber angle gamma in the tyre frame (+ = top tilted toward +left):
-        //   1. Chassis roll relative to the road normal (dot(up, k.lat))
-        //   2. 3D kinematic camber ks.camber_rad (includes static camber, nonlinear bump/droop camber curve,
-        //      and steering-induced caster + KPI inclination) + bent wishbone/caster damage + sidewall rollover tilt.
+        //   - Independent axles (DoubleWishbone, MacPherson, MultiLink): body roll + kinematic camber + bushing compliance + rollover.
+        //   - Live SolidAxle: both wheels stay perpendicular to the rigid axle beam (beam roll = atan2(dz_L - dz_R, track)),
+        //     independent of body roll relative to the axle!
         const double roll_gamma = std::asin(clamp(dot(up, k.lat), -0.5, 0.5));
-        const double side = left_wheel ? -1.0 : 1.0;   // FL/RL = -1 (left), FR/RR = +1 (right)
         const double rollover_gamma = tire_condition_[w].sidewall_rollover_camber_rad();
-        k.gamma = clamp(roll_gamma - side * (ks.camber_rad + damage_.camber[w]) + damage_.caster[w] * std::sin(d) + rollover_gamma,
-                        -0.35, 0.35);
-        k.gamma_rate = -side * ks.dcamber_dz * comp_rate[w];
+        if (ax.kinematics.type == SuspensionType::SolidAxle) {
+            const int wl = a * 2, wr = a * 2 + 1;
+            const double beam_roll_rel_body = std::atan2(dz_[wl] - dz_[wr], std::max(ax.track, 0.8));
+            k.gamma = clamp(roll_gamma - beam_roll_rel_body - side * (ks.camber_rad + damage_.camber[w])
+                            + comp_camber + rollover_gamma, -0.35, 0.35);
+            k.gamma_rate = -(comp_rate[wl] - comp_rate[wr]) / std::max(ax.track, 0.8);
+        } else {
+            k.gamma = clamp(roll_gamma - side * (ks.camber_rad + damage_.camber[w]) + damage_.caster[w] * std::sin(d)
+                            + comp_camber + rollover_gamma, -0.35, 0.35);
+            k.gamma_rate = -side * ks.dcamber_dz * comp_rate[w];
+        }
         const double w_dpi = tire_condition_[w].dpi(tp);
-        k.re = tire_zones_enabled ? effective_rolling_radius_mf62(tp, k.load, k.gamma, w_dpi, drivetrain_.wheel_omega[w])
+        k.re = tire_zones_enabled ? effective_rolling_radius_mf62(tp, k.load, k.gamma, w_dpi, drivetrain_.wheel_omega[w],
+                                                                  prev_fx_[w], prev_fy_[w])
                                   : effective_rolling_radius(tp, k.load);
         relaxation_lengths(tp, k.load, k.gamma, k.sigma_x, k.sigma_y, w_dpi);
     }
@@ -801,7 +837,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     // for any step size).
     const int n_sub = std::max(1, (int)std::ceil(dt / max_substep - 1e-9));
     const double h = dt / n_sub;
-    std::array<double, 4> fx_sum{}, fy_sum{}, mz_sum{}, kerb_ratio_sum{};
+    std::array<double, 4> fx_sum{}, fy_sum{}, mx_sum{}, mz_sum{}, kerb_ratio_sum{};
     DrivetrainInput din{input_.throttle, input_.clutch, input_.brake, input_.handbrake, input_.gear,
                         damage_.engine_power};
     din.brake_power_scale = damage_.brakes;
@@ -915,6 +951,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             tire_condition_[w].contact_patch_length_m = f.contact_patch_length_m;
             fx_sum[w] += f.fx;
             fy_sum[w] += f.fy;
+            mx_sum[w] += f.mx;
             mz_sum[w] += f.mz;
             kerb_ratio_sum[w] += f.kerb_load_ratio;
             double slip_power = std::abs(f.fx * v_sx) + std::abs(f.fy * k.vy);
@@ -1004,7 +1041,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const int a = w < 2 ? 0 : 1;
         double droop = cfg_.axle(w).spring_rest_length - comp[w];
         wo.centre_world = rays[w].origin + rays[w].direction * droop
-                        + s.orientation.rotate({wheel_kin[w].wheel_offset.x, wheel_kin[w].wheel_offset.y, 0.0});
+                        + s.orientation.rotate({wheel_kin[w].wheel_offset.x + hub_recession_m[w], wheel_kin[w].wheel_offset.y, 0.0});
         wo.angular_velocity = drivetrain_.wheel_omega[w];
         wo.slip_ratio = kappa_[w];
         wo.slip_angle = std::atan(tan_alpha_[w]);
@@ -1015,7 +1052,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         wo.brake_pad_wear = pad_wear_[w];
         if (!touching[w]) continue;
         const Kin& k = kin[w];
-        double fx = fx_sum[w] / n_sub, fy = fy_sum[w] / n_sub, mz = mz_sum[w] / n_sub;
+        double fx = fx_sum[w] / n_sub, fy = fy_sum[w] / n_sub, mx = mx_sum[w] / n_sub, mz = mz_sum[w] / n_sub;
         prev_fx_[w] = fx;
         if (w < 2 && cfg_.axle(w).max_steer_deg > 0) {
             // Rack torque about the steering axis: the tyre's aligning moment plus the lateral force acting on the
@@ -1083,7 +1120,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         force += f_susp + f_long + f_lat;
         axle_fy[a] += fy;
         wheel_fy[w] = fy;
-        torque += cross(k.point - s.position, f_susp + f_long) + cross(p_lat - s.position, f_lat) + k.normal * (0.15 * mz);
+        torque += cross(k.point - s.position, f_susp + f_long) + cross(p_lat - s.position, f_lat)
+                + k.fwd * mx + k.normal * (0.15 * mz);
     }
 
     prev_axle_fy_ = axle_fy;
@@ -1118,23 +1156,50 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     const double rho_air = atmosphere_.enabled ? atmosphere_.air_density_kg_m3() : a.air_density;
     out.air_density_kg_m3 = rho_air;
 
-    force += s.velocity * (-0.5 * rho_air * a.drag_area * damage_.aero_drag * eff_drag_scale * v);
-    double vx_body = dot(s.velocity, s.orientation.rotate({1, 0, 0}));
-    // Ride height & 2D Non-Linear Ground-Effect Aero Map:
-    // Lower ride height increases underbody venturi downforce until the front splitter bottoms out past its choke threshold
-    // (dz_f > 0.88 * max_compression), where underbody airflow partially stalls (aero porpoising / high-speed bottoming push).
     const double dz_f = 0.5 * (dz_[FL] + dz_[FR]), dz_r = 0.5 * (dz_[RL] + dz_[RR]);
-    if (chassis_dyn_.active_aero_enabled && dz_f > cfg_.front.max_compression * 0.85 && out.speed > 35.0) {
-        out.front_splitter_stalled = true;
-        eff_front_down_scale *= 0.74; // -26% front venturi stall when splitter chokes against asphalt
+    const double front_rh = std::max(0.0, a.static_ride_height_front_m - dz_f);
+    const double rear_rh = std::max(0.0, a.static_ride_height_rear_m - dz_r);
+    out.front_ride_height_m = front_rh;
+    out.rear_ride_height_m = rear_rh;
+
+    double cd_area = a.drag_area;
+    double cl_front_area = 0.0;
+    double cl_rear_area = 0.0;
+    if (a.map_2d.valid()) {
+        // Explicit 2D Front/Rear Ride-Height Aerodynamic Map (ClA_front(h_f, h_r), ClA_rear(h_f, h_r), CdA(h_f, h_r))
+        a.map_2d.sample(front_rh, rear_rh, cl_front_area, cl_rear_area, cd_area);
+        if (chassis_dyn_.active_aero_enabled && front_rh < 0.018 && out.speed > 35.0) {
+            out.front_splitter_stalled = true;
+            eff_front_down_scale *= 0.74;
+        }
+    } else {
+        if (chassis_dyn_.active_aero_enabled && dz_f > cfg_.front.max_compression * 0.85 && out.speed > 35.0) {
+            out.front_splitter_stalled = true;
+            eff_front_down_scale *= 0.74; // -26% front venturi stall when splitter chokes against asphalt
+        }
+        const double ground = clamp(1.0 + a.ground_effect_per_m * 0.5 * (dz_f + dz_r), 0.6, 1.5);
+        const double balance = clamp(a.front_balance + a.pitch_balance_per_m * (dz_f - dz_r), 0.05, 0.95);
+        cl_front_area = a.lift_area * ground * balance;
+        cl_rear_area = a.lift_area * ground * (1.0 - balance);
     }
-    const double ground = clamp(1.0 + a.ground_effect_per_m * 0.5 * (dz_f + dz_r), 0.6, 1.5);
-    const double balance = clamp(a.front_balance + a.pitch_balance_per_m * (dz_f - dz_r), 0.05, 0.95);
-    double down = 0.5 * rho_air * a.lift_area * ground * vx_body * vx_body;
+    // Diffuser rake stall: excessive rear-high rake breaks the diffuser seal under braking/crests
+    double diffuser_scale = 1.0;
+    if (chassis_dyn_.active_aero_enabled && (rear_rh - front_rh) > a.diffuser_stall_rake_m && out.speed > 35.0) {
+        out.diffuser_stalled = true;
+        diffuser_scale = 0.82;
+    }
+
+    force += s.velocity * (-0.5 * rho_air * cd_area * damage_.aero_drag * eff_drag_scale * v);
+    double vx_body = dot(s.velocity, s.orientation.rotate({1, 0, 0}));
+    const double q_dyn = 0.5 * rho_air * vx_body * vx_body;
+    const double f_down_front = q_dyn * cl_front_area * eff_front_down_scale;
+    const double f_down_rear = q_dyn * cl_rear_area * yaw_rear_down_mult * active_rear_down_mult * diffuser_scale;
+    const double f_down_tot = f_down_front + f_down_rear;
+    out.aero_balance_front = (f_down_tot > 1e-6) ? clamp(f_down_front / f_down_tot, 0.0, 1.0) : a.front_balance;
     Vec3 p_front = s.position + s.orientation.rotate({cfg_.dist_cg_front, 0, 0});
     Vec3 p_rear = s.position + s.orientation.rotate({-cfg_.dist_cg_rear, 0, 0});
-    Vec3 f_front = up * (-down * balance * eff_front_down_scale);
-    Vec3 f_rear = up * (-down * (1 - balance) * yaw_rear_down_mult * active_rear_down_mult);
+    Vec3 f_front = up * (-f_down_front);
+    Vec3 f_rear = up * (-f_down_rear);
     force += f_front + f_rear;
     torque += cross(p_front - s.position, f_front) + cross(p_rear - s.position, f_rear);
 

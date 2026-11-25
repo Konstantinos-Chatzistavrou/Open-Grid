@@ -126,6 +126,7 @@ struct ChassisDynamicsConfig {
     double ayc_max_yaw_moment_nm = 1450.0;           // peak pro-rotation torque-vectoring yaw moment (N m)
     bool active_aero_enabled = false;                // DRS straight-line low-drag (-14% drag > 180 km/h) + Braking Airbrake (+22% rear downforce)
     bool brake_fluid_boil_enabled = false;           // DOT 4 caliper fluid boiling (> 260 C) causes vapor-lock spongy brake pressure loss
+    bool bushing_compliance_enabled = false;         // Elastokinematic bushing compliance (toe/camber/recession under Fx/Fy)
 };
 
 // Aerodynamic slipstream (drafting tow), turbulent dirty-air front downforce loss, and drift yaw-angle aero scaling.
@@ -188,6 +189,10 @@ struct VehicleOutput {
     double air_density_kg_m3 = 1.225;        // live ISA atmospheric air density (kg/m^3) from altitude, Celsius & humidity
     double roll_centre_front_m = 0.0;        // m, dynamic front axle kinematic roll-centre height above road
     double roll_centre_rear_m = 0.0;         // m, dynamic rear axle kinematic roll-centre height above road
+    double front_ride_height_m = 0.11;       // m, live front splitter/undertray height above road
+    double rear_ride_height_m = 0.125;       // m, live rear diffuser height above road
+    double aero_balance_front = 0.45;        // live front share of aerodynamic downforce (0..1)
+    bool diffuser_stalled = false;           // true when excessive rear-high rake stalls underbody diffuser
 };
 
 // Physical effect multipliers (filled from DamageModel each tick when damage is enabled).

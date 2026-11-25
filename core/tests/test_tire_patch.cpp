@@ -6,6 +6,7 @@
 #include <memory>
 #include "harness.hpp"
 #include "rs/sim.hpp"
+#include "rs/street_surface.hpp"
 #include "rs/telemetry.hpp"
 #include "rs/tire.hpp"
 #include "rs/ue5_bridge.hpp"
@@ -585,5 +586,212 @@ RS_TEST(tire_patch) {
                     g95 < g70 - 0.12 && drop_per_pct_cliff > drop_per_pct_early * 2.5);
         test::check("sustained slick overheating above working ceiling activates blistering and cuts grip",
                     hot_slick.blistering > 0.05 && hot_slick.grip_factor(&slick) < 0.90);
+    }
+
+    // =========================================================================
+    // 10. Full Pacejka MF 6.2: Overturning Moment Mx, pressure trail/residual, force-coupled Re
+    // =========================================================================
+    {
+        TireOperating op_nom{};
+        op_nom.dpi = 0.0;
+        op_nom.enable_mf62_hybrid = true;
+        TireOperating op_hi = op_nom;
+        op_hi.dpi = 0.25;
+        const TireForces f_nom = magic_formula(p, 0.0, std::tan(5.0 * deg), 4500.0, 1.0, 0.0, op_nom);
+        const TireForces f_hi = magic_formula(p, 0.0, std::tan(5.0 * deg), 4500.0, 1.0, 0.0, op_hi);
+        const double mx_cam_pos = mf_overturning_moment(p, 4500.0, 0.0, 4.0 * deg, 0.0);
+        const double mx_cam_neg = mf_overturning_moment(p, 4500.0, 0.0, -4.0 * deg, 0.0);
+        const double re_free = effective_rolling_radius_mf62(p, 4500.0, 0.0, 0.0, 60.0, 0.0, 0.0);
+        const double re_loaded = effective_rolling_radius_mf62(p, 4500.0, 0.0, 0.0, 60.0, -5000.0, 5000.0);
+
+        std::printf("         MF 6.2: Mx(Fy)=%.1f Nm, Mx(+4deg)=%.1f vs (-4deg)=%.1f Nm | trail nom=%.4f vs hiP=%.4f m | Re free=%.4f vs Fx/Fy=%.4f m\n",
+                    f_nom.mx, mx_cam_pos, mx_cam_neg, f_nom.pneumatic_trail, f_hi.pneumatic_trail, re_free, re_loaded);
+        test::check("MF 6.2 overturning moment Mx is nonzero and antisymmetric with camber",
+                    f_nom.mx > 15.0 && mx_cam_pos > 15.0 && mx_cam_neg < -15.0);
+        test::check("MF 6.2 higher inflation pressure shortens pneumatic trail via pPz1",
+                    f_hi.pneumatic_trail < f_nom.pneumatic_trail - 0.001);
+        test::check("MF 6.2 Q_FCX/Q_FCY force coupling slightly compresses loaded rolling radius under hard Fx/Fy",
+                    re_loaded < re_free - 0.00005 && re_loaded > re_free - 0.004);
+    }
+
+    // =========================================================================
+    // 11. Dynamic City-Street Surface Evolution (rubber, marbles, wet wake drying & crown drainage)
+    // =========================================================================
+    {
+        StreetSurfaceEvolution evo(2000.0, 100, 6.75, 0.02);
+        evo.reset(0.0, 0.0, 0.08);
+        const StreetSurfaceSample green = evo.sample(100.0, 0.0);
+        // Simulate 40 passes of hard cornering on the center lane (lat = 0)
+        for (int pass = 0; pass < 40; ++pass) {
+            evo.deposit_wheel(100.0, 0.0, 18000.0, 35.0, 4800.0, 0.4);
+        }
+        const StreetSurfaceSample rubbered_dry = evo.sample(100.0, 0.0);
+        const StreetSurfaceSample offline_marbles = evo.sample(100.0, 1.5);
+
+        // Now rain falls on the rubbered street -> rubbered line becomes slicker in wet than clean off-line asphalt,
+        // and crown drains water toward outer curb gutters, while passing traffic dries the driven lane!
+        evo.step_weather(24.0, 18.0, 300.0); // 5 min of heavy rain (24 mm/hr -> ~2 mm)
+        const StreetSurfaceSample wet_rubbered = evo.sample(100.0, 0.0);
+        const StreetSurfaceSample wet_gutter = evo.sample(100.0, 6.2);
+        const StreetSurfaceSample wet_clean_mid = evo.sample(500.0, 0.0); // un-rubbered section
+        for (int pass = 0; pass < 25; ++pass) {
+            evo.deposit_wheel(100.0, 0.0, 4000.0, 35.0, 4500.0, 0.25);
+        }
+        const StreetSurfaceSample wet_after_wake = evo.sample(100.0, 0.0);
+
+        // Marble pickup on tyre scrubs off over ~90 m of clean asphalt
+        TireCondition mt;
+        mt.temperature_c = mt.surface_c = 85.0;
+        mt.marble_pickup = 0.85;
+        const double g_dirty = mt.grip_factor(&p);
+        for (int i = 0; i < 40; ++i) mt.update(400.0, 4000.0, 30.0, 0.2, &p); // 240 m rolling
+        const double g_cleaned = mt.grip_factor(&p);
+
+        std::printf("         street evo: dry mu %.3f -> rubbered %.3f (r=%.2f) | offline marbles=%.2f (mu=%.3f) | wet rubbered %.3f vs clean %.3f | water center %.2f -> wake %.2f, gutter %.2f mm\n",
+                    green.effective_mu_mult, rubbered_dry.effective_mu_mult, rubbered_dry.rubber_0_to_1,
+                    offline_marbles.marbles_0_to_1, offline_marbles.effective_mu_mult,
+                    wet_rubbered.wet_mu_mult, wet_clean_mid.wet_mu_mult,
+                    wet_rubbered.water_mm, wet_after_wake.water_mm, wet_gutter.water_mm);
+        test::check("rubber laydown increases dry street grip and sheds marbles into adjacent off-line lane",
+                    rubbered_dry.effective_mu_mult > green.effective_mu_mult + 0.015 &&
+                    offline_marbles.marbles_0_to_1 > 0.08 && offline_marbles.effective_mu_mult < green.effective_mu_mult);
+        test::check("rubbered-in line is slicker in wet than un-rubbered asphalt; crown drains water into gutters; traffic wake dries line",
+                    wet_rubbered.wet_mu_mult < wet_clean_mid.wet_mu_mult - 0.02 &&
+                    wet_gutter.water_mm > wet_rubbered.water_mm + 0.2 &&
+                    wet_after_wake.water_mm < wet_rubbered.water_mm * 0.65);
+        test::check("off-line marble pickup cuts tyre grip and scrubs off cleanly on clean asphalt",
+                    g_dirty < 0.94 && g_cleaned > g_dirty + 0.04 && mt.marble_pickup < 0.15);
+    }
+
+    // =========================================================================
+    // 12. Procedural ISO 8608 Urban Micro-Roughness, Road Crown, Wet Manholes & Crosswalks
+    // =========================================================================
+    {
+        UrbanStreetConfig u_smooth; u_smooth.road_class = IsoRoadClass::ClassA_Highway; u_smooth.base_water_mm = 0.0;
+        UrbanStreetConfig u_rough;  u_rough.road_class = IsoRoadClass::ClassD_BrokenCobble; u_rough.base_water_mm = 1.5;
+        StreetMicroGround g_smooth(u_smooth), g_rough(u_rough);
+
+        double rms_a = 0.0, rms_d = 0.0;
+        for (int i = 0; i < 200; ++i) {
+            const double x = i * 0.35;
+            const double ha = g_smooth.height_at(x, 0.0), hd = g_rough.height_at(x, 0.0);
+            rms_a += ha * ha; rms_d += hd * hd;
+        }
+        rms_a = std::sqrt(rms_a / 200.0);
+        rms_d = std::sqrt(rms_d / 200.0);
+        const double crown_center = g_smooth.height_at(5.0, 0.0);
+        const double crown_curb = g_smooth.height_at(5.0, 5.5);
+        const double mu_manhole_wet = g_rough.cell_mu_at(15.0, 1.75);
+        const double mu_paint_wet = g_rough.cell_mu_at(40.0, 0.15);
+        ContactPatchProfile manhole_patch;
+        g_rough.fill_patch_profile({15.0, 1.75, 0.0}, {1, 0, 0}, {0, 1, 0}, 0.10, 0.11, manhole_patch);
+
+        std::printf("         ISO 8608 urban street: RMS ClassA=%.2f mm vs ClassD=%.2f mm | crown center=%.1f vs curb=%.1f mm | wet manhole mu=%.2f, crosswalk mu=%.2f\n",
+                    rms_a * 1000.0, rms_d * 1000.0, crown_center * 1000.0, crown_curb * 1000.0,
+                    mu_manhole_wet, mu_paint_wet);
+        test::check("ISO 8608 Class D broken street is substantially rougher than Class A highway",
+                    rms_d > rms_a * 5.0 && rms_d > 0.004);
+        test::check("2% urban drainage crown slopes down from centerline toward gutters",
+                    crown_curb < crown_center - 0.06 && g_rough.water_depth_at(5.0, 5.5) > g_rough.water_depth_at(5.0, 0.0) * 1.5);
+        test::check("wet cast-iron manhole & crosswalk paint drop 4x4 patch mu sharply",
+                    mu_manhole_wet < 0.52 && mu_paint_wet < 0.65 && manhole_patch.has_height_map && manhole_patch.mu_cell[5] < 0.55);
+    }
+
+    // =========================================================================
+    // 13. 2D Front/Rear Ride-Height & Pitch Aero Map + Diffuser Rake Stall
+    // =========================================================================
+    {
+        CarConfig acfg = cfg;
+        acfg.aero.static_ride_height_front_m = 0.080;
+        acfg.aero.static_ride_height_rear_m = 0.100;
+        acfg.aero.map_2d.front_rh_m = {0.04, 0.08, 0.12};
+        acfg.aero.map_2d.rear_rh_m  = {0.06, 0.10, 0.14};
+        // Lower front ride height increases front ClA (ground-effect suction) and shifts aero balance forward
+        acfg.aero.map_2d.cl_front = {
+            1.40, 1.55, 1.35,   // h_f = 0.04 (low nose -> high front suction)
+            0.95, 1.05, 0.90,   // h_f = 0.08 (nominal)
+            0.55, 0.60, 0.50    // h_f = 0.12 (high nose -> less ground effect)
+        };
+        acfg.aero.map_2d.cl_rear = {
+            1.45, 1.30, 1.05,
+            1.35, 1.25, 1.00,
+            1.15, 1.05, 0.85
+        };
+        acfg.aero.map_2d.cd = {
+            0.95, 0.98, 1.02,
+            0.90, 0.92, 0.95,
+            0.88, 0.89, 0.91
+        };
+        double clf_mid = 0, clr_mid = 0, cd_mid = 0;
+        acfg.aero.map_2d.sample(0.06, 0.08, clf_mid, clr_mid, cd_mid);
+
+        auto s_aero = test::make_sim(acfg, 1.0 / 400.0);
+        s_aero->vehicle.chassis_dynamics().active_aero_enabled = true;
+        s_aero->reset({}, 0.0, 55.0, 5);
+        DriverInput cruise; cruise.throttle = 0.35; cruise.gear = 5; cruise.auto_clutch = true;
+        for (int i = 0; i < 80; ++i) s_aero->step(cruise);
+        const double bal_cruise = s_aero->last.aero_balance_front;
+        const double rh_f_cruise = s_aero->last.front_ride_height_m;
+        // Hard brake -> nose dives -> front ride height drops -> 2D map shifts aero balance forward!
+        DriverInput brk; brk.brake = 0.90; brk.gear = 5; brk.auto_clutch = true;
+        for (int i = 0; i < 100; ++i) s_aero->step(brk);
+        const double bal_brake = s_aero->last.aero_balance_front;
+        const double rh_f_brake = s_aero->last.front_ride_height_m;
+
+        std::printf("         2D aero map: bilerp(0.06,0.08) ClF=%.2f ClR=%.2f Cd=%.2f | cruise h_f=%.1f mm bal=%.3f -> braking h_f=%.1f mm bal=%.3f\n",
+                    clf_mid, clr_mid, cd_mid, rh_f_cruise * 1000.0, bal_cruise, rh_f_brake * 1000.0, bal_brake);
+        test::check("2D aero map bilinear interpolation exact at grid midpoint",
+                    std::abs(clf_mid - 1.2375) < 1e-6 && std::abs(cd_mid - 0.9375) < 1e-6);
+        test::check("braking nose-dive lowers front ride height and shifts 2D aero balance forward",
+                    rh_f_brake < rh_f_cruise - 0.005 && bal_brake > bal_cruise + 0.02);
+    }
+
+    // =========================================================================
+    // 14. Elastokinematic Bushing Compliance + Multi-Link & Solid-Axle Layouts
+    // =========================================================================
+    {
+        // A. Rubber-bushed compliance vs rigid hardpoints under braking & cornering
+        CarConfig c_rigid = cfg;
+        CarConfig c_bush = cfg;
+        c_bush.front.toe_compliance_rad_per_kn_fx = 0.0008;
+        c_bush.front.camber_compliance_rad_per_kn_fy = 0.0018;
+        c_bush.front.longitudinal_compliance_m_per_kn_fx = 0.0015;
+        auto s_r = test::make_sim(c_rigid, 1.0 / 400.0);
+        auto s_b = test::make_sim(c_bush, 1.0 / 400.0);
+        s_r->reset({}, 0.0, 32.0, 4);
+        s_b->reset({}, 0.0, 32.0, 4);
+        DriverInput brk_turn; brk_turn.brake = 0.75; brk_turn.steer = 0.35; brk_turn.gear = 4; brk_turn.auto_clutch = true;
+        for (int i = 0; i < 80; ++i) { s_r->step(brk_turn); s_b->step(brk_turn); }
+        const double d_toe_fl = s_b->last.wheels[FL].toe_angle - s_r->last.wheels[FL].toe_angle;
+        const double d_cam_fr = s_b->last.wheels[FR].camber - s_r->last.wheels[FR].camber;
+
+        // B. SolidAxle live beam + Panhard rod kinematics & MultiLink 5-link solver
+        CarConfig c_solid = cfg;
+        c_solid.rear.kinematics.type = SuspensionType::SolidAxle;
+        c_solid.rear.kinematics.explicit_in_config = true;
+        c_solid.rear.kinematics.panhard_height_m = 0.24;
+        c_solid.rear.kinematics.panhard_length_m = 1.20;
+        c_solid.rear.kinematics.wheel_center = {0.0, 0.5 * c_solid.rear.track, c_solid.tire_rear.radius};
+        c_solid.rear.kinematics.tire_radius = c_solid.tire_rear.radius;
+        c_solid.finalize();
+        const WheelKinematicSample sa_bump = c_solid.axle_kinematics[1]->sample_left(0.06, 0.0);
+        const AxleRollCentre sa_rc = c_solid.axle_kinematics[1]->roll_centre(0.02, -0.02, 0.0);
+
+        CarConfig c_ml = cfg;
+        c_ml.rear.kinematics = synthesize_fitted_hardpoints(c_ml.rear, c_ml.tire_rear, c_ml.wheelbase);
+        c_ml.rear.kinematics.type = SuspensionType::MultiLink;
+        c_ml.rear.kinematics.explicit_in_config = true;
+        c_ml.finalize();
+        const WheelKinematicSample ml_bump = c_ml.axle_kinematics[1]->sample_left(0.05, 0.0);
+
+        std::printf("         elastokinematics: braking/turn dToe_FL=%.3f deg, dCamber_FR=%.3f deg | SolidAxle Panhard dy=%.2f mm RC=%.3f m | MultiLink bump camber=%.2f deg\n",
+                    d_toe_fl * 180.0 / kPi, d_cam_fr * 180.0 / kPi,
+                    sa_bump.wheel_offset.y * 1000.0, sa_rc.height_m, ml_bump.camber_rad * 180.0 / kPi);
+        test::check("elastokinematic bushings induce braking toe-in and lateral camber compliance deflection",
+                    d_toe_fl > 0.001 && std::abs(d_cam_fr) > 0.002);
+        test::check("SolidAxle produces exact Panhard lateral arc shift and anchors roll centre at Panhard height",
+                    sa_bump.wheel_offset.y < -0.001 && std::abs(sa_rc.height_m - 0.24) < 0.03);
+        test::check("MultiLink 5-link suspension solves negative camber gain in bump",
+                    ml_bump.camber_rad < c_ml.rear.static_camber_deg * deg - 0.01);
     }
 }

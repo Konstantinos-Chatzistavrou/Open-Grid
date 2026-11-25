@@ -28,6 +28,8 @@ struct TireParams;
 enum class SuspensionType {
     DoubleWishbone = 0,
     MacPherson = 1,
+    MultiLink = 2,   // 5-link independent suspension (split lower ball joints / virtual kingpin + dedicated toe link)
+    SolidAxle = 3,   // live solid axle beam + Panhard rod / Watts link (camber tracks axle roll, lateral Panhard arc)
 };
 
 struct Vec2 {
@@ -52,6 +54,11 @@ struct SuspensionHardpoints {
 
     // Strut top mount (MacPherson only)
     Vec3 strut_top{};
+
+    // Solid axle beam + Panhard rod / Watts link parameters (SolidAxle only)
+    double panhard_height_m = 0.22;  // m above ground (fixes lateral roll-centre height of live axle)
+    double panhard_length_m = 1.25;  // m, Panhard bar length (drives lateral axle shift arc under heave)
+    double solid_axle_track_m = 1.60; // m, axle track width for coupled left/right camber roll angle
 
     // Steering tie rod (or rear toe link when non-steered)
     Vec3 tie_inner{};      // inner ball joint on rack / subframe
