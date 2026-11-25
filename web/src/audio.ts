@@ -2610,8 +2610,11 @@ export class GameAudio {
       b[7] = (out[OUT.bovVenting] || 0) > 0.5 ? 1 : 0;
       b[8] = (out[OUT.shiftCut] || 0) > 0.5 || limDip < 0.9 ? 1 : 0;
       b[11] = (out[OUT.gearGrind] || 0) > 0.5 ? 1 : 0;
-      b[12] = gearFreq;
-      b[13] = gearPresence * (isRaceBox ? 0.85 : 0.35);
+      const physWhineHz = out[OUT.gearWhineHz] || 0;
+      const isDogBox = Math.round(out[OUT.transmissionType] || 0) === 1;
+      b[12] = physWhineHz > 40 ? physWhineHz : gearFreq;
+      b[13] = gearPresence * (isDogBox ? 1.0 : isRaceBox ? 0.85 : 0.35);
+      b[14] = out[OUT.drivelineClunk] || 0;
       b[15] = out[OUT.tcSlipRatio] > 0 ? out[OUT.tcSlipRatio] : 1;
       b[16] = out[OUT.tcTorqueRatio] >= 1 ? out[OUT.tcTorqueRatio] : 1;
       b[17] = absSpeed;

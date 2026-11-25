@@ -306,6 +306,10 @@ export const OUT = {
   tcSlipRatio: 395,                     // torque converter turbine/pump speed ratio SR
   tcTorqueRatio: 396,                   // torque converter torque multiplication TR(SR)
   tcLockupEngaged: 397,                 // torque converter TCC mechanical lock-up clutch (0/1)
+  drivelineClunk: 398,                  // mechanical backlash / dog-box / AMT shift engagement clunk, N m
+  gearWhineHz: 399,                     // transmission tooth-mesh frequency, Hz
+  transmissionType: 431,                // 0=HPattern, 1=DogBox, 2=DCT, 3=AutoTC, 4=AMT
+  autoBlip: 432,                        // closed-loop electronic downshift auto-blip active (0/1)
 } as const;
 
 export interface LapInfo { laps: number; current: number; last: number; best: number; distance: number; position: number; finished: boolean; routeLength: number }

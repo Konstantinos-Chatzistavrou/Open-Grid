@@ -3,23 +3,24 @@
   "name": "Kronos Taurus V12",
   "notes": "Kronos Taurus V12: ingested via OpenGrid pipeline from base 'basilisk_v12'.",
   "chassis": {
-    "mass_kg": 1575.0,
+    "mass_kg": 1575,
     "cg_height_m": 0.45,
     "weight_front": 0.42,
     "wheelbase_m": 2.7,
     "inertia_roll_kgm2": 523,
     "inertia_pitch_kgm2": 2075,
-    "inertia_yaw_kgm2": 2322
+    "inertia_yaw_kgm2": 2322,
+    "torsional_stiffness_nm_per_deg": 46000
   },
   "front_axle": {
     "track_m": 1.641,
-    "spring_rate_n_per_m": 65000,
+    "spring_rate_n_per_m": 86000,
     "spring_rest_length_m": 0.25,
-    "max_compression_m": 0.07,
+    "max_compression_m": 0.068,
     "bump_stop_rate_n_per_m": 300000,
-    "damper_bump_ns_per_m": 2900,
-    "damper_rebound_ns_per_m": 5700,
-    "anti_roll_rate_n_per_m": 30000,
+    "damper_bump_ns_per_m": 3700,
+    "damper_rebound_ns_per_m": 7400,
+    "anti_roll_rate_n_per_m": 38000,
     "roll_centre_height_m": 0.06,
     "max_steer_deg": 32,
     "ackermann": 0.5,
@@ -92,13 +93,13 @@
   },
   "rear_axle": {
     "track_m": 1.861,
-    "spring_rate_n_per_m": 75000,
+    "spring_rate_n_per_m": 102000,
     "spring_rest_length_m": 0.25,
-    "max_compression_m": 0.07,
+    "max_compression_m": 0.068,
     "bump_stop_rate_n_per_m": 300000,
-    "damper_bump_ns_per_m": 3100,
-    "damper_rebound_ns_per_m": 6100,
-    "anti_roll_rate_n_per_m": 18000,
+    "damper_bump_ns_per_m": 4100,
+    "damper_rebound_ns_per_m": 8200,
+    "anti_roll_rate_n_per_m": 24000,
     "roll_centre_height_m": 0.1,
     "static_camber_deg": -1.6,
     "camber_gain_deg_per_m": -45,
@@ -180,7 +181,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -3.7604e-05,
+      "pEx4": -0.000037604,
       "slip_stiffness_per_load": 24.129,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -295,7 +296,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -3.7604e-05,
+      "pEx4": -0.000037604,
       "slip_stiffness_per_load": 24.699,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -417,7 +418,7 @@
       ],
       [
         4000,
-        872.0
+        872
       ],
       [
         5000,
@@ -521,9 +522,19 @@
       "mu_sync": 0.12,
       "shift_fork_force_n": 380,
       "cone_radius_m": 0.04,
-      "cone_angle_deg": 7.0,
+      "cone_angle_deg": 7,
       "num_cones": 3,
-      "engage_tol_rads": 42.0
+      "engage_tol_rads": 42
+    },
+    "transmission": "amt",
+    "amt": {
+      "upshift_cut_s": 0.062,
+      "upshift_reengage_s": 0.022,
+      "downshift_blip_max_s": 0.09,
+      "downshift_reengage_s": 0.026,
+      "blip_throttle_gain": 0.0029,
+      "fork_force_n": 760,
+      "engage_clunk_nm": 210
     }
   },
   "aero": {

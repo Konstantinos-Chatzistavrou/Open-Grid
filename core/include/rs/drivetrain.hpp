@@ -47,9 +47,10 @@ struct AtmosphericEnvironment {
 
 enum class TransmissionType : int {
     HPatternSynchro = 0,          // Manual H-pattern synchromesh: baulk-ring cone clutch; grinds & misses if forced without sync
-    SequentialDogBox = 1,         // Motorsport sequential dog-box: flat-foot upshifts via 55 ms ignition-cut or matched speed
-    DualClutchDct = 2,            // Dual-clutch (DCT): 15 ms seamless torque handoff with zero boost drop
-    AutomaticTorqueConverter = 3  // Planetary automatic with hydraulic fluid torque converter & TCC lock-up clutch
+    SequentialDogBox = 1,         // Motorsport sequential dog-box: flat-foot ignition-cut upshifts + pneumatic auto-blip downshifts
+    DualClutchDct = 2,            // Dual-clutch (DCT): 18 ms seamless twin-clutch overlap handoff, zero boost drop, rev-match blip
+    AutomaticTorqueConverter = 3, // Planetary automatic with hydraulic fluid torque converter & TCC lock-up clutch
+    AutomatedManual = 4           // Single-clutch automated manual (ISR / F1 AMT): hydraulic disconnect, synchro throw, torque-kick & auto-blip
 };
 
 enum class SyncState : int {
@@ -115,8 +116,14 @@ struct EngineSystemState {
     bool gear_grind = false;               // true while synchro / dog teeth are grinding from a missed shift
     double grind_timer_s = 0.0;
     bool limiter_cut = false;              // rev limiter fuel cut active (cut at redline, refuel below redline - hysteresis)
-    bool shift_cut_active = false;         // true during a Sequential Dog-Box 55 ms ignition cut (triggers exhaust flame/pop)
+    bool shift_cut_active = false;         // true during Sequential Dog-Box / AMT / DCT ignition shift cut (triggers exhaust pop/flame)
     double shift_cut_timer_s = 0.0;
+    bool auto_blip_active = false;         // true during closed-loop electronic throttle auto-blip on downshifts
+    double auto_blip_throttle = 0.0;       // 0..1 ECU auto-blip throttle command (feeds engine torque & exhaust bark)
+    double dog_blip_timer_s = 0.0;         // elapsed unload + rev-match timer for SequentialDogBox downshifts
+    int dog_pending_gear = -1;             // target lower gear awaiting dog-box auto-blip speed match
+    double dct_handoff_timer_s = 0.0;      // remaining DCT twin-clutch overlap handoff duration (s)
+    double shift_clunk_impulse_nm = 0.0;   // mechanical dog-ring / AMT clutch engagement clunk impulse (N m)
 
     // Driveline Torsional Halfshaft Compliance & Mechanical Backlash Clunk
     bool torsional_compliance_enabled = false;

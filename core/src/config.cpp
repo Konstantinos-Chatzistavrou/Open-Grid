@@ -282,6 +282,7 @@ CarConfig parse_car_config(const std::string& text) {
     c.inertia_xx = num(ch, "inertia_roll_kgm2", "chassis");
     c.inertia_yy = num(ch, "inertia_pitch_kgm2", "chassis");
     c.inertia_zz = num(ch, "inertia_yaw_kgm2", "chassis");
+    c.torsional_stiffness_nm_per_deg = num_or(ch, "torsional_stiffness_nm_per_deg", 0.0);
     c.front = parse_axle(j.at("front_axle"), "front_axle");
     c.rear = parse_axle(j.at("rear_axle"), "rear_axle");
     c.tire_front = parse_tire(j.at("tire_front"), "tire_front");
@@ -411,6 +412,27 @@ CarConfig parse_car_config(const std::string& text) {
         tp.lockup_speed_ratio = num_or(tc, "lockup_speed_ratio", tp.lockup_speed_ratio);
         tp.lockup_min_speed_mps = num_or(tc, "lockup_min_speed_mps", tp.lockup_min_speed_mps);
         tp.lockup_min_gear = tc.value("lockup_min_gear", tp.lockup_min_gear);
+    }
+    if (d.contains("dog_box")) {
+        const json& db = d.at("dog_box");
+        DogBoxParams& dp = c.drivetrain.dog_box;
+        dp.upshift_cut_s = num_or(db, "upshift_cut_s", dp.upshift_cut_s);
+        dp.downshift_unload_s = num_or(db, "downshift_unload_s", dp.downshift_unload_s);
+        dp.downshift_blip_max_s = num_or(db, "downshift_blip_max_s", dp.downshift_blip_max_s);
+        dp.blip_throttle_gain = num_or(db, "blip_throttle_gain", dp.blip_throttle_gain);
+        dp.engage_clunk_nm = num_or(db, "engage_clunk_nm", dp.engage_clunk_nm);
+        dp.auto_blip = db.value("auto_blip", dp.auto_blip);
+    }
+    if (d.contains("amt")) {
+        const json& am = d.at("amt");
+        AmtParams& ap = c.drivetrain.amt;
+        ap.upshift_cut_s = num_or(am, "upshift_cut_s", ap.upshift_cut_s);
+        ap.upshift_reengage_s = num_or(am, "upshift_reengage_s", ap.upshift_reengage_s);
+        ap.downshift_blip_max_s = num_or(am, "downshift_blip_max_s", ap.downshift_blip_max_s);
+        ap.downshift_reengage_s = num_or(am, "downshift_reengage_s", ap.downshift_reengage_s);
+        ap.blip_throttle_gain = num_or(am, "blip_throttle_gain", ap.blip_throttle_gain);
+        ap.fork_force_n = num_or(am, "fork_force_n", ap.fork_force_n);
+        ap.engage_clunk_nm = num_or(am, "engage_clunk_nm", ap.engage_clunk_nm);
     }
     if (j.contains("steering")) {
         const json& st = j.at("steering");

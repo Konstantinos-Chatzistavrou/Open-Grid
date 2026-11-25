@@ -455,13 +455,17 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     b[389] = c.out.diffuser_stalled ? 1.0 : 0.0;
     b[390] = c.last_street_rubber;
     b[391] = c.last_street_marbles;
-    // Physical steering column + power steering & torque converter telemetry [392..397]
+    // Physical steering column + power steering & torque converter telemetry [392..399]
     b[392] = c.out.steering_column_torque_nm;
     b[393] = c.out.steering_assist_torque_nm;
     b[394] = c.out.power_steering_gain;
     b[395] = c.out.tc_slip_ratio;
     b[396] = c.out.tc_torque_ratio;
     b[397] = c.out.tc_lockup_engaged ? 1.0 : 0.0;
+    b[398] = c.out.driveline_clunk_nm;
+    b[399] = c.out.gear_whine_hz;
+    b[431] = double(int(c.vehicle->engine_systems().transmission));
+    b[432] = c.out.auto_blip_active ? 1.0 : 0.0;
 }
 }  // namespace
 

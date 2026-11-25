@@ -47,6 +47,9 @@ void carry_ground_data(WheelContact& out, const WheelContact& surface_hit, const
 
 Vehicle::Vehicle(const CarConfig& cfg)
     : cfg_(cfg), damage_model_(cfg.mass, wheel_points(cfg)), drivetrain_(cfg_) {
+    if (cfg_.torsional_stiffness_nm_per_deg > 0.0) {
+        chassis_dyn_.torsional_stiffness_nm_per_deg = cfg_.torsional_stiffness_nm_per_deg;
+    }
     // Ensure precomputed kinematic tables exist even if a test constructed CarConfig without finalize().
     for (int a = 0; a < 2; ++a) {
         if (!cfg_.axle_kinematics[a]) {
@@ -170,8 +173,19 @@ void Vehicle::reset_motion(double v, int gear) {
     sys.popout_stress_s = 0.0;
     sys.turbo_surge = 0.0;
     sys.surge_boost_bar = 0.0;
+    sys.shift_cut_active = false;
+    sys.shift_cut_timer_s = 0.0;
+    sys.auto_blip_active = false;
+    sys.auto_blip_throttle = 0.0;
+    sys.dog_blip_timer_s = 0.0;
+    sys.dog_pending_gear = -1;
+    sys.dct_handoff_timer_s = 0.0;
+    sys.shift_clunk_impulse_nm = 0.0;
     shift_timer_ = 0.0;
     shift_release_timer_ = 0.0;
+    shift_release_duration_ = 0.035;
+    amt_downshift_ = false;
+    dct_blip_timer_ = 0.0;
     since_shift_timer_ = 10.0;
     missed_recover_timer_ = 0.0;
     recovering_from_miss_ = false;
@@ -182,9 +196,11 @@ void Vehicle::reset_motion(double v, int gear) {
         drivetrain_.engine_omega = std::max(idle_w, shaft_w);
         drivetrain_.stalled = false;
         sys.engaged_gear = gear;
+        last_gear_ = gear;
         sys.input_shaft_omega = shaft_w;
     } else if (gear == 1) {
         sys.engaged_gear = 1;
+        last_gear_ = 1;
         sys.input_shaft_omega = drivetrain_.engine_omega;
     }
     prev_axle_fy_ = {0, 0};
@@ -620,8 +636,14 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             f += ax.bump_stop_rate * (comp[w] - bump_start);
         }
         {
-            // digressive damper: c below the knee speed, c * ratio above it (blow-off valving)
-            const double c = comp_rate[w] > 0 ? ax.damper_bump : ax.damper_rebound, v = std::abs(comp_rate[w]), knee = ax.damper_knee_mps;
+            // digressive damper: c below the knee speed, c * ratio above it (blow-off valving),
+            // plus a smooth hydraulic top-out / droop buffer in the final 8 mm before full extension.
+            double c = comp_rate[w] > 0 ? ax.damper_bump : ax.damper_rebound;
+            if (comp_rate[w] < 0.0 && comp[w] < 0.008) {
+                const double droop_u = clamp((0.008 - comp[w]) / 0.008, 0.0, 1.0);
+                c *= (1.0 + 1.15 * droop_u * droop_u);
+            }
+            const double v = std::abs(comp_rate[w]), knee = ax.damper_knee_mps;
             f += sign(comp_rate[w]) * c * (v <= knee ? v : knee + ax.damper_high_speed_ratio * (v - knee));
         }
         int other = w ^ 1;                              // FL<->FR, RL<->RR
@@ -651,7 +673,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const double speed_flat_scale = clamp((std::abs(wheel_w_s) * tp_s.radius - 1.5) / 14.0, 0.0, 1.0);
         // ---- 15 Hz 2-DOF Unsprung Wheel-Hop & Radial Tire Carcass Dynamics
         if (unsprung_dynamics_enabled) {
-            const double m_u = 42.0; // kg unsprung wheel/tire/hub/brake assembly mass
+            // Vehicle-matched unsprung corner mass (carbon GT3 ~31 kg .. road GT ~39 kg .. heavy muscle ~46 kg)
+            const double m_u = clamp(16.0 + 2.0 * tp_s.mbelt + 0.009 * cfg_.mass, 26.0, 50.0);
             const double k_t = std::max(80000.0, k_t_eff); // N/m radial tire carcass stiffness (pressure-coupled)
             const double c_t = std::max(800.0, tp_s.vertical_damping); // N s/m radial tire carcass damping
             // Unsprung mass sits between suspension force pushing down (susp_force[w]) and tire carcass pushing up
@@ -923,20 +946,162 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     din.ambient_air_c = atmosphere_.ambient_air_c;
     din.altitude_m = atmosphere_.altitude_m;
     din.humidity_0_to_1 = atmosphere_.humidity_0_to_1;
-    // ---- ASSIST: auto-clutch (sits on top of the physical clutch disc; drivetrain only sees a pedal value)
-    // Modulates around the physical bite point for smooth launches & anti-stall, and declutches on shifts
-    // according to AutoClutchQuality:
-    //   Perfect: full declutch held until synchromesh completes + smooth release (zero missed shifts)
-    //   Normal:  clean normal shifts; slamming rapid shifts shortens hold and can slow-sync / grind
-    //   Poor:    brief / sloppy declutch while keeping partial throttle -> can miss shifts & damage gearbox
+    // ---- Transmission-specific clutch, shift-interrupt & auto-blip orchestration
+    // Every gearbox type behaves like its real-world mechanical counterpart:
+    //   * AutomaticTorqueConverter: fluid coupling + TCC lock-up (no clutch pedal management)
+    //   * DualClutchDct:            18 ms seamless overlapping twin-clutch upshifts (NO clutch disconnect!),
+    //                               45 ms closed-loop downshift rev-match blip, automatic launch/anti-stall
+    //   * SequentialDogBox:         ZERO clutch on upshifts (50 ms flat-foot ignition cut in Drivetrain) & ZERO
+    //                               clutch on downshifts (pneumatic auto-blip in Drivetrain); auto anti-stall/launch
+    //   * AutomatedManual (AMT):    electro-hydraulic single dry clutch: ~68 ms upshift torque-interrupt + crisp
+    //                               24 ms re-engagement kick, closed-loop heel-toe auto-blip downshifts, auto launch
+    //   * HPatternSynchro:          manual 3-pedal synchromesh with player AutoClutchQuality (Perfect/Normal/Poor)
     since_shift_timer_ += dt;
-    // A dual-clutch box has no clutch pedal at all: its mechatronics launch the car and swap the clutches on every shift, whatever
-    // clutch assist the player picked, and it does it as well as a perfect driver (so it can never miss a shift). The assist and
-    // its quality setting are for cars with a clutch pedal (manual synchromesh, sequential dog-box). A torque converter has no
-    // clutch to manage at all (fluid coupling + lock-up clutch, in the drivetrain).
-    const bool box_clutches_itself = drivetrain_.systems.transmission == TransmissionType::DualClutchDct;
-    if ((input_.auto_clutch || box_clutches_itself) && drivetrain_.systems.transmission != TransmissionType::AutomaticTorqueConverter) {
-        const AutoClutchQuality q = box_clutches_itself ? AutoClutchQuality::Perfect : input_.auto_clutch_quality;
+    const TransmissionType tx = drivetrain_.systems.transmission;
+    const auto& ratios = cfg_.drivetrain.gear_ratios;
+
+    // Estimate driven-axle carrier angular speed for closed-loop rev-match blip targets
+    auto est_carrier_omega = [&]() -> double {
+        double w_f = 0.5 * (drivetrain_.wheel_omega[FL] + drivetrain_.wheel_omega[FR]);
+        double w_r = 0.5 * (drivetrain_.wheel_omega[RL] + drivetrain_.wheel_omega[RR]);
+        if (cfg_.drivetrain.layout == "fwd") return w_f;
+        if (cfg_.drivetrain.layout == "rwd") return w_r;
+        const double s_f = cfg_.drivetrain.awd_front_split;
+        return s_f * w_f + (1.0 - s_f) * w_r;
+    };
+    auto apply_standing_launch_clutch = [&]() {
+        if (input_.gear >= 0 && input_.gear < (int)ratios.size() && ratios[input_.gear] != 0.0) {
+            const bool low_gear_or_slow = (input_.gear <= 2) || (std::abs(out.speed) < 8.0)
+                                       || (drivetrain_.engine_rpm() < cfg_.engine.idle_rpm + 450.0);
+            if (low_gear_or_slow) {
+                double engage = clamp((drivetrain_.engine_rpm() - (cfg_.engine.idle_rpm + 250.0)) / 1500.0, 0.0, 1.0);
+                double launch_clutch = lerp(std::min(0.95, cfg_.drivetrain.clutch.bite_point + 0.08), 0.0, engage);
+                din.clutch = std::max(din.clutch, launch_clutch);
+            }
+        }
+    };
+
+    if (tx == TransmissionType::DualClutchDct) {
+        // Pre-selected odd/even twin clutches: NEVER open clutch to 1.0 on upshifts (zero boost drop, 18 ms swap).
+        if (input_.gear != last_gear_) {
+            if (input_.gear < last_gear_ && input_.gear >= 2 && last_gear_ >= 2 && std::abs(out.speed) > 4.0) {
+                dct_blip_timer_ = 0.045;
+            }
+            since_shift_timer_ = 0.0;
+        }
+        if (dct_blip_timer_ > 0.0) {
+            dct_blip_timer_ = std::max(0.0, dct_blip_timer_ - dt);
+            const double target_ratio = (input_.gear >= 0 && input_.gear < (int)ratios.size())
+                                      ? ratios[input_.gear] * cfg_.drivetrain.final_drive : 0.0;
+            const double redline_rad = cfg_.engine.redline_rpm * (2.0 * kPi / 60.0);
+            const double w_tgt = clamp(target_ratio * est_carrier_omega(), 0.0, 0.96 * redline_rad);
+            const double dw = w_tgt - drivetrain_.engine_omega;
+            if (dw > 15.0 && dct_blip_timer_ > 0.0) {
+                drivetrain_.systems.auto_blip_active = true;
+                drivetrain_.systems.auto_blip_throttle = clamp(0.25 + dw * 0.0026, 0.25, 0.85);
+            } else {
+                drivetrain_.systems.auto_blip_active = false;
+                drivetrain_.systems.auto_blip_throttle = 0.0;
+                dct_blip_timer_ = 0.0;
+            }
+        } else {
+            drivetrain_.systems.auto_blip_active = false;
+            drivetrain_.systems.auto_blip_throttle = 0.0;
+        }
+        apply_standing_launch_clutch();
+    } else if (tx == TransmissionType::SequentialDogBox) {
+        // Pneumatic sequential dog-box: flat-foot upshift ignition cut & downshift auto-blip are handled
+        // directly in Drivetrain without opening the clutch! Standing starts & anti-stall manage the clutch
+        // automatically unless the driver has an explicit manual clutch pedal depressed.
+        if (input_.gear != last_gear_) since_shift_timer_ = 0.0;
+        const bool is_dog_spec = (cfg_.drivetrain.transmission == "dog_box");
+        if (input_.auto_clutch || is_dog_spec) {
+            apply_standing_launch_clutch();
+        }
+    } else if (tx == TransmissionType::AutomatedManual) {
+        // Single-clutch electro-hydraulic AMT (Aventador ISR / Ferrari F1): no driver clutch pedal.
+        // Distinct 65-70 ms hydraulic torque-interrupt + exhaust crack on upshift, crisp 24 ms clutch snap kick,
+        // and closed-loop heel-toe throttle auto-blip on downshifts.
+        const AmtParams& ap = cfg_.drivetrain.amt;
+        if (input_.gear != last_gear_) {
+            if (input_.gear == 1) {
+                shift_timer_ = 0.0;
+                shift_release_timer_ = 0.0;
+                amt_downshift_ = false;
+                drivetrain_.systems.auto_blip_active = false;
+                drivetrain_.systems.auto_blip_throttle = 0.0;
+            } else if (input_.gear < last_gear_ && input_.gear >= 2 && last_gear_ >= 2 && std::abs(out.speed) > 4.0) {
+                amt_downshift_ = true;
+                shift_timer_ = ap.downshift_blip_max_s;
+                shift_release_timer_ = ap.downshift_reengage_s;
+                shift_release_duration_ = std::max(ap.downshift_reengage_s, 0.008);
+            } else if (input_.gear > last_gear_ && last_gear_ >= 2) {
+                amt_downshift_ = false;
+                shift_timer_ = ap.upshift_cut_s;
+                shift_release_timer_ = ap.upshift_reengage_s;
+                shift_release_duration_ = std::max(ap.upshift_reengage_s, 0.008);
+                if (din.throttle > 0.25) {
+                    drivetrain_.systems.shift_cut_active = true;
+                    drivetrain_.systems.shift_cut_timer_s = std::min(0.045, ap.upshift_cut_s);
+                }
+            } else {
+                amt_downshift_ = false;
+                shift_timer_ = 0.055;
+                shift_release_timer_ = 0.030;
+                shift_release_duration_ = 0.030;
+            }
+            since_shift_timer_ = 0.0;
+        }
+
+        const bool sync_hold = drivetrain_.is_synchronizing();
+        if (shift_timer_ > 0.0 || sync_hold) {
+            shift_timer_ = std::max(0.0, shift_timer_ - dt);
+            din.clutch = 1.0;
+            din.throttle = 0.0;
+            if (amt_downshift_) {
+                const double target_ratio = (input_.gear >= 0 && input_.gear < (int)ratios.size())
+                                          ? ratios[input_.gear] * cfg_.drivetrain.final_drive : 0.0;
+                const double redline_rad = cfg_.engine.redline_rpm * (2.0 * kPi / 60.0);
+                const double w_tgt = clamp(target_ratio * est_carrier_omega(), 0.0, 0.96 * redline_rad);
+                const double dw = w_tgt - drivetrain_.engine_omega;
+                drivetrain_.systems.auto_blip_active = true;
+                drivetrain_.systems.auto_blip_throttle = dw > 8.0
+                                                       ? clamp(0.28 + dw * ap.blip_throttle_gain, 0.28, 0.92)
+                                                       : 0.0;
+                // End blip hold immediately once synchro has locked AND engine revs are matched!
+                if (!sync_hold && dw <= 55.0) {
+                    shift_timer_ = 0.0;
+                    drivetrain_.systems.auto_blip_active = false;
+                    drivetrain_.systems.auto_blip_throttle = 0.0;
+                }
+            } else {
+                drivetrain_.systems.auto_blip_active = false;
+                drivetrain_.systems.auto_blip_throttle = 0.0;
+            }
+            if (shift_timer_ <= 0.0 && !sync_hold) {
+                drivetrain_.systems.auto_blip_active = false;
+                drivetrain_.systems.auto_blip_throttle = 0.0;
+                drivetrain_.systems.shift_clunk_impulse_nm = std::max(
+                    drivetrain_.systems.shift_clunk_impulse_nm,
+                    amt_downshift_ ? ap.engage_clunk_nm * 0.65 : ap.engage_clunk_nm);
+            }
+        } else if (shift_release_timer_ > 0.0) {
+            drivetrain_.systems.auto_blip_active = false;
+            drivetrain_.systems.auto_blip_throttle = 0.0;
+            shift_release_timer_ = std::max(0.0, shift_release_timer_ - dt);
+            const double frac = clamp(shift_release_timer_ / std::max(shift_release_duration_, 0.008), 0.0, 1.0);
+            din.clutch = std::max(din.clutch, frac * cfg_.drivetrain.clutch.bite_point);
+        } else {
+            drivetrain_.systems.auto_blip_active = false;
+            drivetrain_.systems.auto_blip_throttle = 0.0;
+            amt_downshift_ = false;
+        }
+        apply_standing_launch_clutch();
+    } else if (input_.auto_clutch && tx != TransmissionType::AutomaticTorqueConverter) {
+        // Traditional H-Pattern manual synchromesh with player AutoClutchQuality (Perfect / Normal / Poor).
+        const AutoClutchQuality q = input_.auto_clutch_quality;
+        drivetrain_.systems.auto_blip_active = false;
+        drivetrain_.systems.auto_blip_throttle = 0.0;
         if (input_.gear != last_gear_) {
             if (input_.gear != 1) {
                 if (q == AutoClutchQuality::Perfect) {
@@ -944,8 +1109,9 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
                     shift_release_timer_ = 0.035;
                 } else if (q == AutoClutchQuality::Normal) {
                     // Rapid shift-slamming (< 0.35 s between shifts) rushes the clutch release.
-                    shift_timer_ = (since_shift_timer_ < 0.35) ? 0.032 : 0.11;
-                    shift_release_timer_ = 0.025;
+                    const bool slammed = (since_shift_timer_ < 0.35);
+                    shift_timer_ = slammed ? 0.020 : 0.11;
+                    shift_release_timer_ = slammed ? 0.008 : 0.025;
                 } else {
                     // Poor auto-clutch: too brief for synchromesh under load.
                     shift_timer_ = 0.022;
@@ -958,12 +1124,6 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             since_shift_timer_ = 0.0;
         }
 
-        // Recover after a missed shift so auto-clutch drivers aren't soft-locked in Neutral. The box waits in neutral for the clutch to
-        // be free, then re-synchronises (a few tenths of a second with the clutch open). So: wait out the 0.45 s penalty window, then
-        // hold the clutch fully open with the throttle off until the retry has COMPLETED (sync_state back to Idle). The recovery used
-        // to end the moment the synchro started (sync_state leaves Missed), so the clutch snapped shut mid-sync: every retry missed
-        // again, one every ~0.46 s, until the gearbox read 0 % and the car sat in neutral for good. kMaxRecoverS is a last resort so a
-        // retry that never completes cannot hold the clutch open for ever.
         constexpr double kMaxRecoverS = 2.5;
         const SyncState sync_now = drivetrain_.systems.sync_state;
         if (sync_now == SyncState::Missed) recovering_from_miss_ = true;
@@ -995,22 +1155,17 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             din.clutch = std::max(din.clutch, frac * cfg_.drivetrain.clutch.bite_point);
         }
 
-        const auto& ratios = cfg_.drivetrain.gear_ratios;
-        if (input_.gear >= 0 && input_.gear < (int)ratios.size() && ratios[input_.gear] != 0.0) {
-            const bool low_gear_or_slow = (input_.gear <= 2) || (std::abs(out.speed) < 8.0)
-                                       || (drivetrain_.engine_rpm() < cfg_.engine.idle_rpm + 450.0);
-            if (low_gear_or_slow) {
-                double engage = clamp((drivetrain_.engine_rpm() - (cfg_.engine.idle_rpm + 250.0)) / 1500.0, 0.0, 1.0);
-                double launch_clutch = lerp(std::min(0.95, cfg_.drivetrain.clutch.bite_point + 0.08), 0.0, engage);
-                din.clutch = std::max(din.clutch, launch_clutch);
-            }
-        }
+        apply_standing_launch_clutch();
+    } else if (tx == TransmissionType::HPatternSynchro || tx == TransmissionType::AutomaticTorqueConverter) {
+        drivetrain_.systems.auto_blip_active = false;
+        drivetrain_.systems.auto_blip_throttle = 0.0;
     }
     last_gear_ = input_.gear;
     const double throttle_after_shift = din.throttle;
     if (!disc_init_) { disc_temp_.fill(cfg_.brake_thermal.start_temp_c); disc_init_ = true; }
     for (int w = 0; w < 4; ++w) din.pad_mu[w] = brake_pad_mu(disc_temp_[w]);
     bool missed_this_tick = false;
+    double max_clunk_this_tick = 0.0;
     for (int step = 0; step < n_sub; ++step) {
         std::array<double, 4> tyre_t{}, roll_t{};
         for (int w = 0; w < 4; ++w) {
@@ -1110,6 +1265,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         din.throttle = throttle_after_shift * (1.0 - tc_cut_) * (1.0 - esc_throttle_cut);
         drivetrain_.step(din, tyre_t, roll_t, h);
         missed_this_tick |= drivetrain_.systems.missed_shift_event;
+        max_clunk_this_tick = std::max(max_clunk_this_tick, drivetrain_.systems.driveline_clunk_nm);
         // ---- brake discs: heated by the friction power the pads absorb (T_brake |w|; a locked wheel heats the tyre,
         // not the disc), cooled by airflow (vented disc: h = base + k v) and radiation (eps sigma A (T^4 - Ta^4)).
         const BrakeThermal& bt = cfg_.brake_thermal;
@@ -1138,7 +1294,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         as.abs_active[w] = abs_pressure_[w] < 0.98;
     }
     as.tc_cut = tc_cut_;
-    out.throttle_applied = din.throttle;
+    out.throttle_applied = std::max(din.throttle,
+                                    drivetrain_.systems.auto_blip_active ? drivetrain_.systems.auto_blip_throttle : 0.0);
     out.brake_applied = input_.brake;
 
     // ------------------------------------------------------------------ forces on the chassis
@@ -1348,7 +1505,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     out.fuel_liters = drivetrain_.systems.fuel_liters;
     out.gear_grind = drivetrain_.systems.gear_grind;
     out.shift_cut_active = drivetrain_.systems.shift_cut_active;
-    out.driveline_clunk_nm = drivetrain_.systems.driveline_clunk_nm;
+    out.auto_blip_active = drivetrain_.systems.auto_blip_active;
+    out.driveline_clunk_nm = max_clunk_this_tick;
     out.clutch_temp_c = drivetrain_.systems.clutch_temp_c;
     out.clutch_health = drivetrain_.systems.clutch_health;
     out.gearbox_health = drivetrain_.systems.gearbox_health;

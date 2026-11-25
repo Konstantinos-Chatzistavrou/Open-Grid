@@ -239,6 +239,27 @@ struct TorqueConverterParams {
     int lockup_min_gear = 4;              // gear index (0=R, 1=N, 2=1st, 3=2nd, 4=3rd) for TCC lock-up
 };
 
+// Motorsport sequential dog-box pneumatic paddle-shift parameters ("transmission": "dog_box").
+struct DogBoxParams {
+    double upshift_cut_s = 0.050;         // s, flat-foot ignition cut unloading undercut dog rings (zero clutch pedal)
+    double downshift_unload_s = 0.015;    // s, pneumatic dog-ring unload across neutral before engagement
+    double downshift_blip_max_s = 0.085;  // s, closed-loop electronic throttle auto-blip window on downshifts
+    double blip_throttle_gain = 0.0032;   // throttle per rad/s RPM deficit during pneumatic downshift auto-blip
+    double engage_clunk_nm = 260.0;       // N m, crisp mechanical dog-ring engagement impulse
+    bool auto_blip = true;                // electronic throttle auto-blip on downshifts
+};
+
+// Single-clutch automated manual (ISR / F1 AMT) electro-hydraulic shift parameters ("transmission": "amt").
+struct AmtParams {
+    double upshift_cut_s = 0.068;         // s, electro-hydraulic single-clutch disconnect + shift-fork throw
+    double upshift_reengage_s = 0.024;    // s, crisp hydraulic clutch snap back through bite point (the AMT kick)
+    double downshift_blip_max_s = 0.095;  // s, closed-loop heel-toe throttle rev-match window on downshifts
+    double downshift_reengage_s = 0.028;  // s, smooth hydraulic clutch re-engagement after rev-match
+    double blip_throttle_gain = 0.0028;   // throttle per rad/s RPM deficit during automated heel-toe blip
+    double fork_force_n = 720.0;          // N, electro-hydraulic shift-fork actuator force (~2x human hand)
+    double engage_clunk_nm = 185.0;       // N m, single-clutch hydraulic re-engagement driveline kick impulse
+};
+
 enum class PowerSteeringMode : int {
     Manual = 0,       // Unassisted rack-and-pinion (raw mechanical feel)
     Hydraulic = 1,    // Engine-driven hydraulic boost with relief-valve saturation
@@ -267,12 +288,14 @@ struct DrivetrainParams {
     double clutch_max_torque = 900;           // N m static capacity at fully released pedal (used if max_clamp_force_n <= 0)
     double driveline_inertia = 0.05;          // kg m^2 gearbox + driveshaft inertia reflected to input shaft
     std::string layout = "rwd";               // "rwd", "fwd", "awd"
-    std::string transmission;                 // optional: "" (default), "h_pattern", "dog_box", "dct", "auto_tc"
+    std::string transmission;                 // optional: "" (default), "h_pattern", "dog_box", "dct", "auto_tc", "amt"
     double awd_front_split = 0.4;             // torque fraction to the front (centre diff)
     DiffParams front_diff, rear_diff, centre_diff;
     ClutchParams clutch;
     SynchroParams synchro;
     TorqueConverterParams torque_converter;
+    DogBoxParams dog_box;
+    AmtParams amt;
 };
 
 // Active aerodynamics. A car has it only if its spec says so ("aero": {"drs": true, "airbrake": true}); the vehicle also needs
@@ -322,6 +345,7 @@ struct CarConfig {
     double weight_front = 0.48;               // static front axle load fraction
     double wheelbase = 2.65;
     double inertia_xx = 550, inertia_yy = 2100, inertia_zz = 2400;   // kg m^2 about the CG
+    double torsional_stiffness_nm_per_deg = 0.0; // N m/deg (<= 0 falls back to ChassisDynamicsConfig default)
     double brake_bias_front = 0.62;           // fraction of total brake torque on the front axle
     double brake_torque_total = 7000;         // N m, all four wheels together at full pedal (pads in their range)
     BrakeThermal brake_thermal;

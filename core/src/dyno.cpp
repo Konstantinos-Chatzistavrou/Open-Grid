@@ -115,7 +115,7 @@ void DynoMeter::sample(const VehicleOutput& out, double engine_rpm, double dt, d
         steady_t_ = 0;
     }
     // 0-100 km/h from rest
-    if (speed_mps < 0.3 && out.throttle_applied < 0.05) run_t_ = 0;
+    if (speed_mps < 0.3 && (out.throttle_applied < 0.05 || run_t_ < 0)) run_t_ = 0;
     else if (run_t_ >= 0) {
         run_t_ += dt;
         if (t100_ < 0 && speed_mps >= 100.0 / 3.6) t100_ = run_t_;

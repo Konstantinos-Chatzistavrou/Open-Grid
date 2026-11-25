@@ -174,6 +174,7 @@ struct VehicleOutput {
     double turbo_surge = 0.0;        // 0..1 compressor surge flutter index when throttle closes abruptly under high boost
     bool gear_grind = false;
     bool shift_cut_active = false;
+    bool auto_blip_active = false;
     double driveline_clunk_nm = 0.0;
     // Physical clutch disc & synchromesh gearbox telemetry
     double clutch_temp_c = 40.0;
@@ -327,8 +328,11 @@ private:
     std::array<double, 4> unsprung_vz_{};   // 2-DOF unsprung wheel vertical velocity (wheel hop), m/s
     AeroWakeState aero_wake_{};
     int last_gear_ = 1;                     // auto-clutch: detects gear changes
-    double shift_timer_ = 0;                // auto-clutch: active declutch hold timer (s)
-    double shift_release_timer_ = 0;        // auto-clutch: smooth post-sync clutch release ramp (s)
+    double shift_timer_ = 0;                // auto-clutch / AMT: active declutch hold timer (s)
+    double shift_release_timer_ = 0;        // auto-clutch / AMT: post-sync clutch release ramp (s)
+    double shift_release_duration_ = 0.035; // duration of the current clutch release ramp (s)
+    bool amt_downshift_ = false;            // AMT: active shift is a rev-matched downshift
+    double dct_blip_timer_ = 0.0;           // DCT: active downshift rev-match blip timer (s)
     double since_shift_timer_ = 10.0;       // auto-clutch: time since previous shift (detects rapid shift slamming)
     double missed_recover_timer_ = 0.0;     // auto-clutch: brief neutral penalty before recovering a missed shift
     bool recovering_from_miss_ = false;     // auto-clutch: a missed shift is being recovered (clutch held open until the retry completes)

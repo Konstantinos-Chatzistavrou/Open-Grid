@@ -95,10 +95,13 @@ Drivetrain::Drivetrain(const CarConfig& cfg) : cfg_(cfg) {
         systems.transmission = TransmissionType::HPatternSynchro;
     } else if (cfg.drivetrain.transmission == "dog_box") {
         systems.transmission = TransmissionType::SequentialDogBox;
+        systems.dog_box_flat_shift_cut = true;
     } else if (cfg.drivetrain.transmission == "dct") {
         systems.transmission = TransmissionType::DualClutchDct;
     } else if (cfg.drivetrain.transmission == "auto_tc") {
         systems.transmission = TransmissionType::AutomaticTorqueConverter;
+    } else if (cfg.drivetrain.transmission == "amt") {
+        systems.transmission = TransmissionType::AutomatedManual;
     }
     auto leaf = [&](int w) { nodes_.push_back(Node{w}); return (int)nodes_.size() - 1; };
     auto diff = [&](int a, int b, double s, const DiffParams* p) {
@@ -169,7 +172,10 @@ double Drivetrain::synchro_torque_capacity() const {
     const SynchroParams& sp = cfg_.drivetrain.synchro;
     const double sin_alpha = std::max(std::sin(sp.cone_angle_deg * kPi / 180.0), 0.05);
     const double health_eff = 0.25 + 0.75 * clamp(systems.gearbox_health, 0.0, 1.0);
-    return std::max(sp.num_cones, 1) * sp.mu_sync * sp.shift_fork_force_n * sp.cone_radius_m / sin_alpha * health_eff;
+    const double fork_force = (systems.transmission == TransmissionType::AutomatedManual)
+                            ? std::max(sp.shift_fork_force_n, cfg_.drivetrain.amt.fork_force_n)
+                            : sp.shift_fork_force_n;
+    return std::max(sp.num_cones, 1) * sp.mu_sync * fork_force * sp.cone_radius_m / sin_alpha * health_eff;
 }
 
 double Drivetrain::engine_rpm() const { return engine_omega / kRpmToRad; }
@@ -273,6 +279,9 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         systems.shift_cut_timer_s = std::max(0.0, systems.shift_cut_timer_s - h);
         if (systems.shift_cut_timer_s <= 0.0) systems.shift_cut_active = false;
     }
+    if (systems.dct_handoff_timer_s > 0.0) {
+        systems.dct_handoff_timer_s = std::max(0.0, systems.dct_handoff_timer_s - h);
+    }
 
     auto trigger_missed_shift = [&](int target_gear, double dw_rads) {
         systems.engaged_gear = 1; // kicked out to Neutral
@@ -288,7 +297,9 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         systems.gearbox_health = clamp(systems.gearbox_health - 0.035 * severity, 0.0, 1.0);
     };
 
-    if (systems.transmission == TransmissionType::HPatternSynchro) {
+    if (systems.transmission == TransmissionType::HPatternSynchro ||
+        systems.transmission == TransmissionType::AutomatedManual) {
+        const bool is_amt = (systems.transmission == TransmissionType::AutomatedManual);
         const double T_sync = synchro_torque_capacity();
         if (in.gear == 1) {
             systems.engaged_gear = 1;
@@ -344,13 +355,16 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
                     } else {
                         systems.input_shaft_omega += sign(dw) * max_dw;
                     }
-                } else {
-                    // Clutch is still clamped (or dropped too early before sync finished) while |dw| > tol.
+                } else if (!is_amt) {
+                    // H-pattern manual: clutch is still clamped (or dropped too early before sync finished) while |dw| > tol.
                     systems.clash_timer_s += h;
                     const double grace_s = systems.strict_h_pattern_synchro ? 0.0 : 0.020;
                     if (systems.clutch_opened_during_sync || systems.clash_timer_s >= grace_s) {
                         trigger_missed_shift(systems.sync_target_gear, dw);
                     }
+                } else {
+                    // Electro-hydraulic AMT TCU never forces a clash; waits for hydraulic clutch to open cleanly.
+                    systems.sync_timer_s += h;
                 }
             }
         } else {
@@ -358,18 +372,71 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
             systems.sync_target_gear = -1;
             systems.clash_timer_s = 0.0;
         }
-    } else if (in.gear != systems.engaged_gear) {
+    } else if (systems.transmission == TransmissionType::SequentialDogBox) {
+        const DogBoxParams& dp = cfg_.drivetrain.dog_box;
         if (in.gear == 1) {
             systems.engaged_gear = 1;
             systems.sync_state = SyncState::Idle;
             systems.sync_target_gear = -1;
-        } else if (systems.transmission == TransmissionType::SequentialDogBox) {
-            if (in.gear > systems.engaged_gear && systems.engaged_gear >= 2 && in.throttle > 0.35 && systems.dog_box_flat_shift_cut) {
-                // Motorsport dog-box flat-foot upshift: 55 ms ignition cut unloads dog rings cleanly.
-                systems.shift_cut_active = true;
-                systems.shift_cut_timer_s = 0.055;
-                systems.engaged_gear = in.gear;
+            systems.dog_pending_gear = -1;
+            systems.dog_blip_timer_s = 0.0;
+            systems.auto_blip_active = false;
+            systems.auto_blip_throttle = 0.0;
+        } else if (systems.dog_pending_gear >= 2) {
+            // Active pneumatic auto-blip downshift in progress: stay in neutral while DBW throttle
+            // accelerates the crank & input shaft up to the lower gear's speed, then snap the dog ring in!
+            if (in.gear != systems.dog_pending_gear) {
+                systems.dog_pending_gear = in.gear;
+            }
+            systems.dog_blip_timer_s += h;
+            const double w_target = clamp(gear_ratio(systems.dog_pending_gear) * w_carrier,
+                                          idle_w, e.redline_rpm * 0.97 * kRpmToRad);
+            const double dw = w_target - engine_omega;
+            systems.auto_blip_active = true;
+            systems.auto_blip_throttle = (dw > 10.0)
+                                       ? clamp(0.28 + dw * dp.blip_throttle_gain, 0.28, 0.92)
+                                       : 0.0;
+            const bool matched = std::abs(w_target - engine_omega) <= sp.dog_engage_tol_rads;
+            const bool ready = (systems.dog_blip_timer_s >= dp.downshift_unload_s && matched)
+                            || (systems.dog_blip_timer_s >= dp.downshift_blip_max_s);
+            if (ready) {
+                systems.engaged_gear = systems.dog_pending_gear;
+                systems.input_shaft_omega = gear_ratio(systems.engaged_gear) * w_carrier;
                 systems.sync_state = SyncState::Idle;
+                systems.sync_target_gear = -1;
+                systems.dog_pending_gear = -1;
+                systems.dog_blip_timer_s = 0.0;
+                systems.auto_blip_active = false;
+                systems.auto_blip_throttle = 0.0;
+                systems.gear_grind = false;
+                systems.shift_clunk_impulse_nm = std::max(systems.shift_clunk_impulse_nm, dp.engage_clunk_nm * 0.85);
+            }
+        } else if (in.gear != systems.engaged_gear) {
+            const bool is_upshift = (in.gear > systems.engaged_gear && systems.engaged_gear >= 2);
+            const bool is_downshift = (in.gear < systems.engaged_gear && in.gear >= 2 && systems.engaged_gear >= 2);
+            if (is_upshift && systems.dog_box_flat_shift_cut) {
+                // Motorsport dog-box flat-foot upshift: ignition cut unloads undercut dog rings cleanly without clutch pedal.
+                if (in.throttle > 0.25) {
+                    systems.shift_cut_active = true;
+                    systems.shift_cut_timer_s = dp.upshift_cut_s;
+                }
+                systems.engaged_gear = in.gear;
+                systems.input_shaft_omega = gear_ratio(in.gear) * w_carrier;
+                systems.sync_state = SyncState::Idle;
+                systems.gear_grind = false;
+                systems.shift_clunk_impulse_nm = std::max(systems.shift_clunk_impulse_nm, dp.engage_clunk_nm);
+            } else if (is_downshift && systems.dog_box_flat_shift_cut && dp.auto_blip && std::abs(w_carrier) > 3.0) {
+                // Pneumatic paddle downshift: unload across neutral and fire closed-loop electronic throttle auto-blip.
+                systems.engaged_gear = 1;
+                systems.sync_state = SyncState::Synchronizing;
+                systems.sync_target_gear = in.gear;
+                systems.dog_pending_gear = in.gear;
+                systems.dog_blip_timer_s = 0.0;
+                systems.auto_blip_active = true;
+                const double w_target = clamp(gear_ratio(in.gear) * w_carrier,
+                                              idle_w, e.redline_rpm * 0.97 * kRpmToRad);
+                const double dw = std::max(0.0, w_target - engine_omega);
+                systems.auto_blip_throttle = dw > 10.0 ? clamp(0.28 + dw * dp.blip_throttle_gain, 0.28, 0.92) : 0.0;
                 systems.gear_grind = false;
             } else if (!systems.dog_box_flat_shift_cut) {
                 systems.engaged_gear = in.gear;
@@ -377,8 +444,8 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
             } else {
                 const double w_target = gear_ratio(in.gear) * w_carrier;
                 const double dw = w_target - systems.input_shaft_omega;
-                const bool unloaded = (T_s <= 10.0) || systems.shift_cut_active || (in.throttle < 0.15)
-                                   || (std::abs(dw) <= sp.dog_engage_tol_rads);
+                const bool unloaded = (T_s <= 10.0) || systems.shift_cut_active || (in.throttle < 0.20)
+                                   || (std::abs(dw) <= sp.dog_engage_tol_rads) || (std::abs(w_carrier) <= 3.0);
                 if (systems.sync_state == SyncState::Missed && systems.sync_target_gear == in.gear && !unloaded) {
                     // Stay in neutral until unloaded or re-selected.
                 } else if (unloaded) {
@@ -386,17 +453,32 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
                     systems.input_shaft_omega = w_target;
                     systems.sync_state = SyncState::Idle;
                     systems.gear_grind = false;
+                    systems.shift_clunk_impulse_nm = std::max(systems.shift_clunk_impulse_nm, dp.engage_clunk_nm * 0.5);
                 } else {
                     trigger_missed_shift(in.gear, dw);
                 }
             }
-        } else {
-            // Dual-Clutch (DCT): pre-selected twin clutch packs hand off cleanly in 15 ms unless broken.
+        }
+    } else if (in.gear != systems.engaged_gear) {
+        if (in.gear == 1) {
+            systems.engaged_gear = 1;
+            systems.sync_state = SyncState::Idle;
+            systems.sync_target_gear = -1;
+        } else if (systems.transmission == TransmissionType::DualClutchDct) {
+            // Dual-Clutch (DCT): pre-selected odd/even twin clutch packs overlap-swap in 18 ms with zero boost drop.
             if (in.gear > systems.engaged_gear && systems.engaged_gear >= 2 && in.throttle > 0.35) {
-                systems.shift_cut_active = false;
-                systems.shift_cut_timer_s = 0.015;
+                systems.shift_cut_active = true;
+                systems.shift_cut_timer_s = 0.018;   // crisp 18 ms ignition torque-trim ("DSG/PDK crack")
+                systems.dct_handoff_timer_s = 0.025; // keep turbo throttle/boost pre-loaded throughout swap
             }
             systems.engaged_gear = in.gear;
+            systems.input_shaft_omega = gear_ratio(in.gear) * w_carrier;
+            systems.sync_state = SyncState::Idle;
+            systems.gear_grind = false;
+        } else {
+            // Planetary AutomaticTorqueConverter: wet bands/clutches swap ratio smoothly under hydraulic pressure.
+            systems.engaged_gear = in.gear;
+            systems.input_shaft_omega = gear_ratio(in.gear) * w_carrier;
             systems.sync_state = SyncState::Idle;
             systems.gear_grind = false;
         }
@@ -423,12 +505,16 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         double rpm = engine_rpm();
         // Idle controller: opens the throttle a little when revs fall below idle.
         double thr = std::max(in.throttle, clamp((e.idle_rpm - rpm) / 300.0, 0.0, 1.0) * 0.5);
+        // Closed-loop electronic throttle auto-blip on downshifts (SequentialDogBox, AutomatedManual, DualClutchDct).
+        if (systems.auto_blip_active && systems.auto_blip_throttle > 0.0) {
+            thr = std::max(thr, clamp(systems.auto_blip_throttle, 0.0, 1.0));
+        }
         // Rev limiter, hard fuel cut with hysteresis: cut at redline, refuel below redline - band. (A cut that refuels the
         // moment rpm dips under redline holds the revs glued to it; the band gives the real bounce.)
         if (rpm >= e.redline_rpm) systems.limiter_cut = true;
         else if (rpm < e.redline_rpm - std::max(e.limiter_hysteresis_rpm, 1.0)) systems.limiter_cut = false;
         if (systems.limiter_cut) thr = 0;
-        if (systems.shift_cut_active) thr = 0;          // sequential dog-box flat-shift ignition cut
+        if (systems.shift_cut_active && !systems.auto_blip_active) thr = 0; // ignition cut during upshift
         if (systems.fuel_consumption_enabled && systems.fuel_liters <= 0.0) thr = 0; // out of fuel
 
         // ---- Turbocharger spool, boost pressure, Blow-Off Valve (BOV) & Intercooler Heat Soak (IAT + Altitude)
@@ -442,9 +528,10 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         if (systems.turbo_stage > 0) {
             const double max_boost = max_boost_for_stage(systems.turbo_stage);
             const double rpm_norm = clamp((rpm - e.idle_rpm) / std::max(e.redline_rpm - e.idle_rpm, 1000.0), 0.0, 1.0);
-            // DCT shifts keep throttle plate/boost pre-loaded; normal throttle lift vents BOV
-            const double eff_thr_for_boost = (systems.transmission == TransmissionType::DualClutchDct && systems.shift_cut_timer_s > 0.0)
-                                           ? std::max(thr, in.throttle) : thr;
+            // DCT and flat-foot dog-box ignition-cut shifts keep the throttle plate & turbo boost pre-loaded!
+            const bool keep_boost_loaded = (systems.transmission == TransmissionType::DualClutchDct && systems.dct_handoff_timer_s > 0.0)
+                                        || (systems.transmission == TransmissionType::SequentialDogBox && systems.shift_cut_active);
+            const double eff_thr_for_boost = keep_boost_loaded ? std::max(thr, in.throttle) : thr;
             const double exhaust_flow = clamp((rpm_norm - 0.18) / 0.55, 0.0, 1.0) * eff_thr_for_boost;
             const double target_boost = eff_thr_for_boost > 0.15 ? exhaust_flow * max_boost : -0.35 * (1.0 - eff_thr_for_boost);
             const double tau_spool = (target_boost > systems.boost_bar) ? (0.14 + 0.05 * systems.turbo_stage) : 0.065;
@@ -590,7 +677,8 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
     constexpr double kStickBand = 2.0;    // rad/s (~19 RPM) Karnopp zero-velocity deadband
     constexpr double kStribeckVel = 18.0; // rad/s Stribeck static->kinetic transition speed
     clutch_torque = 0.0;
-    systems.driveline_clunk_nm = 0.0;
+    systems.driveline_clunk_nm = systems.shift_clunk_impulse_nm;
+    systems.shift_clunk_impulse_nm = 0.0;
     double slip_power_w = 0.0;
 
     auto solve_karnopp = [&](double w1, double a1, double i1, double w2, double a2, double i2,

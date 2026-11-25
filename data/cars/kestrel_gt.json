@@ -9,7 +9,8 @@
     "wheelbase_m": 2.65,
     "inertia_roll_kgm2": 493,
     "inertia_pitch_kgm2": 1883,
-    "inertia_yaw_kgm2": 2000
+    "inertia_yaw_kgm2": 2000,
+    "torsional_stiffness_nm_per_deg": 45000
   },
   "front_axle": {
     "track_m": 1.61,
@@ -180,7 +181,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -3.7604e-05,
+      "pEx4": -0.000037604,
       "slip_stiffness_per_load": 26.979,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -295,7 +296,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -3.7604e-05,
+      "pEx4": -0.000037604,
       "slip_stiffness_per_load": 27.549,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -524,9 +525,18 @@
       "mu_sync": 0.12,
       "shift_fork_force_n": 350,
       "cone_radius_m": 0.038,
-      "cone_angle_deg": 7.0,
+      "cone_angle_deg": 7,
       "num_cones": 2,
-      "engage_tol_rads": 42.0
+      "engage_tol_rads": 42
+    },
+    "transmission": "dog_box",
+    "dog_box": {
+      "upshift_cut_s": 0.048,
+      "downshift_unload_s": 0.015,
+      "downshift_blip_max_s": 0.08,
+      "blip_throttle_gain": 0.0033,
+      "engage_clunk_nm": 260,
+      "auto_blip": true
     }
   },
   "aero": {
@@ -539,11 +549,49 @@
     "static_ride_height_rear_m": 0.112,
     "diffuser_stall_rake_m": 0.052,
     "map_2d": {
-      "front_rh_m": [0.05, 0.095, 0.14],
-      "rear_rh_m": [0.065, 0.112, 0.155],
-      "cl_front": [0.57, 0.61, 0.64, 0.48, 0.506, 0.53, 0.39, 0.41, 0.43],
-      "cl_rear": [0.7, 0.65, 0.58, 0.68, 0.644, 0.57, 0.63, 0.59, 0.53],
-      "cd": [0.9, 0.91, 0.92, 0.875, 0.88, 0.89, 0.86, 0.865, 0.875]
+      "front_rh_m": [
+        0.05,
+        0.095,
+        0.14
+      ],
+      "rear_rh_m": [
+        0.065,
+        0.112,
+        0.155
+      ],
+      "cl_front": [
+        0.57,
+        0.61,
+        0.64,
+        0.48,
+        0.506,
+        0.53,
+        0.39,
+        0.41,
+        0.43
+      ],
+      "cl_rear": [
+        0.7,
+        0.65,
+        0.58,
+        0.68,
+        0.644,
+        0.57,
+        0.63,
+        0.59,
+        0.53
+      ],
+      "cd": [
+        0.9,
+        0.91,
+        0.92,
+        0.875,
+        0.88,
+        0.89,
+        0.86,
+        0.865,
+        0.875
+      ]
     },
     "drs": true,
     "airbrake": true

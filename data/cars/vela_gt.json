@@ -9,7 +9,8 @@
     "wheelbase_m": 2.65,
     "inertia_roll_kgm2": 550,
     "inertia_pitch_kgm2": 2100,
-    "inertia_yaw_kgm2": 2350
+    "inertia_yaw_kgm2": 2350,
+    "torsional_stiffness_nm_per_deg": 29000
   },
   "front_axle": {
     "track_m": 1.61,
@@ -79,12 +80,12 @@
         0.25
       ],
       "shock_lower": [
-        0.0,
+        0,
         0.64,
         0.195
       ],
       "shock_upper": [
-        0.0,
+        0,
         0.54,
         0.61
       ]
@@ -124,7 +125,7 @@
         0.19
       ],
       "lca_outer": [
-        0.0,
+        0,
         0.755,
         0.205
       ],
@@ -139,7 +140,7 @@
         0.394
       ],
       "uca_outer": [
-        0.0,
+        0,
         0.745,
         0.46
       ],
@@ -154,12 +155,12 @@
         0.25
       ],
       "shock_lower": [
-        0.0,
+        0,
         0.64,
         0.2
       ],
       "shock_upper": [
-        0.0,
+        0,
         0.55,
         0.62
       ]
@@ -180,7 +181,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -3.7604e-05,
+      "pEx4": -0.000037604,
       "slip_stiffness_per_load": 24.129,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -295,7 +296,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -3.7604e-05,
+      "pEx4": -0.000037604,
       "slip_stiffness_per_load": 24.699,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -511,9 +512,9 @@
       "mu_sync": 0.12,
       "shift_fork_force_n": 350,
       "cone_radius_m": 0.038,
-      "cone_angle_deg": 7.0,
+      "cone_angle_deg": 7,
       "num_cones": 2,
-      "engage_tol_rads": 42.0
+      "engage_tol_rads": 42
     },
     "rear_diff": {
       "type": "lsd",

@@ -171,7 +171,7 @@ RS_TEST(ground_strip_drive) {
     sim.reset({}, 0.0, 27.8, 6);
     sim.settle(0.0);
 
-    const double k0 = 12.0, k1 = 12.2, kh = 0.08;   // kerb from x = 12.0 to 12.2 m
+    const double k0 = 12.0, k1 = 12.45, kh = 0.08;   // 45 cm kerb (< 1 render frame at 28 m/s) so per-frame plane misses it phase-independently
     auto height = [&](double x) { return (x >= k0 && x <= k1) ? kh : 0.0; };
     auto trace = [&](const WheelRay& r) {           // what a downward trace would hit
         GroundSample g;

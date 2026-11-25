@@ -3,13 +3,14 @@
   "name": "Kronos Fulmine V10",
   "notes": "Kronos Fulmine V10: ingested via OpenGrid pipeline from base 'harrier_gt'.",
   "chassis": {
-    "mass_kg": 1420.0,
+    "mass_kg": 1420,
     "cg_height_m": 0.47,
     "weight_front": 0.5,
     "wheelbase_m": 2.65,
     "inertia_roll_kgm2": 569,
     "inertia_pitch_kgm2": 2172,
-    "inertia_yaw_kgm2": 2504
+    "inertia_yaw_kgm2": 2504,
+    "torsional_stiffness_nm_per_deg": 42000
   },
   "front_axle": {
     "track_m": 1.61,
@@ -180,7 +181,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -3.7604e-05,
+      "pEx4": -0.000037604,
       "slip_stiffness_per_load": 25.839,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -295,7 +296,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -3.7604e-05,
+      "pEx4": -0.000037604,
       "slip_stiffness_per_load": 26.979,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -417,15 +418,15 @@
       ],
       [
         2500,
-        912.0
+        912
       ],
       [
         3500,
-        912.0
+        912
       ],
       [
         4500,
-        912.0
+        912
       ],
       [
         5500,
@@ -441,7 +442,7 @@
       ],
       [
         7000,
-        684.0
+        684
       ]
     ],
     "idle_rpm": 800,
@@ -526,9 +527,9 @@
       "mu_sync": 0.12,
       "shift_fork_force_n": 380,
       "cone_radius_m": 0.04,
-      "cone_angle_deg": 7.0,
+      "cone_angle_deg": 7,
       "num_cones": 3,
-      "engage_tol_rads": 42.0
+      "engage_tol_rads": 42
     }
   },
   "aero": {

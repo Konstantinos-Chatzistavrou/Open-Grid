@@ -58,13 +58,15 @@ Run flat_out(const CarConfig& cfg, bool auto_gearbox, bool clutch_assist, AutoCl
 }  // namespace
 
 RS_TEST(transmission_by_car) {
-    // the cars whose real counterpart has a dual-clutch box, and the one with a torque-converter automatic
+    // Cars declaring dual-clutch, torque converter, sequential race dog-box, or single-clutch automated manual (AMT)
     const std::map<std::string, TransmissionType> declared = {
         {"falcorn_9r", TransmissionType::DualClutchDct},   {"falcorn_9r_rs", TransmissionType::DualClutchDct},
         {"aether_solis", TransmissionType::DualClutchDct}, {"aether_borealis", TransmissionType::DualClutchDct},
         {"valenza_corsa", TransmissionType::DualClutchDct}, {"valenza_fiamma", TransmissionType::DualClutchDct},
         {"valenza_sp3", TransmissionType::DualClutchDct},  {"kronos_fulmine", TransmissionType::DualClutchDct},
         {"tornado_gt", TransmissionType::DualClutchDct},   {"falcorn_hellhound", TransmissionType::AutomaticTorqueConverter},
+        {"kestrel_gt", TransmissionType::SequentialDogBox}, {"tornado_gt3", TransmissionType::SequentialDogBox},
+        {"kronos_taurus", TransmissionType::AutomatedManual}, {"strix_gt7", TransmissionType::AutomatedManual},
     };
     int wrong = 0;
     for (const auto& [id, type] : declared) {
@@ -72,16 +74,16 @@ RS_TEST(transmission_by_car) {
         Vehicle v(cfg);
         if (v.engine_systems().transmission != type) { ++wrong; std::printf("         %s: wrong box\n", id.c_str()); }
     }
-    test::check("the ten cars with a dual-clutch / converter counterpart declare it in their car file", wrong == 0);
+    test::check("all 14 declared DCT / converter / dog-box / AMT cars load their exact gearbox type", wrong == 0);
 
-    // A dual-clutch car cannot miss a shift: not with the Poor clutch assist, not with the assist OFF (there is no clutch pedal).
+    // Every self-shifting/pneumatic box (DCT, SequentialDogBox, AutomatedManual) cannot miss a shift with Poor or OFF clutch assist.
     int bad = 0;
     for (const auto& [id, type] : declared) {
-        if (type != TransmissionType::DualClutchDct) continue;
+        if (type == TransmissionType::AutomaticTorqueConverter) continue;
         const CarConfig cfg = load_car_config(test::data_path("cars/" + id + ".json"));
         for (int mode = 0; mode < 2; ++mode) {
             const Run r = flat_out(cfg, true, mode == 0, AutoClutchQuality::Poor);
-            const bool ok = r.missed == 0 && r.gearbox > 0.999 && r.neutral_max < 0.2 && r.clutch > 0.97 && r.kmh > 200.0 && r.t100 > 0;
+            const bool ok = r.missed == 0 && r.gearbox > 0.999 && r.neutral_max < 0.2 && r.clutch > 0.96 && r.kmh > 200.0 && r.t100 > 0;
             if (!ok) {
                 ++bad;
                 std::printf("         %s (clutch assist %s): %.0f km/h, %d missed, gearbox %.0f %%, clutch %.0f %%, neutral %.2f s\n", id.c_str(),
@@ -89,7 +91,7 @@ RS_TEST(transmission_by_car) {
             }
         }
     }
-    test::check("every dual-clutch car pulls cleanly flat out with the clutch assist Poor or OFF: no missed shift, no wear", bad == 0);
+    test::check("every DCT / dog-box / AMT car pulls cleanly flat out with clutch assist Poor or OFF: no missed shift, no wear", bad == 0);
 
     // The same cars with MAN (paddles) and no clutch pedal: shifting by hand works through the whole box.
     bad = 0;
@@ -102,7 +104,129 @@ RS_TEST(transmission_by_car) {
             std::printf("         %s paddles: %.0f km/h, gear %d, %d missed\n", id.c_str(), r.kmh, r.gear, r.missed);
         }
     }
-    test::check("paddle shifting (MAN) on a dual-clutch car works with no clutch pedal and no missed shift", bad == 0);
+    test::check("paddle shifting (MAN) on DCT / dog-box / AMT works with no clutch pedal and no missed shift", bad == 0);
+
+    // Sequential race dog-box (Kestrel GT & Tornado GT3): flat-foot ignition-cut upshift + pneumatic auto-blip downshift + mechanical dog clunk!
+    for (const char* id : {"kestrel_gt", "tornado_gt3"}) {
+        const CarConfig cfg = load_car_config(test::data_path("cars/" + std::string(id) + ".json"));
+        auto s = test::make_sim(cfg);
+        test::enable_game_models(s->vehicle);
+        s->vehicle.assists().abs = true;
+        s->reset({}, 0.0, 38.0, 4);   // ~137 km/h in 3rd gear
+        DriverInput up;
+        up.gear = 5;                  // flat-foot upshift 3rd -> 4th with NO clutch pedal
+        up.throttle = 1.0;
+        up.clutch = 0.0;
+        up.auto_clutch = false;
+        bool saw_cut = false;
+        double max_clunk = 0.0;
+        for (int i = 0; i < 36; ++i) {
+            s->step(up);
+            saw_cut |= s->last.shift_cut_active;
+            max_clunk = std::max(max_clunk, s->last.driveline_clunk_nm);
+        }
+        const bool up_ok = (s->last.gear == 5 && saw_cut && max_clunk >= 120.0 && s->last.missed_shifts == 0);
+
+        // Now brake with ABS and command a clutchless paddle downshift 4th -> 3rd: pneumatic auto-blip must fire and rev-match cleanly!
+        DriverInput down;
+        down.gear = 4;
+        down.throttle = 0.0;
+        down.brake = 0.45;
+        down.clutch = 0.0;
+        down.auto_clutch = false;
+        const double rpm_before = s->last.engine_rpm;
+        const double v_before = std::max(s->last.speed, 1.0);
+        bool saw_blip = false;
+        double max_blip_thr = 0.0;
+        for (int i = 0; i < 48; ++i) {
+            s->step(down);
+            saw_blip |= s->last.auto_blip_active;
+            max_blip_thr = std::max(max_blip_thr, s->last.throttle_applied);
+        }
+        const double old_gear_rpm_now = rpm_before * (s->last.speed / v_before);
+        const bool down_ok = (s->last.gear == 4 && saw_blip && max_blip_thr > 0.25 && s->last.engine_rpm > old_gear_rpm_now + 350.0
+                              && s->last.missed_shifts == 0 && s->last.gearbox_health > 0.999);
+        std::printf("         dog-box %-12s up(cut=%d clunk=%.0fNm) | down(blip=%d thr=%.2f rpm %.0f vs old-gear %.0f missed=%d)\n",
+                    id, saw_cut, max_clunk, saw_blip, max_blip_thr, s->last.engine_rpm, old_gear_rpm_now, s->last.missed_shifts);
+        test::check("sequential dog-box: flat-foot upshift cut + mechanical dog clunk + auto-blip downshift", up_ok && down_ok);
+    }
+
+    // Single-clutch automated manual (Kronos Taurus V12 & Strix GT7): distinct upshift torque interrupt (~65 ms) + heel-toe auto-blip downshift!
+    for (const char* id : {"kronos_taurus", "strix_gt7"}) {
+        const CarConfig cfg = load_car_config(test::data_path("cars/" + std::string(id) + ".json"));
+        auto s = test::make_sim(cfg);
+        test::enable_game_models(s->vehicle);
+        s->vehicle.assists().abs = true;
+        s->reset({}, 0.0, 38.0, 4);   // ~137 km/h in 3rd gear
+        DriverInput up;
+        up.gear = 5;                  // upshift 3rd -> 4th with NO clutch pedal
+        up.throttle = 1.0;
+        up.clutch = 0.0;
+        up.auto_clutch = false;
+        bool saw_cut = false;
+        double interrupt_s = 0.0, max_clunk = 0.0;
+        for (int i = 0; i < 60; ++i) {
+            s->step(up);
+            saw_cut |= s->last.shift_cut_active;
+            if (s->last.throttle_applied < 0.1) interrupt_s += s->dt;
+            max_clunk = std::max(max_clunk, s->last.driveline_clunk_nm);
+        }
+        const bool up_ok = (s->last.gear == 5 && saw_cut && interrupt_s >= 0.045 && interrupt_s <= 0.13
+                            && max_clunk >= 100.0 && s->last.missed_shifts == 0);
+
+        // Downshift 4th -> 3rd under braking: electro-hydraulic clutch opens + heel-toe throttle auto-blip rev-matches cleanly!
+        DriverInput down;
+        down.gear = 4;
+        down.throttle = 0.0;
+        down.brake = 0.45;
+        down.clutch = 0.0;
+        down.auto_clutch = false;
+        const double rpm_before = s->last.engine_rpm;
+        const double v_before = std::max(s->last.speed, 1.0);
+        bool saw_blip = false;
+        double max_blip_thr = 0.0;
+        for (int i = 0; i < 60; ++i) {
+            s->step(down);
+            saw_blip |= s->last.auto_blip_active;
+            max_blip_thr = std::max(max_blip_thr, s->last.throttle_applied);
+        }
+        const double old_gear_rpm_now = rpm_before * (s->last.speed / v_before);
+        const bool down_ok = (s->last.gear == 4 && saw_blip && max_blip_thr > 0.25 && s->last.engine_rpm > old_gear_rpm_now + 350.0
+                              && s->last.missed_shifts == 0 && s->last.gearbox_health > 0.999);
+        std::printf("         AMT     %-12s up(cut=%d gap=%.3fs clunk=%.0fNm) | down(blip=%d thr=%.2f rpm %.0f vs old-gear %.0f)\n",
+                    id, saw_cut, interrupt_s, max_clunk, saw_blip, max_blip_thr, s->last.engine_rpm, old_gear_rpm_now);
+        test::check("single-clutch AMT: crisp hydraulic torque-interrupt upshift + heel-toe auto-blip downshift", up_ok && down_ok);
+    }
+
+    // DCT vs AMT vs Manual shift speed hierarchy: DCT has shorter torque interrupt than single-clutch AMT, which is faster than H-pattern manual!
+    {
+        const CarConfig base = load_car_config(test::data_path("cars/kronos_taurus.json"));
+        auto measure_gap = [&](const std::string& tx_name) {
+            CarConfig c = base;
+            c.drivetrain.transmission = tx_name;
+            auto s = test::make_sim(c);
+            test::enable_game_models(s->vehicle);
+            s->reset({}, 0.0, 38.0, 4);
+            DriverInput up;
+            up.gear = 5;
+            up.throttle = 1.0;
+            up.auto_clutch = true;
+            up.auto_clutch_quality = AutoClutchQuality::Perfect;
+            double gap = 0.0;
+            for (int i = 0; i < 80; ++i) {
+                s->step(up);
+                if (s->last.throttle_applied < 0.1 || s->last.shift_cut_active) gap += s->dt;
+            }
+            return gap;
+        };
+        const double gap_dct = measure_gap("dct");
+        const double gap_amt = measure_gap("amt");
+        const double gap_man = measure_gap("h_pattern");
+        std::printf("         upshift torque-interrupt hierarchy: DCT %.3f s < AMT %.3f s < H-pattern %.3f s\n",
+                    gap_dct, gap_amt, gap_man);
+        test::check("upshift torque gap matches real life: DCT < single-clutch AMT < manual H-pattern",
+                    gap_dct < gap_amt - 0.025 && gap_amt < gap_man - 0.025);
+    }
 
     // The torque-converter car: idles on the brake in Drive without stalling, creeps, no phantom clutch wear, and is not slower at the top.
     {

@@ -9,7 +9,8 @@
     "wheelbase_m": 2.63,
     "inertia_roll_kgm2": 470,
     "inertia_pitch_kgm2": 1840,
-    "inertia_yaw_kgm2": 2050
+    "inertia_yaw_kgm2": 2050,
+    "torsional_stiffness_nm_per_deg": 50000
   },
   "front_axle": {
     "track_m": 1.774,
@@ -180,7 +181,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -3.7604e-05,
+      "pEx4": -0.000037604,
       "slip_stiffness_per_load": 29.259,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -295,7 +296,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -3.7604e-05,
+      "pEx4": -0.000037604,
       "slip_stiffness_per_load": 30.019,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -396,7 +397,7 @@
     "mbelt_kg": 6.9471
   },
   "brakes": {
-    "max_total_torque_nm": 9500.0,
+    "max_total_torque_nm": 9500,
     "bias_front": 0.72
   },
   "engine": {
@@ -509,9 +510,18 @@
       "mu_sync": 0.12,
       "shift_fork_force_n": 380,
       "cone_radius_m": 0.04,
-      "cone_angle_deg": 7.0,
+      "cone_angle_deg": 7,
       "num_cones": 3,
-      "engage_tol_rads": 42.0
+      "engage_tol_rads": 42
+    },
+    "transmission": "dog_box",
+    "dog_box": {
+      "upshift_cut_s": 0.045,
+      "downshift_unload_s": 0.014,
+      "downshift_blip_max_s": 0.078,
+      "blip_throttle_gain": 0.0034,
+      "engage_clunk_nm": 290,
+      "auto_blip": true
     }
   },
   "aero": {
@@ -522,11 +532,49 @@
     "static_ride_height_rear_m": 0.088,
     "diffuser_stall_rake_m": 0.045,
     "map_2d": {
-      "front_rh_m": [0.035, 0.068, 0.105],
-      "rear_rh_m": [0.055, 0.088, 0.125],
-      "cl_front": [1.44, 1.54, 1.62, 1.21, 1.276, 1.33, 0.96, 1.02, 1.06],
-      "cl_rear": [1.72, 1.64, 1.48, 1.68, 1.624, 1.46, 1.6, 1.54, 1.4],
-      "cd": [1.19, 1.21, 1.23, 1.16, 1.17, 1.19, 1.14, 1.15, 1.16]
+      "front_rh_m": [
+        0.035,
+        0.068,
+        0.105
+      ],
+      "rear_rh_m": [
+        0.055,
+        0.088,
+        0.125
+      ],
+      "cl_front": [
+        1.44,
+        1.54,
+        1.62,
+        1.21,
+        1.276,
+        1.33,
+        0.96,
+        1.02,
+        1.06
+      ],
+      "cl_rear": [
+        1.72,
+        1.64,
+        1.48,
+        1.68,
+        1.624,
+        1.46,
+        1.6,
+        1.54,
+        1.4
+      ],
+      "cd": [
+        1.19,
+        1.21,
+        1.23,
+        1.16,
+        1.17,
+        1.19,
+        1.14,
+        1.15,
+        1.16
+      ]
     }
   },
   "surface_grip": {

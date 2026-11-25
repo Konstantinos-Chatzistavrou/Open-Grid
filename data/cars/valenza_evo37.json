@@ -3,23 +3,24 @@
   "name": "Valenza 037 Evo",
   "notes": "Valenza 037 Evo: ingested via OpenGrid pipeline from base 'valenza_fiamma'.",
   "chassis": {
-    "mass_kg": 1095.0,
+    "mass_kg": 1095,
     "cg_height_m": 0.44,
     "weight_front": 0.42,
     "wheelbase_m": 2.63,
     "inertia_roll_kgm2": 535,
     "inertia_pitch_kgm2": 2040,
-    "inertia_yaw_kgm2": 2290
+    "inertia_yaw_kgm2": 2290,
+    "torsional_stiffness_nm_per_deg": 24000
   },
   "front_axle": {
     "track_m": 1.69,
-    "spring_rate_n_per_m": 65000,
+    "spring_rate_n_per_m": 56000,
     "spring_rest_length_m": 0.25,
-    "max_compression_m": 0.07,
+    "max_compression_m": 0.088,
     "bump_stop_rate_n_per_m": 300000,
-    "damper_bump_ns_per_m": 2900,
-    "damper_rebound_ns_per_m": 5700,
-    "anti_roll_rate_n_per_m": 30000,
+    "damper_bump_ns_per_m": 2600,
+    "damper_rebound_ns_per_m": 5200,
+    "anti_roll_rate_n_per_m": 26000,
     "roll_centre_height_m": 0.06,
     "max_steer_deg": 32,
     "ackermann": 0.5,
@@ -92,13 +93,13 @@
   },
   "rear_axle": {
     "track_m": 1.73,
-    "spring_rate_n_per_m": 75000,
+    "spring_rate_n_per_m": 62000,
     "spring_rest_length_m": 0.25,
-    "max_compression_m": 0.07,
+    "max_compression_m": 0.088,
     "bump_stop_rate_n_per_m": 300000,
-    "damper_bump_ns_per_m": 3100,
-    "damper_rebound_ns_per_m": 6100,
-    "anti_roll_rate_n_per_m": 18000,
+    "damper_bump_ns_per_m": 2800,
+    "damper_rebound_ns_per_m": 5600,
+    "anti_roll_rate_n_per_m": 19000,
     "roll_centre_height_m": 0.1,
     "static_camber_deg": -1.6,
     "camber_gain_deg_per_m": -45,
@@ -180,7 +181,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -3.7604e-05,
+      "pEx4": -0.000037604,
       "slip_stiffness_per_load": 25.649,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -295,7 +296,7 @@
       "E": 0.46403,
       "pEx2": 0.25022,
       "pEx3": 0.067842,
-      "pEx4": -3.7604e-05,
+      "pEx4": -0.000037604,
       "slip_stiffness_per_load": 26.599,
       "pKx2": 0.48896,
       "pKx3": 0.21253,
@@ -413,11 +414,11 @@
       ],
       [
         3000,
-        613.0
+        613
       ],
       [
         4500,
-        613.0
+        613
       ],
       [
         6000,
@@ -461,7 +462,7 @@
       "coast_ramp": 0.2
     },
     "awd_front_split": 0.3,
-    "front_torque_share": 0.0,
+    "front_torque_share": 0,
     "gear_teeth": [
       [
         -48,
@@ -514,9 +515,9 @@
       "mu_sync": 0.12,
       "shift_fork_force_n": 380,
       "cone_radius_m": 0.04,
-      "cone_angle_deg": 7.0,
+      "cone_angle_deg": 7,
       "num_cones": 3,
-      "engage_tol_rads": 42.0
+      "engage_tol_rads": 42
     }
   },
   "aero": {
