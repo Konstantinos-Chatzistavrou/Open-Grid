@@ -50,6 +50,7 @@
 - **Car Modding Pipeline First**: Start with 20–30 meticulously modeled cars and empower the community with an open drop-in modding pipeline (`docs/MODDING.md`) to reach 500+ vehicles organically.
 - **Persistent Multiplayer Damage & Repair Bills**:
   - Structural crash damage sustained in multiplayer/race events is **saved per car** and carries over until repaired in the Garage—directly discouraging ramming and griefing.
+  - **Zero Ghosting (100% Solid Physical Contact Always)**: Never ghost players, AI rivals, traffic, wrecked cars, or police cruisers (no arcade/GT-style pass-through ghosting). Rammers are deterred by real physical damage, repair/tow bills, and Bad-Sport SR quarantine—not intangible cars.
 - **The "Totaling" Conundrum — Tow Truck Fee**:
   - If your car is totaled and undrivable during an event, a **Tow Truck Fee** (`$1,200` / `250 XP`) is deducted from race winnings (or billed to recover the car to the Garage).
 - **In-Game Race Insurance**:

@@ -44,6 +44,7 @@ interface PatrolUnit {
   world: THREE.Vector3;
   root: THREE.Object3D | null;
   lights: { r: THREE.MeshBasicMaterial; b: THREE.MeshBasicMaterial } | null;
+  body: RAPIER.RigidBody | null;
   active: boolean;
 }
 
@@ -110,11 +111,13 @@ export class Cops {
   private flashPhase = false;
   private flashAcc = 0;
   private tmpPos = new THREE.Vector3();
+  private tmpQuat = new THREE.Quaternion();
+  private upAxis = new THREE.Vector3(0, 1, 0);
 
   constructor(private lane: Lane, private hooks: CopHooks) {
     this.units = [
-      { s: 0, lat: 0.7, speed: 0, side: 1, role: 'pit', world: this.world, root: null, lights: null, active: false },
-      { s: 0, lat: -1.8, speed: 0, side: -1, role: 'flank', world: new THREE.Vector3(), root: null, lights: null, active: false },
+      { s: 0, lat: 0.7, speed: 0, side: 1, role: 'pit', world: this.world, root: null, lights: null, body: null, active: false },
+      { s: 0, lat: -1.8, speed: 0, side: -1, role: 'flank', world: new THREE.Vector3(), root: null, lights: null, body: null, active: false },
     ];
   }
 
@@ -142,6 +145,14 @@ export class Cops {
       scene.add(wrap);
       u.root = wrap;
       u.lights = lights;
+      // Solid Rapier collider on every active patrol cruiser (zero ghosting: full physical contact).
+      const body = pw.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, -600, 0));
+      pw.world.createCollider(
+        RAPIER.ColliderDesc.cuboid(0.95, 0.425, 2.1).setTranslation(0, 0.575, 0).setFriction(0.35).setRestitution(0.05).setCollisionGroups(GROUP_CAR),
+        body,
+      );
+      body.setEnabled(false);
+      u.body = body;
       if (i === 0) this.root = wrap;
     }
 
@@ -230,7 +241,7 @@ export class Cops {
     u1.speed = 26;
 
     this.hideRoadblock();
-    this.placeUnits(playerPos);
+    this.placeUnits(playerPos, true);
     this.hooks.onAlert?.(this.heat >= 2 ? `🚨 TACTICAL PURSUIT · HEAT ${this.heat} · 2 UNITS` : '🚨 POLICE PURSUIT ENGAGED');
   }
 
@@ -240,6 +251,10 @@ export class Cops {
     for (const u of this.units) {
       u.active = false;
       if (u.root) u.root.visible = false;
+      if (u.body) {
+        u.body.setTranslation({ x: 0, y: -600, z: 0 }, true);
+        u.body.setEnabled(false);
+      }
     }
     this.hideRoadblock();
   }
@@ -425,19 +440,37 @@ export class Cops {
   get proximity() { return this.active ? Math.max(0, 1 - Math.abs(this.gap) / 165) : 0; }
   get distance() { return Math.abs(this.gap); }
 
-  private placeUnits(_playerPos: THREE.Vector3) {
+  private placeUnits(_playerPos: THREE.Vector3, teleport = false) {
     for (const u of this.units) {
       if (!u.active) {
         if (u.root) u.root.visible = false;
+        if (u.body) {
+          u.body.setTranslation({ x: 0, y: -600, z: 0 }, true);
+          u.body.setEnabled(false);
+        }
         continue;
       }
       this.lane.at(u.s, u.lat, u.world);
       const i = this.lane.idx(u.s);
       const r = this.lane.right[i];
+      const yaw = Math.atan2(r.z, -r.x);
       if (u.root) {
         u.root.position.set(u.world.x, u.world.y + 0.02, u.world.z);
-        u.root.rotation.y = Math.atan2(r.z, -r.x);
+        u.root.rotation.y = yaw;
         u.root.visible = true;
+      }
+      if (u.body) {
+        this.tmpQuat.setFromAxisAngle(this.upAxis, yaw);
+        u.body.setEnabled(true);
+        const pos = { x: u.world.x, y: u.world.y, z: u.world.z };
+        const rot = { x: this.tmpQuat.x, y: this.tmpQuat.y, z: this.tmpQuat.z, w: this.tmpQuat.w };
+        if (teleport) {
+          u.body.setTranslation(pos, true);
+          u.body.setRotation(rot, true);
+        } else {
+          u.body.setNextKinematicTranslation(pos);
+          u.body.setNextKinematicRotation(rot);
+        }
       }
       void this.tmpPos;
     }

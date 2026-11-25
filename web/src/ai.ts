@@ -663,7 +663,7 @@ export class AiTraffic {
   onWreck: (name: string) => void = () => {};
   private tmpV = new THREE.Vector3();
   private tickNo = 0;
-  private dt = 1 / 240;
+  private dt = 1 / 400;
 
   /**
    * After world.step(): share the player's collisions with rivals. The rival's body is kinematic, so the solver
