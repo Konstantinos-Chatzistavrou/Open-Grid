@@ -108,6 +108,7 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
 
     // ---- target speed: route profile (looking a little ahead to absorb control lag)
     double target = std::min(speed_profile(pr.s), speed_profile(pr.s + std::max(v, 0.0) * 0.5));
+    if (p_.racing_line) target *= grip_scale;
     braking_for_traffic = false;
     // Deceleration of the car ahead, estimated from how its PERCEIVED speed changes (low-passed).
     if (p.gap < 1e8 && prev_seen_t_ >= 0 && p.time > prev_seen_t_) {
@@ -273,6 +274,7 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
     if (p_.racing_line && !racecraft_lat) base_lat = line_.lateral(pr.s + ld);
     // Leave a car's width to anyone alongside (overlapping along the road): never steer into them. Applies to every
     // AI, racing or not: the car being passed holds its side of the road.
+    const double base_lat_before_neighbours = base_lat;
     for (const OtherCar& o : others) {
         if (length(o.position - s.position) > 12.0) continue;
         const Route::Projection op = route_.project(o.position, hint_);
@@ -281,6 +283,8 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
         if (op.lateral >= pr.lateral) base_lat = std::min(base_lat + avoid_, op.lateral - sep) - avoid_;
         else base_lat = std::max(base_lat + avoid_, op.lateral + sep) - avoid_;
     }
+    // the racing line itself is what is being followed (nobody moved it): the feed-forward law below may drive it
+    const bool line_free = p_.racing_line && !racecraft_lat && avoid_ == 0.0 && std::abs(base_lat - base_lat_before_neighbours) < 1e-9;
     double lat = clamp(base_lat + avoid_, -(ahead.width_right - 1.2), ahead.width_left - 1.2);
     active_lateral_target = lat;
     Vec3 tp = ahead.p + route_.left(pr.s + ld) * lat;
@@ -288,6 +292,24 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
     double eta = std::atan2(local.y, local.x);
     double delta = std::atan(2.0 * cfg_.wheelbase * std::sin(eta) / ld);
     double lock = cfg_.front.max_steer_deg * kPi / 180.0;
+    // a slide (sideslip beyond 3 deg, full at 8 deg): steer into it and come off the pedals, as a driver does
+    const double beta = last.sideslip;
+    const double slide = p_.racing_line ? std::min(1.0, std::max(0.0, (std::abs(beta) - 0.05) / 0.10)) : 0.0;
+    double e_line = 0.0;
+    if (line_free) {
+        // Stanley-style: the line's own curvature as feed-forward, heading and cross-track error as feedback. Pure pursuit lags and
+        // cuts corners at 200+ km/h; on the five real circuits this is what keeps the car on the line.
+        const double vf = std::max(v, 0.0);
+        auto line_pt = [&](double sq) { return route_.at(sq).p + route_.left(sq) * line_.lateral(sq); };
+        const Vec3 t_ahead = line_pt(pr.s + 3.0) - line_pt(pr.s - 3.0);
+        const double psi_path = std::atan2(t_ahead.y, t_ahead.x);
+        double psi_e = std::atan2(fwd.y, fwd.x) - psi_path;
+        while (psi_e > kPi) psi_e -= 2 * kPi;
+        while (psi_e < -kPi) psi_e += 2 * kPi;
+        e_line = pr.lateral - line_.lateral(pr.s);
+        delta = std::atan(cfg_.wheelbase * line_.curvature(pr.s + 0.15 * vf)) - (1.0 - slide) * psi_e
+              - std::atan(1.5 * e_line / (vf + 5.0)) + 1.2 * beta * slide;
+    }
     out.raw.steer = clamp(delta / lock, -1.0, 1.0);
 
     // ---- pedals: desired acceleration proportional to the speed error
@@ -299,6 +321,15 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
         out.raw.throttle = clamp(a_des / 4.0 + (v > 5 ? 0.1 : 0.3), 0.0, 1.0);
     } else {
         out.raw.brake = clamp(-a_des / 9.0, 0.0, 1.0);
+    }
+    out.raw.throttle *= 1.0 - slide;
+    if (p_.racing_line) {
+        // grip estimate: a slide or a car 2.5 m off its line costs 5 % of the corner speeds (at most once a second, floor 70 %);
+        // it comes back at 0.4 % per second while the car behaves. Only judged while nobody moved the line on purpose.
+        grip_cd_ -= dt;
+        const bool trouble = std::abs(beta) > 0.12 || (line_free && std::abs(e_line) > 2.5);
+        if (trouble && grip_cd_ <= 0.0) { grip_scale = std::max(0.70, grip_scale - 0.05); grip_cd_ = 1.0; }
+        else if (!trouble) grip_scale = std::min(1.0, grip_scale + 0.004 * dt);
     }
 
     // ---- recovery: stuck against a wall / wreck -> reverse for a moment
@@ -321,7 +352,6 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
         stuck_t_ = 0;
         out.gear_request = 0;
     }
-    (void)last;
     return out;
 }
 

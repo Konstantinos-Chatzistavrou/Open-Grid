@@ -11,6 +11,10 @@
 //    Above its panic threshold it brakes fully, and swerves if there is road to the side.
 //    On narrow streets there is often no room: that is how pile-ups happen.
 //  - Recovery: if stuck against something, reverses briefly and tries again.
+//  - Races (racing_line): the line is followed with curvature feed-forward plus heading and cross-track feedback (a Stanley-
+//    style law), a slide is steered into with the throttle lifted, and the corner speeds are scaled by a grip estimate that
+//    drops when the car slides or runs wide and recovers slowly: a car whose limit is below its tyres' nominal grip (understeer,
+//    load sensitivity) finds its own pace instead of leaving the track. Streets keep pure pursuit.
 #pragma once
 #include <deque>
 #include <vector>
@@ -58,6 +62,7 @@ public:
     double pressure_level = 0.0;
     bool under_pressure_lockup = false;
     double active_lateral_target = 0.0;
+    double grip_scale = 1.0;       // racing_line only: 0.70..1, the share of its corner speeds the driver dares, adapted to what the car does
     double speed_profile(double s) const;
     const RacingLine& racing_line() const { return line_; }
 
@@ -71,7 +76,7 @@ private:
     bool committed_pass_ = false;        // a pass once started is carried through (no flip-flop at the 16 m trigger)
     double pass_dir_ = 0;                // side of that pass, + = left
     int hint_ = -1;
-    double time_ = 0, stuck_t_ = 0, reverse_t_ = 0, avoid_ = 0;
+    double time_ = 0, stuck_t_ = 0, reverse_t_ = 0, avoid_ = 0, grip_cd_ = 0;
     double a_other_ = 0;                 // estimated deceleration of the car ahead (perceived)
     double prev_seen_t_ = -1, prev_seen_v_ = 0;
     std::deque<Seen> seen_;

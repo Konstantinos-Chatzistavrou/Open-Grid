@@ -764,8 +764,11 @@ RS_TEST(reference_data_real_tracks_ai) {
         {"Spa-Francorchamps", "validation/tracks-extra/Spa.csv"}, {"Silverstone", "validation/tracks-extra/Silverstone.csv"},
         {"Suzuka", "validation/tracks-extra/Suzuka.csv"}}};
     int clean = 0, total = 0;
-    for (const char* car_id : {"vela_gt", "tornado_gt3"}) {
-        const CarConfig cfg = load_car_config(test::data_path(std::string("cars/") + car_id + ".json"));
+    // the Vela GT and the Tornado GT3 (RS_ALL_CARS=1: every shipped car, 125 laps)
+    std::vector<CarConfig> cars;
+    if (std::getenv("RS_ALL_CARS")) cars = all_cars();
+    else for (const char* car_id : {"vela_gt", "tornado_gt3"}) cars.push_back(load_car_config(test::data_path(std::string("cars/") + car_id + ".json")));
+    for (const CarConfig& cfg : cars) {
         const double a_lat = sheet::skidpad(cfg), stop = abs_stop_m(cfg, 100 / 3.6);
         const double a_brake = (100 / 3.6) * (100 / 3.6) / (2 * stop) / kGravity, v_top = paper_top_speed(cfg).v_mps;
         for (const auto& [name, rel] : tracks) {
@@ -809,12 +812,12 @@ RS_TEST(reference_data_real_tracks_ai) {
             ++total;
         }
     }
-    // KNOWN GAP, not a pass: the game's AI is built for city streets and drives at ~100 % of its car's grip with a pure-pursuit
-    // follower and no slide recovery. After the friction ellipse went into its speed profile (a corner's lateral acceleration is not
-    // available for braking or power; 9 of 10 laps off the track before, 5 of 10 now) it still spins or runs wide on the other
-    // six laps of these 200-300 km/h circuits. This guard stops it getting worse; docs/physics-data-gaps.md lists it.
+    // The race AI (racing_line) follows the line with a feed-forward + feedback steering law, steers into a slide with the throttle
+    // lifted, and scales its corner speeds by a grip estimate that drops when it slides or runs wide (src/ai.cpp). Before that it was
+    // pure pursuit at the tyres' nominal grip: 4-5 of these 10 laps stayed on the track, the rest spun in a hairpin under braking or
+    // ran 4-5 m wide at 170-210 km/h. All 10 must now stay within 2 m of the edge (the car's half width and a kerb).
     std::printf("         AI laps completed on the track: %d of %d\n", clean, total);
-    test::check_range("AI laps completed on the track (regression guard on a known gap)", clean, 4, total, "of 10");
+    test::check_range("AI laps completed on the track (all of them)", clean, total, total, "laps");
 }
 
 // ---- aero reference bands, applied to what the simulation actually does --------------------------------------------------------
