@@ -3,13 +3,13 @@
 Decided 2026-10-17: the game moves from Godot to the browser. The C++ core is NOT rewritten: it is
 compiled to WebAssembly, so handling, assists, damage, AI and race logic stay one source of truth.
 
-## Stack (versions checked 2026-10-17)
+## Stack (versions checked 2026-10-17, upgraded 2026-11-25)
 | Layer | Choice | Why |
 |---|---|---|
-| Rendering | three.js r186 (0.186.1), `WebGPURenderer` + TSL | current WebGPU path; clustered (Forward+) lighting since r185, TSL post-processing |
-| Physics (handling) | `core/` -> WebAssembly via Emscripten 6.0.12 (`web/wasm/build.sh`) | same code as native; 208 KB .wasm |
+| Rendering | three.js r187 (0.187.0), `WebGPURenderer` + TSL | current WebGPU path; clustered (Forward+) lighting since r185, TSL post-processing |
+| Physics (handling) | `core/` -> WebAssembly via Emscripten 7.0.1 (`web/wasm/build.sh`) | same code as native; 368 KB .wasm; 6.0.12 and 7.0.1 builds give bit-identical simulation output |
 | Physics (rigid bodies, collisions, wheel raycasts) | Rapier 0.21 (`@dimforge/rapier3d-compat`) | replaces Godot's physics server in the same role |
-| Build | Vite 8.3, TypeScript 5.9 | |
+| Build | Vite 8.3, TypeScript 7.0 (native compiler) | |
 | Assets | the existing glTF exports (`game/assets/*.glb`) and `data/*.json`, symlinked into `web/public` | one source for both builds |
 
 Babylon.js 9 was the alternative (also WebGPU, clustered lighting); three.js chosen for TSL, the

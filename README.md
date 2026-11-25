@@ -19,7 +19,7 @@ a phone.
 
 What is in here:
 
-- **The game**: three.js r186 renderer (WebGPU, with an automatic WebGL 2 fallback), Rapier rigid bodies, parties of
+- **The game**: three.js r187 renderer (WebGPU, with an automatic WebGL 2 fallback), Rapier rigid bodies, parties of
   up to 6 over WebRTC, wheels with force feedback, phones with tilt steering.
 - **The physics core** (`core/`): Pacejka tyres fitted to real tyre data, suspension kinematics, a full drivetrain,
   assists, aero, fuel, wet roads, damage. Checked against a real car on every push: see

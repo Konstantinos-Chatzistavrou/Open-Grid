@@ -1,7 +1,7 @@
 # Free assets for the night street-racing game (research 2026-10-18)
 
 Scope: free assets with licences that allow **commercial** use and **modification** for a web game
-(three.js r186 WebGPU, served from Vercel). Every licence statement below was checked on the
+(three.js r187 WebGPU, served from Vercel). Every licence statement below was checked on the
 licence page itself or through the site's API on 2026-10-18. Anything not checked is marked
 **UNVERIFIED**. This is research notes, not legal advice. Check the licence on each asset page again
 on the day you download it, and keep a screenshot or PDF of that page in `assets_source/licenses/`.
@@ -303,7 +303,7 @@ $G optimize prop.glb prop_final.glb --compress meshopt --texture-compress ktx2 -
    --simplify true --simplify-error 0.001 --instance true
 ```
 
-Loader side (three r186, WebGPU). Copy `node_modules/three/examples/jsm/libs/basis/*` to
+Loader side (three r187, WebGPU). Copy `node_modules/three/examples/jsm/libs/basis/*` to
 `web/public/basis/`:
 
 ```ts
