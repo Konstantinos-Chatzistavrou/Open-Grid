@@ -142,6 +142,10 @@ TelemetrySample make_telemetry_sample(
         s.wheel_load_n[i] = w.load;
         s.wheel_kerb_load_ratio[i] = w.kerb_load_ratio;
         s.wheel_surface_excitation[i] = w.surface_excitation;
+        s.sidewall_rollover[i] = w.sidewall_rollover;
+        s.sidewall_damage[i] = w.sidewall_damage;
+        s.rim_strike_force_n[i] = w.rim_strike_force_n;
+        s.carcass_hysteresis_w[i] = w.carcass_hysteresis_w;
     }
     s.roll_centre_front_m = out.roll_centre_front_m;
     s.roll_centre_rear_m = out.roll_centre_rear_m;

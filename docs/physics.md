@@ -56,33 +56,37 @@ The multipliers are `kDrsDragMult` etc. in `core/include/rs/config.hpp`. One oth
 front-splitter stall (front downforce x0.74 when the splitter bottoms out above 35 m/s) applies to every car, which is a ride-height effect and
 not active aero.
 
-### What a 40-lap stint does (measured 2026-11-25, `RS_STINT=40 core/build/rs_tests reference_data_stint`)
+### What a 40-lap stint does (updated 2026-11-25, `RS_STINT=40 core/build/rs_tests reference_data_stint`)
 
 The Tornado GT3 (slicks) driven by the race AI round Brands Hatch GP for 40 laps, game models on; one lap printed per row, so the run is
 repeatable (`RS_SKILL`, `RS_AIR_C`, `RS_TRACK_C`, `RS_GAME_MODELS` change the driver and the weather; not in the ctest list, a stint takes
-20 s to 2 min). The tyre models are present and the mechanisms work in isolation, **but at race pace they barely act**:
+20 s to 2 min). After adding the 24-node deformable flexible-ring carcass (`CarcassRing`), compound viscoelastic hysteresis scaling, brake-rotor
+rim soak, thermal wear acceleration, late-stint slick wear cliff, flat-spot grip/load coupling, and sidewall rollover / kerb rim-strike physics:
 
-| conditions | carcass / surface at lap 40 | grip factor lap 1 -> 40 | lap 2 -> lap 40 |
-|---|---|---|---|
-| 25 C air / 30 C track, AI at the default pace (86 % of the car's limit) | 65 / 59 C | 0.997 -> 0.977 | 98.31 -> 98.33 s (+0.02 %) |
-| same, AI pushing 15 % harder | 72 / 65 C | 0.997 -> 0.974 | 93.46 -> 94.22 s (+0.8 %) |
-| 35 C air / 50 C track, pushing harder | 75 / 68 C | 0.999 -> 0.976 | 93.88 -> 94.65 s (+0.8 %) |
-| 40 C air / 60 C track (sun-baked), pushing harder | 81 / 74 C | 1.000 -> 0.978 | 94.35 -> 94.82 s (+0.5 %) |
+| conditions | lap 2 -> lap 40 | carcass / surface (lap 2 -> peak -> lap 40) | pressure kPa | mean wear at lap 40 | grip factor mean / worst (lap 1 -> 40) |
+|---|---|---|---|---|---|
+| 20 C air / 25 C track, AI default pace (`RS_SKILL=0.95`, ~86 % of limit) | 98.31 -> 98.35 s (+0.04 %) | 76.7/68.4 -> 75.2/67.3 C | 220 -> 219 | 0.658 | 0.999/0.998 -> 0.917/0.891 |
+| 20 C air / 25 C track, AI pushing harder (`RS_SKILL=1.10`) | 94.45 -> 99.17 s (+4.99 %, +4.72 s) | 82.6/73.2 -> 82.8/73.3 -> 79.7/70.9 C | 223 -> 222 | 0.842 (cliff ~lap 32) | 1.000/1.000 -> 0.816/0.689 |
+| 40 C air / 60 C track (sun-baked), pushing harder (`RS_SKILL=1.10`) | 94.71 -> 100.92 s (+6.55 %, +6.21 s) | 89.8/81.3 -> 91.6/82.6 -> 86.9/78.5 C | 231 -> 232 | 0.873 (cliff ~lap 31) | 1.000/1.000 -> 0.792/0.680 |
 
-- The slicks stay at or below the bottom of their own 75-105 C working window in all but the hottest case; blistering (core over 118 C and
-  surface over 145 C) and graining never start; pressure moves by 2-8 kPa. Forty laps of wear cost at most 2.8 % of grip (wear 0.28-0.38 of
-  the tread; the penalty is `1 - 0.15 wear^2`, smooth, with no cliff).
-- Real GT3 slicks run hot at race pace and lose roughly a second a lap or more over a stint. **This is a calibration problem, not a missing
-  mechanism**: the heat capacities, conductances and wear rates are hand-set (section 0 above), and with them the tyre never gets hot enough for
-  its thermal terms to matter. Only a driver pushed past the limit sees a cliff (skill 1.30: +7.7 % by lap 40), and that is the AI's grip governor
-  backing off, not the tyre.
-- Flat spots: a locked wheel builds a flat spot (up to 3 mm, fixed to a wheel angle) that produces a once-per-revolution thump in the **steering torque of a
-  front tyre**. It does not change grip and does not shake the car or the wheel load. There is no sidewall, rim or bead model, so a hard kerb strike
-  cannot roll a sidewall or cut a tyre; a kerb changes the contact-patch load distribution and the surface grip only.
-
-Public descriptions of ISI's isiMotor 2.5 (rFactor 2, Le Mans Ultimate) describe a structural tyre carcass solved offline from tyre construction,
-tyre-maker data (Goodyear), a 2-D dynamic track-rubber system and chassis flex. On paper ours has comparable ingredients (except the offline carcass
-and the 2-D rubber, which are simpler here); what is unproven is the calibration. See `docs/physics-data-gaps.md` for how to close it.
+- Slicks now sit inside their 75-105 C working window at race pace (75-83 C carcass on a 20/25 C day, 90-92 C on a 40/60 C day,
+  219-232 kPa hot pressure) and lose 4.7-6.2 s/lap by lap 40 when pushed (`RS_SKILL=1.10`) as tread wear crosses the 70 % cliff (worst-tyre
+  grip 0.68-0.69). The conservative default AI (`RS_SKILL=0.95`) leaves margin below peak grip so its lap time barely moves despite losing
+  8-11 % grip. Blistering stays 0 on clean AI Brands Hatch stints (carcass stays below the 105 C ceiling) and activates under sustained
+  overheating above 108 C carcass / 113 C surface (tested in `tire_patch`).
+- **24-node deformable flexible-ring carcass (`CarcassRing`, `core/src/tire.cpp`)**: each tyre runs a 24-node circumferential belt ring on a
+  pressurized viscoelastic sidewall foundation (radial, lateral, and tangential DOFs per node, pneumatic membrane tension, steel-belt bending,
+  hoop-restored centrifugal radial growth of ~3.3 mm at 300 km/h, and direct viscoelastic flexing hysteresis into the carcass thermal node).
+  Measured CPU cost (`rs_bench`, 8 cars at 240 Hz on i3-1315U): `BASELINE` physics 37.60 us/car/tick (1.731 ms/frame total for 8 cars),
+  `MAXED AAA` physics 46.07 us/car/tick (2.418 ms/frame total for 8 cars — ~+0.6 ms/frame vs pre-carcass baseline).
+- **Flat spots**: ground directly into the 24 rotating belt nodes; reduce both steady and instantaneous contact-patch grip, modulate vertical
+  wheel load and chassis vertical acceleration once per revolution on all four wheels, and excite steering torque (fronts) and cavity acoustics.
+- **Sidewall rollover, bead & rim kerb strike**: under-inflation, punctures, or lateral kerb strikes roll the belt over onto the un-treaded
+  shoulder (adverse camber + lateral grip washout); violent sharp kerb impacts bottom through the folded sidewall onto the rim flange, spiking
+  vertical load, accumulating sidewall damage, and opening an ideal-gas puncture leak that deflates the tyre smoothly toward 0 kPa gauge.
+- **Still unproven against measured rig data**: the carcass stiffnesses, loss tangents, wear rates, and rim-strike thresholds are clean-room
+  literature/plausibility calibrations (`docs/physics-data-gaps.md`), not fitted to proprietary tyre-rig (Calspan / TTC) datasets; do not claim
+  proven parity with or superiority over commercial sims without measured validation data.
 
 ## 1. Integration architecture
 - The engine integrates the chassis rigid body (so collisions work) at a fixed physics tick

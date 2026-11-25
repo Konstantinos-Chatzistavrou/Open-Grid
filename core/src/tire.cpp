@@ -265,39 +265,165 @@ double stribeck_friction_factor(const TireParams& p, double slip_speed_mps, doub
 }
 
 double TireCondition::ideal_gas_pressure_kpa(const TireParams* p) const {
-    // Ideal gas law for constant tyre cavity volume: P_abs / T_K = P_cold_abs / T_cold_K
+    // Ideal gas law for constant tyre cavity volume with puncture mass loss (air_mass_ratio):
+    //   P_abs = air_mass_ratio * P_cold_abs * (T_air_K / T_cold_K)
     // Cold reference temperature T_cold = 20 C (293.15 K), standard atmospheric pressure = 101.325 kPa.
     constexpr double kPAtmKpa = 101.325;
     constexpr double kTColdK = 293.15;
     const double p_cold = p ? p->p_cold_kpa : 188.0;
     const double t_air_k = clamp(inner_air_c, -40.0, 200.0) + 273.15;
-    return (p_cold + kPAtmKpa) * (t_air_k / kTColdK) - kPAtmKpa;
+    const double mass_frac = clamp(air_mass_ratio, 0.0, 1.5);
+    const double p_abs = mass_frac * (p_cold + kPAtmKpa) * (t_air_k / kTColdK);
+    return std::max(0.0, p_abs - kPAtmKpa);
 }
 
 namespace {
-// Sidewall cooling of the carcass (~0.32 m^2 both sides of a 245-285 section, 19-20 inch tyre): ~2.5 mm of rubber
-// (tread/sidewall compounds conduct k = 0.30-0.54 W/(m K), patent measurements; 0.35 * 0.32 / 0.0025 ~ 45 W/K) in
-// series with its air film, which has the tread's film coefficient per m^2 (area ratio ~0.52).
+// Sidewall cooling of the carcass (~0.32 m^2 both sides of a 245-285 section tyre): rubber conduction in series
+// with its wheel-arch air film (Kelly & Sharp 2010; Farroni et al. 2014).
 constexpr double kSidewallConductionWK = 45.0;
-constexpr double kSidewallAreaRatio = 0.52;
+constexpr double kSidewallAreaRatio = 0.55;
+
+// Precomputed unit circle for the 24-node circumferential flexible-ring carcass (phi_k = k * 2*pi/24).
+// Rotating by wheel_angle_rad uses 1 sin/cos per sub-step + 2 multiplies per node (zero trig inside the loop).
+constexpr double kCarcassCos[kCarcassNodes] = {
+     1.0000000000000000,  0.9659258262890683,  0.8660254037844387,  0.7071067811865476,
+     0.5000000000000001,  0.2588190451025207,  0.0000000000000000, -0.2588190451025207,
+    -0.5000000000000000, -0.7071067811865475, -0.8660254037844386, -0.9659258262890682,
+    -1.0000000000000000, -0.9659258262890683, -0.8660254037844387, -0.7071067811865477,
+    -0.5000000000000004, -0.2588190451025210,  0.0000000000000000,  0.2588190451025206,
+     0.5000000000000001,  0.7071067811865474,  0.8660254037844384,  0.9659258262890682
+};
+constexpr double kCarcassSin[kCarcassNodes] = {
+     0.0000000000000000,  0.2588190451025207,  0.5000000000000000,  0.7071067811865475,
+     0.8660254037844386,  0.9659258262890683,  1.0000000000000000,  0.9659258262890683,
+     0.8660254037844387,  0.7071067811865476,  0.5000000000000001,  0.2588190451025210,
+     0.0000000000000000, -0.2588190451025207, -0.5000000000000000, -0.7071067811865475,
+    -0.8660254037844385, -0.9659258262890682, -1.0000000000000000, -0.9659258262890683,
+    -0.8660254037844387, -0.7071067811865477, -0.5000000000000004, -0.2588190451025210
+};
+
+inline double wrap_angle_pi(double a) {
+    a = std::fmod(a + kPi, 2.0 * kPi);
+    if (a < 0.0) a += 2.0 * kPi;
+    return a - kPi;
+}
+
+void sync_external_flat_spot_to_ring(TireCondition& tc) {
+    double max_ring_mm = 0.0;
+    for (int k = 0; k < kCarcassNodes; ++k) {
+        max_ring_mm = std::max(max_ring_mm, tc.carcass.flat_spot_m[k] * 1000.0);
+    }
+    if (tc.flat_spot_depth_mm > max_ring_mm + 0.02) {
+        const double depth_m = clamp(tc.flat_spot_depth_mm * 1e-3, 0.0, 0.003);
+        const double target_phi = wrap_angle_pi(-tc.flat_spot_phase_rad);
+        for (int k = 0; k < kCarcassNodes; ++k) {
+            const double phi_k = k * (2.0 * kPi / kCarcassNodes);
+            const double dphi = std::abs(wrap_angle_pi(phi_k - target_phi));
+            if (dphi < 0.35) {
+                const double w = std::cos(0.5 * kPi * dphi / 0.35);
+                tc.carcass.flat_spot_m[k] = std::max(tc.carcass.flat_spot_m[k], depth_m * w * w);
+            }
+        }
+    }
+}
 }  // namespace
+
+double TireCondition::sidewall_height_m(const TireParams* p) const {
+    if (!p) return 0.098;
+    return clamp(p->section_width_m * p->aspect_ratio, 0.055, 0.165);
+}
+
+void TireCondition::repair_structural(const TireParams* p) {
+    carcass = CarcassRing{};
+    wear = 0.0;
+    flat_spot_depth_mm = 0.0;
+    flat_spot_phase_rad = 0.0;
+    flat_spot_load_delta_n = 0.0;
+    blistering = 0.0;
+    graining = 0.0;
+    belt_torsion_rad = 0.0;
+    belt_torsion_vel_rads = 0.0;
+    belt_lateral_m = 0.0;
+    belt_lateral_vel_mps = 0.0;
+    sidewall_rollover = 0.0;
+    sidewall_rollover_rad = 0.0;
+    sidewall_damage = 0.0;
+    air_mass_ratio = 1.0;
+    puncture_leak_rate = 0.0;
+    rim_strike_force_n = 0.0;
+    carcass_hysteresis_w = 0.0;
+    pressure_kpa = ideal_gas_pressure_kpa(p);
+}
+
+double TireCondition::flat_spot_radial_drop_m(double wheel_angle_rad, double radius_m) const {
+    if (flat_spot_depth_mm <= 0.02) return 0.0;
+    const double r = std::max(radius_m, 0.18);
+    // Check both the 24-node belt flat-spot profile (supports multiple flat spots) and the exact primary flat spot
+    // chord so narrow flat spots resolve smoothly at sub-node angular precision.
+    double max_drop = 0.0;
+    const double d0 = clamp(flat_spot_depth_mm * 1e-3, 0.0, 0.003);
+    const double theta_c0 = clamp(std::sqrt(2.0 * d0 / r), 0.07, 0.30);
+    const double dt0 = std::abs(wrap_angle_pi(wheel_angle_rad - flat_spot_phase_rad));
+    if (dt0 < theta_c0) {
+        const double c = std::cos(0.5 * kPi * dt0 / theta_c0);
+        max_drop = d0 * c * c;
+    }
+    const double c_w = std::cos(wheel_angle_rad);
+    const double s_w = std::sin(wheel_angle_rad);
+    for (int k = 0; k < kCarcassNodes; ++k) {
+        const double fk = carcass.flat_spot_m[k];
+        if (fk <= 2e-5) continue;
+        const double cos_k = c_w * kCarcassCos[k] - s_w * kCarcassSin[k];
+        if (cos_k <= 0.90) continue;
+        const double sin_k = s_w * kCarcassCos[k] + c_w * kCarcassSin[k];
+        const double ang = std::abs(std::atan2(sin_k, cos_k));
+        const double tc = clamp(std::sqrt(2.0 * fk / r), 0.08, 0.30);
+        if (ang < tc) {
+            const double c = std::cos(0.5 * kPi * ang / tc);
+            max_drop = std::max(max_drop, fk * c * c);
+        }
+    }
+    return max_drop;
+}
+
+double TireCondition::flat_spot_grip_factor(double wheel_angle_rad) const {
+    if (flat_spot_depth_mm <= 0.05) return 1.0;
+    // Instantaneous contact-patch grip dip as a glazed, out-of-round flat spot passes through the footprint.
+    // (The steady average grip loss from glazing/out-of-roundness is in zone_health_grip_factor().)
+    const double drop_mm = flat_spot_radial_drop_m(wheel_angle_rad, 0.33) * 1000.0;
+    const double pulse_loss = 0.040 * clamp(drop_mm, 0.0, 3.0); // up to -12% instantaneous dip at 3 mm flat spot
+    return clamp(1.0 - pulse_loss, 0.85, 1.0);
+}
+
+double TireCondition::sidewall_rollover_grip_factor() const {
+    // Progressive lateral grip washout when sidewall rolls over onto un-treaded shoulder or deflates from a puncture.
+    const double roll_loss = 0.24 * clamp(sidewall_rollover, 0.0, 1.0);
+    const double flat_loss = 0.36 * clamp(1.0 - air_mass_ratio, 0.0, 1.0);
+    return clamp(1.0 - roll_loss - flat_loss, 0.42, 1.0);
+}
+
+double TireCondition::sidewall_rollover_camber_rad() const {
+    if (sidewall_rollover <= 1e-4) return 0.0;
+    // Lateral belt rollover tilts the contact plane onto the un-treaded outer shoulder (adverse camber shift).
+    return clamp(sign(sidewall_rollover_rad) * 0.11 * sidewall_rollover, -0.14, 0.14);
+}
 
 void TireCondition::update(double slip_power_w, double load_n, double speed_mps, double dt, const TireParams* p) {
     if (dt <= 0) return;
     // Explicit 3-node lumped-capacitance thermal network (Kelly & Sharp 2010; Farroni et al. 2014):
     //   Node 1 (Surface, Ts):   C_s dTs/dt = P_slip - G_sc (Ts - Tc) - h_a(v) (Ts - T_air) - g_road (Ts - T_track)
-    //   Node 2 (Carcass, Tc):   C_c dTc/dt = G_sc (Ts - Tc) + P_hyst(p, Fz, v) - G_cg (Tc - Tg) - G_sw(v) (Tc - T_air)
-    //   Node 3 (Inner Air, Tg): C_g dTg/dt = G_cg (Tc - Tg) - G_rim(v) (Tg - T_air)
-    // Frictional slip work heats the outer 2-3 mm tread surface immediately; rolling hysteresis flexing (which rises
-    // when under-inflated) heats the carcass; heat conducts Surface <-> Carcass <-> Inner Air; Inner Air sets inflation
-    // pressure directly via the ideal gas law.
+    //   Node 2 (Carcass, Tc):   C_c dTc/dt = G_sc (Ts - Tc) + P_hyst(p, Fz, v) + P_flex_ring - G_cg (Tc - Tg) - G_sw(v) (Tc - T_air)
+    //   Node 3 (Inner Air, Tg): C_g dTg/dt = G_cg (Tc - Tg) + Q_brake_rim - G_rim(v) (Tg - T_air)
+    // Frictional slip work heats the outer ~2 mm tread surface immediately; rolling hysteresis + deformable carcass
+    // viscoelastic flexing heat the bulk carcass; heat conducts Surface <-> Carcass <-> Inner Air (plus brake rotor
+    // rim soak); Inner Air + air_mass_ratio set inflation pressure directly via the ideal gas law.
     const bool inner_air_mutated = std::abs(inner_air_c - last_inner_air_c_) > 1e-6;
     const bool carcass_teleported = std::abs(temperature_c - last_carcass_c_) > 10.0;
     if (!inner_air_mutated && carcass_teleported) {
         inner_air_c = clamp(0.45 * ambient_air_c + 0.55 * temperature_c, -25.0, 160.0);
     }
 
-    constexpr double Cs = 1500.0;   // J/K, outer 2-3 mm tread surface layer
+    constexpr double Cs = 1500.0;   // J/K, outer ~2.2 mm tread surface layer
     constexpr double Cc = 16000.0;  // J/K, steel belt & rubber carcass bulk
     constexpr double Cg = 260.0;    // J/K, cavity inflation gas + inner-liner thermal boundary layer
     constexpr double G_sc = 400.0;  // W/K, conduction Surface <-> Carcass
@@ -306,50 +432,78 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
     const double Tair = ambient_air_c;
     const double Ttrack = track_surface_c;
     const double v = std::abs(speed_mps);
-    const double ha_total = 20.0 + 2.5 * v;                 // W/K, surface convective air cooling
+    // Wheel-arch forced convective cooling calibrated so highway cruising (~90 km/h) settles ~10-15 C above air
+    // while GT3 race pace (~145 km/h avg + slip/cornering flex) drives slicks cleanly into their 75-105 C window.
+    // Grooved road treads have ~30% more convective surface area & boundary-layer turbulence than smooth zero-void slicks.
+    const double cool_scale = p ? clamp(p->tread_cooling_scale, 0.45, 1.25) : 1.0;
+    const double ha_total = (20.0 + 2.5 * v) * cool_scale;  // W/K, surface convective air cooling
     // Solid-to-solid conductive heat transfer between loaded contact patch and asphalt road surface
     const double g_road = (std::abs(Ttrack - Tair) > 1e-4 && load_n > 50.0)
                         ? 38.0 * clamp(load_n / 4000.0, 0.0, 1.6) : 0.0;
     const double ha = std::max(5.0, ha_total - g_road * 0.45);
-    // Sidewall: carcass -> sidewall rubber -> air film, toward the AMBIENT air (no pull toward a set running
-    // temperature: the carcass settles where rolling hysteresis, slip work and cooling balance).
+    // Sidewall: carcass -> sidewall rubber -> air film, toward ambient air (pure energy balance, no set-point pull).
     const double G_film_sw = kSidewallAreaRatio * ha_total;
     const double G_sw = kSidewallConductionWK * G_film_sw / (kSidewallConductionWK + G_film_sw);
-    const double G_rim = 18.0 + 0.65 * v;                   // W/K, Inner Air <-> wheel rim / ambient airflow exchange
+    const double G_rim = (18.0 + 0.65 * v) * (0.65 + 0.35 * cool_scale); // W/K, Inner Air <-> wheel rim / ambient exchange
 
-    // Pressure-coupled rolling hysteresis power: under-inflated tyres flex more and generate more carcass heat
-    const double cur_dpi = (p && pressure_kpa > 0.0) ? dpi(*p) : 0.0;
+    // Pressure-coupled rolling hysteresis (mild compound scaling so slicks reach working temp at race pace
+    // without overheating on 300 km/h straights) + deformable carcass viscoelastic flexing hysteresis.
+    const double hyst_loss = p ? clamp(p->hysteresis_loss_factor, 0.4, 3.0) : 1.0;
+    const double roll_compound = clamp(0.88 + 0.12 * hyst_loss, 1.0, 1.22);
+    const double cur_dpi = (p && (pressure_kpa > 0.0 || air_mass_ratio < 0.999)) ? dpi(*p) : 0.0;
     const double p_nom_abs = p ? std::max(p->p_nominal_kpa + 101.325, 100.0) : 321.325;
-    const double p_abs_ratio = clamp(((p ? p->p_nominal_kpa : 220.0) * (1.0 + cur_dpi) + 101.325) / p_nom_abs, 0.55, 1.65);
-    const double hyst = 0.012 * load_n * v / std::sqrt(p_abs_ratio);
+    const double p_abs_ratio = clamp(((p ? p->p_nominal_kpa : 220.0) * (1.0 + cur_dpi) + 101.325) / p_nom_abs, 0.35, 1.65);
+    const double hyst_roll = 0.012 * roll_compound * load_n * v / std::sqrt(p_abs_ratio);
+    const double hyst_flex = clamp(carcass_hysteresis_w, 0.0, 7500.0);
+    const double hyst = hyst_roll + hyst_flex;
 
-    // Integrate in <= 50 ms sub-steps (max eigenvalue ~0.45 /s -> stable with large margin)
+    // Puncture air leak (sidewall cut / bead unseat): deflates smoothly until internal pressure reaches ambient.
+    if (puncture_leak_rate > 0.0 && air_mass_ratio > 0.0) {
+        const double p_cold = p ? p->p_cold_kpa : 188.0;
+        const double t_air_k = clamp(inner_air_c, -40.0, 200.0) + 273.15;
+        const double eq_ratio = clamp(101.325 / ((p_cold + 101.325) * (t_air_k / 293.15)), 0.15, 1.0);
+        if (air_mass_ratio > eq_ratio) {
+            air_mass_ratio = std::max(eq_ratio, eq_ratio + (air_mass_ratio - eq_ratio) * std::exp(-puncture_leak_rate * dt));
+        }
+    }
+
+    // Integrate in <= 50 ms sub-steps (max eigenvalue ~0.40 /s -> stable with large margin)
     const int n = std::max(1, (int)std::ceil(dt / 0.05));
     const double h = dt / n;
     for (int i = 0; i < n; ++i) {
         const double ts = surface_c, tc = temperature_c, tg = inner_air_c;
         const double q_sc = G_sc * (ts - tc);
         const double q_cg = G_cg * (tc - tg);
+        // Radiant / convective heat soak from hot racing brake rotor (> 180 C) inside wheel barrel into inner cavity air & bead/carcass
+        const double q_brake = (brake_disc_temp_c > std::max(180.0, tg + 40.0))
+                             ? clamp(1.85 * (brake_disc_temp_c - 180.0), 0.0, 1100.0) : 0.0;
         const double dts = (slip_power_w - q_sc - ha * (ts - Tair) - g_road * (ts - Ttrack)) / Cs;
-        const double dtc = (q_sc + hyst - q_cg - G_sw * (tc - Tair)) / Cc;
-        const double dtg = (q_cg - G_rim * (tg - Tair)) / Cg;
+        const double dtc = (q_sc + hyst + 0.45 * q_brake - q_cg - G_sw * (tc - Tair)) / Cc;
+        const double dtg = (q_cg + 0.55 * q_brake - G_rim * (tg - Tair)) / Cg;
         surface_c = clamp(ts + dts * h, -15.0, 260.0);
         temperature_c = clamp(tc + dtc * h, -15.0, 180.0);
         inner_air_c = clamp(tg + dtg * h, -25.0, 160.0);
     }
 
-    // Ideal gas law directly from Node 3 (Inner Air temperature)
+    // Ideal gas law directly from Node 3 (Inner Air temperature) & cavity air mass
     pressure_kpa = ideal_gas_pressure_kpa(p);
+    // Keep contact_patch_length_m anchored to physical load & pressure while incorporating flexible-ring flattening
     if (p && load_n > 0.0) {
-        contact_patch_length_m = 2.0 * contact_patch_half_length(*p, load_n, dpi(*p));
+        const double geom_len = 2.0 * contact_patch_half_length(*p, load_n, dpi(*p));
+        contact_patch_length_m = carcass.deformed_patch_length_m > 0.04
+                               ? (0.5 * geom_len + 0.5 * carcass.deformed_patch_length_m)
+                               : geom_len;
     }
 
-    // Wear: tread abrasion in proportion to friction work (Reye 1860; Schallamach & Turner), from every slip,
-    // not only slides: grip-limited cornering wears the tread too. Rate per compound (TireParams::wear_per_mj).
+    // Wear: tread abrasion in proportion to friction work (Reye 1860; Schallamach & Turner), accelerated when
+    // rubber overheats past the compound ceiling or tears during cold graining.
     if (slip_power_w > 0.0) {
         static const TireParams kDefaultTyre{};
-        const double per_mj = (p ? p : &kDefaultTyre)->wear_per_mj;
-        wear = clamp(wear + slip_power_w * dt * 1e-6 * per_mj, 0.0, 1.0);
+        const TireParams* tp = p ? p : &kDefaultTyre;
+        const double t_hi = tp->temp_optimal_c + tp->temp_window_c;
+        const double over_c = std::max(0.0, surface_c - t_hi);
+        const double thermal_wear_mult = 1.0 + 1.8 * clamp(over_c / 40.0, 0.0, 1.5) + 0.8 * clamp(graining, 0.0, 1.0);
+        wear = clamp(wear + slip_power_w * dt * 1e-6 * tp->wear_per_mj * thermal_wear_mult, 0.0, 1.0);
     }
     // Keep 3-zone surface temperatures synchronized toward surface_c when update() is called directly
     if (imo_spread_c() < 1e-9) {
@@ -360,8 +514,7 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
         middle_c += (surface_c - middle_c) * alpha_sync;
         outer_c += (surface_c - outer_c) * alpha_sync;
     }
-    // Micro-asperity flash temperature (~8 ms response) on top of the tread surface: rises with sliding power. (It
-    // used to be reset to the surface here every call, which cancelled the relaxation in update_zones.)
+    // Micro-asperity flash temperature (~8 ms response) on top of the tread surface: rises with sliding power.
     {
         const double rise = clamp(std::max(0.0, slip_power_w) / 950.0, 0.0, 58.0);
         flash_c = clamp(flash_c + (surface_c + rise - flash_c) * (1.0 - std::exp(-dt / 0.008)), 10.0, 310.0);
@@ -381,6 +534,14 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
     }
     const double z_in0 = inner_c, z_mid0 = middle_c, z_out0 = outer_c;
 
+    // Fallback lateral carcass flexing power when update_zones() is called standalone (without step_carcass_ring)
+    if (!carcass.initialized && std::abs(lateral_force_n) > 10.0 && std::abs(speed_mps) > 1.0) {
+        const double r = p ? std::max(p->radius, 0.20) : 0.33;
+        const double k_lat_est = 300000.0 * (p ? clamp(0.40 / std::max(p->aspect_ratio, 0.22), 0.72, 1.50) : 1.0);
+        const double f_rot = std::abs(speed_mps) / (2.0 * kPi * r);
+        carcass_hysteresis_w = clamp(0.5 * (lateral_force_n * lateral_force_n / k_lat_est) * f_rot * 1.15, 0.0, 4500.0);
+    }
+
     const double flash_before = flash_c;   // the zone pass below does the flash step from the rib surfaces
     update(slip_power_w, load_n, speed_mps, dt, p);
     flash_c = flash_before;
@@ -391,7 +552,8 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
 
     // 3-zone lateral heat distribution across Inner / Middle / Outer tread surface ribs (Surface Node)
     const double p_nom = p ? std::max(p->p_nominal_kpa, 1.0) : 220.0;
-    const double rel_dpi = pressure_kpa > 0.0 ? clamp((pressure_kpa - p_nom) / p_nom, -0.5, 0.5) : 0.0;
+    const double rel_dpi = (pressure_kpa > 0.0 || air_mass_ratio < 0.999)
+                         ? clamp((pressure_kpa - p_nom) / p_nom, -0.5, 0.5) : 0.0;
     const double fz_ref = p ? std::max(p->fz0, 1000.0) : 4000.0;
 
     // Negative top-inward tilt (-wheel_side_sign * camber_rad < 0, e.g. negative static camber) biases straight-line heating onto inner_c
@@ -420,7 +582,8 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
     const double Tair = ambient_air_c;
     const double Ttrack = track_surface_c;
     const double v = std::abs(speed_mps);
-    const double ha_total = 20.0 + 2.5 * v;
+    const double cool_scale = p ? clamp(p->tread_cooling_scale, 0.45, 1.25) : 1.0;
+    const double ha_total = (20.0 + 2.5 * v) * cool_scale;
     const double g_road = (std::abs(Ttrack - Tair) > 1e-4 && load_n > 50.0)
                         ? 38.0 * clamp(load_n / 4000.0, 0.0, 1.6) : 0.0;
     const double ha = std::max(5.0, ha_total - g_road * 0.45);
@@ -452,24 +615,58 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
     const double alpha_flash = 1.0 - std::exp(-dt / 0.008);
     flash_c = clamp(flash_c + (flash_target - flash_c) * alpha_flash, 10.0, 310.0);
 
-    // Brake-lockup flat-spotting
-    if (v > 8.0 && load_n > 800.0 && std::abs(wheel_omega_rads) < 1.2) {
-        flat_spot_depth_mm = clamp(flat_spot_depth_mm + (std::max(0.0, slip_power_w) / 22000.0) * 0.45 * dt, 0.0, 3.0);
+    // Brake-lockup flat-spotting directly into the 24-node rotating carcass belt material!
+    sync_external_flat_spot_to_ring(*this);
+    if (v > 8.0 && load_n > 800.0 && std::abs(wheel_omega_rads) < 1.5) {
+        const double grind_m = (std::max(0.0, slip_power_w) / 22000.0) * 0.45e-3 * dt;
+        const double target_phi = wrap_angle_pi(-wheel_angle_rad);
+        for (int k = 0; k < kCarcassNodes; ++k) {
+            const double phi_k = k * (2.0 * kPi / kCarcassNodes);
+            const double dphi = std::abs(wrap_angle_pi(phi_k - target_phi));
+            if (dphi < 0.36) {
+                const double w = std::cos(0.5 * kPi * dphi / 0.36);
+                carcass.flat_spot_m[k] = clamp(carcass.flat_spot_m[k] + grind_m * w * w, 0.0, 0.003);
+            }
+        }
+        flat_spot_depth_mm = clamp(flat_spot_depth_mm + grind_m * 1000.0, 0.0, 3.0);
         flat_spot_phase_rad = std::fmod(wheel_angle_rad, 2.0 * kPi);
     } else if (std::abs(wheel_omega_rads) > 15.0) {
-        flat_spot_depth_mm = clamp(flat_spot_depth_mm - 0.002 * dt, 0.0, 3.0);
+        const double heal_m = 1.5e-6 * dt;
+        double deepest_m = 0.0;
+        int deepest_k = -1;
+        for (int k = 0; k < kCarcassNodes; ++k) {
+            if (carcass.flat_spot_m[k] > 0.0) {
+                carcass.flat_spot_m[k] = std::max(0.0, carcass.flat_spot_m[k] - heal_m);
+                if (carcass.flat_spot_m[k] > deepest_m) {
+                    deepest_m = carcass.flat_spot_m[k];
+                    deepest_k = k;
+                }
+            }
+        }
+        flat_spot_depth_mm = clamp(std::max(flat_spot_depth_mm - 0.0015 * dt, deepest_m * 1000.0), 0.0, 3.0);
+        if (deepest_k >= 0 && deepest_m * 1000.0 >= flat_spot_depth_mm - 0.05) {
+            flat_spot_phase_rad = wrap_angle_pi(-(deepest_k * (2.0 * kPi / kCarcassNodes)));
+        }
     }
 
-    // Blistering & Graining
+    // Compound-relative Blistering & Graining:
+    //   Blistering: subsurface rubber delamination under sustained bulk carcass & mean tread overheating
+    //     (builds over minutes of abuse, not a brief single-corner outer-shoulder spike).
+    //   Graining: cold-tearing of the surface when sliding hard below the compound's working floor.
+    const double t_opt = p ? p->temp_optimal_c : 90.0;
+    const double t_win = p ? std::max(p->temp_window_c, 10.0) : 25.0;
+    const double t_hi = t_opt + t_win;
+    const double t_lo = t_opt - t_win;
     const double max_core_c = std::max(tc_before, temperature_c);
-    const double max_surf_c = std::max({ts_before, surface_c, inner_c, middle_c, outer_c});
-    if (max_core_c > 118.0 && max_surf_c > 145.0) {
-        blistering = clamp(blistering + 0.015 * dt, 0.0, 1.0);
+    const double eff_surf_c = 0.65 * std::max(ts_before, surface_c) + 0.35 * std::max({inner_c, middle_c, outer_c});
+    if (max_core_c > t_hi + 3.0 && eff_surf_c > t_hi + 8.0) {
+        const double rate = 0.0012 + 0.00022 * (eff_surf_c - (t_hi + 8.0));
+        blistering = clamp(blistering + rate * dt, 0.0, 1.0);
     }
-    if (std::min(tc_before, temperature_c) < 58.0 && slip_power_w > 12000.0) {
-        graining = clamp(graining + 0.02 * dt, 0.0, 1.0);
-    } else if (temperature_c >= 75.0 && temperature_c <= 105.0) {
-        graining = clamp(graining - 0.01 * dt, 0.0, 1.0);
+    if (std::min(tc_before, temperature_c) < t_lo - 10.0 && slip_power_w > 7500.0) {
+        graining = clamp(graining + 0.015 * dt, 0.0, 1.0);
+    } else if (temperature_c >= t_lo && temperature_c <= t_hi) {
+        graining = clamp(graining - 0.012 * dt, 0.0, 1.0);
     }
     last_carcass_c_ = temperature_c;
     last_inner_air_c_ = inner_air_c;
@@ -484,11 +681,13 @@ double TireCondition::flat_spot_ffb_torque_nm(double wheel_angle_rad, double loa
 }
 
 double TireCondition::zone_health_grip_factor() const {
-    const double blister_loss = 0.08 * clamp(blistering, 0.0, 1.0);
-    const double grain_loss = 0.06 * clamp(graining, 0.0, 1.0);
+    const double blister_loss = 0.12 * clamp(blistering, 0.0, 1.0);
+    const double grain_loss = 0.08 * clamp(graining, 0.0, 1.0);
     const double spread = imo_spread_c();
     const double spread_loss = spread > 28.0 ? 0.04 * clamp((spread - 28.0) / 22.0, 0.0, 1.0) : 0.0;
-    return clamp(1.0 - blister_loss - grain_loss - spread_loss, 0.82, 1.0);
+    const double flat_steady_loss = 0.032 * clamp(flat_spot_depth_mm, 0.0, 3.0);
+    const double sw_dmg_loss = 0.14 * clamp(sidewall_damage, 0.0, 1.0);
+    return clamp(1.0 - blister_loss - grain_loss - spread_loss - flat_steady_loss - sw_dmg_loss, 0.60, 1.0);
 }
 
 double TireCondition::wlf_rib_grip_factor(double rib_surface_c, const TireParams* p) const {
@@ -511,30 +710,354 @@ double TireCondition::wlf_rib_grip_factor(double rib_surface_c, const TireParams
     return wlf_grip * flash_grease;
 }
 
+void TireCondition::step_carcass_ring(double fx_n, double fy_n, double fz_n, double wheel_omega_rads,
+                                      double wheel_angle_rad, double radius_m, double dt, const TireParams* p,
+                                      const ContactPatchProfile* patch) {
+    if (dt <= 0.0) return;
+    // Real-time 24-node deformable flexible-ring carcass model (Gipser FTire / Gong / Pacejka Ch. 9):
+    //   - Radial, lateral, and tangential belt DOFs per node on a pressurized viscoelastic sidewall foundation
+    //   - Pneumatic membrane tension T_belt = P_abs * width * R + steel-belt bending stiffness EI_r, EI_y
+    //   - Per-node rotating flat-spot indentation, kerb height enveloping, progressive sidewall-fold & rim-flange
+    //     bottoming, sidewall lateral rollover, centrifugal radial growth, high-speed standing waves, and direct
+    //     viscoelastic flexing hysteresis dissipation (sum c_sw * v^2) into the bulk thermal node.
+    sync_external_flat_spot_to_ring(*this);
+    carcass.initialized = true;
+
+    const double r = std::max(radius_m, 0.20);
+    const double width = p ? clamp(p->section_width_m, 0.15, 0.40) : 0.245;
+    const double aspect = p ? clamp(p->aspect_ratio, 0.22, 0.75) : 0.40;
+    const double h_sw = sidewall_height_m(p);
+    const double rho_rim_clear = 0.68 * h_sw; // true radial deflection before rim flange pinches folded sidewall
+    const double m_belt = p ? clamp(p->mbelt, 3.5, 10.5) : 5.4;
+    const double m_node = m_belt / kCarcassNodes;
+    const double ds = (2.0 * kPi * r) / kCarcassNodes;
+    const double inv_ds = 1.0 / ds;
+    const double inv_ds3 = inv_ds * inv_ds * inv_ds;
+
+    const double p_nom = p ? std::max(p->p_nominal_kpa, 80.0) : 220.0;
+    const double p_kpa = (pressure_kpa > 0.0 || air_mass_ratio < 0.999)
+                       ? std::max(0.0, pressure_kpa) : p_nom;
+    const double cur_dpi = clamp((p_kpa - p_nom) / p_nom, -0.85, 0.65);
+    const double p_abs_kpa = p_kpa + 101.325;
+    const double p_abs_ratio = clamp(p_abs_kpa / (p_nom + 101.325), 0.28, 1.75);
+
+    const double ar_stiff = clamp(0.40 / aspect, 0.72, 1.50);
+    const double tv_stiff = thermal_stiffness_factor(p);
+    const double c_fz_nom = p ? std::max(120000.0, p->vertical_stiffness) : 220000.0;
+    const double pfz1 = p ? p->pfz1 : 0.72;
+    const double c_fz_eff = std::max(45000.0, c_fz_nom * clamp(1.0 + pfz1 * cur_dpi, 0.28, 1.60));
+
+    // Pneumatic belt tension and pressurized sidewall foundation stiffnesses per belt node.
+    // Calibrated to measured passenger/GT radial carcass stiffnesses (C_Fy ~ 420-650 kN/m scaled by section width
+    // and normal-load contact engagement so nominal-pressure 1.0-1.9 g cornering stays crisp without rolling over;
+    // under-inflation or punctures collapse k_y_sw & T_belt and trigger progressive sidewall tuck-under).
+    const double w_scale = clamp(width / 0.245, 0.75, 1.60);
+    const double fz_ref = p ? std::max(p->fz0, 1000.0) : 4000.0;
+    const double load_lat_stiff = clamp(0.75 + 0.25 * (fz_n / fz_ref), 0.75, 2.50);
+    const double t_belt = std::max(2500.0, p_abs_kpa * 1000.0 * width * r * 0.90);
+    const double p_stiff_r = clamp(0.35 + 0.65 * p_abs_ratio, 0.25, 1.65);
+    const double p_stiff_y = clamp(0.20 + 0.80 * p_abs_ratio, 0.15, 1.65);
+    const double k_r_sw = (c_fz_nom * 0.45 / kCarcassNodes) * p_stiff_r * ar_stiff * tv_stiff;
+    const double k_y_sw = (1350000.0 / kCarcassNodes) * w_scale * load_lat_stiff * p_stiff_y * ar_stiff * tv_stiff;
+    const double k_t_sw = (95000.0 / (kCarcassNodes * r * r)) * ar_stiff * tv_stiff;
+
+    // Viscoelastic sidewall dampers (hysteresis increases when under-inflated or cold/rubbery)
+    const double zeta_scale = clamp(1.0 / std::sqrt(p_abs_ratio), 0.85, 1.65);
+    const double c_r_sw = 2.0 * 0.16 * zeta_scale * std::sqrt(k_r_sw * m_node);
+    const double c_y_sw = 2.0 * 0.18 * zeta_scale * std::sqrt(k_y_sw * m_node);
+    const double c_t_sw = 2.0 * 0.16 * zeta_scale * std::sqrt(k_t_sw * m_node);
+
+    // Steel-belt bending stiffness & discrete inter-node couplings (capped cleanly for 2 kHz stability)
+    const double ei_r = 10.0 * (width / 0.245);
+    const double ei_y = 18.0 * (width / 0.245);
+    const double k_ten = t_belt * inv_ds;
+    const double k_br = ei_r * inv_ds3;
+    const double k_by = ei_y * inv_ds3;
+    const double k_t_ring = std::min(140000.0, 0.22 * m_node / (0.0005 * 0.0005));
+    const double k_tread = (fz_n > 1.0) ? (c_fz_eff * 0.34) : 0.0;
+
+    // Adaptive sub-step count guarantees semi-implicit Euler stability across all tyre sizes & pressures
+    const double k_eig_max = std::max(k_r_sw + 4.0 * k_ten + 16.0 * k_br + k_tread,
+                                      k_y_sw + 4.0 * k_ten + 16.0 * k_by);
+    const double omega_max = std::sqrt(k_eig_max / m_node);
+    const double h_max = std::min(0.0005, 1.15 / std::max(omega_max, 100.0));
+    const int n_sub = std::clamp(static_cast<int>(std::ceil(dt / h_max)), 1, 8);
+    const double h = dt / n_sub;
+
+    // Extract longitudinal kerb profile from the 4x4 ContactPatchProfile once per call
+    double row_dz_peak[kPatchRows] = {0.0, 0.0, 0.0, 0.0};
+    double kerb_step_m = 0.0;
+    const bool has_patch = (patch != nullptr && patch->has_height_map);
+    if (has_patch) {
+        double min_dz = 1e9, max_dz = -1e9;
+        for (int i = 0; i < kPatchRows; ++i) {
+            double r_max = -1e9;
+            for (int j = 0; j < kPatchCols; ++j) {
+                const int idx = i * kPatchCols + j;
+                if (!patch->contact_mask[idx]) continue;
+                const double dz = patch->road_dz_m[idx];
+                r_max = std::max(r_max, dz);
+                min_dz = std::min(min_dz, dz);
+                max_dz = std::max(max_dz, dz);
+            }
+            row_dz_peak[i] = (r_max > -1e8) ? r_max : 0.0;
+        }
+        if (max_dz > min_dz) kerb_step_m = clamp(max_dz - min_dz, 0.0, 0.14);
+    }
+
+    // True vertical carcass deflection rho_true = Fz / C_Fz(p), plus effective hub sinkage rho_hub for the flexible ring
+    // (accounts for belt-inward bridging at contact shoulders so the footprint engages 2-4 nodes).
+    const double rho_true = (fz_n > 1.0) ? clamp(fz_n / c_fz_eff, 0.0, 0.92 * h_sw) : 0.0;
+    const double rho_hub = clamp(1.42 * rho_true, 0.0, 0.92 * h_sw);
+    const double a_patch = (fz_n > 1.0 && p) ? contact_patch_half_length(*p, fz_n, cur_dpi)
+                                             : clamp(std::sqrt(std::max(0.0, 2.0 * r * rho_hub)), 0.03, 0.15);
+    // Centrifugal outward pull balanced by circumferential steel-belt hoop stiffness (k_hoop ~ 1.4 MN/m per node):
+    // yields ~2.5-3.8 mm radial belt growth at 300 km/h (matching PAC2002 / MF-Swift) without stiffening local flattening.
+    const double k_hoop_node = 1.4e6 * (width / 0.245);
+    const double u_cent_eq = -clamp((m_node * wheel_omega_rads * wheel_omega_rads * r) / k_hoop_node, 0.0, 0.006);
+    const double f_cent_out = -k_r_sw * u_cent_eq; // outward force yielding exact u_cent_eq in equilibrium
+
+    double acc_hyst_w = 0.0;
+    double acc_flat_delta_n = 0.0;
+    double acc_rim_force_n = 0.0;
+    double max_rim_sev = 0.0;
+    double last_contact_y = 0.0;
+    double last_radial_max = 0.0;
+    double last_patch_len = 0.0;
+    int last_contact_nodes = 0;
+
+    std::array<double, kCarcassNodes> fn_node{};
+    std::array<double, kCarcassNodes> ar_node{};
+    std::array<double, kCarcassNodes> ay_node{};
+    std::array<double, kCarcassNodes> at_node{};
+
+    const double inv_m = 1.0 / m_node;
+    const double damp_r = 1.0 / (1.0 + h * c_r_sw * inv_m);
+    const double damp_y = 1.0 / (1.0 + h * c_y_sw * inv_m);
+    const double damp_t = 1.0 / (1.0 + h * c_t_sw * inv_m);
+
+    for (int sub = 0; sub < n_sub; ++sub) {
+        const double theta_w = wheel_angle_rad + wheel_omega_rads * ((sub + 0.5) * h);
+        const double c_w = std::cos(theta_w);
+        const double s_w = std::sin(theta_w);
+
+        double fn_sum = 0.0;
+        double fn_smooth_sum = 0.0;
+        double step_rim_f = 0.0;
+        double x_min = 1e9, x_max = -1e9;
+        int n_contact = 0;
+        double radial_max = 0.0;
+
+        for (int k = 0; k < kCarcassNodes; ++k) {
+            fn_node[k] = 0.0;
+            if (fz_n <= 1.0) continue;
+            const double cos_k = c_w * kCarcassCos[k] - s_w * kCarcassSin[k];
+            if (cos_k <= 0.72) continue; // only bottom ~+-44 deg arc can touch road
+            const double sin_k = s_w * kCarcassCos[k] + c_w * kCarcassSin[k];
+            const double x_k = -r * sin_k; // +x = leading edge, -x = trailing edge
+
+            double road_dz_k = 0.0;
+            if (has_patch) {
+                const double u_row = clamp((x_k / std::max(a_patch, 0.03) + 0.75) * 2.0, 0.0, 3.0);
+                const int r0 = std::min(2, static_cast<int>(u_row));
+                const double frac = u_row - r0;
+                road_dz_k = row_dz_peak[r0] + (row_dz_peak[r0 + 1] - row_dz_peak[r0]) * frac;
+            }
+
+            const double pen_smooth = r * (cos_k - 1.0) + rho_hub + road_dz_k;
+            const double pen_actual = pen_smooth - carcass.flat_spot_m[k];
+
+            const double def_smooth = pen_smooth - carcass.u_r[k];
+            const double def_actual = pen_actual - carcass.u_r[k];
+            if (def_smooth > 0.0) fn_smooth_sum += k_tread * def_smooth;
+
+            if (def_actual > 0.0) {
+                double f_k = k_tread * def_actual;
+                // Progressive folded-sidewall stiffening & metal rim-flange strike measured on TRUE physical
+                // radial carcass penetration (rho_true + local kerb step road_dz_k) so smooth flat-asphalt
+                // high-downforce corners never trigger false rim strikes while sharp kerbs & flat tyres do.
+                const double true_pen = r * (cos_k - 1.0) + rho_true + road_dz_k - carcass.flat_spot_m[k];
+                const double u_peak = std::max(0.0, true_pen);
+                if (u_peak > 0.78 * rho_rim_clear) {
+                    const double fold = u_peak - 0.78 * rho_rim_clear;
+                    f_k += (c_fz_eff * 0.60) * (fold * fold) / std::max(rho_rim_clear, 0.02);
+                }
+                if (u_peak > rho_rim_clear) {
+                    const double rim_pen = u_peak - rho_rim_clear;
+                    const double f_rim = (c_fz_eff * 3.8) * rim_pen;
+                    f_k += f_rim;
+                    step_rim_f += f_rim;
+                    max_rim_sev = std::max(max_rim_sev, clamp(rim_pen / (0.28 * h_sw), 0.0, 1.0));
+                }
+                fn_node[k] = f_k;
+                fn_sum += f_k;
+                ++n_contact;
+                x_min = std::min(x_min, x_k);
+                x_max = std::max(x_max, x_k);
+                radial_max = std::max(radial_max, std::max(carcass.u_r[k], u_peak));
+            }
+        }
+
+        // Sharp kerb-edge sidewall pinch when a tall (> 3.2 cm) step hits a loaded / cornering tyre
+        if (kerb_step_m > 0.032 && fz_n > 1200.0) {
+            const double effective_pen = rho_true + kerb_step_m * (0.75 + 0.35 * clamp(std::abs(fy_n) / std::max(fz_n, 1000.0), 0.0, 1.2));
+            if (effective_pen > rho_rim_clear) {
+                const double pinch = effective_pen - rho_rim_clear;
+                const double f_pinch = c_fz_eff * 3.2 * pinch;
+                step_rim_f += f_pinch;
+                max_rim_sev = std::max(max_rim_sev, clamp(pinch / (0.30 * h_sw), 0.0, 1.0));
+            }
+        }
+
+        const double inv_fn_sum = fn_sum > 1e-6 ? (1.0 / fn_sum) : 0.0;
+        const double inv_n_all = 1.0 / kCarcassNodes;
+
+        // Compute elastic ring accelerations (periodic 2nd-order tension + 4th-order bending stencil)
+        for (int k = 0; k < kCarcassNodes; ++k) {
+            const int km2 = (k + kCarcassNodes - 2) % kCarcassNodes;
+            const int km1 = (k + kCarcassNodes - 1) % kCarcassNodes;
+            const int kp1 = (k + 1) % kCarcassNodes;
+            const int kp2 = (k + 2) % kCarcassNodes;
+
+            const double ur = carcass.u_r[k], uy = carcass.u_y[k], ut = carcass.u_t[k];
+            const double lap_r = carcass.u_r[km1] - 2.0 * ur + carcass.u_r[kp1];
+            const double bih_r = carcass.u_r[km2] - 4.0 * carcass.u_r[km1] + 6.0 * ur - 4.0 * carcass.u_r[kp1] + carcass.u_r[kp2];
+            const double lap_y = carcass.u_y[km1] - 2.0 * uy + carcass.u_y[kp1];
+            const double bih_y = carcass.u_y[km2] - 4.0 * carcass.u_y[km1] + 6.0 * uy - 4.0 * carcass.u_y[kp1] + carcass.u_y[kp2];
+            const double lap_t = carcass.u_t[km1] - 2.0 * ut + carcass.u_t[kp1];
+
+            // Distribute contact patch shear forces across loaded nodes (or evenly if called without Fz in unit test)
+            const double w_shear = (fn_sum > 1e-6) ? (fn_node[k] * inv_fn_sum) : inv_n_all;
+            const double fy_k = fy_n * w_shear;
+            const double ft_k = fx_n * w_shear;
+
+            const double f_r = fn_node[k] - f_cent_out - k_r_sw * ur + k_ten * lap_r - k_br * bih_r;
+            const double f_y = fy_k - k_y_sw * uy + k_ten * lap_y - k_by * bih_y;
+            const double f_t = ft_k - k_t_sw * ut + k_t_ring * lap_t;
+
+            ar_node[k] = f_r * inv_m;
+            ay_node[k] = f_y * inv_m;
+            at_node[k] = f_t * inv_m;
+        }
+
+        // Semi-implicit Euler update with implicit sidewall damping + viscoelastic flexing dissipation
+        double sub_hyst = 0.0;
+        double contact_y_num = 0.0;
+        const double max_u_r = 0.90 * h_sw;
+        const double max_u_y = 0.85 * h_sw;
+        const double max_u_t = 0.06 * r;
+        for (int k = 0; k < kCarcassNodes; ++k) {
+            const double vr = clamp((carcass.v_r[k] + h * ar_node[k]) * damp_r, -8.0, 8.0);
+            const double vy = clamp((carcass.v_y[k] + h * ay_node[k]) * damp_y, -6.0, 6.0);
+            const double vt = clamp((carcass.v_t[k] + h * at_node[k]) * damp_t, -8.0, 8.0);
+            carcass.v_r[k] = vr;
+            carcass.v_y[k] = vy;
+            carcass.v_t[k] = vt;
+            carcass.u_r[k] = clamp(carcass.u_r[k] + h * vr, -0.015, max_u_r);
+            carcass.u_y[k] = clamp(carcass.u_y[k] + h * vy, -max_u_y, max_u_y);
+            carcass.u_t[k] = clamp(carcass.u_t[k] + h * vt, -max_u_t, max_u_t);
+
+            // Viscoelastic lateral + tangential flexing power (zero in straight-line cruise, 1-3 kW in hard corners/braking!)
+            sub_hyst += c_y_sw * vy * vy + c_t_sw * vt * vt;
+            if (fn_node[k] > 0.0) contact_y_num += fn_node[k] * carcass.u_y[k];
+        }
+
+        acc_hyst_w += sub_hyst;
+        acc_flat_delta_n += (fn_sum - fn_smooth_sum);
+        acc_rim_force_n += step_rim_f;
+        last_contact_y = (fn_sum > 1e-6) ? (contact_y_num * inv_fn_sum) : carcass.u_y[0];
+        last_radial_max = radial_max;
+        last_contact_nodes = n_contact;
+        last_patch_len = (n_contact >= 2) ? (x_max - x_min + ds * 0.65) : ((n_contact == 1) ? ds : 0.0);
+    }
+
+    // Aggregate ring-wide averages for legacy 2-DOF rigid-ring belt fields & trailing-edge standing wave detection.
+    // Standing waves form in the free unloaded trailing arc (cos_k < 0.45) when rolling speed approaches the belt's
+    // critical wave speed c_wave = sqrt((T_belt + T_struct) / rho_belt) (above ~360 km/h nominal, or ~220 km/h flat).
+    double mean_ut = 0.0, mean_vt = 0.0, mean_uy = 0.0, mean_vy = 0.0, wave_amp = 0.0;
+    const double c_end = std::cos(wheel_angle_rad + wheel_omega_rads * dt);
+    const double s_end = std::sin(wheel_angle_rad + wheel_omega_rads * dt);
+    const double v_roll = std::abs(wheel_omega_rads) * r;
+    const double rho_belt_lin = m_belt / (2.0 * kPi * r);
+    const double t_struct = 18000.0 * w_scale; // steel-belt structural hoop tension
+    const double c_wave = std::sqrt(std::max(1000.0, t_belt + t_struct) / std::max(rho_belt_lin, 0.5));
+    for (int k = 0; k < kCarcassNodes; ++k) {
+        mean_ut += carcass.u_t[k];
+        mean_vt += carcass.v_t[k];
+        mean_uy += carcass.u_y[k];
+        mean_vy += carcass.v_y[k];
+        const double sin_k = s_end * kCarcassCos[k] + c_end * kCarcassSin[k];
+        const double cos_k = c_end * kCarcassCos[k] - s_end * kCarcassSin[k];
+        if (sin_k * sign(wheel_omega_rads + 1e-6) > 0.70 && cos_k < 0.45 && cos_k > -0.55) {
+            const double u_cent = -f_cent_out / std::max(k_r_sw, 100.0);
+            wave_amp = std::max(wave_amp, std::abs(carcass.u_r[k] - u_cent));
+        }
+    }
+    const double inv_n = 1.0 / kCarcassNodes;
+    belt_torsion_rad = clamp((mean_ut * inv_n) / r, -0.06, 0.06);
+    belt_torsion_vel_rads = clamp((mean_vt * inv_n) / r, -40.0, 40.0);
+    belt_lateral_m = clamp((std::abs(last_contact_y) > 1e-9 ? last_contact_y : (mean_uy * inv_n)), -0.06, 0.06);
+    belt_lateral_vel_mps = clamp(mean_vy * inv_n, -5.0, 5.0);
+
+    // Cyclic lateral + tangential carcass hysteresis (viscoelastic flexing power dissipated in the rotating ring,
+    // plus standing-wave heating when rolling speed approaches the critical belt wave speed c_wave).
+    const double speed_wave_ratio = v_roll / std::max(c_wave, 15.0);
+    const double wave_heat_w = (speed_wave_ratio > 0.82 && wave_amp > 0.0020)
+                             ? clamp(3800.0 * (speed_wave_ratio - 0.82) * (wave_amp * 250.0), 0.0, 3500.0)
+                             : 0.0;
+    // Direct viscoelastic flexing hysteresis: physical cyclic lateral/longitudinal strain dissipation per revolution
+    // (discretization-independent) plus transient ring-vibration damping (kerbs, flat spots) and standing-wave heat.
+    const double hyst_loss = p ? clamp(p->hysteresis_loss_factor, 0.4, 3.0) : 1.0;
+    const double f_rot_hz = std::abs(wheel_omega_rads) / (2.0 * kPi);
+    const double tan_delta_sw = 0.42 * hyst_loss / std::sqrt(p_abs_ratio);
+    const double cyclic_strain_w = 0.5 * (std::abs(fy_n * last_contact_y) + std::abs(fx_n * (mean_ut * inv_n)))
+                                 * f_rot_hz * kPi * tan_delta_sw;
+    const double transient_vib_w = 0.14 * (acc_hyst_w / n_sub) * hyst_loss;
+    const double raw_hyst_w = clamp(cyclic_strain_w + transient_vib_w + wave_heat_w, 0.0, 3200.0);
+    // Smooth hysteresis power slightly (~25 ms) so discrete node-entry ripple doesn't jitter telemetry
+    const double alpha_h = clamp(dt / 0.025, 0.0, 1.0);
+    carcass.hysteresis_power_w += (raw_hyst_w - carcass.hysteresis_power_w) * alpha_h;
+    carcass_hysteresis_w = carcass.hysteresis_power_w;
+
+    carcass.contact_lateral_m = last_contact_y;
+    carcass.contact_radial_max_m = last_radial_max;
+    carcass.flat_spot_load_delta_n = clamp(acc_flat_delta_n / n_sub, -0.65 * std::max(fz_n, 1000.0), 0.65 * std::max(fz_n, 1000.0));
+    carcass.rim_strike_force_n = acc_rim_force_n / n_sub;
+    carcass.rim_impact_severity = max_rim_sev;
+    carcass.deformed_patch_length_m = last_patch_len;
+    carcass.standing_wave_amp_m = wave_amp;
+    carcass.contact_nodes = last_contact_nodes;
+
+    flat_spot_load_delta_n = carcass.flat_spot_load_delta_n;
+    rim_strike_force_n = carcass.rim_strike_force_n;
+
+    // Sidewall lateral rollover onto un-treaded shoulder:
+    //   phi_roll = atan2(u_y_contact, H_sw) vs pressure- and aspect-ratio-dependent critical rollover angle phi_crit.
+    sidewall_rollover_rad = std::atan2(last_contact_y, h_sw);
+    const double phi_crit = (0.29 + 0.14 * clamp(cur_dpi, -0.75, 0.30)) * clamp(0.38 / aspect, 0.80, 1.35);
+    const double excess_roll = std::max(0.0, std::abs(sidewall_rollover_rad) - phi_crit);
+    const double kerb_roll_boost = (kerb_step_m > 0.028 && std::abs(fy_n) > 0.35 * std::max(fz_n, 1000.0))
+                                 ? clamp((kerb_step_m - 0.028) * 6.0, 0.0, 0.35) : 0.0;
+    sidewall_rollover = clamp(excess_roll / 0.18 + kerb_roll_boost, 0.0, 1.0);
+
+    // Sidewall / bead damage and puncture leak from violent kerb / rim-pinch strikes:
+    if (max_rim_sev > 0.18) {
+        const double dmg_rate = 1.8 * (max_rim_sev - 0.18) * (1.0 + 0.8 * sidewall_rollover);
+        sidewall_damage = clamp(sidewall_damage + dmg_rate * dt, 0.0, 1.0);
+        if (max_rim_sev > 0.55 || sidewall_damage > 0.45) {
+            // Sidewall cut or bead unseat opens a progressive air leak (slow leak ~0.025/s up to blowout ~0.25/s)
+            const double cut_rate = 0.025 + 0.22 * clamp(std::max(max_rim_sev - 0.50, sidewall_damage - 0.40), 0.0, 1.0);
+            puncture_leak_rate = std::max(puncture_leak_rate, cut_rate);
+        }
+    }
+}
+
 void TireCondition::step_rigid_ring_belt(double fx_n, double fy_n, double radius_m, double dt, const TireParams* p) {
     if (dt <= 0.0) return;
-    // MF-Swift-style MF-Swift Rigid-Ring Belt Model:
-    // Steel-belted tread ring (m_belt from measured PAC2002 MBELT = 5.4 kg for 245/40 R18, scaled by tire width/radius)
-    // suspended on elastic sidewalls whose stiffness scales inversely with aspect ratio (shorter 30-series sidewall = stiffer):
-    //   In-plane torsional eigenfrequency:  f_nx = 1/(2 pi) * sqrt(k_torsion / I_belt) ~ 72-82 Hz
-    //   Out-of-plane lateral eigenfrequency: f_ny = 1/(2 pi) * sqrt(k_lat / m_belt)     ~ 45-52 Hz
-    const double r = std::max(radius_m, 0.20);
-    const double m_belt = p ? clamp(p->mbelt, 3.5, 10.5) : 5.4;
-    const double I_belt = std::max(0.28, m_belt * r * r * 0.68);
-    const double ar_stiff = p ? clamp(0.40 / std::max(p->aspect_ratio, 0.22), 0.75, 1.45) : 1.0;
-    const double k_tor = 90000.0 * ar_stiff, c_tor = 52.0 * std::sqrt(ar_stiff);
-    const double k_lat = 590000.0 * ar_stiff, c_lat = 360.0 * std::sqrt(ar_stiff);
-    const int n_sub = std::max(1, (int)std::ceil(dt / 0.0005)); // >= 2 kHz integration for 72-82 Hz ring mode stability
-    const double h = dt / n_sub;
-    for (int i = 0; i < n_sub; ++i) {
-        const double tau_belt = fx_n * r * 0.12 - k_tor * belt_torsion_rad - c_tor * belt_torsion_vel_rads;
-        belt_torsion_vel_rads = clamp(belt_torsion_vel_rads + (tau_belt / I_belt) * h, -35.0, 35.0);
-        belt_torsion_rad = clamp(belt_torsion_rad + belt_torsion_vel_rads * h, -0.045, 0.045);
-
-        const double f_lat_belt = fy_n * 0.15 - k_lat * belt_lateral_m - c_lat * belt_lateral_vel_mps;
-        belt_lateral_vel_mps = clamp(belt_lateral_vel_mps + (f_lat_belt / m_belt) * h, -3.5, 3.5);
-        belt_lateral_m = clamp(belt_lateral_m + belt_lateral_vel_mps * h, -0.022, 0.022);
-    }
+    // Delegates directly to the 24-node deformable flexible-ring carcass model at nominal load so legacy callers
+    // and unit tests drive the same unified belt mechanics.
+    const double fz_nom = p ? p->fz0 : 4000.0;
+    step_carcass_ring(fx_n, fy_n, fz_nom, 0.0, 0.0, radius_m, dt, p, nullptr);
 }
 
 double TireCondition::thermal_stiffness_factor(const TireParams* p) const {
@@ -560,17 +1083,18 @@ TireAcousticSource TireCondition::compute_acoustics(double wheel_omega_rads, dou
     ac.cavity_mode_low_hz = std::max(120.0, f0_cavity - doppler_hz);
     ac.cavity_mode_high_hz = f0_cavity + doppler_hz;
     ac.tread_block_pitch_hz = 64.0 * (std::abs(wheel_omega_rads) / (2.0 * kPi)); // 64 tread pitch blocks around circumference
-    // Broadband transient volume-displacement acceleration (m^3/s^2) excited by curb strikes & MF-Swift belt ring vibration
+    // Broadband transient volume-displacement acceleration (m^3/s^2) excited by curb strikes, flat spots & belt vibration
+    const double flat_vib = std::abs(flat_spot_load_delta_n) / 1400.0 + rim_strike_force_n / 3500.0;
     const double vib_energy = std::abs(carcass_deflection_rate_mps) * 1.8 + std::abs(belt_torsion_vel_rads) * 0.08
-                            + std::abs(belt_lateral_vel_mps) * 0.45;
+                            + std::abs(belt_lateral_vel_mps) * 0.45 + flat_vib;
     ac.transient_volume_accel = vib_energy * 0.045;
     ac.cavity_ring_gain = clamp(vib_energy * 0.32, 0.0, 1.0);
     return ac;
 }
 
 double TireCondition::dpi(const TireParams& p) const {
-    if (pressure_kpa <= 0) return 0.0;
-    return clamp((pressure_kpa - p.p_nominal_kpa) / std::max(p.p_nominal_kpa, 1.0), -0.5, 0.5);
+    if (pressure_kpa <= 0 && air_mass_ratio >= 0.999) return 0.0;
+    return clamp((pressure_kpa - p.p_nominal_kpa) / std::max(p.p_nominal_kpa, 1.0), -0.85, 0.5);
 }
 
 double TireCondition::grip_factor(const TireParams* p) const {
@@ -581,12 +1105,16 @@ double TireCondition::grip_factor(const TireParams* p) const {
     const double t = 0.55 * temperature_c + 0.45 * surface_c;
     double temp_grip = 1.0;
     if (t < t_opt - w) { double d = (t_opt - w - t) / 60.0; temp_grip = std::max(0.85, 1.0 - 0.14 * d * d - 0.02 * d); }
-    else if (t > t_opt + w) { double d = (t - t_opt - w) / 50.0; temp_grip = std::max(0.82, 1.0 - 0.14 * d * d); }
+    else if (t > t_opt + w) { double d = (t - t_opt - w) / 50.0; temp_grip = std::max(0.80, 1.0 - 0.16 * d * d); }
     // Immediate surface overheating greasiness (smooth C1 rational roll-off above t_opt + w)
     const double ds = std::max(0.0, surface_c - (t_opt + w));
     const double grease = 1.0 - 0.18 * (ds * ds) / (ds * ds + 38.0 * 38.0);
-    double wear_grip = 1.0 - 0.15 * wear * wear;
-    return temp_grip * grease * wear_grip * zone_health_grip_factor();
+    // Progressive tread wear + late-stint wear cliff past 70% wear (slicks drop off sharply near carcass plies)
+    const double wear_base = p ? p->wear_grip_loss : 0.15;
+    const double wear_cliff = p ? p->wear_cliff_loss : 0.02;
+    const double cliff_u = clamp((wear - 0.70) / 0.30, 0.0, 1.0);
+    const double wear_grip = clamp(1.0 - wear_base * wear * wear - wear_cliff * cliff_u * cliff_u, 0.62, 1.0);
+    return temp_grip * grease * wear_grip * zone_health_grip_factor() * sidewall_rollover_grip_factor();
 }
 
 double effective_rolling_radius(const TireParams& p, double fz) {

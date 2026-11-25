@@ -104,6 +104,9 @@ void Vehicle::service() {
     sys.popout_stress_s = 0.0;
     sys.turbo_surge = 0.0;
     sys.surge_boost_bar = 0.0;
+    for (int w = 0; w < 4; ++w) {
+        tire_condition_[w].repair_structural(&cfg_.tire(w));
+    }
 }
 
 void Vehicle::reset_motion(double v, int gear) {
@@ -570,30 +573,55 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const double anti = w < 2 ? -ax.anti_pitch * fx : (fx > 0 ? ax.anti_pitch : ax.anti_lift_rear_braking) * fx;
         f += anti * hl;
         susp_force[w] = std::max(0.0, f);               // a spring can push, not pull the ground
+        // Flat-spot geometric radial excitation & rim-flange kerb bottoming impact (ALL 4 wheels):
+        const TireParams& tp_s = cfg_.tire(w);
+        const double w_dpi_s = tire_condition_[w].dpi(tp_s);
+        const double k_t_eff = std::max(60000.0, tp_s.vertical_stiffness * clamp(1.0 + tp_s.pfz1 * w_dpi_s, 0.30, 1.60));
+        const bool has_flat = tire_condition_[w].flat_spot_depth_mm > 0.05;
+        const double wheel_w_s = drivetrain_.wheel_omega[w];
+        const double speed_flat_scale = clamp((std::abs(wheel_w_s) * tp_s.radius - 1.5) / 14.0, 0.0, 1.0);
         // ---- 15 Hz 2-DOF Unsprung Wheel-Hop & Radial Tire Carcass Dynamics
         if (unsprung_dynamics_enabled) {
             const double m_u = 42.0; // kg unsprung wheel/tire/hub/brake assembly mass
-            const double w_dpi = tire_condition_[w].dpi(cfg_.tire(w));
-            const double k_t = std::max(140000.0, cfg_.tire(w).vertical_stiffness * (1.0 + cfg_.tire(w).pfz1 * w_dpi)); // N/m radial tire carcass stiffness (MF 6.2 / MF-Swift-style pressure-coupled)
-            const double c_t = std::max(800.0, cfg_.tire(w).vertical_damping); // N s/m radial tire carcass damping (from PAC2002 VERTICAL_DAMPING = 2000)
+            const double k_t = std::max(80000.0, k_t_eff); // N/m radial tire carcass stiffness (pressure-coupled)
+            const double c_t = std::max(800.0, tp_s.vertical_damping); // N s/m radial tire carcass damping
             // Unsprung mass sits between suspension force pushing down (susp_force[w]) and tire carcass pushing up
-            const double sub_dt = std::min(dt, 0.002);
+            const double sub_dt = has_flat ? std::min(dt, 0.0005) : std::min(dt, 0.002);
             const int u_steps = std::max(1, (int)std::ceil(dt / sub_dt));
             const double hu = dt / u_steps;
             double uz = unsprung_z_[w], uv = unsprung_vz_[w];
+            double flat_drop_avg = 0.0;
             for (int us = 0; us < u_steps; ++us) {
-                // Static carcass deflection balances static suspension force; uz is dynamic offset (+ = hub hopped up)
-                const double f_carcass = std::max(0.0, susp_force[w] - k_t * uz - c_t * uv);
+                // Once-per-revolution flat-spot radial chord drop unloads the carcass and excites 15 Hz wheel hop
+                double flat_drop = 0.0;
+                if (has_flat && speed_flat_scale > 0.0) {
+                    const double theta_u = wheel_angle_[w] + wheel_w_s * ((us + 0.5) * hu);
+                    flat_drop = tire_condition_[w].flat_spot_radial_drop_m(theta_u, tp_s.radius) * speed_flat_scale;
+                    flat_drop_avg += flat_drop;
+                }
+                const double f_carcass = std::max(0.0, susp_force[w] - k_t * (uz + flat_drop) - c_t * uv);
                 const double a_u = (f_carcass - susp_force[w]) / m_u - 18.0 * comp_rate[w];
                 uv = clamp(uv + a_u * hu, -4.5, 4.5);
                 uz = clamp(uz + uv * hu, -0.035, 0.035);
             }
+            flat_drop_avg /= u_steps;
             unsprung_z_[w] = uz;
             unsprung_vz_[w] = uv;
-            out.wheels[w].carcass_deflection_m = std::max(0.0, susp_force[w] / k_t - uz);
+            out.wheels[w].carcass_deflection_m = std::max(0.0, susp_force[w] / k_t - uz - flat_drop_avg);
             out.wheels[w].unsprung_vel_mps = uv;
-            // Effective ground contact normal load modulates with 15 Hz unsprung wheel hop
-            susp_force[w] = std::max(0.0, susp_force[w] - k_t * uz * 0.45);
+            // Effective ground contact normal load modulates with 15 Hz unsprung wheel hop & flat-spot radial drop
+            susp_force[w] = std::max(0.0, susp_force[w] - k_t * (uz * 0.45 + flat_drop_avg * 0.75));
+        } else if (has_flat && speed_flat_scale > 0.0) {
+            // Even with massless wheels, flat spots directly modulate wheel load & chassis vertical acceleration
+            const double flat_drop = tire_condition_[w].flat_spot_radial_drop_m(wheel_angle_[w], tp_s.radius) * speed_flat_scale;
+            const double flat_dfz = clamp(tire_condition_[w].flat_spot_load_delta_n - k_t_eff * flat_drop * 0.65,
+                                          -0.55 * susp_force[w], 0.45 * susp_force[w]);
+            susp_force[w] = std::max(0.0, susp_force[w] + flat_dfz);
+        }
+        if (tire_condition_[w].rim_strike_force_n > 1.0) {
+            // Sharp kerb / rim-flange bottoming spike transmitted cleanly into wheel load & chassis heave/roll
+            const double rim_cap = cfg_.mass * kGravity * 1.4;
+            susp_force[w] += clamp(tire_condition_[w].rim_strike_force_n * 0.35, 0.0, rim_cap);
         }
     }
     for (int w = 0; w < 4; ++w) dz_[w] = touching[w] ? comp[w] - cfg_.wheels[w].static_compression : dz_[w] * 0.9;
@@ -692,15 +720,20 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         }
         tire_condition_[w].rib_contact_shares = c.rib_contact_shares;
         tire_condition_[w].enveloping_slope_tan = c.enveloping_slope_tan;
+        tire_condition_[w].brake_disc_temp_c = disc_temp_[w];
+        // grip_factor() already incorporates thermal window, greasiness, wear cliff, zone health (blister/grain/flat-spot/
+        // sidewall damage) and sidewall rollover; flat_spot_grip_factor() adds the instantaneous once-per-rev glazed dip.
         k.mu = cfg_.grip_for_surface(c.surface) * tire_condition_[w].grip_factor(&cfg_.tire(w))
-             * (tire_zones_enabled ? tire_condition_[w].zone_health_grip_factor() : 1.0) * damage_.grip[w] * wet_mu;
+             * tire_condition_[w].flat_spot_grip_factor(wheel_angle_[w]) * damage_.grip[w] * wet_mu;
         // Dynamic inclination / camber angle gamma in the tyre frame (+ = top tilted toward +left):
         //   1. Chassis roll relative to the road normal (dot(up, k.lat))
         //   2. 3D kinematic camber ks.camber_rad (includes static camber, nonlinear bump/droop camber curve,
-        //      and steering-induced caster + KPI inclination) + bent wishbone/caster damage.
+        //      and steering-induced caster + KPI inclination) + bent wishbone/caster damage + sidewall rollover tilt.
         const double roll_gamma = std::asin(clamp(dot(up, k.lat), -0.5, 0.5));
         const double side = left_wheel ? -1.0 : 1.0;   // FL/RL = -1 (left), FR/RR = +1 (right)
-        k.gamma = clamp(roll_gamma - side * (ks.camber_rad + damage_.camber[w]) + damage_.caster[w] * std::sin(d), -0.35, 0.35);
+        const double rollover_gamma = tire_condition_[w].sidewall_rollover_camber_rad();
+        k.gamma = clamp(roll_gamma - side * (ks.camber_rad + damage_.camber[w]) + damage_.caster[w] * std::sin(d) + rollover_gamma,
+                        -0.35, 0.35);
         k.gamma_rate = -side * ks.dcamber_dz * comp_rate[w];
         const double w_dpi = tire_condition_[w].dpi(tp);
         k.re = tire_zones_enabled ? effective_rolling_radius_mf62(tp, k.load, k.gamma, w_dpi, drivetrain_.wheel_omega[w])
@@ -888,9 +921,10 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             wheel_angle_[w] += drivetrain_.wheel_omega[w] * h;
             if (tire_zones_enabled) {
                 const double side_sign = (w % 2 == 0) ? -1.0 : 1.0;
+                tire_condition_[w].step_carcass_ring(f.fx, f.fy, k.load, drivetrain_.wheel_omega[w], wheel_angle_[w],
+                                                     k.re, h, &tp, op.patch);
                 tire_condition_[w].update_zones(slip_power, k.load, std::hypot(k.vx, k.vy), k.gamma, f.fy,
                                                 side_sign, drivetrain_.wheel_omega[w], wheel_angle_[w], h, &tp);
-                tire_condition_[w].step_rigid_ring_belt(f.fx, f.fy, k.re, h, &tp);
             } else {
                 tire_condition_[w].update(slip_power, k.load, std::hypot(k.vx, k.vy), h, &tp);
             }
@@ -1031,7 +1065,13 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const double surf_rough = clamp(1.0 - cfg_.grip_for_surface(contacts[w].surface), 0.0, 0.5) * clamp(v_roll / 20.0, 0.0, 1.0)
                                 + clamp(contacts[w].water_depth_mm / 6.0, 0.0, 0.4) * clamp(v_roll / 20.0, 0.0, 1.0);
         const double base_rumble = 0.05 * clamp(v_roll / 50.0, 0.0, 1.0);
-        wo.surface_excitation = clamp(vert_excite + kerb_excite + surf_rough + base_rumble, 0.0, 1.0);
+        const double flat_excite = clamp(std::abs(tire_condition_[w].flat_spot_load_delta_n) / 1800.0
+                                         + tire_condition_[w].rim_strike_force_n / 4000.0, 0.0, 0.85);
+        wo.surface_excitation = clamp(vert_excite + kerb_excite + surf_rough + base_rumble + flat_excite, 0.0, 1.0);
+        wo.sidewall_rollover = tire_condition_[w].sidewall_rollover;
+        wo.sidewall_damage = tire_condition_[w].sidewall_damage;
+        wo.rim_strike_force_n = tire_condition_[w].rim_strike_force_n;
+        wo.carcass_hysteresis_w = tire_condition_[w].carcass_hysteresis_w;
         // Suspension force acts along the body's up axis (plus symmetric heave jacking force);
         // longitudinal tyre force at the contact patch; lateral tyre force at the dynamic
         // roll-centre height (handles the roll-moment geometric transfer without double-counting);

@@ -133,6 +133,22 @@ struct OPENGRIDPHYSICS_API FOpenGridWheelState
     /** Simcenter 2606 ~225 Hz toroidal tire cavity resonance excitation gain (0..1). */
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
     float CavityRingGain = 0.0f;
+
+    /** Lateral sidewall tuck-under / shoulder rollover index (0..1, w.sidewall_rollover). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float SidewallRollover = 0.0f;
+
+    /** Structural sidewall / bead damage from violent kerb/rim pinch strikes (0..1, w.sidewall_damage). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float SidewallDamage = 0.0f;
+
+    /** Rim-flange bottoming vertical impact force on sharp kerbs / potholes (N, w.rim_strike_force_n). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float RimStrikeForceN = 0.0f;
+
+    /** Viscoelastic carcass flexing heat dissipation from the 24-node flexible ring (W, w.carcass_hysteresis_w). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float CarcassHysteresisW = 0.0f;
 };
 
 /**

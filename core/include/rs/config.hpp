@@ -84,6 +84,10 @@ struct TireParams {
     // work (wear 1 = tread gone). Set together by the car file's "compound" (road / semi_slick / slick).
     double start_c = 80;
     double wear_per_mj = 1.0 / 90.0;
+    double wear_grip_loss = 0.15;     // smooth tread wear grip loss at wear = 1.0
+    double wear_cliff_loss = 0.02;    // extra late-stint wear cliff drop past 70% tread wear (slicks drop off sharply)
+    double hysteresis_loss_factor = 1.0; // compound viscoelastic loss tangent scale (road ~0.65, semi_slick ~0.78, slick ~1.85)
+    double tread_cooling_scale = 1.0;    // convective cooling factor: grooved road tread = 1.0, smooth zero-void slick ~ 0.66
     // PAC2002 / MF 6.2 / MF-Swift-style physical carcass, belt & non-linear rolling radius parameters
     // (defaults from measured Audi 245/40 R18 PAC2002 lab dataset, data/tires/audi_245_40R18_pac2002.tir):
     double vertical_damping = 2000.0; // N s/m, radial tire carcass damping (VERTICAL_DAMPING)

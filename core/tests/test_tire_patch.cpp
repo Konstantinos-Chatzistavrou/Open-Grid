@@ -397,4 +397,193 @@ RS_TEST(tire_patch) {
                     tel.tire_temp_c[RL] > tel.tire_carcass_temp_c[RL] && tel.tire_pressure_kpa[RL] > cfg.tire_rear.p_cold_kpa &&
                     tel.tire_patch_length_m[RL] > 0.10);
     }
+
+    // =========================================================================
+    // 6. 24-node deformable flexible-ring carcass (flattening, pressure, hyst)
+    // =========================================================================
+    {
+        TireCondition ring_nom, ring_low_p, ring_fast;
+        ring_nom.pressure_kpa = p.p_nominal_kpa;
+        ring_low_p.pressure_kpa = 105.0; // severely under-inflated
+        ring_fast.pressure_kpa = p.p_nominal_kpa;
+
+        double ang = 0.0;
+        for (int i = 0; i < 200; ++i) {
+            ang += 95.0 * 0.001;
+            ring_nom.step_carcass_ring(0.0, 5200.0, 4500.0, 95.0, ang, p.radius, 0.001, &p, nullptr);
+            ring_low_p.step_carcass_ring(0.0, 5200.0, 4500.0, 95.0, ang, p.radius, 0.001, &p, nullptr);
+        }
+        // High-speed unloaded centrifugal expansion check (250 rad/s ~ 300 km/h)
+        double ang_f = 0.0;
+        for (int i = 0; i < 200; ++i) {
+            ang_f += 250.0 * 0.001;
+            ring_fast.step_carcass_ring(0.0, 0.0, 0.0, 250.0, ang_f, p.radius, 0.001, &p, nullptr);
+        }
+        double mean_ur_fast = 0.0;
+        for (double u : ring_fast.carcass.u_r) mean_ur_fast += u / kCarcassNodes;
+
+        // Straight rolling with zero lateral/longitudinal shear dissipates near-zero lateral/tangential flexing power
+        TireCondition ring_straight;
+        ring_straight.pressure_kpa = p.p_nominal_kpa;
+        double ang_s = 0.0;
+        for (int i = 0; i < 200; ++i) {
+            ang_s += 75.0 * 0.001;
+            ring_straight.step_carcass_ring(0.0, 0.0, 3600.0, 75.0, ang_s, p.radius, 0.001, &p, nullptr);
+        }
+
+        std::printf("         24-node carcass: nom nodes=%d patch=%.1f mm lat=%.1f mm hyst=%.0f W | low-P(105kPa) lat=%.1f mm rollover=%.2f hyst=%.0f W | 300km/h cent_ur=%.2f mm | straight hyst=%.1f W\n",
+                    ring_nom.carcass.contact_nodes, ring_nom.carcass.deformed_patch_length_m * 1000.0,
+                    ring_nom.carcass.contact_lateral_m * 1000.0, ring_nom.carcass_hysteresis_w,
+                    ring_low_p.carcass.contact_lateral_m * 1000.0, ring_low_p.sidewall_rollover,
+                    ring_low_p.carcass_hysteresis_w, mean_ur_fast * 1000.0, ring_straight.carcass_hysteresis_w);
+
+        test::check("24-node carcass flattens into a multi-node contact footprint under load",
+                    ring_nom.carcass.contact_nodes >= 2 && ring_nom.carcass.deformed_patch_length_m > 0.08 &&
+                    ring_nom.carcass.contact_radial_max_m > 0.008);
+        test::check("under-inflation softens lateral belt stiffness, increases rollover & flexing hysteresis",
+                    std::abs(ring_low_p.carcass.contact_lateral_m) > std::abs(ring_nom.carcass.contact_lateral_m) * 1.25 &&
+                    ring_low_p.sidewall_rollover > ring_nom.sidewall_rollover + 0.15 &&
+                    ring_low_p.carcass_hysteresis_w > ring_nom.carcass_hysteresis_w * 1.25);
+        test::check("high-speed rotation expands flexible carcass ring radially outward by ~1.5-5.5 mm at 300 km/h",
+                    mean_ur_fast < -0.0015 && mean_ur_fast > -0.0055);
+        test::check("viscoelastic flexing hysteresis is near zero in straight rolling and substantial under cornering",
+                    ring_straight.carcass_hysteresis_w < 10.0 && ring_nom.carcass_hysteresis_w > 400.0);
+    }
+
+    // =========================================================================
+    // 7. Flat spots reduce grip AND shake wheel load + chassis (all 4 wheels)
+    // =========================================================================
+    {
+        TireCondition clean_c, flat_c;
+        flat_c.flat_spot_depth_mm = 2.5;
+        flat_c.flat_spot_phase_rad = 0.0;
+        const double g_clean = clean_c.grip_factor(&p) * clean_c.flat_spot_grip_factor(0.0);
+        const double g_flat_off = flat_c.grip_factor(&p) * flat_c.flat_spot_grip_factor(kPi);
+        const double g_flat_on = flat_c.grip_factor(&p) * flat_c.flat_spot_grip_factor(0.0);
+        test::check("2.5 mm flat spot reduces both steady grip and instantaneous grip as flat passes footprint",
+                    g_flat_off < g_clean * 0.94 && g_flat_on < g_flat_off * 0.93);
+
+        // Full vehicle test: lock rear wheels via handbrake at 100 km/h to grind rear flat spots, then roll straight
+        // and verify once-per-revolution rear wheel load ripple and chassis vertical vibration (not just front FFB!)
+        auto measure_shake = [&](bool unsprung_on, bool create_rear_flat) {
+            auto flat_g = std::make_shared<PlaneGround>(Vec3{0, 0, 1});
+            Simulation s(cfg, flat_g);
+            s.dt = 1.0 / 240.0;
+            s.vehicle.unsprung_dynamics_enabled = unsprung_on;
+            s.vehicle.tire_zones_enabled = true;
+            s.vehicle.assists().abs = false;
+            s.reset({}, 0.0, 28.0, 4);
+            if (create_rear_flat) {
+                // Lock rear wheels for 1.6 s with handbrake to grind real rear flat spots
+                for (int i = 0; i < 384; ++i) {
+                    DriverInput in;
+                    in.gear = 4; in.clutch = 1.0; in.handbrake = 1.0;
+                    s.step(in);
+                }
+            }
+            // Cruise smoothly for 1.0 s and measure RL load & chassis vertical accel oscillation
+            double rl_min = 1e9, rl_max = 0.0, az_min = 1e9, az_max = -1e9, flat_mm = 0.0;
+            for (int i = 0; i < 240; ++i) {
+                DriverInput in;
+                in.gear = 4; in.throttle = 0.25; in.auto_clutch = true;
+                s.step(in);
+                if (i >= 48 && s.last.wheels[RL].contact) {
+                    rl_min = std::min(rl_min, s.last.wheels[RL].load);
+                    rl_max = std::max(rl_max, s.last.wheels[RL].load);
+                    az_min = std::min(az_min, s.last.accel.z);
+                    az_max = std::max(az_max, s.last.accel.z);
+                    flat_mm = std::max(flat_mm, s.last.wheels[RL].condition.flat_spot_depth_mm);
+                }
+            }
+            return std::array<double, 3>{rl_max - rl_min, az_max - az_min, flat_mm};
+        };
+
+        const auto smooth_u = measure_shake(true, false);
+        const auto flat_u = measure_shake(true, true);
+        const auto flat_no_u = measure_shake(false, true);
+        std::printf("         flat-spot chassis shake (RL): smooth dFz=%.1f N dAz=%.3f m/s^2 | flat(%.2f mm, unsprung ON) dFz=%.0f N dAz=%.2f m/s^2 | flat(unsprung OFF) dFz=%.0f N dAz=%.2f m/s^2\n",
+                    smooth_u[0], smooth_u[1], flat_u[2], flat_u[0], flat_u[1], flat_no_u[0], flat_no_u[1]);
+        test::check("handbrake lockup grinds rear flat spot and shakes rear wheel load & chassis (unsprung ON)",
+                    flat_u[2] > 0.35 && flat_u[0] > smooth_u[0] + 350.0 && flat_u[1] > smooth_u[1] + 0.25);
+        test::check("flat spot shakes rear wheel load & chassis even with unsprung dynamics OFF",
+                    flat_no_u[0] > smooth_u[0] + 250.0 && flat_no_u[1] > smooth_u[1] + 0.20);
+    }
+
+    // =========================================================================
+    // 8. Sidewall rollover, kerb rim-flange strike & puncture deflation
+    // =========================================================================
+    {
+        TireCondition kerb_t;
+        kerb_t.pressure_kpa = p.p_nominal_kpa;
+        // Sharp 7.5 cm vertical kerb step under high cornering & vertical load -> pinches sidewall to rim!
+        ContactPatchProfile sharp_kerb;
+        sharp_kerb.has_height_map = true;
+        for (int i = 0; i < kPatchRows; ++i) {
+            for (int j = 0; j < kPatchCols; ++j) {
+                sharp_kerb.road_dz_m[i * kPatchCols + j] = (i >= 2) ? 0.075 : 0.0;
+            }
+        }
+        double max_rim_f = 0.0;
+        double ang = 0.0;
+        for (int i = 0; i < 400; ++i) {
+            ang += 100.0 * 0.001;
+            kerb_t.step_carcass_ring(0.0, 5800.0, 6200.0, 100.0, ang, p.radius, 0.001, &p, &sharp_kerb);
+            max_rim_f = std::max(max_rim_f, kerb_t.rim_strike_force_n);
+        }
+        const double dmg_after_hit = kerb_t.sidewall_damage;
+        const double leak_rate = kerb_t.puncture_leak_rate;
+        const double p_before_leak = kerb_t.pressure_kpa;
+        // Roll for 30 s after the sidewall cut -> pressure deflates smoothly via ideal gas law
+        for (int i = 0; i < 600; ++i) {
+            kerb_t.update(500.0, 3800.0, 25.0, 0.05, &p);
+        }
+        const double p_after_leak = kerb_t.pressure_kpa;
+        const double grip_flat_tyre = kerb_t.grip_factor(&p);
+
+        std::printf("         sharp 7.5 cm kerb strike: peak rim force=%.0f N, sidewall_dmg=%.2f, leak=%.3f/s, P %.1f -> %.1f kPa, flat grip=%.3f\n",
+                    max_rim_f, dmg_after_hit, leak_rate, p_before_leak, p_after_leak, grip_flat_tyre);
+        test::check("violent 7.5 cm kerb strike bottoms to rim, damages sidewall & triggers puncture leak",
+                    max_rim_f > 2000.0 && dmg_after_hit > 0.15 && leak_rate > 0.01);
+        test::check("punctured tyre deflates via ideal gas law and loses substantial grip",
+                    p_after_leak < p_before_leak - 60.0 && grip_flat_tyre < 0.78);
+
+        kerb_t.repair_structural(&p);
+        test::check("repair_structural restores sealed pressure, zero sidewall damage and full health",
+                    kerb_t.sidewall_damage == 0.0 && kerb_t.puncture_leak_rate == 0.0 &&
+                    kerb_t.air_mass_ratio == 1.0 && kerb_t.pressure_kpa > 180.0);
+    }
+
+    // =========================================================================
+    // 9. Slick compound thermal calibration, blistering & late-stint wear cliff
+    // =========================================================================
+    {
+        TireParams slick = p;
+        apply_compound(slick, "slick");
+        // Verify late-stint wear cliff on slicks (past 70% wear drops steeper than first 50%)
+        TireCondition w0, w50, w70, w95;
+        w0.temperature_c = w50.temperature_c = w70.temperature_c = w95.temperature_c = 90.0;
+        w0.surface_c = w50.surface_c = w70.surface_c = w95.surface_c = 90.0;
+        w0.wear = 0.0; w50.wear = 0.50; w70.wear = 0.70; w95.wear = 0.95;
+        const double g0 = w0.grip_factor(&slick), g50 = w50.grip_factor(&slick);
+        const double g70 = w70.grip_factor(&slick), g95 = w95.grip_factor(&slick);
+        const double drop_per_pct_early = (g0 - g50) / 50.0;
+        const double drop_per_pct_cliff = (g70 - g95) / 25.0;
+
+        // Sustained thermal abuse (>125 C carcass/surface) activates blistering on slicks
+        TireCondition hot_slick;
+        hot_slick.set_environment_celsius(35.0, 50.0);
+        hot_slick.temperature_c = hot_slick.surface_c = hot_slick.inner_c = hot_slick.middle_c = hot_slick.outer_c = 126.0;
+        hot_slick.inner_air_c = 95.0;
+        for (int i = 0; i < 400; ++i) {
+            hot_slick.update_zones(14000.0, 5000.0, 38.0, -0.04, 5500.0, -1.0, 115.0, i * 0.5, 0.05, &slick);
+        }
+
+        std::printf("         slick wear cliff: new=%.3f, 50%%=%.3f, 70%%=%.3f, 95%%=%.3f (cliff slope %.2fx early); hot abuse core=%.1f C blister=%.2f grip=%.3f\n",
+                    g0, g50, g70, g95, drop_per_pct_cliff / std::max(drop_per_pct_early, 1e-6),
+                    hot_slick.carcass_c(), hot_slick.blistering, hot_slick.grip_factor(&slick));
+        test::check("slick exhibits realistic late-stint wear cliff past 70% wear",
+                    g95 < g70 - 0.12 && drop_per_pct_cliff > drop_per_pct_early * 2.5);
+        test::check("sustained slick overheating above working ceiling activates blistering and cuts grip",
+                    hot_slick.blistering > 0.05 && hot_slick.grip_factor(&slick) < 0.90);
+    }
 }

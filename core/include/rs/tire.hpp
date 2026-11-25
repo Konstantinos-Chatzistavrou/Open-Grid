@@ -25,6 +25,32 @@ namespace rs {
 constexpr int kPatchRows = 4;    // longitudinal stations along contact length 2a (0 = trailing -x .. 3 = leading +x)
 constexpr int kPatchCols = 4;    // lateral stations across tread width 2b (0 = right -y .. 3 = left +y, ISO 8855)
 constexpr int kPatchPoints = kPatchRows * kPatchCols;
+constexpr int kCarcassNodes = 24; // circumferential flexible-ring carcass belt nodes (every 15 deg around the tyre)
+
+// Real-time 24-node circumferential deformable flexible-ring carcass (Gipser FTire / Gong / Pacejka Ch. 9 elastic ring
+// on pressurized viscoelastic sidewall foundation). Each node rotates with the wheel material so flat spots, local belt
+// flattening, kerb enveloping, rim-flange bottoming, lateral sidewall rollover, centrifugal growth, high-speed standing
+// waves, and viscoelastic flexing hysteresis emerge directly from belt mechanics.
+struct CarcassRing {
+    std::array<double, kCarcassNodes> u_r{};         // radial inward belt deflection relative to inflated free radius (m)
+    std::array<double, kCarcassNodes> v_r{};         // radial belt velocity (m/s)
+    std::array<double, kCarcassNodes> u_y{};         // lateral belt deflection relative to rim (+ = ISO left, m)
+    std::array<double, kCarcassNodes> v_y{};         // lateral belt velocity (m/s)
+    std::array<double, kCarcassNodes> u_t{};         // tangential circumferential belt deflection relative to rim (m)
+    std::array<double, kCarcassNodes> v_t{};         // tangential belt velocity (m/s)
+    std::array<double, kCarcassNodes> flat_spot_m{}; // per-node local tread flat-spot depth ground into belt (0..0.003 m)
+
+    double hysteresis_power_w = 0.0;      // viscoelastic carcass flexing heat dissipation (lateral/tangential/kerb/wave, W)
+    double contact_lateral_m = 0.0;       // load-weighted mean lateral belt deflection inside the contact patch (m)
+    double contact_radial_max_m = 0.0;    // peak radial belt compression inside the contact patch (m)
+    double flat_spot_load_delta_n = 0.0;  // instantaneous once-per-rev vertical load modulation from flat-spotted nodes (N)
+    double rim_strike_force_n = 0.0;      // progressive rim-flange / folded-sidewall pinch impact force on kerbs (N)
+    double rim_impact_severity = 0.0;     // 0..1 instantaneous rim-strike severity
+    double deformed_patch_length_m = 0.0; // emergent chord length of contacting flexible-ring belt nodes (m)
+    double standing_wave_amp_m = 0.0;     // high-speed trailing-edge belt wave amplitude (m)
+    int contact_nodes = 0;                // count of circumferential belt nodes currently loaded in the footprint
+    bool initialized = false;
+};
 
 // Per-cell road profile over the 4x4 contact patch (row-major: idx = row * 4 + col).
 // row 0..3 = trailing (-0.75a) .. leading (+0.75a); col 0..3 = right (-0.75b) .. left (+0.75b) in ISO tyre frame.
@@ -102,12 +128,22 @@ struct TireCondition {
     double track_surface_c = 30.0;// Asphalt road surface temperature (C) for conductive contact-patch heat transfer
     std::array<double, 3> rib_contact_shares{1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0}; // 16-point 3D geometric load shares (Inner, Middle, Outer)
 
-    // MF-Swift-style MF-Swift Rigid-Ring Belt Dynamics (40-90 Hz steel-belt carcass ring vibration relative to rim)
-    double belt_torsion_rad = 0.0;      // in-plane torsional deflection of tread belt ring vs wheel rim (rad)
-    double belt_torsion_vel_rads = 0.0; // in-plane torsional angular velocity of belt ring vs rim (rad/s)
-    double belt_lateral_m = 0.0;        // out-of-plane lateral sidewall deflection of belt ring vs rim (m)
-    double belt_lateral_vel_mps = 0.0;  // out-of-plane lateral velocity of belt ring vs rim (m/s)
-    double enveloping_slope_tan = 0.0;  // MF-Swift 3D tandem-cam obstacle enveloping slope tan(beta_env)
+    // Deformable 24-node flexible-ring carcass belt & sidewall/rim/bead state
+    CarcassRing carcass{};
+    double belt_torsion_rad = 0.0;        // in-plane torsional deflection of tread belt ring vs wheel rim (rad)
+    double belt_torsion_vel_rads = 0.0;   // in-plane torsional angular velocity of belt ring vs rim (rad/s)
+    double belt_lateral_m = 0.0;          // out-of-plane lateral sidewall deflection of belt ring vs rim (m)
+    double belt_lateral_vel_mps = 0.0;    // out-of-plane lateral velocity of belt ring vs rim (m/s)
+    double enveloping_slope_tan = 0.0;    // MF-Swift 3D tandem-cam obstacle enveloping slope tan(beta_env)
+    double sidewall_rollover = 0.0;       // 0..1 normalized sidewall tuck-under / shoulder rollover index
+    double sidewall_rollover_rad = 0.0;   // lateral belt rollover angle atan2(u_y_contact, H_sw) (rad)
+    double sidewall_damage = 0.0;         // 0..1 structural sidewall / bead damage from violent kerb/rim pinch strikes
+    double air_mass_ratio = 1.0;          // 1.0 = sealed cavity gas; drops toward 0 on sidewall cut / bead unseat puncture
+    double puncture_leak_rate = 0.0;      // 1/s fractional cavity gas leak rate from sidewall cut / bead unseat
+    double flat_spot_load_delta_n = 0.0;  // N, instantaneous once-per-rev vertical load ripple from flat-spotted belt
+    double rim_strike_force_n = 0.0;      // N, instantaneous rim-flange bottoming force on sharp kerb/pothole strikes
+    double carcass_hysteresis_w = 0.0;    // W, viscoelastic flexing power from deformable carcass ring into bulk Node 2
+    double brake_disc_temp_c = 30.0;      // C, adjacent brake rotor temperature for rim -> cavity air radiant heat soak
 
     // Internal change trackers (allows legacy tests that teleport temperature_c directly to stay consistent
     // while keeping continuous 3-node ODE integration pure during simulation).
@@ -116,9 +152,26 @@ struct TireCondition {
 
     double carcass_c() const { return temperature_c; }
     void set_environment_celsius(double air_c, double track_c) { ambient_air_c = air_c; track_surface_c = track_c; }
-    /** Ideal gas law gauge pressure (kPa) from inner_air_c: P_abs = P_cold_abs * (T_air_K / 293.15). */
+    /** Ideal gas law gauge pressure (kPa) from inner_air_c and air_mass_ratio (puncture deflation). */
     double ideal_gas_pressure_kpa(const TireParams* p = nullptr) const;
+    /** Step the 24-node deformable flexible-ring carcass belt, kerb rim-bottoming, sidewall rollover & flat-spot load ripple. */
+    void step_carcass_ring(double fx_n, double fy_n, double fz_n, double wheel_omega_rads, double wheel_angle_rad,
+                           double radius_m, double dt, const TireParams* p = nullptr,
+                           const ContactPatchProfile* patch = nullptr);
+    /** Legacy 2-DOF belt step entry point (advances the flexible-ring carcass and updates belt_torsion_rad / belt_lateral_m). */
     void step_rigid_ring_belt(double fx_n, double fy_n, double radius_m, double dt, const TireParams* p = nullptr);
+    /** Sidewall section height H_sw = section_width * aspect_ratio (m). */
+    double sidewall_height_m(const TireParams* p = nullptr) const;
+    /** Geometric radial tread depression (m) at the contact patch from flat-spotted belt nodes at wheel_angle_rad. */
+    double flat_spot_radial_drop_m(double wheel_angle_rad, double radius_m) const;
+    /** Instantaneous contact-patch grip multiplier as a glazed flat spot rotates through the footprint (0.85..1.0). */
+    double flat_spot_grip_factor(double wheel_angle_rad) const;
+    /** Lateral grip multiplier from sidewall tuck-under rollover and deflation (0.45..1.0). */
+    double sidewall_rollover_grip_factor() const;
+    /** Effective adverse camber shift (rad) caused by lateral sidewall rollover onto the un-treaded shoulder. */
+    double sidewall_rollover_camber_rad() const;
+    /** Repair structural tyre damage, punctures, flat spots, wear, blistering, graining and belt deformations. */
+    void repair_structural(const TireParams* p = nullptr);
     /** MF-Swift-style T&V (Temperature & Velocity) shear-modulus stiffness factor for K_xk and K_ya. */
     double thermal_stiffness_factor(const TireParams* p = nullptr) const;
     /** MF-Swift-style Broadband Transient Tire-Road NVH & Toroidal Cavity Resonance Acoustic Source. */

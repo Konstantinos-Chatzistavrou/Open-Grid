@@ -12,14 +12,23 @@ namespace rs {
 //   road        summer UHP street tyre: full grip from ~10 C (makers: summer compounds harden below ~7 C) to ~90 C
 //   semi_slick  road-legal track tyre (Cup 2 / Trofeo R class): needs some heat, ~50-100 C
 //   slick       racing slick: a ~30 C wide window (Pirelli: "a working range of about 30 degrees"), 75-105 C
-// Wear rates: ~0.15 MJ/km of friction work on the most-loaded tyre at race pace (measured, AI laps), for ~1000 /
-// 600 / 350 km of track driving to a worn-out tread (slick: GT3 sets are built for double stints; Spa 24 h allows
-// 30 dry sets for a weekend of several thousand km).
+// Wear rates: calibrated so road tyres last ~1000 km of hard track driving, semi-slicks ~450 km, and GT3 slicks
+// wear ~60-85% over a ~155 km (40-lap Brands Hatch GP / 1-hour GT3) stint with a late-stint wear cliff past 70%
+// as the soft outer rubber wears down toward the hard base ply.
 void apply_compound(TireParams& t, const std::string& c, const std::string& ctx) {
-    if (c == "road") { t.temp_optimal_c = 50; t.temp_window_c = 40; t.start_c = 45; t.wear_per_mj = 1.0 / 150.0; }
-    else if (c == "semi_slick") { t.temp_optimal_c = 75; t.temp_window_c = 25; t.start_c = 70; t.wear_per_mj = 1.0 / 90.0; }
-    else if (c == "slick") { t.temp_optimal_c = 90; t.temp_window_c = 15; t.start_c = 85; t.wear_per_mj = 1.0 / 52.5; }
-    else throw std::runtime_error("car config: '" + ctx + ".compound' must be road, semi_slick or slick (got '" + c + "')");
+    if (c == "road") {
+        t.temp_optimal_c = 50; t.temp_window_c = 40; t.start_c = 45;
+        t.wear_per_mj = 1.0 / 150.0; t.wear_grip_loss = 0.15; t.wear_cliff_loss = 0.02;
+        t.hysteresis_loss_factor = 0.65; t.tread_cooling_scale = 1.00;
+    } else if (c == "semi_slick") {
+        t.temp_optimal_c = 75; t.temp_window_c = 25; t.start_c = 70;
+        t.wear_per_mj = 1.0 / 80.0; t.wear_grip_loss = 0.17; t.wear_cliff_loss = 0.08;
+        t.hysteresis_loss_factor = 0.70; t.tread_cooling_scale = 1.00;
+    } else if (c == "slick") {
+        t.temp_optimal_c = 90; t.temp_window_c = 15; t.start_c = 85;
+        t.wear_per_mj = 1.0 / 22.0; t.wear_grip_loss = 0.18; t.wear_cliff_loss = 0.14;
+        t.hysteresis_loss_factor = 1.65; t.tread_cooling_scale = 0.94;
+    } else throw std::runtime_error("car config: '" + ctx + ".compound' must be road, semi_slick or slick (got '" + c + "')");
 }
 
 using nlohmann::json;
@@ -115,6 +124,10 @@ TireParams parse_tire(const json& j, const std::string& ctx) {
     t.temp_window_c = num_or(j, "temp_window_c", t.temp_window_c);
     t.start_c = num_or(j, "start_temp_c", t.start_c);
     t.wear_per_mj = num_or(j, "wear_per_mj", t.wear_per_mj);
+    t.wear_grip_loss = num_or(j, "wear_grip_loss", t.wear_grip_loss);
+    t.wear_cliff_loss = num_or(j, "wear_cliff_loss", t.wear_cliff_loss);
+    t.hysteresis_loss_factor = num_or(j, "hysteresis_loss_factor", t.hysteresis_loss_factor);
+    t.tread_cooling_scale = num_or(j, "tread_cooling_scale", t.tread_cooling_scale);
     const json& lo = j.at("longitudinal");
     t.cx = num(lo, "C", ctx + ".longitudinal");
     t.mu_x = num(lo, "mu", ctx + ".longitudinal");

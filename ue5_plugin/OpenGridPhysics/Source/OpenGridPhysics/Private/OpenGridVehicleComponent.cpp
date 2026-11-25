@@ -691,6 +691,10 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
         Dst.FlashTempC = WS.flash_temp_c;
         Dst.FlatSpotDepthMm = WS.flat_spot_depth_mm;
         Dst.CavityRingGain = WS.cavity_ring_gain;
+        Dst.SidewallRollover = WS.sidewall_rollover;
+        Dst.SidewallDamage = WS.sidewall_damage;
+        Dst.RimStrikeForceN = WS.rim_strike_force_n;
+        Dst.CarcassHysteresisW = WS.carcass_hysteresis_w;
 
         WheelCentresWorld[w] = Dst.WorldCenterCm;
         WheelSteerRad[w] = Dst.SteerAngleRad;

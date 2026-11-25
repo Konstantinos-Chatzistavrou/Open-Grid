@@ -418,6 +418,10 @@ struct UeWheelState {
     float flash_temp_c = 80.0f;
     float flat_spot_depth_mm = 0.0f;
     float cavity_ring_gain = 0.0f;
+    float sidewall_rollover = 0.0f;
+    float sidewall_damage = 0.0f;
+    float rim_strike_force_n = 0.0f;
+    float carcass_hysteresis_w = 0.0f;
 };
 
 struct UeCrushMorphWeights {
@@ -499,6 +503,10 @@ inline UeWheelState make_ue_wheel_state(const WheelOutput& w, double tire_radius
     const TireAcousticSource ac = w.condition.compute_acoustics(
         w.angular_velocity, tire_radius_m, std::abs(w.unsprung_vel_mps));
     st.cavity_ring_gain = static_cast<float>(ac.cavity_ring_gain);
+    st.sidewall_rollover = static_cast<float>(w.sidewall_rollover);
+    st.sidewall_damage = static_cast<float>(w.sidewall_damage);
+    st.rim_strike_force_n = static_cast<float>(w.rim_strike_force_n);
+    st.carcass_hysteresis_w = static_cast<float>(w.carcass_hysteresis_w);
     return st;
 }
 

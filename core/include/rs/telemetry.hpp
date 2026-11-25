@@ -75,6 +75,10 @@ struct TelemetrySample {
     std::array<double, 4> wheel_load_n{};
     std::array<double, 4> wheel_kerb_load_ratio{};
     std::array<double, 4> wheel_surface_excitation{};
+    std::array<double, 4> sidewall_rollover{};
+    std::array<double, 4> sidewall_damage{};
+    std::array<double, 4> rim_strike_force_n{};
+    std::array<double, 4> carcass_hysteresis_w{};
     double boost_bar = 0.0;
     double intake_air_temp_c = 28.0;
     double oil_temp_c = 85.0;

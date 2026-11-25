@@ -111,6 +111,10 @@ struct WheelOutput {
     double motion_ratio = 1.0;       // wheel-to-shock kinematic motion ratio
     double kerb_load_ratio = 0.0;    // 0..1 share of vertical load on raised kerb cells from the 4x4 contact patch
     double surface_excitation = 0.0; // 0..1 high-frequency road/kerb/rumble vertical velocity excitation
+    double sidewall_rollover = 0.0;  // 0..1 lateral sidewall tuck-under / rollover index
+    double sidewall_damage = 0.0;    // 0..1 structural sidewall/bead damage from kerb rim strikes
+    double rim_strike_force_n = 0.0; // N, rim-flange bottoming force during sharp kerb/pothole impacts
+    double carcass_hysteresis_w = 0.0; // W, viscoelastic flexing power dissipated in the 24-node flexible carcass ring
 };
 
 // Chassis torsional stiffness (frame twist between front & rear strut towers), Active Torque-Vectoring E-Diff (AYC),
