@@ -175,6 +175,12 @@ void UOpenGridVehicleComponent::ApplyFeatureFlags()
     Vehicle_->chassis_dynamics().progressive_bump_stops_enabled = true;
     Vehicle_->engine_systems().torsional_compliance_enabled = true;
     Vehicle_->engine_systems().dog_box_flat_shift_cut = true;
+    // A car whose file does not name its gearbox gets the manual synchromesh box, exactly as in the browser build (web/wasm/bridge.cpp
+    // rs_create). The core's own default is the sequential dog-box, so without this the two builds shifted differently.
+    if (Config_.drivetrain.transmission.empty())
+    {
+        Vehicle_->engine_systems().transmission = rs::TransmissionType::HPatternSynchro;
+    }
     Vehicle_->atmosphere().enabled = true;
     Vehicle_->engine_systems().wear_enabled = true;               // redline / overheating abuse -> misfires
     Vehicle_->engine_systems().fuel_consumption_enabled = true;   // empty tank cuts the throttle; RepairAndService refuels
