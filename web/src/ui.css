@@ -483,6 +483,7 @@ body.photomode #hud, body.photomode #mirror, body.replaymode #hud, body.replaymo
 #nos-bar.hot { border-right-color: #ff2d55; color: #ff8095; }
 #minimap.expanded {
   position: fixed !important; left: 50% !important; top: 50% !important; bottom: auto !important;
+  height: auto !important;
   transform: translate(-50%, -50%) !important;
   z-index: 36 !important;
 }
@@ -1038,8 +1039,8 @@ body.touch #zone-hud {
   #touch .pad.hb { width: 54px; height: 54px; }
   #touch .pedals { gap: 6px; }
 }
-@media (max-height: 420px) {
-  body.touch #minimap { width: 144px; height: 144px; top: auto; bottom: calc(58px + env(safe-area-inset-bottom)); }
+@media (max-height: 440px) {
+  body.touch #minimap:not(.expanded) { width: 184px; height: auto; top: auto; bottom: calc(54px + env(safe-area-inset-bottom)); }
 }
 
 /* ---- CS2-Inspired Live Supply & Demand Auction House + Direct Garage Upgrades ---- */

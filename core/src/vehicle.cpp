@@ -947,9 +947,13 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
 
         const auto& ratios = cfg_.drivetrain.gear_ratios;
         if (input_.gear >= 0 && input_.gear < (int)ratios.size() && ratios[input_.gear] != 0.0) {
-            double engage = clamp((drivetrain_.engine_rpm() - (cfg_.engine.idle_rpm + 250.0)) / 1500.0, 0.0, 1.0);
-            double launch_clutch = lerp(std::min(0.95, cfg_.drivetrain.clutch.bite_point + 0.08), 0.0, engage);
-            din.clutch = std::max(din.clutch, launch_clutch);
+            const bool low_gear_or_slow = (input_.gear <= 2) || (std::abs(out.speed) < 8.0)
+                                       || (drivetrain_.engine_rpm() < cfg_.engine.idle_rpm + 450.0);
+            if (low_gear_or_slow) {
+                double engage = clamp((drivetrain_.engine_rpm() - (cfg_.engine.idle_rpm + 250.0)) / 1500.0, 0.0, 1.0);
+                double launch_clutch = lerp(std::min(0.95, cfg_.drivetrain.clutch.bite_point + 0.08), 0.0, engage);
+                din.clutch = std::max(din.clutch, launch_clutch);
+            }
         }
     }
     last_gear_ = input_.gear;

@@ -31,7 +31,18 @@ export interface NavTheme {
   buttonIcon: string;
   poi: string;
   water: string;
+  waterEdge: string;
   green: string;
+  greenEdge: string;
+  laneDash: string;
+  bldgShadow: string;
+  bldgFlat: string;
+  shieldBg: string;
+  shieldBorder: string;
+  shieldText: string;
+  puckDisc: string;
+  roadPill: string;
+  roadPillBorder: string;
   trafficOrange: string;
   trafficRed: string;
   trafficOrangeCasing: string;
@@ -40,32 +51,43 @@ export interface NavTheme {
 
 export const NIGHT: NavTheme = {
   night: true,
-  land: '#1a232e',
-  landFar: '#141b24',
-  road: ['#3d4959', '#485669', '#5a6a82', '#a08c5a'],
-  casing: ['#11171f', '#11171f', '#10161e', '#4f4328'],
-  roof: '#324053',
-  roofEdge: '#ffffff12',
-  wallLit: '#28343f',
-  wallDark: '#202a36',
-  label: '#aeb8c6',
-  labelHalo: '#1d2733',
-  route: '#4d94ff',
-  routeCasing: '#173a78',
-  puck: '#4d94ff',
-  haze: '#141b24',
+  land: '#18212b',
+  landFar: '#121922',
+  road: ['#2f3b4a', '#3b4a5e', '#4d6078', '#b09155'],
+  casing: ['#0d131a', '#0d131a', '#0b1017', '#4c3e20'],
+  roof: '#2d3b4e',
+  roofEdge: '#ffffff1c',
+  wallLit: '#243140',
+  wallDark: '#1b2532',
+  label: '#c6d0dd',
+  labelHalo: '#141c26',
+  route: '#4b93ff',
+  routeCasing: '#153a7a',
+  puck: '#4285f4',
+  haze: '#121922',
   card: '#1f2328',
   cardText: '#f1f3f4',
   cardSub: '#aab0b8',
   cardLine: '#ffffff1f',
-  maneuver: '#0b7a45',
-  maneuverDark: '#085f35',
+  maneuver: '#0b7b44',
+  maneuverDark: '#075c32',
   eta: '#5bd486',
-  button: '#2a2f36',
+  button: '#282d35',
   buttonIcon: '#e8eaed',
-  poi: '#7ea1ff',
-  water: '#123552',
-  green: '#1d3d32',
+  poi: '#6ea8fe',
+  water: '#123452',
+  waterEdge: '#204d73',
+  green: '#18382d',
+  greenEdge: '#224a3c',
+  laneDash: '#ffffff24',
+  bldgShadow: 'rgba(6, 10, 16, 0.42)',
+  bldgFlat: '#24303e',
+  shieldBg: '#184734',
+  shieldBorder: '#7ad8a4',
+  shieldText: '#eefbf3',
+  puckDisc: '#ffffff',
+  roadPill: '#20262ee8',
+  roadPillBorder: '#ffffff26',
   trafficOrange: '#f9ab00',
   trafficRed: '#ea4335',
   trafficOrangeCasing: '#7a4d00',
@@ -74,20 +96,20 @@ export const NIGHT: NavTheme = {
 
 export const DAY: NavTheme = {
   night: false,
-  land: '#eceae4',
-  landFar: '#e2e0da',
-  road: ['#ffffff', '#ffffff', '#ffffff', '#fdd479'],
-  casing: ['#cfd2d6', '#c6cacf', '#b9bec4', '#e0a93a'],
-  roof: '#f6f4f0',
-  roofEdge: '#00000014',
-  wallLit: '#e0ddd6',
-  wallDark: '#cfccc4',
-  label: '#4d535a',
+  land: '#f1f3f4',
+  landFar: '#e4e7ea',
+  road: ['#ffffff', '#ffffff', '#ffffff', '#ffda75'],
+  casing: ['#dadce0', '#cfd3d8', '#bdc1c6', '#e0a21e'],
+  roof: '#f6f7f8',
+  roofEdge: '#00000018',
+  wallLit: '#e2e5e9',
+  wallDark: '#cfd4da',
+  label: '#3c4043',
   labelHalo: '#ffffff',
   route: '#4285f4',
   routeCasing: '#1a56c2',
   puck: '#4285f4',
-  haze: '#e2e0da',
+  haze: '#e4e7ea',
   card: '#ffffff',
   cardText: '#202124',
   cardSub: '#5f6368',
@@ -98,8 +120,19 @@ export const DAY: NavTheme = {
   button: '#ffffff',
   buttonIcon: '#3c4043',
   poi: '#4285f4',
-  water: '#a9d3f5',
-  green: '#cfe8cb',
+  water: '#aadaff',
+  waterEdge: '#89c4f4',
+  green: '#ceead6',
+  greenEdge: '#a8dab5',
+  laneDash: '#b0b8c288',
+  bldgShadow: 'rgba(32, 42, 54, 0.16)',
+  bldgFlat: '#e6e8ec',
+  shieldBg: '#137333',
+  shieldBorder: '#ffffff',
+  shieldText: '#ffffff',
+  puckDisc: '#ffffff',
+  roadPill: '#ffffffeb',
+  roadPillBorder: '#dadce0',
   trafficOrange: '#f29900',
   trafficRed: '#d93025',
   trafficOrangeCasing: '#b06a00',
@@ -267,4 +300,59 @@ export function speedBubbles(c: CanvasRenderingContext2D, x: number, y: number, 
   c.fillStyle = over ? '#ffd9d5' : t.cardSub;
   c.font = `500 9.5px ${font}`;
   c.fillText('km/h', x, y + 15);
+}
+
+/** 3-lane guidance pill under the emerald maneuver card when approaching a turn (Google Maps lane assistant). */
+export function drawLaneGuidance(c: CanvasRenderingContext2D, x: number, y: number, w: number, kind: ManeuverKind, dir: -1 | 1, t: NavTheme) {
+  const h = 34;
+  c.save();
+  c.fillStyle = t.maneuverDark;
+  roundRect(c, x, y - 6, w, h + 6, 12);
+  c.fill();
+  c.fillStyle = t.maneuver;
+  c.fillRect(x, y - 6, w, 9);
+  const cx = x + w * 0.5;
+  const cy = y + h * 0.5 + 1;
+  const activeLane = kind === 'straight' ? 1 : (dir < 0 ? 0 : 2);
+  for (let lane = 0; lane < 3; lane++) {
+    const lx = cx + (lane - 1) * 34;
+    const isAct = lane === activeLane;
+    const lk: ManeuverKind = isAct ? kind : 'straight';
+    const ld: -1 | 1 = isAct ? dir : 1;
+    c.save();
+    c.translate(lx, cy);
+    drawManeuver(c, lk, ld, 21, isAct ? '#ffffff' : 'rgba(255,255,255,0.34)');
+    c.restore();
+    if (lane < 2) {
+      c.strokeStyle = 'rgba(255,255,255,0.22)';
+      c.lineWidth = 1;
+      c.setLineDash([3, 3]);
+      c.beginPath();
+      c.moveTo(lx + 17, y + 6);
+      c.lineTo(lx + 17, y + h - 4);
+      c.stroke();
+      c.setLineDash([]);
+    }
+  }
+  c.restore();
+}
+
+/** Crisp highway route shield pill (e.g. "I-495", "FDR", "A1", "M25") like Google Maps navigation. */
+export function drawHighwayShield(c: CanvasRenderingContext2D, x: number, y: number, text: string, t: NavTheme, font: string) {
+  c.save();
+  c.font = `700 10px ${font}`;
+  const tw = c.measureText(text).width;
+  const pw = Math.max(26, tw + 11);
+  const ph = 16;
+  roundRect(c, x - pw / 2, y - ph / 2, pw, ph, 4);
+  c.fillStyle = t.shieldBg;
+  c.fill();
+  c.strokeStyle = t.shieldBorder;
+  c.lineWidth = 1.25;
+  c.stroke();
+  c.fillStyle = t.shieldText;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  c.fillText(text, x, y + 0.5);
+  c.restore();
 }

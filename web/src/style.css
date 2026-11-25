@@ -508,36 +508,34 @@ body.touch.spectating #board { top: calc(54px + env(safe-area-inset-top)); }
 #menu .big-lv { font-size: 22px; text-align: center; margin: 4px 0; }
 
 /* ---- GPS: a rectangular car navigation screen (the picture is drawn by minimap.ts; this is the device around it) ------ */
-#minimap { position: absolute; left: 16px; bottom: 46px; width: 432px; padding: 10px 10px 0; box-sizing: border-box; pointer-events: none;
-  border-radius: 20px 20px 16px 16px; overflow: hidden;
-  /* piano-black bezel with a brushed-metal edge */
+#minimap { --gps-bezel: 6px; --gps-chin: 14px; --gps-radius: 14px;
+  position: absolute; left: 16px; bottom: 46px; width: 420px; height: auto;
+  padding: var(--gps-bezel) var(--gps-bezel) 0; box-sizing: border-box; pointer-events: none;
+  border-radius: var(--gps-radius); overflow: hidden;
+  /* piano-black bezel with a slim brushed-metal edge (uniform thickness across desktop & mobile) */
   background: linear-gradient(152deg, #3a3f49 0%, #14171c 18%, #0a0c10 48%, #1b1f26 76%, #0a0c0f 100%);
-  box-shadow: inset 0 0 0 1px #6f7787, inset 0 1px 0 #ffffff40, inset 0 -1px 0 #000, 0 0 0 1px #000, 0 2px 0 #20252c, 0 24px 48px #000d; }
-#minimap canvas { display: block; width: 100%; aspect-ratio: 16 / 10; height: auto; border-radius: 9px; pointer-events: auto; cursor: pointer;
-  background: #000; box-shadow: 0 0 0 1px #000, 0 0 0 2px #1e2229, inset 0 0 36px #000a; }
+  box-shadow: inset 0 0 0 1px #6f7787, inset 0 1px 0 #ffffff40, inset 0 -1px 0 #000, 0 0 0 1px #000, 0 2px 0 #20252c, 0 20px 42px #000c; }
+#minimap canvas { display: block; width: 100%; aspect-ratio: 16 / 10; height: auto; border-radius: calc(var(--gps-radius) - var(--gps-bezel)); pointer-events: auto; cursor: pointer;
+  background: #000; box-shadow: 0 0 0 1px #000, 0 0 0 2px #1e2229, inset 0 0 32px #000a; }
 /* glass: a sheen across the screen, brighter at the top-left like the windscreen reflected in it */
-#minimap::after { content: ''; position: absolute; left: 10px; right: 10px; top: 10px; aspect-ratio: 16 / 10; border-radius: 9px; pointer-events: none;
-  background: radial-gradient(130% 70% at 18% -4%, #ffffff24 0%, #ffffff0a 38%, transparent 62%),
-              linear-gradient(116deg, transparent 36%, #ffffff12 43%, #ffffff05 52%, transparent 58%);
+#minimap::after { content: ''; position: absolute; left: var(--gps-bezel); right: var(--gps-bezel); top: var(--gps-bezel); aspect-ratio: 16 / 10; border-radius: calc(var(--gps-radius) - var(--gps-bezel)); pointer-events: none;
+  background: radial-gradient(130% 70% at 18% -4%, #ffffff20 0%, #ffffff08 38%, transparent 62%),
+              linear-gradient(116deg, transparent 36%, #ffffff10 43%, #ffffff04 52%, transparent 58%);
   mix-blend-mode: screen; }
-/* the chin under the glass: three soft keys and a standby light */
-#minimap .gps-chin { position: relative; height: 22px; display: flex; align-items: center; justify-content: center; gap: 16px; pointer-events: none; }
-#minimap .gps-chin i { width: 28px; height: 5px; border-radius: 3px; background: linear-gradient(#2c313a, #0b0d11);
-  box-shadow: inset 0 1px 0 #ffffff26, 0 1px 0 #000; }
-#minimap .gps-chin b { position: absolute; right: 8px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: #2fd36b; box-shadow: 0 0 6px #2fd36b; }
-/* expanded: the whole screen, wide, with the map flat and north-up */
-#minimap.expanded { left: 50%; top: 50%; bottom: auto; width: min(960px, 94vw, calc((100vh - 90px) * 1.6 + 20px)); transform: translate(-50%, -50%); pointer-events: auto; }
-body.touch #minimap { left: calc(10px + env(safe-area-inset-left)); top: auto; bottom: calc(58px + env(safe-area-inset-bottom)); width: 232px; padding: 5px 5px 0; border-radius: 12px; }
-body.touch #minimap::after { left: 5px; right: 5px; top: 5px; border-radius: 7px; }
-body.touch #minimap canvas { border-radius: 7px; }
-body.touch #minimap .gps-chin { height: 10px; }
+/* the chin under the glass: slim uniform hardware bar with three soft keys and a standby light */
+#minimap .gps-chin { position: relative; height: var(--gps-chin); display: flex; align-items: center; justify-content: center; gap: 12px; pointer-events: none; }
+#minimap .gps-chin i { width: 20px; height: 3px; border-radius: 2px; background: linear-gradient(#2c313a, #0b0d11);
+  box-shadow: inset 0 1px 0 #ffffff24, 0 1px 0 #000; }
+#minimap .gps-chin b { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 4px; height: 4px; border-radius: 50%; background: #2fd36b; box-shadow: 0 0 5px #2fd36b; }
+/* expanded: wide north-up overview keeping the exact same slim bezel thickness */
+#minimap.expanded { left: 50%; top: 50%; bottom: auto; height: auto; width: min(960px, 94vw, calc((100vh - 90px) * 1.6 + 12px)); transform: translate(-50%, -50%); pointer-events: auto; }
+body.touch #minimap { --gps-bezel: 6px; --gps-chin: 12px; --gps-radius: 13px;
+  left: calc(10px + env(safe-area-inset-left)); top: auto; bottom: calc(58px + env(safe-area-inset-bottom)); width: 220px; height: auto; }
 body.touch #minimap .gps-chin i { width: 16px; height: 3px; }
-body.touch #minimap .gps-chin b { top: 3px; width: 3px; height: 3px; }
-body.touch #minimap.expanded { width: 94vw; }
+body.touch #minimap .gps-chin b { width: 3.5px; height: 3.5px; }
+body.touch #minimap.expanded { width: min(94vw, calc((100vh - 54px) * 1.6 + 12px)); height: auto; }
 @media (max-width: 640px), (max-height: 700px) {
-  #minimap:not(.expanded) { width: 300px; padding: 7px 7px 0; border-radius: 14px; }
-  #minimap:not(.expanded)::after { left: 7px; right: 7px; top: 7px; }
-  #minimap:not(.expanded) .gps-chin { height: 14px; }
+  #minimap:not(.expanded) { width: 260px; height: auto; }
 }
 
 /* ---- username and friends (identity.ts, menu.ts profile) ---------------------------------------------------------- */

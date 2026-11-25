@@ -8,7 +8,8 @@
 // Frames: road graph and route = game frame (x east, y north); three.js = (x, y up, z = -y_game).
 import { NavBuildings } from './navBuildings';
 import {
-  DAY, NIGHT, type NavTheme, card, classifyTurn, compassButton, drawManeuver, roundButton, roundRect, speedBubbles, type ManeuverKind,
+  DAY, NIGHT, type NavTheme, card, classifyTurn, compassButton, drawHighwayShield, drawLaneGuidance, drawManeuver,
+  roundButton, roundRect, speedBubbles, type ManeuverKind,
 } from './navUi';
 
 /** cls: 0 local, 1 collector (secondary / tertiary), 2 arterial (primary), 3 highway (trunk / motorway) */
@@ -60,6 +61,12 @@ export class Minimap {
   readonly buildings = new NavBuildings();
   /** camera height above the road (m), eased with speed and with the next turn */
   private camH = 64;
+  /** smoothed camera forward unit vector so kerb hits don't jitter the 3D map */
+  private camHx = 1;
+  private camHy = 0;
+  private hasCamH = false;
+  /** Low-power mobile mode: caps 3D building count & shadow work while preserving crisp Google Maps styling. */
+  lowPower = false;
   private lastCar = { x: 0, z: 0 };
   private sizeCache = 0;
   /** road segments of one tier by stroke width: one path + one stroke per width */
@@ -404,10 +411,17 @@ export class Minimap {
 
     // ---- camera: higher (looking further) with speed; a little closer when a turn is coming up
     this.flat = this.expanded;
-    let target = clamp(60 + speed * 1.35, 60, 160);
+    let target = clamp(58 + speed * 1.35, 58, 160);
     if (next && dist < 260) target *= 0.78 + 0.22 * clamp((dist - 40) / 220, 0, 1);
     this.camH += (target - this.camH) * 0.12;
-    this.vx = cx; this.vy = cy; this.vhx = hx; this.vhy = hy;
+    if (!this.hasCamH) { this.camHx = hx; this.camHy = hy; this.hasCamH = true; }
+    else {
+      this.camHx += (hx - this.camHx) * 0.26;
+      this.camHy += (hy - this.camHy) * 0.26;
+      const cl = Math.hypot(this.camHx, this.camHy) || 1;
+      this.camHx /= cl; this.camHy /= cl;
+    }
+    this.vx = cx; this.vy = cy; this.vhx = this.camHx; this.vhy = this.camHy;
     this.vH = this.camH; this.vD = this.camH * BACK;
     this.flatK = 1 / 3.8;
 
@@ -416,17 +430,18 @@ export class Minimap {
     c.save();
     c.beginPath(); c.rect(0, 0, NAV_W, NAV_H); c.clip();
     c.fillStyle = T.land; c.fillRect(0, 0, NAV_W, NAV_H);
-    this.drawAreas(c, T, cx, cy, hx, hy);
-    this.drawRoads(c, T, cx, cy, hx, hy);
-    if (!this.flat && this.camH < 135) this.drawBuildings(c, T, cx, cy, hx, hy);
-    this.drawLabels(c, T, cx, cy, hx, hy);
-    this.drawRoute(c, T, routeS);
+    this.drawAreas(c, T, cx, cy, this.camHx, this.camHy);
+    if (this.flat) this.drawFlatBuildings(c, T, cx, cy);
+    this.drawRoads(c, T, cx, cy, this.camHx, this.camHy);
+    if (!this.flat && this.camH < 138) this.drawBuildings(c, T, cx, cy, this.camHx, this.camHy);
+    this.drawRoute(c, T, routeS, next, dist);
+    this.drawLabels(c, T, cx, cy, this.camHx, this.camHy);
     this.drawMarkers(c, T, cx, cy, others);
-    // haze into the distance
+    // atmospheric sky/horizon haze into the distance (like Google Maps 3D tilt horizon)
     if (!this.flat) {
-      const g = c.createLinearGradient(0, 0, 0, NAV_H * 0.46);
-      g.addColorStop(0, T.haze); g.addColorStop(0.35, T.haze + 'cc'); g.addColorStop(1, T.haze + '00');
-      c.fillStyle = g; c.fillRect(0, 0, NAV_W, NAV_H * 0.46);
+      const g = c.createLinearGradient(0, 0, 0, NAV_H * 0.42);
+      g.addColorStop(0, T.haze); g.addColorStop(0.32, T.haze + 'd4'); g.addColorStop(1, T.haze + '00');
+      c.fillStyle = g; c.fillRect(0, 0, NAV_W, NAV_H * 0.42);
     }
     this.drawPuck(c, T, cx, cy, hx, hy);
     c.restore();
@@ -501,6 +516,21 @@ export class Minimap {
           c.stroke();
         }
       }
+      // Subtle Google Maps center lane divider on wide arterials & highways in 3D navigation view
+      if (!this.flat && tier >= 2) {
+        c.save();
+        c.strokeStyle = T.laneDash;
+        c.lineCap = 'butt';
+        c.setLineDash([7, 9]);
+        for (const [lw, b] of byWidth) {
+          if (lw < 7.5) continue;
+          c.beginPath();
+          for (let i = 0; i < b.length; i += 4) { c.moveTo(b[i], b[i + 1]); c.lineTo(b[i + 2], b[i + 3]); }
+          c.lineWidth = Math.min(1.6, lw * 0.11);
+          c.stroke();
+        }
+        c.restore();
+      }
       // traffic: a coloured stripe down the middle of the slow roads of this tier
       for (let k = 0; k < 2; k++) {
         const tb = this.trafficB[k];
@@ -530,8 +560,10 @@ export class Minimap {
       reach = ahead * 0.85; ccx = cx + hx * ahead * 0.45; ccy = cy + hy * ahead * 0.45;
     }
     for (let layer = 0; layer < 2; layer++) {
-      const list = layer ? this.green : this.water, fill = layer ? T.green : T.water;
-      c.fillStyle = fill;
+      const list = layer ? this.green : this.water;
+      c.fillStyle = layer ? T.green : T.water;
+      c.strokeStyle = layer ? T.greenEdge : T.waterEdge;
+      c.lineWidth = 1.25;
       for (const a of list) {
         const b = a.b;
         // the box against the view circle
@@ -540,8 +572,42 @@ export class Minimap {
         c.beginPath();
         for (const r of a.r) this.ringPath(c, r);
         c.fill('evenodd');
+        c.stroke();
       }
     }
+  }
+
+  /** Flat building footprints for the expanded north-up city map (Google Maps city-block texture). */
+  private drawFlatBuildings(c: CanvasRenderingContext2D, T: NavTheme, cx: number, cy: number) {
+    this.buildings.ensure(cx, cy, 480);
+    const maxR = (NAV_W / this.flatK) * 0.62;
+    const maxD = maxR * maxR;
+    c.save();
+    c.fillStyle = T.bldgFlat;
+    c.strokeStyle = T.roofEdge;
+    c.lineWidth = 0.7;
+    c.beginPath();
+    let drawn = 0;
+    const cap = this.lowPower ? 260 : 620;
+    this.buildings.forEachTile((t) => {
+      for (let i = 0; i < t.n && drawn < cap; i++) {
+        const o = i * 7;
+        const bx = t.d[o], by = t.d[o + 1];
+        const dx = bx - cx, dy = by - cy;
+        if (dx * dx + dy * dy > maxD) continue;
+        const ex = t.d[o + 2], ey = t.d[o + 3], co = t.d[o + 4], si = t.d[o + 5];
+        for (let k = 0; k < 4; k++) {
+          const lx = k === 0 || k === 3 ? ex : -ex, ly = k < 2 ? ey : -ey;
+          this.proj(bx + lx * co - ly * si, by + lx * si + ly * co, 0);
+          if (k === 0) c.moveTo(this.sx, this.sy); else c.lineTo(this.sx, this.sy);
+        }
+        c.closePath();
+        drawn++;
+      }
+    });
+    c.fill();
+    c.stroke();
+    c.restore();
   }
 
   /** Add one ring (flat x,y list) to the current path, in screen space. */
@@ -596,10 +662,32 @@ export class Minimap {
     order.length = cnt;
     for (let i = 0; i < cnt; i++) order[i] = i;
     order.sort((a, b) => itD[b] - itD[a]);
-    const n = Math.min(cnt, 420);
-    const hCap = this.vH * 0.12;
+    const n = Math.min(cnt, this.lowPower ? 180 : 380);
+    const hCap = this.vH * 0.13;
     const sxs = [0, 0, 0, 0], sys = [0, 0, 0, 0], txs = [0, 0, 0, 0], tys = [0, 0, 0, 0];
     const wx = [0, 0, 0, 0], wy = [0, 0, 0, 0];
+    const shx = [0, 0, 0, 0], shy = [0, 0, 0, 0];
+    // Cast directional ground shadows first in one clean pass (Google Maps 3D block depth)
+    if (!this.lowPower) {
+      c.fillStyle = T.bldgShadow;
+      c.beginPath();
+      for (let k = cnt - n; k < cnt; k++) {
+        const t = itT[order[k]], o = itO[order[k]];
+        const bx = t[o], by = t[o + 1], ex = t[o + 2], ey = t[o + 3], co = t[o + 4], si = t[o + 5];
+        const h = Math.min(t[o + 6] * 0.4, hCap, 22);
+        const sd = h * 0.45;
+        let ok = true;
+        for (let i = 0; i < 4; i++) {
+          const lx = i === 0 || i === 3 ? ex : -ex, ly = i < 2 ? ey : -ey;
+          this.proj(bx + lx * co - ly * si + sd, by + lx * si + ly * co - sd * 0.75, 0);
+          shx[i] = this.sx; shy[i] = this.sy;
+          if (Number.isNaN(this.sx + this.sy)) ok = false;
+        }
+        if (!ok) continue;
+        c.moveTo(shx[0], shy[0]); c.lineTo(shx[1], shy[1]); c.lineTo(shx[2], shy[2]); c.lineTo(shx[3], shy[3]); c.closePath();
+      }
+      c.fill();
+    }
     for (let k = cnt - n; k < cnt; k++) {
       const t = itT[order[k]], o = itO[order[k]];
       const bx = t[o], by = t[o + 1], ex = t[o + 2], ey = t[o + 3], co = t[o + 4], si = t[o + 5];
@@ -669,13 +757,19 @@ export class Minimap {
       if (clash) continue;
       boxes.push(x, y, w, h);
       seen.add(n.name);
-      c.strokeStyle = T.labelHalo; c.strokeText(n.name, x, y);
-      c.fillStyle = T.label; c.fillText(n.name, x, y);
+      // Numbered highways / expressways get an authentic Google Maps highway shield badge
+      const shieldMatch = n.cls >= 2 ? n.name.match(/\b(I-\d+|US[-\s]?\d+|NY[-\s]?\d+[A-Z]?|FDR|A\d{1,3}|M\d{1,2}|C1|BQE)\b/i) : null;
+      if (shieldMatch) {
+        drawHighwayShield(c, x, y, shieldMatch[1].toUpperCase(), T, FONT);
+      } else {
+        c.strokeStyle = T.labelHalo; c.strokeText(n.name, x, y);
+        c.fillStyle = T.label; c.fillText(n.name, x, y);
+      }
       drawn++;
     }
   }
 
-  private drawRoute(c: CanvasRenderingContext2D, T: NavTheme, routeS: number | null) {
+  private drawRoute(c: CanvasRenderingContext2D, T: NavTheme, routeS: number | null, nextTurn: Turn | null, nextDist: number) {
     if (this.route.length < 2) return;
     c.lineCap = 'round'; c.lineJoin = 'round';
     if (this.flat) {
@@ -709,10 +803,61 @@ export class Minimap {
         }
         // the guidance line turns orange / red where the road ahead is slow
         const m = Math.min(n, i + (run >> 1)), cg = this.trafficLevel > 0.3 || this.jams.length ? this.congestion(wxs[m], wys[m], 2) : 0;
-        if (pass === 0) { c.strokeStyle = cg > 0.75 ? T.trafficRedCasing : cg > 0.45 ? T.trafficOrangeCasing : T.routeCasing; c.lineWidth = w + 3.6; }
+        if (pass === 0) { c.strokeStyle = cg > 0.75 ? T.trafficRedCasing : cg > 0.45 ? T.trafficOrangeCasing : T.routeCasing; c.lineWidth = w + 3.8; }
         else { c.strokeStyle = cg > 0.75 ? T.trafficRed : cg > 0.45 ? T.trafficOrange : T.route; c.lineWidth = w; }
         c.stroke();
       }
+    }
+    // Google Maps white directional chevrons spaced along the active blue guidance ribbon
+    if (!this.flat) {
+      c.save();
+      c.strokeStyle = 'rgba(255,255,255,0.88)';
+      c.lineCap = 'round'; c.lineJoin = 'round';
+      for (let i = 5; i < Math.min(n - 2, 70); i += 10) {
+        const x0 = px[i], y0 = py[i], x1 = px[i + 1], y1 = py[i + 1];
+        if (Number.isNaN(x0 + y0 + x1 + y1)) continue;
+        if (x0 < 20 || x0 > NAV_W - 20 || y0 < 75 || y0 > NAV_H - 18) continue;
+        const ang = Math.atan2(y1 - y0, x1 - x0);
+        const sz = clamp((2.6 * FOCAL) / Math.max(pz[i], NEAR), 2.2, 5.2);
+        c.save();
+        c.translate(x0, y0);
+        c.rotate(ang);
+        c.lineWidth = Math.max(1.3, sz * 0.36);
+        c.beginPath();
+        c.moveTo(-sz * 0.65, -sz * 0.72);
+        c.lineTo(sz * 0.45, 0);
+        c.lineTo(-sz * 0.65, sz * 0.72);
+        c.stroke();
+        c.restore();
+      }
+      // Painted white turn arrow right on the upcoming junction when within 260 m
+      if (nextTurn && nextDist > 8 && nextDist < 260) {
+        const p0 = this.routeAt(nextTurn.s - 10, { x: 0, y: 0 });
+        const p1 = this.routeAt(nextTurn.s, { x: 0, y: 0 });
+        const p2 = this.routeAt(nextTurn.s + 12, { x: 0, y: 0 });
+        this.proj(p0.x, p0.y, 0); const ax = this.sx, ay = this.sy;
+        this.proj(p1.x, p1.y, 0); const bx = this.sx, by = this.sy, bz = this.sz;
+        this.proj(p2.x, p2.y, 0); const cx2 = this.sx, cy2 = this.sy;
+        if (!Number.isNaN(ax + ay + bx + by + cx2 + cy2) && bz >= NEAR) {
+          const aw = clamp((2.9 * FOCAL) / Math.max(bz, NEAR), 2.2, 5.2);
+          c.strokeStyle = '#ffffff';
+          c.lineWidth = aw;
+          c.beginPath();
+          c.moveTo(ax, ay);
+          c.quadraticCurveTo(bx, by, cx2, cy2);
+          c.stroke();
+          const hang = Math.atan2(cy2 - by, cx2 - bx);
+          const hs = aw * 1.9;
+          c.fillStyle = '#ffffff';
+          c.beginPath();
+          c.moveTo(cx2 + Math.cos(hang) * hs * 0.7, cy2 + Math.sin(hang) * hs * 0.7);
+          c.lineTo(cx2 + Math.cos(hang + 2.4) * hs, cy2 + Math.sin(hang + 2.4) * hs);
+          c.lineTo(cx2 + Math.cos(hang - 2.4) * hs, cy2 + Math.sin(hang - 2.4) * hs);
+          c.closePath();
+          c.fill();
+        }
+      }
+      c.restore();
     }
     // start / finish
     const s0 = this.route[0];
@@ -732,10 +877,17 @@ export class Minimap {
       for (const lm of this.landmarks) {
         if (Math.abs(lm.x - cx) > 700 || Math.abs(lm.y - cy) > 700) continue;
         this.proj(lm.x, lm.y, 0);
-        if (!(this.sx > CARD_W + 30 && this.sx < NAV_W - 80 && this.sy > 120 && this.sy < NAV_H - 20)) continue;
-        c.fillStyle = T.poi; c.beginPath(); c.arc(this.sx, this.sy, 4.4, 0, Math.PI * 2); c.fill();
-        c.strokeStyle = T.labelHalo; c.strokeText(lm.name, this.sx + 8, this.sy); c.fillStyle = T.label; c.fillText(lm.name, this.sx + 8, this.sy);
-        if (++n >= 4) break;
+        if (!(this.sx > CARD_W + 30 && this.sx < NAV_W - 80 && this.sy > 110 && this.sy < NAV_H - 22)) continue;
+        // Categorized Google Maps POI pin badge (white ring + colored disc + crisp inner dot)
+        c.fillStyle = T.poi;
+        c.strokeStyle = '#ffffff';
+        c.lineWidth = 1.8;
+        c.beginPath(); c.arc(this.sx, this.sy, 6.2, 0, Math.PI * 2); c.fill(); c.stroke();
+        c.fillStyle = '#ffffff';
+        c.beginPath(); c.arc(this.sx, this.sy, 2.0, 0, Math.PI * 2); c.fill();
+        c.lineWidth = 3.2;
+        c.strokeStyle = T.labelHalo; c.strokeText(lm.name, this.sx + 10, this.sy); c.fillStyle = T.label; c.fillText(lm.name, this.sx + 10, this.sy);
+        if (++n >= 5) break;
       }
     }
     // rivals / players
@@ -768,14 +920,49 @@ export class Minimap {
     if (Number.isNaN(x)) return;
     c.save();
     c.translate(x, y);
-    // the way the screen's "up" lines up with the car: flat map rotates the arrow, the tilted view keeps it upright
+    // flat overview rotates the puck to car heading; tilted 3D view keeps it aligned to the road ahead
     if (this.flat) c.rotate(Math.PI / 2 - Math.atan2(hy, hx));
-    const g = c.createRadialGradient(0, 0, 0, 0, 0, 34);
-    g.addColorStop(0, T.puck + '55'); g.addColorStop(1, T.puck + '00');
-    c.fillStyle = g; c.beginPath(); c.arc(0, 0, 34, 0, Math.PI * 2); c.fill();
-    c.shadowColor = 'rgba(0,0,0,0.55)'; c.shadowBlur = 7; c.shadowOffsetY = 2;
-    c.fillStyle = T.puck; c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.lineJoin = 'round';
-    c.beginPath(); c.moveTo(0, -17); c.lineTo(12.5, 13); c.lineTo(0, 6.5); c.lineTo(-12.5, 13); c.closePath(); c.stroke(); c.fill();
+    else {
+      // slight relative yaw delta between car nose and smoothed 3D camera heading feels super alive!
+      const dAng = Math.atan2(this.camHx * hy - this.camHy * hx, this.camHx * hx + this.camHy * hy);
+      c.rotate(-clamp(dAng, -0.45, 0.45));
+    }
+    // Signature Google Maps translucent blue heading radar cone projecting ahead
+    const beam = c.createRadialGradient(0, -4, 4, 0, -4, 46);
+    beam.addColorStop(0, T.puck + '44');
+    beam.addColorStop(1, T.puck + '00');
+    c.fillStyle = beam;
+    c.beginPath();
+    c.moveTo(0, 0);
+    c.arc(0, 0, 46, -Math.PI * 0.72, -Math.PI * 0.28);
+    c.closePath();
+    c.fill();
+    // Signature Google Maps white circular navigation medallion with soft drop shadow
+    c.save();
+    c.shadowColor = 'rgba(0,0,0,0.45)';
+    c.shadowBlur = 9;
+    c.shadowOffsetY = 2.5;
+    c.fillStyle = T.puckDisc;
+    c.beginPath();
+    c.arc(0, 0, this.flat ? 13 : 16.5, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+    // Subtle outer hairline border on white disc
+    c.strokeStyle = T.night ? 'rgba(0,0,0,0.28)' : 'rgba(60,64,67,0.18)';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.arc(0, 0, this.flat ? 13 : 16.5, 0, Math.PI * 2);
+    c.stroke();
+    // Crisp Google-blue navigation chevron inside the white medallion
+    const sc = this.flat ? 0.76 : 1.0;
+    c.fillStyle = T.puck;
+    c.beginPath();
+    c.moveTo(0, -10.5 * sc);
+    c.lineTo(8.2 * sc, 8.2 * sc);
+    c.lineTo(0, 4.4 * sc);
+    c.lineTo(-8.2 * sc, 8.2 * sc);
+    c.closePath();
+    c.fill();
     c.restore();
   }
 
@@ -831,7 +1018,7 @@ export class Minimap {
       c.font = `400 15px ${FONT}`;
       c.fillStyle = '#ffffffdd';
       c.fillText(this.fit(c, sub, CW - 24), X + 14, 10 + 90);
-      // "Then" strip with the turn after that
+      // "Then" strip OR 3-lane guidance strip right below the emerald maneuver card
       if (then && next && thenGap < 320 && !this.waypoint && dist < 1200) {
         const ty = 10 + h - 2;
         c.fillStyle = T.maneuverDark;
@@ -840,7 +1027,32 @@ export class Minimap {
         c.fillStyle = '#ffffffcc'; c.font = `500 15px ${FONT}`; c.textBaseline = 'middle';
         c.fillText('Then', X + 14, ty + 18);
         c.save(); c.translate(X + 72, ty + 17); drawManeuver(c, then.kind, then.dir, 26); c.restore();
+      } else if (next && !this.waypoint && dist < 260 && kind !== 'straight') {
+        drawLaneGuidance(c, X, 10 + h - 2, CW, kind, dir, T);
       }
+    }
+    // Floating current-street pill along the bottom edge (signature Google Maps street nameplate!)
+    if (!this.flat && this.street) {
+      c.save();
+      c.font = `500 12px ${FONT}`;
+      const label = this.fit(c, this.street, 170);
+      const pw = c.measureText(label).width + 22;
+      const px = AXIS_X - pw * 0.5;
+      const py = NAV_H - 30;
+      c.shadowColor = T.night ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.22)';
+      c.shadowBlur = 8; c.shadowOffsetY = 2;
+      c.fillStyle = T.roadPill;
+      roundRect(c, px, py, pw, 22, 11);
+      c.fill();
+      c.shadowColor = 'transparent';
+      c.strokeStyle = T.roadPillBorder;
+      c.lineWidth = 1;
+      c.stroke();
+      c.fillStyle = T.cardText;
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(label, AXIS_X, py + 11.5);
+      c.restore();
     }
     // ---- bottom card: time, distance, arrival
     {

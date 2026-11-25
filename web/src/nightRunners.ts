@@ -247,6 +247,11 @@ export function applyNightRunnersToPhysics(phys: any, eng: EngineState, st: Stan
       else if (sw.torqueShape === 'rotary') shapeMul = 0.76 + 0.36 * f * f;
       return [nr, t * powerMul * shapeMul];
     });
+    // Upgrade clutch clamp capacity alongside engine/turbo/swap torque so high-power builds never cook their clutch
+    if (d.drivetrain && typeof d.drivetrain.clutch_max_torque_nm === 'number') {
+      const peakT = Math.max(...d.engine.torque_curve.map(([, t]: [number, number]) => t));
+      d.drivetrain.clutch_max_torque_nm = Math.max(d.drivetrain.clutch_max_torque_nm * Math.max(1, powerMul), peakT * 1.75);
+    }
   }
   if (d.chassis && typeof d.chassis.mass_kg === 'number' && sw.massDeltaKg) {
     d.chassis.mass_kg = Math.max(850, d.chassis.mass_kg + sw.massDeltaKg);

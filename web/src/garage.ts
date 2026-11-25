@@ -77,6 +77,10 @@ export function applyMods(base: any, m: Mods): any {
   const d = JSON.parse(JSON.stringify(base));
   const torque = 1 + 0.05 * m.engine, grip = 1 + 0.05 * m.tyres, mass = 1 - 0.03 * m.weight;
   d.engine.torque_curve = d.engine.torque_curve.map(([rpm, t]: [number, number]) => [rpm, Math.round(t * torque * 10) / 10]);
+  if (d.drivetrain && typeof d.drivetrain.clutch_max_torque_nm === 'number') {
+    const peakT = Math.max(...d.engine.torque_curve.map(([, t]: [number, number]) => t));
+    d.drivetrain.clutch_max_torque_nm = Math.max(d.drivetrain.clutch_max_torque_nm * torque, peakT * 1.70);
+  }
   for (const k of ['tire_front', 'tire_rear']) {
     if (!d[k]) continue;
     d[k].longitudinal.mu *= grip;

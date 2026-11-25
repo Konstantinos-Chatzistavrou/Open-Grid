@@ -142,6 +142,33 @@ RS_TEST(clutch_lockup_no_chatter) {
     test::check_range("smooth clutch torque (no high-frequency chatter spikes)", max_step_jump, 0.0, 15.0, "N m");
     test::check("cleanly accelerates the car under locked clutch", v1 > v0 + 3.0);
     test::check("no phantom slip heating while statically locked", temp_after <= temp_before + 0.5);
+
+    // Regression: Stage-3 turbo pull from rest through all gears on a tight-margin car (harrier_gt: 800 Nm peak)
+    // must NEVER enter a clutch thermal-slip death spiral ("gears getting shorter" / failing to reach top speed).
+    {
+        CarConfig hcfg = load_car_config(test::data_path("cars/harrier_gt.json"));
+        auto hs = test::make_sim(hcfg);
+        hs->vehicle.engine_systems().turbo_stage = 3;
+        hs->vehicle.engine_systems().transmission = TransmissionType::HPatternSynchro;
+        hs->vehicle.assists().tc = true;
+        hs->settle(0.5);
+        Controls hc(hcfg);
+        hc.settings.auto_gearbox = true;
+        hc.settings.auto_clutch = true;
+        RawInput hraw;
+        hraw.device = InputDevice::Wheel;
+        hraw.throttle = 1.0;
+        double vmax_kmh = 0.0;
+        for (int i = 0; i < 240 * 35; ++i) {
+            hs->step(hc.update(hraw, hs->last, hs->dt));
+            vmax_kmh = std::max(vmax_kmh, hs->last.speed * 3.6);
+        }
+        std::printf("         harrier_gt Stage-3 turbo 35 s pull: vmax %.1f km/h, clutch temp %.1f C, health %.3f, locked %d\n",
+                    vmax_kmh, hs->last.clutch_temp_c, hs->last.clutch_health, hs->last.clutch_locked ? 1 : 0);
+        test::check_range("Stage-3 turbo car reaches high speed cleanly (no slipping clutch)", vmax_kmh, 290.0, 460.0, "km/h");
+        test::check_range("Stage-3 turbo race pull preserves clutch health", hs->last.clutch_health, 0.90, 1.0, "-");
+        test::check_range("Stage-3 turbo race pull keeps clutch below fade temp", hs->last.clutch_temp_c, 20.0, 220.0, "C");
+    }
 }
 
 // ---------------------------------------------------------------- 4. Gear tooth ratios, missed shift & gearbox damage

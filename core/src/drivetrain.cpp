@@ -145,7 +145,14 @@ double Drivetrain::clutch_clamp_force(double pedal) const {
         ? (0.94 + 0.06 * (health - 0.7) / 0.3)
         : (0.25 + 0.69 * (health / 0.7));
     const double denom = std::max(cp.mu_static * cp.effective_radius_m * std::max(cp.num_surfaces, 1), 1e-6);
-    const double f_max = cp.max_clamp_force_n > 0.0 ? cp.max_clamp_force_n : (cfg_.drivetrain.clutch_max_torque / denom);
+    // Match factory/stage clutch rating to forced-induction boost stage and ensure kinetic capacity
+    // (mu_kinetic / mu_static ~ 0.81) comfortably exceeds peak engine torque so a fully engaged
+    // clutch never enters a spontaneous thermal-slip death spiral during a race.
+    const double turbo_headroom = systems.turbo_stage > 0
+                                ? (1.0 + max_boost_for_stage(systems.turbo_stage) * 0.24)
+                                : 1.0;
+    const double rated_torque = std::max(cfg_.drivetrain.clutch_max_torque, peak_engine_torque_ * 1.55) * turbo_headroom;
+    const double f_max = cp.max_clamp_force_n > 0.0 ? (cp.max_clamp_force_n * turbo_headroom) : (rated_torque / denom);
     return f_max * ramp * health_scale;
 }
 

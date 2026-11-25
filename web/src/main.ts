@@ -1706,6 +1706,7 @@ async function main() {
   // GPS minimap: the tiles' road graphs (loaded in the background), the race route, rivals / players & 1:1 city landmarks
   let lastNavTouch = 0;
   const minimap = new Minimap(document.getElementById('hud')!);
+  minimap.lowPower = isTouch || potato;
   // a physical nav screen in the cabin, textured from the same GPS canvas; the texture is only re-uploaded while a camera
   // that can see the dash is active (cockpit / hood / orbit). ?navscreen=0 leaves it out of the car.
   const navScreen = params.get('navscreen') === '0' ? null : createNavScreen(minimap.cv);
