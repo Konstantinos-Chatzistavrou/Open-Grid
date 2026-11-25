@@ -1,6 +1,6 @@
 # UE 5.8 Vehicle Audio: MetaSound Patch Wiring Guide
 
-OpenGrid ships a procedural **48 kHz / 24-bit mono PCM WAV** audio stem generator (`tools/ue5/generate_audio_stems.py`) with zero third-party samples (`CC-BY-NC-4.0`, tracked provenance ledger in `assets_source/audio/manifest.json`). This guide wires all 11 stems into a UE 5.8 MetaSound Source (`MSS_OpenGridVehicle`) driven directly by `UOpenGridVehicleComponent` and `UOpenGridAudioComponent` (`ue5/Source/OpenGrid/OpenGridAudioComponent.h`).
+OpenGrid ships a procedural **48 kHz / 24-bit mono PCM WAV** audio stem generator (`tools/ue5/generate_audio_stems.py`) with zero third-party samples (`CC-BY-NC-4.0`, tracked provenance ledger in `assets_source/audio/manifest.json`). This guide wires all 11 stems into a UE 5.8 MetaSound Source (`MSS_OpenGridVehicle`) driven directly by `UOpenGridVehicleComponent` and `UOpenGridMetaSoundComponent` (`ue5/Source/OpenGrid/OpenGridMetaSoundComponent.h`).
 
 ---
 
@@ -15,7 +15,7 @@ OpenGrid ships a procedural **48 kHz / 24-bit mono PCM WAV** audio stem generato
    - **Looping**: `False` on the `USoundWave` asset (let the MetaSound `Wave Player` node control looping cleanly).
    - **Loading Behavior**: `Retain on Load` (eliminates first-frame streaming hitch on rapid pitch/trigger changes).
    - **Compression Quality**: `100` (or `PCM` / `ADPCM` override on engine/gear loops so zero-crossing loop boundaries stay click-free).
-4. Assign your MetaSound Source (`MSS_OpenGridVehicle`) to `UOpenGridAudioComponent::EngineSoundAsset` on the car pawn (`bAutoPlay = true`).
+4. Assign your MetaSound Source (`MSS_OpenGridVehicle`) to `UOpenGridMetaSoundComponent::EngineSoundAsset` on the car pawn (`bAutoPlay = true`).
 
 ---
 
@@ -39,9 +39,9 @@ OpenGrid ships a procedural **48 kHz / 24-bit mono PCM WAV** audio stem generato
 
 ---
 
-## 3. Exact `UOpenGridAudioComponent` Parameter Interface
+## 3. Exact `UOpenGridMetaSoundComponent` Parameter Interface
 
-`UOpenGridAudioComponent` automatically discovers `UOpenGridVehicleComponent` on the same actor, binds all audio delegates, and pushes these exact parameter names onto its `UAudioComponent` every post-physics tick (`ue5/Source/OpenGrid/OpenGridAudioComponent.cpp`):
+`UOpenGridMetaSoundComponent` automatically discovers `UOpenGridVehicleComponent` on the same actor, binds all audio delegates, and pushes these exact parameter names onto its `UAudioComponent` every post-physics tick (`ue5/Source/OpenGrid/OpenGridMetaSoundComponent.cpp`):
 
 | MetaSound Input Name | Type | Source / Meaning | Range / Smoothing |
 |---|---|---|---|
@@ -155,7 +155,7 @@ flowchart LR
 
 ## 5. Wiring on `AOpenGridCarPawn`
 
-`UOpenGridAudioComponent` requires zero Blueprint boilerplate:
-1. Add `UOpenGridAudioComponent` to your car pawn (or Blueprint subclass of `AOpenGridCarPawn`).
+`UOpenGridMetaSoundComponent` requires zero Blueprint boilerplate:
+1. Add `UOpenGridMetaSoundComponent` to your car pawn (or Blueprint subclass of `AOpenGridCarPawn`).
 2. Set `EngineSoundAsset = MSS_OpenGridVehicle` (or a per-car MetaSound Preset with `EngineStem` and `EngineRefHz` overridden).
 3. Update wet-weather spray dynamically from your weather manager via `AudioComp->SetWetness(WetFactor)` (`0.0` dry .. `1.0` soaked Tokyo rain).

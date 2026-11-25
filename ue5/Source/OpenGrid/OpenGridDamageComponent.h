@@ -131,6 +131,15 @@ public:
     UFUNCTION(BlueprintCallable, Category="OpenGrid|Damage")
     void RepairAllDamage();
 
+    /**
+     * Repair that was requested from the vehicle (UOpenGridVehicleComponent::RepairAndService). The vehicle only queues the
+     * repair for its physics thread, so for a few frames it still reports the old zone damage: resetting the visuals now
+     * would let this component read that stale damage, detach the parts it just reattached and fling them off again.
+     * Instead the stale damage is ignored until the vehicle reports it cleared (or MaxRepairWaitSeconds pass), then
+     * RepairAllDamage() runs once.
+     */
+    void BeginRepairAfterVehicleService();
+
 protected:
     virtual void BeginPlay() override;
     virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
@@ -152,4 +161,9 @@ private:
     /** Extra impact damage accumulated outside rs_core (e.g. roof hits or Blueprint callbacks). */
     float ExtraZoneDamage_[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     float PreviousTotalZoneDamage_ = 0.0f;
+
+    /** True from BeginRepairAfterVehicleService() until the vehicle's own zone damage has cleared (or the wait ran out). */
+    bool bRepairPending_ = false;
+    float RepairPendingSeconds_ = 0.0f;
+    static constexpr float MaxRepairWaitSeconds = 1.0f;
 };

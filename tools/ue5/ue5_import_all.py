@@ -189,6 +189,15 @@ def _build_interchange_pipeline(
         _set_prop_any(mesh_pipeline, ("build_nanite",), enable_nanite)
         _set_prop_any(mesh_pipeline, ("generate_lightmap_u_vs", "generate_lightmap_uvs"), False)
         _set_prop_any(mesh_pipeline, ("import_collision",), False)
+        if import_morph_targets:
+            # body.glb carries crash / widebody morph targets but no skin. Interchange classifies an unskinned glTF mesh as a
+            # STATIC mesh, and static import is switched off above, so without this nothing would be imported and the
+            # deformable body (DeformableBodyMeshAsset) would never exist. Ask for it to become a skeletal mesh: the
+            # dedicated option first (UE 5.5+), the blunt "force every mesh to skeletal" one on older builds.
+            if not _set_prop_any(mesh_pipeline, ("convert_statics_with_morph_targets_to_skeletals",), True):
+                force_skeletal = _enum_attr(getattr(unreal, "InterchangeForceMeshType", None), "IFMT_SKELETAL_MESH")
+                if not _set_prop_any(mesh_pipeline, ("force_all_mesh_as_type",), force_skeletal):
+                    _warn("Could not ask Interchange for a skeletal body mesh: body.glb (morph targets, no skin) may import as nothing")
 
     material_pipeline = None
     try:
@@ -291,6 +300,13 @@ def _post_process_imported_mesh(
                 pass
 
 
+def _import_state(did_import: bool, asset_path: str) -> str:
+    """Log label for the result of _import_glb_mesh: imported now, already there, or (a real problem) not created."""
+    if did_import:
+        return "imported"
+    return "exists" if _asset_exists(asset_path) else "MISSING: import failed"
+
+
 def _import_glb_mesh(
     source_file: str,
     dest_path: str,
@@ -365,6 +381,12 @@ def _import_glb_mesh(
             # Final fallback: standard glTF import options (no custom options object)
             task.options = None
             asset_tools.import_asset_tasks([task])
+
+    # Report success only if the asset is really there: the import calls above return without raising when Interchange
+    # produced nothing (or put it under another name), and the car data tables point at this exact asset path.
+    if not _asset_exists(asset_path):
+        _warn(f"Import of {source_file} did not create {asset_path} (see the Output Log: pipeline options, asset naming)")
+        return False, asset_path
 
     _post_process_imported_mesh(
         asset_path,
@@ -449,7 +471,7 @@ def step_import_cars(
                 force_reimport=force_reimport,
                 sockets_ue_cm=sockets_ue_cm,
             )
-            _log(f"  [{car_id}] Nanite hero body -> {asset_path} ({'imported' if did_import else 'exists'})")
+            _log(f"  [{car_id}] Nanite hero body -> {asset_path} ({_import_state(did_import, asset_path)})")
             stats["bodies" if did_import else "skipped"] += 1
         elif os.path.isfile(body_glb):
             did_import, asset_path = _import_glb_mesh(
@@ -462,7 +484,7 @@ def step_import_cars(
                 force_reimport=force_reimport,
                 sockets_ue_cm=sockets_ue_cm,
             )
-            _log(f"  [{car_id}] Body (morph targets) -> {asset_path} ({'imported' if did_import else 'exists'})")
+            _log(f"  [{car_id}] Body (morph targets) -> {asset_path} ({_import_state(did_import, asset_path)})")
             stats["bodies" if did_import else "skipped"] += 1
         else:
             _warn(f"  [{car_id}] Missing body.glb in {car_dir}")

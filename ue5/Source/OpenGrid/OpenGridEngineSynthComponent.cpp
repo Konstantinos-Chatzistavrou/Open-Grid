@@ -5,31 +5,31 @@
 
 namespace {
 
-rs::EngineVoice ToCoreVoice(EOpenGridEngineVoice V)
+rs::EngineVoice ToCoreVoice(EOpenGridSynthVoice V)
 {
     switch (V)
     {
-        case EOpenGridEngineVoice::V8Flatplane:    return rs::EngineVoice::V8Flatplane;
-        case EOpenGridEngineVoice::V8Supercharged: return rs::EngineVoice::V8Supercharged;
-        case EOpenGridEngineVoice::V8TwinTurbo:    return rs::EngineVoice::V8TwinTurbo;
-        case EOpenGridEngineVoice::V12Na:          return rs::EngineVoice::V12Na;
-        case EOpenGridEngineVoice::V10Screamer:    return rs::EngineVoice::V10Screamer;
-        case EOpenGridEngineVoice::Flat6Na:        return rs::EngineVoice::Flat6Na;
-        case EOpenGridEngineVoice::I6Forged:       return rs::EngineVoice::I6Forged;
-        case EOpenGridEngineVoice::V6TwinTurbo:    return rs::EngineVoice::V6TwinTurbo;
-        case EOpenGridEngineVoice::Rotary4:        return rs::EngineVoice::Rotary4;
-        case EOpenGridEngineVoice::V8Crossplane:
+        case EOpenGridSynthVoice::V8Flatplane:    return rs::EngineVoice::V8Flatplane;
+        case EOpenGridSynthVoice::V8Supercharged: return rs::EngineVoice::V8Supercharged;
+        case EOpenGridSynthVoice::V8TwinTurbo:    return rs::EngineVoice::V8TwinTurbo;
+        case EOpenGridSynthVoice::V12Na:          return rs::EngineVoice::V12Na;
+        case EOpenGridSynthVoice::V10Screamer:    return rs::EngineVoice::V10Screamer;
+        case EOpenGridSynthVoice::Flat6Na:        return rs::EngineVoice::Flat6Na;
+        case EOpenGridSynthVoice::I6Forged:       return rs::EngineVoice::I6Forged;
+        case EOpenGridSynthVoice::V6TwinTurbo:    return rs::EngineVoice::V6TwinTurbo;
+        case EOpenGridSynthVoice::Rotary4:        return rs::EngineVoice::Rotary4;
+        case EOpenGridSynthVoice::V8Crossplane:
         default:                                   return rs::EngineVoice::V8Crossplane;
     }
 }
 
-rs::ExhaustStage ToCoreStage(EOpenGridExhaustStage S)
+rs::ExhaustStage ToCoreStage(EOpenGridSynthExhaustStage S)
 {
     switch (S)
     {
-        case EOpenGridExhaustStage::Stock:        return rs::ExhaustStage::Stock;
-        case EOpenGridExhaustStage::RaceTitanium: return rs::ExhaustStage::RaceTitanium;
-        case EOpenGridExhaustStage::Sport:
+        case EOpenGridSynthExhaustStage::Stock:        return rs::ExhaustStage::Stock;
+        case EOpenGridSynthExhaustStage::RaceTitanium: return rs::ExhaustStage::RaceTitanium;
+        case EOpenGridSynthExhaustStage::Sport:
         default:                                  return rs::ExhaustStage::Sport;
     }
 }
@@ -142,7 +142,7 @@ void UOpenGridEngineSynthComponent::TriggerOverrunBurble(float Intensity)
 }
 
 void UOpenGridEngineSynthComponent::SetVoice(
-    EOpenGridEngineVoice NewVoice, EOpenGridExhaustStage NewStage, bool bHasTurbo)
+    EOpenGridSynthVoice NewVoice, EOpenGridSynthExhaustStage NewStage, bool bHasTurbo)
 {
     Voice = NewVoice;
     ExhaustStage = NewStage;
@@ -170,11 +170,11 @@ int32 UOpenGridEngineSynthComponent::OnGenerateAudio(float* OutAudio, int32 NumS
         const bool bTurbo = bPendingTurbo.load(std::memory_order_relaxed);
 
         rs::EngineAudioConfig Cfg{};
-        Cfg.voice = ToCoreVoice(static_cast<EOpenGridEngineVoice>(PendingVoice.load(std::memory_order_relaxed)));
+        Cfg.voice = ToCoreVoice(static_cast<EOpenGridSynthVoice>(PendingVoice.load(std::memory_order_relaxed)));
         Cfg.sampleRate = ActiveSampleRate;
         Cfg.simFrequency = 8000;
         Cfg.fluidSubsteps = 4;
-        Cfg.exhaustStage = ToCoreStage(static_cast<EOpenGridExhaustStage>(StageRaw));
+        Cfg.exhaustStage = ToCoreStage(static_cast<EOpenGridSynthExhaustStage>(StageRaw));
         Cfg.turboEnabled = bTurbo;
         Synth->initialize(Cfg);
         Synth->warmup(0.15f, TargetRpm.load(std::memory_order_relaxed), 0.1f);
@@ -199,7 +199,7 @@ int32 UOpenGridEngineSynthComponent::OnGenerateAudio(float* OutAudio, int32 NumS
     Ctrl.boostBar = TargetBoostBar.load(std::memory_order_relaxed);
     Ctrl.reverbMix = TargetReverbMix.load(std::memory_order_relaxed);
     Ctrl.ignitionCut = bTargetIgnitionCut.load(std::memory_order_relaxed);
-    Ctrl.exhaustStage = ToCoreStage(static_cast<EOpenGridExhaustStage>(ActiveStage.load(std::memory_order_relaxed)));
+    Ctrl.exhaustStage = ToCoreStage(static_cast<EOpenGridSynthExhaustStage>(ActiveStage.load(std::memory_order_relaxed)));
     Ctrl.turboEnabled = bActiveTurbo.load(std::memory_order_relaxed);
     Ctrl.perspective = ToCorePerspective(static_cast<EOpenGridCameraPerspective>(TargetPerspective.load(std::memory_order_relaxed)));
     Ctrl.tunnelReflection = TargetTunnelReflection.load(std::memory_order_relaxed);

@@ -259,6 +259,15 @@ void UOpenGridVehicleComponent::BeginPlay()
     PerformanceIndex = PiReport.pi;
     VirtualBenchmarkLapSeconds = static_cast<float>(PiReport.virtual_benchmark_lap_s);
 
+    // The MoTeC log runs on a fixed time base (sample_rate_hz, 60 Hz): record() resamples the per-game-frame samples
+    // below to it, so the exported time axis is right at any frame rate, and it keeps only a bounded amount of data.
+    {
+        rs::TelemetryMeta LogMeta;
+        LogMeta.vehicle = Config_.name;
+        MotecLogger_.reset(LogMeta);
+        ElapsedTimeS_ = 0.0;
+    }
+
     Body_ = Body;
     BodyRaw_ = Body;
     if (!Body->IsSimulatingPhysics()) Body->SetSimulatePhysics(true);
@@ -752,7 +761,13 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
     bRearBumperDetached = Out.damage.rear_bumper_detached;
 
     // Event notifications & counters (MissedShift, GearGrind, Backfire, Scrape, BlowOffValve)
-    if (Out.missed_shift_event || Out.missed_shifts > PrevMissedShifts_)
+    // A missed shift is announced once: on the rising edge of the event flag, or when the missed-shift count goes up (two in a
+    // row keep the flag high). TickComponent publishes the same LastRecord_ again on every frame that drains no new physics
+    // step, and that record keeps its latched event flag, so testing the flag as a level would re-fire the event (and the
+    // grind sound / UI bound to it) on each of those frames and over-count OnMissedShiftCount.
+    const bool bMissedShiftEdge = (Out.missed_shift_event && !bPrevMissedShiftEvent_) || Out.missed_shifts > PrevMissedShifts_;
+    bPrevMissedShiftEvent_ = Out.missed_shift_event;
+    if (bMissedShiftEdge)
     {
         OnMissedShiftCount = FMath::Max(OnMissedShiftCount + 1, Out.missed_shifts);
         LastMissedShiftTime = static_cast<float>(ElapsedTimeS_);

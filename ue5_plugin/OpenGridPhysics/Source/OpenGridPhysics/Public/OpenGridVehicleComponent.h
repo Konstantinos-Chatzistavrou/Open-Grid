@@ -756,6 +756,7 @@ private:
     double ElapsedTimeS_ = 0.0;
     bool bPrevBov_ = false;
     bool bPrevGearGrind_ = false;
+    bool bPrevMissedShiftEvent_ = false;
     bool bPrevBackfire_ = false;
     bool bPrevScrape_ = false;
     int32 PrevMissedShifts_ = 0;

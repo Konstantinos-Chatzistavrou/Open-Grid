@@ -5,7 +5,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "OpenGridAudioComponent.generated.h"
+#include "OpenGridMetaSoundComponent.generated.h"
 
 class UAudioComponent;
 class UOpenGridVehicleComponent;
@@ -65,12 +65,12 @@ struct OPENGRID_API FOpenGridAudioTelemetry
  * on an attached UAudioComponent (compatible with UE 5.8 MetaSound Source assets out of the box).
  */
 UCLASS(ClassGroup=(OpenGrid), meta=(BlueprintSpawnableComponent))
-class OPENGRID_API UOpenGridAudioComponent : public UActorComponent
+class OPENGRID_API UOpenGridMetaSoundComponent : public UActorComponent
 {
     GENERATED_BODY()
 
 public:
-    UOpenGridAudioComponent();
+    UOpenGridMetaSoundComponent();
 
     /** Optional MetaSound Source or SoundCue asset assigned to the attached UAudioComponent at BeginPlay. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Audio")

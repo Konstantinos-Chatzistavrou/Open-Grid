@@ -30,30 +30,41 @@ public class OpenGridPhysics : ModuleRules
             "SignalProcessing"
         });
 
+        // rs::EngineAudioSynth (core/src/engine_audio.cpp) and the vendored engine-sim sources are NOT part of RsCoreUnity.cpp, but
+        // both audio components need them (UOpenGridAudioComponent here, UOpenGridEngineSynthComponent in the game module).
+        // They come from the CMake static libraries opengrid_engine_audio + opengrid_engine_sim, which have to be built first.
+        // Say so here, with the command to run, instead of skipping the libraries and failing later with unresolved externals.
+        string AudioLib;
+        string SimLib;
+        string BuildCommand;
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
             PublicSystemLibraries.Add("ws2_32.lib");   // SimHub UDP telemetry (core/src/telemetry.cpp)
-            // Link prebuilt CMake opengrid_engine_audio + opengrid_engine_sim static libs when available
             string WinBuildRel = Path.Combine(CoreRoot, "build", "Release");
-            string AudioLib = Path.Combine(WinBuildRel, "opengrid_engine_audio.lib");
-            string SimLib = Path.Combine(WinBuildRel, "opengrid_engine_sim.lib");
-            if (File.Exists(AudioLib) && File.Exists(SimLib))
-            {
-                PublicAdditionalLibraries.Add(AudioLib);
-                PublicAdditionalLibraries.Add(SimLib);
-            }
+            AudioLib = Path.Combine(WinBuildRel, "opengrid_engine_audio.lib");
+            SimLib = Path.Combine(WinBuildRel, "opengrid_engine_sim.lib");
+            BuildCommand = "cmake -S core -B core/build -A x64 && cmake --build core/build --config Release --target opengrid_engine_audio opengrid_engine_sim";
         }
         else if (Target.Platform == UnrealTargetPlatform.Linux)
         {
             string BuildDir = Path.Combine(CoreRoot, "build");
-            string AudioLib = Path.Combine(BuildDir, "libopengrid_engine_audio.a");
-            string SimLib = Path.Combine(BuildDir, "libopengrid_engine_sim.a");
-            if (File.Exists(AudioLib) && File.Exists(SimLib))
-            {
-                PublicAdditionalLibraries.Add(AudioLib);
-                PublicAdditionalLibraries.Add(SimLib);
-            }
+            AudioLib = Path.Combine(BuildDir, "libopengrid_engine_audio.a");
+            SimLib = Path.Combine(BuildDir, "libopengrid_engine_sim.a");
+            BuildCommand = "cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Release && cmake --build core/build --target opengrid_engine_audio opengrid_engine_sim";
         }
+        else
+        {
+            throw new BuildException("OpenGridPhysics: the engine audio libraries are only wired up for Win64 and Linux (" +
+                                     Target.Platform + " is not supported yet).");
+        }
+
+        if (!File.Exists(AudioLib) || !File.Exists(SimLib))
+        {
+            throw new BuildException("OpenGridPhysics: the engine audio libraries are missing (" + AudioLib + ", " + SimLib +
+                                     "). Build them once from the repo root, then build the project again:\n  " + BuildCommand);
+        }
+        PublicAdditionalLibraries.Add(AudioLib);
+        PublicAdditionalLibraries.Add(SimLib);
     }
 
     private static string FindCoreRoot(string Start)

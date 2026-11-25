@@ -109,6 +109,11 @@ protected:
 private:
     static rs::EngineVoice ResolveVoice(EOpenGridEngineVoice Voice, const UOpenGridVehicleComponent* Vehicle);
 
+    /** True once TickComponent() has activated the synth (activation waits for the car so AutoFromCarSpec sees its spec). */
+    bool bStartRequested_ = false;
+    float StartWaitSeconds_ = 0.0f;
+    static constexpr float kMaxCarWaitSeconds = 5.0f;
+
     TWeakObjectPtr<UOpenGridVehicleComponent> VehicleComp_;
     rs::VehicleAudioEngine Engine_;
     rs::TripleBuffer<rs::VehicleAudioTelemetry> TelemetryTB_;

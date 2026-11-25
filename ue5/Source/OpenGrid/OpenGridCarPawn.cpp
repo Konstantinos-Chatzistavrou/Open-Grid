@@ -19,7 +19,7 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
-#include "OpenGridAudioComponent.h"
+#include "OpenGridMetaSoundComponent.h"
 #include "OpenGridCustomizationComponent.h"
 #include "OpenGridDamageComponent.h"
 #include "OpenGridEngineSynthComponent.h"
@@ -118,7 +118,7 @@ AOpenGridCarPawn::AOpenGridCarPawn()
 
     Customization = CreateDefaultSubobject<UOpenGridCustomizationComponent>(TEXT("Customization"));
     Damage = CreateDefaultSubobject<UOpenGridDamageComponent>(TEXT("Damage"));
-    Audio = CreateDefaultSubobject<UOpenGridAudioComponent>(TEXT("Audio"));
+    Audio = CreateDefaultSubobject<UOpenGridMetaSoundComponent>(TEXT("Audio"));
 
     EngineSynth = CreateDefaultSubobject<UOpenGridEngineSynthComponent>(TEXT("EngineSynth"));
     EngineSynth->SetupAttachment(Chassis);
@@ -336,7 +336,9 @@ void AOpenGridCarPawn::SetCameraPerspective(EOpenGridCameraPerspective NewPerspe
 void AOpenGridCarPawn::Recover()
 {
     Vehicle->RepairAndService();   // as the web build's R: fix damage, refuel, restore the engine
-    if (Damage) Damage->RepairAllDamage();
+    // The vehicle only queues that repair for its physics thread, so the damage component waits for the vehicle to report
+    // the damage gone before it reattaches the parts (repairing at once would re-detach them from the stale damage).
+    if (Damage) Damage->BeginRepairAfterVehicleService();
     if (VehicleVfx) VehicleVfx->ResetThermalState();
     const FRotator Yaw(0.0f, GetActorRotation().Yaw, 0.0f);
     Chassis->SetWorldLocationAndRotation(GetActorLocation() + FVector(0.0f, 0.0f, 100.0f), Yaw, false, nullptr, ETeleportType::TeleportPhysics);
@@ -616,14 +618,17 @@ void AOpenGridCarPawn::ApplyVisualMods()
     {
         UStaticMeshComponent* Comp;
         UStaticMesh* Asset;
-        const TCHAR* SocketName;
+        FName SocketName;   // NAME_None: attach at the body origin (the part is modelled in body space)
     };
+    // Only the wing is exported relative to its socket (export_cars_for_ue.mjs, "Exported relative to SOCKET_Wing").
+    // The widebody flares, splitter, diffuser and skirts are modelled in absolute body space, so they attach at the body
+    // origin: snapping them to SOCKET_Splitter / SOCKET_Diffuser as well would add the nose / tail offset a second time.
     const FModSlot Slots[] = {
         {WidebodyMesh.Get(), WidebodyMeshAsset.Get(), NAME_None},
-        {WingMesh.Get(), WingMeshAsset.Get(), TEXT("SOCKET_Wing")},
-        {SplitterMesh.Get(), SplitterMeshAsset.Get(), TEXT("SOCKET_Splitter")},
-        {DiffuserMesh.Get(), DiffuserMeshAsset.Get(), TEXT("SOCKET_Diffuser")},
-        {SkirtsMesh.Get(), SkirtsMeshAsset.Get(), TEXT("SOCKET_Skirts")},
+        {WingMesh.Get(), WingMeshAsset.Get(), FName(TEXT("SOCKET_Wing"))},
+        {SplitterMesh.Get(), SplitterMeshAsset.Get(), NAME_None},
+        {DiffuserMesh.Get(), DiffuserMeshAsset.Get(), NAME_None},
+        {SkirtsMesh.Get(), SkirtsMeshAsset.Get(), NAME_None},
     };
     USceneComponent* ParentComp = (DeformableBodyMesh && DeformableBodyMesh->IsVisible())
                                       ? static_cast<USceneComponent*>(DeformableBodyMesh.Get())
@@ -633,7 +638,7 @@ void AOpenGridCarPawn::ApplyVisualMods()
         if (!S.Comp) continue;
         if (S.Asset)
         {
-            const FName Socket(S.SocketName);
+            const FName Socket = S.SocketName;
             const FName AttachSocket = (ParentComp && Socket != NAME_None && ParentComp->DoesSocketExist(Socket))
                                            ? Socket
                                            : NAME_None;

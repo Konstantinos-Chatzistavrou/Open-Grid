@@ -302,6 +302,16 @@ void UOpenGridDamageComponent::RepairAllDamage()
     OnCrushUpdated.Broadcast(CurrentMorphWeights);
 }
 
+void UOpenGridDamageComponent::BeginRepairAfterVehicleService()
+{
+    for (int32 i = 0; i < 6; ++i)
+    {
+        ExtraZoneDamage_[i] = 0.0f;
+    }
+    bRepairPending_ = true;
+    RepairPendingSeconds_ = 0.0f;
+}
+
 void UOpenGridDamageComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -313,6 +323,19 @@ void UOpenGridDamageComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 
     const FOpenGridCrushMorphWeights Target = SampleTargetMorphWeights();
     const float TargetSum = TotalMorphSum(Target);
+
+    // A repair was requested but the physics thread has not processed it yet, so the vehicle still reports the old zone
+    // damage. Do not morph, detach or launch anything from that stale damage: wait for it to clear, then repair once.
+    if (bRepairPending_)
+    {
+        RepairPendingSeconds_ += DeltaTime;
+        if (TargetSum <= KINDA_SMALL_NUMBER || RepairPendingSeconds_ >= MaxRepairWaitSeconds)
+        {
+            bRepairPending_ = false;
+            RepairAllDamage();
+        }
+        return;
+    }
 
     // Detect rs::Vehicle::service() resetting zone damage back to 0.
     if (bAutoRepairOnVehicleService && PreviousTotalZoneDamage_ > 0.05f && TargetSum <= KINDA_SMALL_NUMBER)

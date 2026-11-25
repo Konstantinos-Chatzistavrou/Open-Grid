@@ -16,7 +16,7 @@
 namespace rs { class EngineAudioSynth; }
 
 UENUM(BlueprintType)
-enum class EOpenGridEngineVoice : uint8
+enum class EOpenGridSynthVoice : uint8
 {
     V8Crossplane    UMETA(DisplayName="6.2L Cross-Plane V8"),
     V8Flatplane     UMETA(DisplayName="4.5L Flat-Plane V8"),
@@ -31,7 +31,7 @@ enum class EOpenGridEngineVoice : uint8
 };
 
 UENUM(BlueprintType)
-enum class EOpenGridExhaustStage : uint8
+enum class EOpenGridSynthExhaustStage : uint8
 {
     Stock           UMETA(DisplayName="Stock Muffler"),
     Sport           UMETA(DisplayName="Sport Exhaust"),
@@ -57,10 +57,10 @@ public:
     virtual ~UOpenGridEngineSynthComponent() override;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|EngineAudio")
-    EOpenGridEngineVoice Voice = EOpenGridEngineVoice::V8Crossplane;
+    EOpenGridSynthVoice Voice = EOpenGridSynthVoice::V8Crossplane;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|EngineAudio")
-    EOpenGridExhaustStage ExhaustStage = EOpenGridExhaustStage::Sport;
+    EOpenGridSynthExhaustStage ExhaustStage = EOpenGridSynthExhaustStage::Sport;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|EngineAudio")
     EOpenGridCameraPerspective CameraPerspective = EOpenGridCameraPerspective::ExteriorChase;
@@ -102,7 +102,7 @@ public:
 
     /** Switch engine architecture (re-initializes thermodynamic solver cleanly on next audio block). */
     UFUNCTION(BlueprintCallable, Category="OpenGrid|EngineAudio")
-    void SetVoice(EOpenGridEngineVoice NewVoice, EOpenGridExhaustStage NewStage, bool bHasTurbo);
+    void SetVoice(EOpenGridSynthVoice NewVoice, EOpenGridSynthExhaustStage NewStage, bool bHasTurbo);
 
 protected:
     virtual bool Init(int32& SampleRate) override;
@@ -136,7 +136,7 @@ private:
     std::atomic<uint8> PendingVoice{ 0 };
     std::atomic<uint8> PendingStage{ 1 };
     std::atomic<bool> bPendingTurbo{ false };
-    std::atomic<uint8> ActiveStage{ static_cast<uint8>(EOpenGridExhaustStage::Sport) };
+    std::atomic<uint8> ActiveStage{ static_cast<uint8>(EOpenGridSynthExhaustStage::Sport) };
     std::atomic<bool> bActiveTurbo{ false };
 
     TArray<float> ScratchL;

@@ -14,7 +14,7 @@ class UCameraComponent;
 class UEnhancedInputComponent;
 class UInputAction;
 class UInputMappingContext;
-class UOpenGridAudioComponent;
+class UOpenGridMetaSoundComponent;
 class UOpenGridCustomizationComponent;
 class UOpenGridDamageComponent;
 class UOpenGridVfxComponent;
@@ -94,7 +94,7 @@ public:
     TObjectPtr<UOpenGridDamageComponent> Damage;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Audio")
-    TObjectPtr<UOpenGridAudioComponent> Audio;
+    TObjectPtr<UOpenGridMetaSoundComponent> Audio;
 
     /** Real-time 48 kHz physical combustion synthesizer (USynthComponent) with 3-ray environmental acoustics. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="OpenGrid|Audio")

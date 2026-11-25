@@ -1,5 +1,5 @@
-// Apache-2.0 — see OpenGridAudioComponent.h
-#include "OpenGridAudioComponent.h"
+// Apache-2.0 — see OpenGridMetaSoundComponent.h
+#include "OpenGridMetaSoundComponent.h"
 
 #include "Components/AudioComponent.h"
 #include "GameFramework/Actor.h"
@@ -33,13 +33,13 @@ const FName kTriggerScrape(TEXT("OnScrape"));
 const FName kTriggerGearShift(TEXT("OnGearShift"));
 }  // namespace
 
-UOpenGridAudioComponent::UOpenGridAudioComponent()
+UOpenGridMetaSoundComponent::UOpenGridMetaSoundComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
     PrimaryComponentTick.TickGroup = TG_PostPhysics;
 }
 
-void UOpenGridAudioComponent::BindVehicle(UOpenGridVehicleComponent* InVehicle)
+void UOpenGridMetaSoundComponent::BindVehicle(UOpenGridVehicleComponent* InVehicle)
 {
     if (Vehicle_.Get() == InVehicle) return;
     UnbindVehicleDelegates();
@@ -50,7 +50,7 @@ void UOpenGridAudioComponent::BindVehicle(UOpenGridVehicleComponent* InVehicle)
     }
 }
 
-void UOpenGridAudioComponent::SetWetness(float InWetness)
+void UOpenGridMetaSoundComponent::SetWetness(float InWetness)
 {
     Wetness = FMath::Clamp(InWetness, 0.0f, 1.0f);
     Telemetry.IsWet = Wetness;
@@ -60,7 +60,7 @@ void UOpenGridAudioComponent::SetWetness(float InWetness)
     }
 }
 
-void UOpenGridAudioComponent::FireAudioTrigger(FName TriggerName)
+void UOpenGridMetaSoundComponent::FireAudioTrigger(FName TriggerName)
 {
     if (AudioComponent && !TriggerName.IsNone())
     {
@@ -68,7 +68,7 @@ void UOpenGridAudioComponent::FireAudioTrigger(FName TriggerName)
     }
 }
 
-void UOpenGridAudioComponent::ResolveComponents()
+void UOpenGridMetaSoundComponent::ResolveComponents()
 {
     AActor* Owner = GetOwner();
     if (!Owner) return;
@@ -105,36 +105,36 @@ void UOpenGridAudioComponent::ResolveComponents()
     }
 }
 
-void UOpenGridAudioComponent::BindVehicleDelegates()
+void UOpenGridMetaSoundComponent::BindVehicleDelegates()
 {
     if (bDelegatesBound_) return;
     UOpenGridVehicleComponent* Vehicle = Vehicle_.Get();
     if (!Vehicle) return;
 
-    Vehicle->OnBlowOffValveVent.AddDynamic(this, &UOpenGridAudioComponent::HandleBlowOffValve);
-    Vehicle->OnBackfire.AddDynamic(this, &UOpenGridAudioComponent::HandleBackfire);
-    Vehicle->OnGearGrind.AddDynamic(this, &UOpenGridAudioComponent::HandleGearGrind);
-    Vehicle->OnMissedShift.AddDynamic(this, &UOpenGridAudioComponent::HandleMissedShift);
-    Vehicle->OnScrape.AddDynamic(this, &UOpenGridAudioComponent::HandleScrape);
+    Vehicle->OnBlowOffValveVent.AddDynamic(this, &UOpenGridMetaSoundComponent::HandleBlowOffValve);
+    Vehicle->OnBackfire.AddDynamic(this, &UOpenGridMetaSoundComponent::HandleBackfire);
+    Vehicle->OnGearGrind.AddDynamic(this, &UOpenGridMetaSoundComponent::HandleGearGrind);
+    Vehicle->OnMissedShift.AddDynamic(this, &UOpenGridMetaSoundComponent::HandleMissedShift);
+    Vehicle->OnScrape.AddDynamic(this, &UOpenGridMetaSoundComponent::HandleScrape);
     bDelegatesBound_ = true;
     LastGear_ = Vehicle->CurrentGear;
 }
 
-void UOpenGridAudioComponent::UnbindVehicleDelegates()
+void UOpenGridMetaSoundComponent::UnbindVehicleDelegates()
 {
     if (!bDelegatesBound_) return;
     if (UOpenGridVehicleComponent* Vehicle = Vehicle_.Get())
     {
-        Vehicle->OnBlowOffValveVent.RemoveDynamic(this, &UOpenGridAudioComponent::HandleBlowOffValve);
-        Vehicle->OnBackfire.RemoveDynamic(this, &UOpenGridAudioComponent::HandleBackfire);
-        Vehicle->OnGearGrind.RemoveDynamic(this, &UOpenGridAudioComponent::HandleGearGrind);
-        Vehicle->OnMissedShift.RemoveDynamic(this, &UOpenGridAudioComponent::HandleMissedShift);
-        Vehicle->OnScrape.RemoveDynamic(this, &UOpenGridAudioComponent::HandleScrape);
+        Vehicle->OnBlowOffValveVent.RemoveDynamic(this, &UOpenGridMetaSoundComponent::HandleBlowOffValve);
+        Vehicle->OnBackfire.RemoveDynamic(this, &UOpenGridMetaSoundComponent::HandleBackfire);
+        Vehicle->OnGearGrind.RemoveDynamic(this, &UOpenGridMetaSoundComponent::HandleGearGrind);
+        Vehicle->OnMissedShift.RemoveDynamic(this, &UOpenGridMetaSoundComponent::HandleMissedShift);
+        Vehicle->OnScrape.RemoveDynamic(this, &UOpenGridMetaSoundComponent::HandleScrape);
     }
     bDelegatesBound_ = false;
 }
 
-void UOpenGridAudioComponent::BeginPlay()
+void UOpenGridMetaSoundComponent::BeginPlay()
 {
     Super::BeginPlay();
     ResolveComponents();
@@ -146,7 +146,7 @@ void UOpenGridAudioComponent::BeginPlay()
     }
 }
 
-void UOpenGridAudioComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void UOpenGridMetaSoundComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     UnbindVehicleDelegates();
     if (AudioComponent && AudioComponent->IsPlaying())
@@ -156,33 +156,33 @@ void UOpenGridAudioComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
 }
 
-void UOpenGridAudioComponent::HandleBlowOffValve(float BoostBarReleased)
+void UOpenGridMetaSoundComponent::HandleBlowOffValve(float BoostBarReleased)
 {
     TurboSurgeDecay_ = FMath::Max(TurboSurgeDecay_, FMath::Clamp(BoostBarReleased / 1.5f, 0.25f, 1.0f));
     FireAudioTrigger(kTriggerBlowOffValve);
 }
 
-void UOpenGridAudioComponent::HandleBackfire(float /*Intensity*/)
+void UOpenGridMetaSoundComponent::HandleBackfire(float /*Intensity*/)
 {
     FireAudioTrigger(kTriggerBackfire);
 }
 
-void UOpenGridAudioComponent::HandleGearGrind(int32 /*AttemptedGear*/)
+void UOpenGridMetaSoundComponent::HandleGearGrind(int32 /*AttemptedGear*/)
 {
     FireAudioTrigger(kTriggerGearGrind);
 }
 
-void UOpenGridAudioComponent::HandleMissedShift(int32 /*TotalMissedShifts*/, float /*SimTimeSeconds*/)
+void UOpenGridMetaSoundComponent::HandleMissedShift(int32 /*TotalMissedShifts*/, float /*SimTimeSeconds*/)
 {
     FireAudioTrigger(kTriggerMissedShift);
 }
 
-void UOpenGridAudioComponent::HandleScrape(float /*ImpactEnergyKj*/)
+void UOpenGridMetaSoundComponent::HandleScrape(float /*ImpactEnergyKj*/)
 {
     FireAudioTrigger(kTriggerScrape);
 }
 
-void UOpenGridAudioComponent::PushFloatParameters() const
+void UOpenGridMetaSoundComponent::PushFloatParameters() const
 {
     if (!AudioComponent) return;
 
@@ -202,7 +202,7 @@ void UOpenGridAudioComponent::PushFloatParameters() const
     AudioComponent->SetIntParameter(kParamGear, Telemetry.Gear);
 }
 
-void UOpenGridAudioComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+void UOpenGridMetaSoundComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
     if (DeltaTime <= 0.0f) return;

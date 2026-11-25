@@ -10,7 +10,11 @@ UOpenGridAudioComponent::UOpenGridAudioComponent(const FObjectInitializer& Objec
 {
     PrimaryComponentTick.bCanEverTick = true;
     PrimaryComponentTick.TickGroup = TG_PostPhysics;
-    bAutoActivate = true;
+    // Not auto-activated: Init() picks the engine voice from the car's spec, but auto-activation runs while the actor's
+    // components initialise, before any BeginPlay, when this component has not found the vehicle yet and the car is not
+    // loaded (the vehicle component loads it in its own BeginPlay). Every car would then get the fallback V8.
+    // TickComponent() activates the synth once the car is ready.
+    bAutoActivate = false;
 }
 
 rs::EngineVoice UOpenGridAudioComponent::ResolveVoice(EOpenGridEngineVoice Voice, const UOpenGridVehicleComponent* Vehicle)
@@ -75,6 +79,20 @@ void UOpenGridAudioComponent::TickComponent(float DeltaTime, ELevelTick TickType
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
     UOpenGridVehicleComponent* Veh = VehicleComp_.Get();
+
+    if (!bStartRequested_)
+    {
+        // Start once the voice can be chosen. AutoFromCarSpec needs the loaded car, but never wait forever: a vehicle that
+        // fails to load (or never loads) still gets the default voice after kMaxCarWaitSeconds.
+        StartWaitSeconds_ += DeltaTime;
+        const bool bNeedsCar = EngineVoice == EOpenGridEngineVoice::AutoFromCarSpec && Veh != nullptr;
+        if (!bNeedsCar || Veh->bCarLoaded || StartWaitSeconds_ >= kMaxCarWaitSeconds)
+        {
+            bStartRequested_ = true;
+            Activate(true);
+        }
+    }
+
     if (!Veh || !Veh->bCarLoaded) return;
 
     // Build lock-free telemetry snapshot from the latest physics output and publish via wait-free triple buffer.

@@ -15,6 +15,12 @@ input; handling, damage, AI and race logic stay in the core so both builds feel 
 First session, step by step: [`docs/ue5_first_session.md`](../docs/ue5_first_session.md).
 What to build now vs. what to stop in WebGPU: [`docs/ue5_roadmap.md`](../docs/ue5_roadmap.md).
 
+**Before the first build:** the engine-audio components link two CMake static libraries (`opengrid_engine_audio`,
+`opengrid_engine_sim`) that the Unreal build does not compile itself. `OpenGridPhysics.Build.cs` stops with the exact
+command if they are missing; from the repo root that is (Linux) `cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Release &&
+cmake --build core/build --target opengrid_engine_audio opengrid_engine_sim`, or on Windows `cmake -S core -B core/build
+-A x64 && cmake --build core/build --config Release --target opengrid_engine_audio opengrid_engine_sim`.
+
 ## Rules
 
 - **The repo is public.** Nothing that may not be redistributed goes in it: Fab and Marketplace assets, paid content,
