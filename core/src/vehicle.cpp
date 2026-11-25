@@ -174,6 +174,7 @@ void Vehicle::reset_motion(double v, int gear) {
     shift_release_timer_ = 0.0;
     since_shift_timer_ = 10.0;
     missed_recover_timer_ = 0.0;
+    recovering_from_miss_ = false;
     const auto& g = cfg_.drivetrain.gear_ratios;
     if (gear >= 0 && gear < (int)g.size() && g[gear] != 0.0) {
         double idle_w = cfg_.engine.idle_rpm * 2.0 * kPi / 60.0;
@@ -952,13 +953,23 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             since_shift_timer_ = 0.0;
         }
 
-        // Recover after a missed shift penalty window so auto-clutch drivers aren't soft-locked in Neutral.
-        if (drivetrain_.systems.sync_state == SyncState::Missed) {
+        // Recover after a missed shift so auto-clutch drivers aren't soft-locked in Neutral. The box waits in neutral for the clutch to
+        // be free, then re-synchronises (a few tenths of a second with the clutch open). So: wait out the 0.45 s penalty window, then
+        // hold the clutch fully open with the throttle off until the retry has COMPLETED (sync_state back to Idle). The recovery used
+        // to end the moment the synchro started (sync_state leaves Missed), so the clutch snapped shut mid-sync: every retry missed
+        // again, one every ~0.46 s, until the gearbox read 0 % and the car sat in neutral for good. kMaxRecoverS is a last resort so a
+        // retry that never completes cannot hold the clutch open for ever.
+        constexpr double kMaxRecoverS = 2.5;
+        const SyncState sync_now = drivetrain_.systems.sync_state;
+        if (sync_now == SyncState::Missed) recovering_from_miss_ = true;
+        else if (sync_now == SyncState::Idle) recovering_from_miss_ = false;
+        if (recovering_from_miss_) {
             missed_recover_timer_ += dt;
             if (missed_recover_timer_ >= 0.45) {
                 din.clutch = 1.0;
                 din.throttle = 0.0;
             }
+            if (missed_recover_timer_ > kMaxRecoverS) recovering_from_miss_ = false;
         } else {
             missed_recover_timer_ = 0.0;
         }

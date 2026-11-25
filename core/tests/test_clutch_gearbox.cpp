@@ -445,3 +445,43 @@ RS_TEST(auto_clutch_quality) {
                     s_slam->last.missed_shifts >= 1 && s_slam->last.gearbox_health < 1.0);
     }
 }
+
+// ---------------------------------------------------------------- 7. A missed shift must be recoverable (no neutral soft-lock)
+// With the Poor (or Normal, when slamming) auto-clutch a shift can be missed and the box kicks out to neutral. The auto-clutch then
+// has to hold the clutch open for the WHOLE re-synchronisation of the retry. It used to end its recovery window the moment the
+// synchro started, so the clutch snapped shut again and every retry failed (one every ~0.46 s) until the gearbox read 0 % and the car
+// sat in neutral for good. Driven the way the game drives it: automatic gearbox, full throttle from rest.
+RS_TEST(gearbox_missed_shift_recovers) {
+    const CarConfig cfg = test::car();
+    for (AutoClutchQuality q : {AutoClutchQuality::Poor, AutoClutchQuality::Normal}) {
+        auto s = test::make_sim(cfg);
+        s->vehicle.engine_systems().transmission = TransmissionType::HPatternSynchro;
+        s->vehicle.assists().tc = true;
+        Controls c(cfg);
+        c.settings.auto_gearbox = true;
+        c.settings.auto_clutch = true;
+        c.settings.auto_clutch_quality = q;
+        s->settle(0.5);
+        c.set_gear(2);
+
+        RawInput raw;
+        raw.device = InputDevice::Gamepad;
+        raw.throttle = 1.0;
+        double neutral_run = 0.0, worst_neutral_run = 0.0;   // time in neutral while a gear is wanted
+        for (int i = 0; i < 30 * 240; ++i) {
+            const DriverInput in = c.update(raw, s->last, s->dt);
+            s->step(in);
+            if (s->last.gear == 1 && in.gear != 1) neutral_run += s->dt;
+            else neutral_run = 0.0;
+            worst_neutral_run = std::max(worst_neutral_run, neutral_run);
+        }
+        const char* name = q == AutoClutchQuality::Poor ? "Poor" : "Normal";
+        std::printf("         auto-clutch %s, 30 s flat out: %.0f km/h, %d missed shifts, gearbox %.0f %%, longest stay in neutral %.2f s\n",
+                    name, s->last.speed * 3.6, s->last.missed_shifts, s->last.gearbox_health * 100.0, worst_neutral_run);
+        char what[128];
+        std::snprintf(what, sizeof what, "%s auto-clutch: never stuck in neutral for more than 1.5 s after a miss", name);
+        test::check(what, worst_neutral_run < 1.5);
+        std::snprintf(what, sizeof what, "%s auto-clutch: the gearbox survives and the car keeps accelerating", name);
+        test::check(what, s->last.gearbox_health > 0.3 && s->last.speed * 3.6 > 200.0);
+    }
+}

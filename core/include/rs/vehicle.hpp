@@ -331,6 +331,7 @@ private:
     double shift_release_timer_ = 0;        // auto-clutch: smooth post-sync clutch release ramp (s)
     double since_shift_timer_ = 10.0;       // auto-clutch: time since previous shift (detects rapid shift slamming)
     double missed_recover_timer_ = 0.0;     // auto-clutch: brief neutral penalty before recovering a missed shift
+    bool recovering_from_miss_ = false;     // auto-clutch: a missed shift is being recovered (clutch held open until the retry completes)
     double prev_steer_rad_ = 0.0;           // previous tick average front road-wheel steer angle (for column damping/inertia)
     double prev_steer_vel_rads_ = 0.0;      // previous tick steering wheel angular velocity (rad/s)
 
