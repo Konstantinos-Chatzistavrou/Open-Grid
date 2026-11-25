@@ -3263,7 +3263,11 @@ async function main() {
       else if (hitL && hitR) rev = 0.6 - Math.min(0.35, (hitL.toi + hitR.toi) / 40 * 0.35);
       else if (hitL || hitR) rev = 0.12;
       audio.envReverb += (rev - audio.envReverb) * 0.35;
+      audio.wallProximityL = hitL ? Math.max(0, 1 - hitL.toi / 10) : 0;
+      audio.wallProximityR = hitR ? Math.max(0, 1 - hitR.toi / 10) : 0;
+      audio.overpassReflection = hitU ? Math.max(0, 1 - hitU.toi / 14) : 0;
       audio.roadWetness = worldClock.wetness;
+      audio.roadWaterMm = worldClock.roadWaterMm;
       let rough = 0;   // wheels on a non-asphalt surface (kerbs / pavement): coarse rolling crunch instead of smooth asphalt
       for (let i = 0; i < 4; i++) { const o = OUT.wheel(i); if (car.out[o + 5] > 0.5 && car.out[o + 11] !== core.info.surfaces.asphalt) rough++; }
       audio.onGravel = rough >= 2;
@@ -3332,6 +3336,7 @@ async function main() {
         core.setAtmosphere(airC, trackC, 15, humidity);
         core.setRoadWater(worldClock.roadWaterMm);
         p2Core?.setRoadWater(worldClock.roadWaterMm);
+        audio.roadWaterMm = worldClock.roadWaterMm;
         const rainRate = worldClock.weather === 'rain' ? Math.max(4, worldClock.roadWaterMm * 14) : 0;
         core.setStreetSurface(1, rainRate, true);
         p2Core?.setStreetSurface(1, rainRate, true);

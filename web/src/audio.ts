@@ -418,8 +418,26 @@ export class GameAudio {
   private garageFlame = 0;
   private garageWasHighRpm = false;
   private _muted = false;
-  /** Low-power mobile/potato audio mode: skips heavy stereo FFT ConvolverNode reverb to save phone ARM CPU. */
+  /** Low-power mobile/potato audio mode: skips heavy stereo FFT ConvolverNode reverb & WASM AudioWorklet to save phone ARM CPU. */
   lowPower = false;
+  /** Real-time environment spatial audio inputs (populated from main.ts 3D raycasts & weather). */
+  wallProximityL = 0;
+  wallProximityR = 0;
+  overpassReflection = 0;
+  roadWaterMm = 0;
+
+  // Dedicated C++17 WebAssembly AudioWorklet (rs::VehicleAudioEngine: vendored engine-sim + 12 voices +
+  // 8-ch Householder tunnel FDN + 4-wheel tyre/road/brake/ABS/drivetrain/aero/impact + 2 ms lookahead limiter).
+  private workletNode: AudioWorkletNode | null = null;
+  private workletGain: GainNode | null = null;
+  private wasmAudioReady = false;
+  private wasmAudioLoading = false;
+  private wasmTelBuf = new Float32Array(128);
+  private lastWasmVoice = -1;
+  private lastWasmStage = -1;
+  private lastWasmTurbo = false;
+  private carId = 'vela_gt';
+  private customVoiceTag = '';
 
   // 4-zone physical combustion & FX audio stems (`/assets/audio/<id>.ogg`) with graceful synth fallback
   private stemBuffers = new Map<string, AudioBuffer>();
@@ -533,6 +551,165 @@ export class GameAudio {
     zero(this.stemDryTyreGain);
     zero(this.stemWetSprayGain);
     zero(this.stemKerbGain);
+    zero(this.workletGain);
+    if (this.workletNode) {
+      this.workletNode.port.postMessage({ type: 'active', active: false });
+    }
+  }
+
+  /** True when the C++17 physical WASM AudioWorklet owns vehicle synthesis (disabled in lowPower mode). */
+  get wasmPhysicalAudioActive(): boolean {
+    return this.wasmAudioReady && !this.lowPower && this.workletNode !== null;
+  }
+
+  private resolveWasmVoiceId(): number {
+    const tag = this.customVoiceTag || this.voiceId;
+    if (tag === 'i4_turbo') return 10;
+    if (tag === 'i5_turbo') return 11;
+    // Detect stock 4-cyl/5-cyl rally & hot-hatch chassis when no engine swap is active
+    if (!this.customVoiceTag) {
+      const id = this.carId.toLowerCase();
+      if (id.includes('quattro') || id.includes('rs3') || id.includes('ttrs') || id.includes('i5')) return 11;
+      if (id.includes('200t') || id.includes('integrale') || id.includes('evo') || id.includes('civic') || id.includes('golf') || id.includes('i4')) return 10;
+    }
+    switch (this.voiceId) {
+      case 'v8_crossplane':   return 0;
+      case 'v8_flatplane':
+      case 'flat8_na':        return 1;
+      case 'v8_supercharged': return 2;
+      case 'v8_twin_turbo':   return 3;
+      case 'v12_na':          return 4;
+      case 'v10_screamer':    return 5;
+      case 'flat6_na':        return 6;
+      case 'i6_forged':       return 7;
+      case 'v6_tt':           return 8;
+      case 'rotary_4':        return 9;
+      default:                return 0;
+    }
+  }
+
+  private resolveWasmExhaustStage(): number {
+    return this.exhaustStage === 'stock' ? 0 : this.exhaustStage === 'race' ? 2 : 1;
+  }
+
+  private resolveWasmPerspective(): number {
+    switch (this.cameraPerspective) {
+      case 'garage':  return 0;
+      case 'chase':   return 1;
+      case 'hood':
+      case 'bumper':  return 2;
+      case 'cockpit': return 3;
+      default:        return 1;
+    }
+  }
+
+  private resolveWasmTurboEnabled(): boolean {
+    const vSpec = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
+    return this.extraTurbo || vSpec.boost === 'turbo' || this.resolveWasmVoiceId() === 10 || this.resolveWasmVoiceId() === 11;
+  }
+
+  private syncWasmVoice() {
+    if (!this.wasmAudioReady || !this.workletNode) return;
+    const voiceId = this.resolveWasmVoiceId();
+    const exhaustStage = this.resolveWasmExhaustStage();
+    const turboEnabled = this.resolveWasmTurboEnabled();
+    if (voiceId === this.lastWasmVoice && exhaustStage === this.lastWasmStage && turboEnabled === this.lastWasmTurbo) {
+      return;
+    }
+    this.lastWasmVoice = voiceId;
+    this.lastWasmStage = exhaustStage;
+    this.lastWasmTurbo = turboEnabled;
+    this.workletNode.port.postMessage({ type: 'voice', voiceId, exhaustStage, turboEnabled });
+  }
+
+  private postWasmTrigger(kind: 'pop' | 'flutter' | 'crank' | 'burble' | 'impact', value: number) {
+    if (!this.wasmPhysicalAudioActive || !this.workletNode) return;
+    this.workletNode.port.postMessage({ type: 'trigger', kind, value });
+  }
+
+  private muteFallbackVehicleBuses(t: number) {
+    const zero = (g?: GainNode | null) => {
+      if (g) g.gain.setTargetAtTime(0, t, 0.02);
+    };
+    zero(this.eng?.g);
+    zero(this.eng?.boostGain);
+    zero(this.eng?.gearGain);
+    zero(this.stemEngMaster);
+    zero(this.stemIntakeGain);
+    zero(this.stemTurboGain);
+    zero(this.stemGearGain);
+    zero(this.stemDryTyreGain);
+    zero(this.stemWetSprayGain);
+    zero(this.stemKerbGain);
+    zero(this.tyre?.g);
+    zero(this.roadRoll?.g);
+    zero(this.cavity?.g);
+    zero(this.wind?.g);
+    zero(this.brakeGain);
+    zero(this.brakeHissGain);
+    zero(this.brakeSquealGain);
+    zero(this.reverbSend);
+    zero(this.tunnelSend);
+    zero(this.tunnelFb);
+  }
+
+  private async initWasmWorklet() {
+    const ctx = this.ctx;
+    if (!ctx || !this.out || this.lowPower || this.wasmAudioLoading || this.wasmAudioReady) return;
+    if (typeof AudioWorkletNode === 'undefined' || !ctx.audioWorklet) return;
+    this.wasmAudioLoading = true;
+    try {
+      const base = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
+      const [resp] = await Promise.all([
+        fetch(`${base}audio/rs_audio.wasm`),
+        ctx.audioWorklet.addModule(`${base}audio/opengrid-audio-worklet.js`),
+      ]);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching rs_audio.wasm`);
+      const wasmBinary = await resp.arrayBuffer();
+      const node = new AudioWorkletNode(ctx, 'opengrid-vehicle-audio', {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+      });
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      node.connect(gain).connect(this.out);
+      const voiceId = this.resolveWasmVoiceId();
+      const exhaustStage = this.resolveWasmExhaustStage();
+      const turboEnabled = this.resolveWasmTurboEnabled();
+      node.port.onmessage = (ev) => {
+        const msg = ev.data;
+        if (!msg) return;
+        if (msg.type === 'ready') {
+          this.wasmAudioReady = true;
+          this.lastWasmVoice = voiceId;
+          this.lastWasmStage = exhaustStage;
+          this.lastWasmTurbo = turboEnabled;
+          this.syncWasmVoice();
+        } else if (msg.type === 'error') {
+          this.wasmAudioReady = false;
+        }
+      };
+      this.workletNode = node;
+      this.workletGain = gain;
+      node.port.postMessage(
+        {
+          type: 'init',
+          wasmBinary,
+          voiceId,
+          exhaustStage,
+          turboEnabled,
+          simFreq: 4000,
+          fluidSubsteps: 3,
+        },
+        [wasmBinary],
+      );
+    } catch {
+      // Graceful automatic fallback: existing WebAudio stems + harmonic synth stay active.
+      this.wasmAudioReady = false;
+    } finally {
+      this.wasmAudioLoading = false;
+    }
   }
 
   /** Silence only road/tyre/wind/siren/gearbox/brake/tunnel layers (used before starting the Garage stationary ignition). */
@@ -573,6 +750,7 @@ export class GameAudio {
     if (this.exhaustStage === stage) return;
     this.exhaustStage = stage;
     this.applyAcousticProfile(0.05);
+    this.syncWasmVoice();
   }
 
   /** Apply combined camera perspective + exhaust stage EQ, cabin resonance, Haas width & cached WaveShaper curve. */
@@ -616,9 +794,12 @@ export class GameAudio {
 
   /** Apply authentic engine acoustic architecture (factory stock engine OR installed engine swap + turbo kit). */
   setCarProfile(carId: string, swapVoice?: EngineVoiceId | null, hasAftermarketTurbo = false) {
+    this.carId = carId;
+    this.customVoiceTag = swapVoice ? String(swapVoice) : '';
     this.voiceId = swapVoice ?? stockEngineOfCar(carId).voice;
     this.extraTurbo = hasAftermarketTurbo;
     this.applyVoice();
+    this.syncWasmVoice();
   }
 
   private applyVoice() {
@@ -710,15 +891,19 @@ export class GameAudio {
     this.garageThr = 0;
     this.garageWasHighRpm = false;
     if (ctx && this.out && !this.muted) {
-      const t = ctx.currentTime;
-      // Crisp starter-motor solenoid + 4 compression cranks before the real engine catches
-      for (let i = 0; i < 4; i++) {
-        this.tone(t + i * 0.095, 0.072, 118, 152, 'sawtooth', 0.11);
-        this.burst(t + i * 0.095, 0.045, 'bandpass', 620, 2.2, 0.06);
+      if (this.wasmPhysicalAudioActive) {
+        this.postWasmTrigger('crank', 0.40);
+      } else {
+        const t = ctx.currentTime;
+        // Crisp starter-motor solenoid + 4 compression cranks before the real engine catches
+        for (let i = 0; i < 4; i++) {
+          this.tone(t + i * 0.095, 0.072, 118, 152, 'sawtooth', 0.11);
+          this.burst(t + i * 0.095, 0.045, 'bandpass', 620, 2.2, 0.06);
+        }
+        // Cold-start exhaust catch bark at 0.38s
+        const v = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
+        this.burst(t + 0.37, 0.18, 'bandpass', v.f2[0], 1.5, 0.24);
       }
-      // Cold-start exhaust catch bark at 0.38s
-      const v = ENGINE_VOICES[this.voiceId] ?? ENGINE_VOICES.v8_crossplane;
-      this.burst(t + 0.37, 0.18, 'bandpass', v.f2[0], 1.5, 0.24);
     }
   }
 
@@ -793,6 +978,8 @@ export class GameAudio {
       if (this.stemTurboGain) this.stemTurboGain.gain.setTargetAtTime(0, t, 0.02);
       if (this.reverbSend) this.reverbSend.gain.setTargetAtTime(0, t, 0.03);
       if (this.tunnelSend) this.tunnelSend.gain.setTargetAtTime(0, t, 0.03);
+      if (this.workletGain) this.workletGain.gain.setTargetAtTime(0, t, 0.02);
+      if (this.workletNode) this.workletNode.port.postMessage({ type: 'active', active: false });
     }
   }
 
@@ -858,6 +1045,8 @@ export class GameAudio {
         if (this.stemEngMaster) this.stemEngMaster.gain.setTargetAtTime(0, t, 0.03);
         if (this.stemIntakeGain) this.stemIntakeGain.gain.setTargetAtTime(0, t, 0.03);
         if (this.stemTurboGain) this.stemTurboGain.gain.setTargetAtTime(0, t, 0.03);
+        if (this.workletGain) this.workletGain.gain.setTargetAtTime(0, t, 0.03);
+        if (this.workletNode) this.workletNode.port.postMessage({ type: 'active', active: false });
         return;
       }
     } else if (now < this.garageCrankUntil) {
@@ -865,6 +1054,25 @@ export class GameAudio {
       this.garageRpm = 320 + Math.sin(now * 0.06) * 45;
       this.garageThr = 0.08;
       this.boostSpool = 0;
+      if (this.wasmPhysicalAudioActive && this.workletNode && this.workletGain) {
+        const b = this.wasmTelBuf;
+        b.fill(0);
+        b[0] = this.garageRpm;
+        b[1] = redline;
+        b[2] = 0.08;
+        b[4] = 0.25;
+        b[6] = this.resolveWasmTurboEnabled() ? 1 : 0;
+        b[10] = 1; // starter_crank
+        b[15] = 1; b[16] = 1;
+        b[20] = this.resolveWasmExhaustStage();
+        b[21] = 0; // ExteriorRear in garage
+        b[22] = 0.34;
+        b[23] = 0.22;
+        this.workletNode.port.postMessage({ type: 'telemetry', data: b.slice(), active: !this.muted });
+        this.workletGain.gain.setTargetAtTime(this.muted ? 0 : 1.0, t, 0.015);
+        this.muteFallbackVehicleBuses(t);
+        return;
+      }
       e.g.gain.setTargetAtTime(0, t, 0.02);
       e.boostGain.gain.setTargetAtTime(0, t, 0.02);
       if (this.stemEngMaster) this.stemEngMaster.gain.setTargetAtTime(0, t, 0.02);
@@ -989,6 +1197,32 @@ export class GameAudio {
     if (this.tunnelFb) {
       this.tunnelFb.gain.setTargetAtTime(this.muted ? 0 : 0.26, t, 0.08);
     }
+
+    if (this.wasmPhysicalAudioActive && this.workletNode && this.workletGain) {
+      this.syncWasmVoice();
+      const b = this.wasmTelBuf;
+      b.fill(0);
+      b[0] = rpm;
+      b[1] = redline;
+      b[2] = thr;
+      b[4] = load;
+      b[5] = this.boostSpool * 1.45;
+      b[6] = this.resolveWasmTurboEnabled() ? 1 : 0;
+      b[8] = now < this.garageLimCutUntil ? 1 : 0;
+      b[15] = 1; b[16] = 1;
+      b[20] = this.resolveWasmExhaustStage();
+      b[21] = 0; // ExteriorRear in showroom garage
+      b[22] = 0.34;
+      b[23] = 0.22;
+      b[24] = 0.45;
+      b[25] = 0.45;
+      b[29] = this.exhaustStage === 'race' && this.resolveWasmTurboEnabled() ? 1 : 0;
+      this.workletNode.port.postMessage({ type: 'telemetry', data: b.slice(), active: !this.muted });
+      this.workletGain.gain.setTargetAtTime(this.muted ? 0 : spinFade, t, 0.02);
+      this.muteFallbackVehicleBuses(t);
+    } else if (this.workletGain) {
+      this.workletGain.gain.setTargetAtTime(0, t, 0.02);
+    }
   }
 
   /**
@@ -1057,6 +1291,9 @@ export class GameAudio {
     this.buildEngine();
     this.tyre = this.buildTyreSynth();
     this.wind = this.loopNoise('lowpass', 420, 0.7);
+    if (!this.lowPower) {
+      void this.initWasmWorklet();
+    }
   }
 
   private loopNoise(type: BiquadFilterType, freq: number, q: number) {
@@ -1956,6 +2193,10 @@ export class GameAudio {
     const cam = CAMERA_PROFILES[this.cameraPerspective];
     const bovScale = 0.72 + 0.28 * cam.boostMul;
     const inten = clamp(intensity, 0.5, 1.2) * bovScale;
+    if (this.wasmPhysicalAudioActive) {
+      this.postWasmTrigger('flutter', inten);
+      return;
+    }
     const rate = 0.94 + Math.random() * 0.12;
     if (this.playStemOneShot('turbo_flutter_bov', t, 0.74 * inten, rate, true, cam.popLpHz > 0 ? 3400 : 0)) {
       return;
@@ -1983,6 +2224,12 @@ export class GameAudio {
       return;
     }
     const t = ctx.currentTime;
+    if (this.wasmPhysicalAudioActive) {
+      this.brakeGain.gain.setTargetAtTime(0, t, 0.02);
+      this.brakeHissGain.gain.setTargetAtTime(0, t, 0.02);
+      this.brakeSquealGain.gain.setTargetAtTime(0, t, 0.02);
+      return;
+    }
     const bp = clamp(brakePressure, 0, 1);
     const spd = Math.abs(speedMps);
     const cam = CAMERA_PROFILES[this.cameraPerspective];
@@ -2344,6 +2591,75 @@ export class GameAudio {
       this.wind!.g.gain.setTargetAtTime(this.muted ? 0 : Math.pow(v, 1.8) * 0.42 * cam.windMul, t, 0.14);
       this.wind!.f.frequency.setTargetAtTime((260 + 1080 * v) * cam.windCutoffMul, t, 0.14);
     }
+
+    if (this.wasmPhysicalAudioActive && this.workletNode && this.workletGain) {
+      this.syncWasmVoice();
+      const b = this.wasmTelBuf;
+      b.fill(0);
+      const tunnelEnv = clamp(Math.max(this.envReverb, cam.tunnelFloor), 0, 1);
+      b[0] = rpm;
+      b[1] = redline;
+      b[2] = thr;
+      b[3] = clamp(out[OUT.brake] || 0, 0, 1);
+      b[4] = load;
+      b[5] = Math.max(out[OUT.boostBar] || 0, this.boostSpool * 1.4);
+      b[6] = this.resolveWasmTurboEnabled() ? 1 : 0;
+      b[7] = (out[OUT.bovVenting] || 0) > 0.5 ? 1 : 0;
+      b[8] = (out[OUT.shiftCut] || 0) > 0.5 || limDip < 0.9 ? 1 : 0;
+      b[11] = (out[OUT.gearGrind] || 0) > 0.5 ? 1 : 0;
+      b[12] = gearFreq;
+      b[13] = gearPresence * (isRaceBox ? 0.85 : 0.35);
+      b[15] = out[OUT.tcSlipRatio] > 0 ? out[OUT.tcSlipRatio] : 1;
+      b[16] = out[OUT.tcTorqueRatio] >= 1 ? out[OUT.tcTorqueRatio] : 1;
+      b[17] = absSpeed;
+      b[18] = out[OUT.sideslip] || 0;
+      b[19] = (out[OUT.splitterStalled] || 0) > 0.5 ? 1 : 0;
+      b[20] = this.resolveWasmExhaustStage();
+      b[21] = this.resolveWasmPerspective();
+      b[22] = clamp(0.12 + tunnelEnv * 0.45, 0, 1);
+      b[23] = tunnelEnv;
+      b[24] = this.wallProximityL;
+      b[25] = this.wallProximityR;
+      b[26] = this.overpassReflection;
+      b[27] = Math.max(this.roadWaterMm, this.roadWetness > 0.15 ? this.roadWetness * 1.8 : 0);
+      b[28] = clamp(out[OUT.streetMarbles] || 0, 0, 1);
+      b[29] = this.exhaustStage === 'race' && this.resolveWasmTurboEnabled() ? 1 : 0;
+      b[30] = out[OUT.treadPitchHz] > 50 ? out[OUT.treadPitchHz] : 520;
+      const absFlag = (out[OUT.abs] || 0) > 0.5 ? 10 : 0;
+      const cavLo = out[OUT.cavityLowHz] > 80 ? out[OUT.cavityLowHz] : 220;
+      const cavHi = out[OUT.cavityHighHz] > 80 ? out[OUT.cavityHighHz] : 228;
+      for (let w = 0; w < 4; w++) {
+        const o = OUT.wheel(w);
+        const dst = 32 + 20 * w;
+        const surf = Math.round(out[o + 11] || 0);
+        const cavG = out[OUT.cavityGain(w)] || 0;
+        b[dst + 0] = out[o + 5] || 0;
+        b[dst + 1] = out[o + 6] || 0;
+        b[dst + 2] = out[o + 7] || 0;
+        b[dst + 3] = out[o + 8] || 0;
+        b[dst + 4] = out[o + 10] || 0;
+        b[dst + 5] = 0.33;
+        b[dst + 6] = out[OUT.treadSurface(w)] || 70;
+        b[dst + 7] = out[OUT.brakeTemp(w)] || 45;
+        b[dst + 8] = out[OUT.pressure(w)] || 220;
+        b[dst + 9] = out[OUT.flatSpot(w)] || 0;
+        b[dst + 12] = b[28];
+        b[dst + 13] = Math.min(1, b[27] * 0.25 * Math.max(0, (absSpeed - 18) / 36));
+        b[dst + 14] = surf === 1 ? 0.85 : 0;
+        b[dst + 15] = Math.min(1, cavG * 1.4);
+        b[dst + 16] = cavLo;
+        b[dst + 17] = cavHi;
+        b[dst + 18] = cavG;
+        b[dst + 19] = absFlag + (this.onGravel ? 2 : (surf % 10));
+      }
+      const active = !this.muted && !stalled;
+      this.workletNode.port.postMessage({ type: 'telemetry', data: b.slice(), active });
+      this.workletGain.gain.setTargetAtTime(active ? 1.0 : 0, t, 0.015);
+      this.muteFallbackVehicleBuses(t);
+    } else if (this.workletGain) {
+      this.workletGain.gain.setTargetAtTime(0, t, 0.02);
+      if (this.workletNode) this.workletNode.port.postMessage({ type: 'active', active: false });
+    }
   }
 
   /** Update dynamic adaptive music intensity from speed, police heat & chase state. */
@@ -2396,6 +2712,10 @@ export class GameAudio {
     const cam = CAMERA_PROFILES[this.cameraPerspective];
     const stage = EXHAUST_PROFILES[this.exhaustStage];
     this.drivingFlame = Math.max(this.drivingFlame, (0.92 + 0.26 * inten) * stage.flameMul);
+    if (this.wasmPhysicalAudioActive) {
+      this.postWasmTrigger('pop', clamp(0.65 + 0.35 * inten, 0.4, 1.0));
+      return;
+    }
     const id = ANTILAG_POP_IDS[this.antiLagPopIdx++ % ANTILAG_POP_IDS.length];
     const rate = (this.exhaustStage === 'race' ? 0.96 : 0.90) + Math.random() * 0.18;
     const bangGain = clamp((0.62 + 0.26 * inten) * stage.shiftBarkMul * cam.popMul, 0.12, 1.15);
@@ -2415,6 +2735,10 @@ export class GameAudio {
     const cam = CAMERA_PROFILES[this.cameraPerspective];
     const stage = EXHAUST_PROFILES[this.exhaustStage];
     this.drivingFlame = Math.max(this.drivingFlame, (0.82 + 0.34 * inten) * stage.flameMul);
+    if (this.wasmPhysicalAudioActive) {
+      this.postWasmTrigger('pop', inten);
+      return;
+    }
     const id = ANTILAG_POP_IDS[this.antiLagPopIdx++ % ANTILAG_POP_IDS.length];
     const rate = stage.popRateMin + Math.random() * stage.popRateSpan;
     const popGain = clamp((0.56 + Math.random() * 0.24) * (0.75 + 0.25 * inten) * stage.popGainMul * cam.popMul, 0.10, 1.15);
@@ -2439,6 +2763,13 @@ export class GameAudio {
     const stage = EXHAUST_PROFILES[this.exhaustStage];
     const mul = stage.burbleGainMul * cam.burbleMul;
     if (mul <= 0.04) return;
+    if (this.wasmPhysicalAudioActive) {
+      this.postWasmTrigger('burble', clamp(inten * mul, 0.2, 1.0));
+      if (this.exhaustStage === 'race') {
+        this.drivingFlame = Math.max(this.drivingFlame, 0.22 * inten);
+      }
+      return;
+    }
 
     // Warm muffled low-mid gurgle (130-260 Hz bandpass)
     const freq = 130 + Math.random() * 130;
@@ -2483,6 +2814,11 @@ export class GameAudio {
     }
 
     // Standard car-to-wall / car-to-car chassis impact
+    if (this.wasmPhysicalAudioActive) {
+      this.postWasmTrigger('impact', Math.max(1, kj));
+      if (glass) this.playGlassShards(t + 0.015, s * 0.85, 22);
+      return;
+    }
     this.tone(t, 0.32, 92, 26, 'sine', 0.75 * s);
     this.burst(t, 0.28 * s + 0.12, 'lowpass', 210, 0.9, 0.72 * s);
     // Sheet-metal crumple & suspension clang modes

@@ -10,6 +10,7 @@
 #include "../include/engine.h"
 
 #include <cmath>
+#include <cstdlib>
 
 CombustionChamber::CombustionChamber() {
     m_crankcasePressure = 0.0;
