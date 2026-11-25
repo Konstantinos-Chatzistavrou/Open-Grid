@@ -38,12 +38,14 @@ defaults, and therefore **every reference test, run with default settings, leave
 `RS_GAME_MODELS=1 ctest --test-dir core/build` runs the whole suite with the game's settings (the same list, `test::enable_game_models`;
 `RS_GAME_MODELS_OFF=name,name` leaves some out to find where a difference comes from: unsprung, zones, yaw_aero, flex, ayc, active_aero, brake_boil,
 torsional, dogbox). Measured 2026-11-25: the headline numbers do not move (the calibrated GT3: skidpad 1.53 g either way, braking 1.68 vs
-1.69 g, quasi-steady laps within 0.1 s), and 95 of 98 tests pass. The three that differ, each traced to one model by switching it off:
-- `dyno`: 0-100 km/h is 12 % slower than the dyno predicts. Only the **driveline torsional compliance** model causes it. Whether 12 % is realistic
-  is unproven; a driveline's wind-up should not cost that much, so it is probably too much.
-- `reference_data_chrono_vehicles`: the HMMWV's yaw response is 0.34 x the bicycle model (limit 0.4). Also only **driveline torsional compliance**.
-- `characters`: the Kestrel's two aero-grip checks fail (its fast-corner grip no longer exceeds its skidpad). Only the **dog-box flat-shift cut**
-  setting causes it: the torque cut during the test's gear changes in the corner, not the aero.
+1.69 g, quasi-steady laps within 0.1 s).
+- **Driveline torsional compliance (fixed 2026-11-25):** previously integrated clutch slip `(engine_omega / G) - w_carrier` instead of axle torque,
+  which left locked-clutch cruise trapped in the backlash deadzone (breaking Chrono HMMWV yaw response at 0.34 x) and injected phantom spring torque
+  on launches (making `dyno` vs `road` 0-100 km/h differ by 12 %). Replaced with a passive 2nd-order half-shaft torsional spring-damper driven by
+  transmitted axle torque (`T_out == T_in` in steady state with authentic ~11-14 Hz shunt and backlash clunk): `dyno` vs `road` 0-100 km/h now
+  matches within `1.009 x` and `reference_data_chrono_vehicles` passes all three vehicles under `RS_GAME_MODELS=1`.
+- Remaining single difference under `RS_GAME_MODELS=1`: `characters` (the Kestrel's two aero-grip checks fail when **dog-box flat-shift cut**
+  interrupts torque during the test's gear changes in the corner, not the aero).
 
 **Active aero (fixed 2026-11-25).** Until then every car, road cars included, got DRS (above 180 km/h at full throttle: drag x0.86, rear downforce x0.82)
 and an airbrake (braking above 22 m/s past 55 % pedal: drag x1.24, rear downforce x1.22) in the game, which put top speed 2.7-4.1 % above the paper

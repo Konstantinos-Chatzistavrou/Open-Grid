@@ -131,6 +131,11 @@ void Vehicle::reset_motion(double v, int gear) {
     sys.tc_torque_ratio = 1.0;
     sys.tc_lockup_frac = 0.0;
     sys.tc_lockup_engaged = false;
+    sys.torsional_twist_rad = 0.0;
+    sys.torsional_twist_mean_rad = 0.0;
+    sys.torsional_vel_rads = 0.0;
+    sys.driveline_clunk_nm = 0.0;
+    sys.last_backlash_side = 0;
     prev_steer_rad_ = 0.0;
     prev_steer_vel_rads_ = 0.0;
     sys.gearbox_health = 1.0;
@@ -830,23 +835,28 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         if (assists_.esc && v > 5.0) {
             double err = yaw_rate - r_ref;                      // + = yawing more to the left
             double band = assists_.esc_yaw_deadband + 0.1 * std::abs(r_ref);
-            bool sliding = std::abs(out.sideslip) > assists_.esc_sideslip_limit;
-            // Oversteer: yawing faster than the reference (in either direction), or sliding.
+            // Dynamic rear-axle sideslip (subtracts geometric Ackermann CG sideslip b * r / v so tight
+            // low-speed zero-slip turns NEVER falsely trigger ESC oversteer braking!).
+            const double beta_rear = std::atan2(v_body.y - yaw_rate * cfg_.dist_cg_rear, v);
+            const bool sliding = std::abs(beta_rear) > assists_.esc_sideslip_limit
+                              && (beta_rear * yaw_rate < 0.0 || std::abs(yaw_rate) < 0.15);
+            // Oversteer: yawing faster than the reference (in either direction), or rear sliding outward.
             // Understeer: yawing slower than the reference by more than the deadband.
             bool over = sliding || (std::abs(err) > band && std::abs(yaw_rate) > std::abs(r_ref));
             bool under = !over && std::abs(err) > band && std::abs(yaw_rate) < std::abs(r_ref) && v > 8.0;
             double mag = clamp(assists_.esc_gain * (std::abs(err) - band), 0.0, assists_.esc_max_brake);
-            if (sliding) mag = std::max(mag, clamp(assists_.esc_gain * (std::abs(out.sideslip) - assists_.esc_sideslip_limit) * 4.0, 0.0, assists_.esc_max_brake));
+            if (sliding) mag = std::max(mag, clamp(assists_.esc_gain * (std::abs(beta_rear) - assists_.esc_sideslip_limit) * 4.0, 0.0, assists_.esc_max_brake));
+            const double sev = clamp(mag / std::max(assists_.esc_max_brake, 1.0), 0.0, 1.0);
             if (over) {
                 // yawing left too much (err > 0) -> brake the front RIGHT (outer) wheel
-                bool rot_left = (sliding ? yaw_rate : err) > 0;
+                bool rot_left = (sliding ? (std::abs(yaw_rate) > 0.05 ? yaw_rate : -beta_rear) : err) > 0;
                 esc_brake[rot_left ? FR : FL] = mag;
-                esc_throttle_cut = 0.3;
+                esc_throttle_cut = 0.30 * sev;
                 as.esc_mode = 1;
             } else if (under) {
                 // turning left but not enough -> brake the rear LEFT (inner) wheel
                 esc_brake[r_ref > 0 ? RL : RR] = mag * 0.6;
-                esc_throttle_cut = 0.5;
+                esc_throttle_cut = 0.45 * sev;
                 as.esc_mode = -1;
             }
         }
@@ -1025,9 +1035,21 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         // filtered over ~30 ms (like an ignition/throttle cut).
         double cut_target = 0;
         if (assists_.tc) {
-            double slip = 0;
-            for (int w = 0; w < 4; ++w)
-                if (cfg_.axle(w).driven && touching[w]) slip = std::max(slip, kappa_[w] * sign(kin[w].vx + 1e-9));
+            double slip_max = 0.0;
+            double slip_weighted = 0.0;
+            double load_sum = 0.0;
+            for (int w = 0; w < 4; ++w) {
+                if (cfg_.axle(w).driven && touching[w]) {
+                    const double s_w = std::max(0.0, kappa_[w] * sign(kin[w].vx + 1e-9));
+                    slip_max = std::max(slip_max, s_w);
+                    slip_weighted += s_w * kin[w].load;
+                    load_sum += kin[w].load;
+                }
+            }
+            // Load-weighted blend: identical to max-slip on straight-line launches (both wheels equally loaded),
+            // while an unloaded inside wheel in a tight corner cannot choke engine power down to 5%.
+            const double slip_avg = load_sum > 10.0 ? (slip_weighted / load_sum) : slip_max;
+            const double slip = 0.65 * slip_avg + 0.35 * slip_max;
             cut_target = clamp((slip - assists_.tc_slip_target) * assists_.tc_gain, 0.0, 1.0);
         }
         tc_cut_ += (cut_target - tc_cut_) * std::min(1.0, h / 0.03);

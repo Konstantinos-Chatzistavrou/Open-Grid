@@ -942,15 +942,17 @@ export class ForzaVfxController {
 
         // --- C. Volumetric 4-Wheel Drift & Front-Lockup Tyre Smoke ---
         if (this.smoke && f.active && outValid && contact) {
-          const latSlip = slipAngle / 0.34;
+          // Only smoke when genuinely sliding past peak grip (~10.5 deg drift or >38% burnout/lockup slip),
+          // NEVER during normal clean cruising, mild acceleration, or routine cornering.
+          const latSlip = slipAngle / 0.42;
           const combinedSlip = Math.hypot(slipRatio, latSlip);
-          const isFrontLockup = i < 2 && brakePressure > 0.45 && slipRatio > 0.22 && speedMps > 5.5;
-          const isSlideOrSpin = combinedSlip > 0.28 && (speedMps > 1.8 || omega * wRadius > 4.5);
+          const isFrontLockup = i < 2 && brakePressure > 0.45 && slipRatio > 0.32 && speedMps > 6.5;
+          const isSlideOrSpin = combinedSlip > 0.42 && (speedMps > 2.5 || omega * wRadius > 6.5);
 
           if (isFrontLockup || isSlideOrSpin) {
             // Wet roads dampen dry rubber smoke slightly while water spray intensifies
             const wetDamp = 1 - wetness * 0.42;
-            const intensity = THREE.MathUtils.clamp((combinedSlip - 0.22) * 1.15, 0.15, 1.35) * wetDamp;
+            const intensity = THREE.MathUtils.clamp((combinedSlip - 0.36) * 1.15, 0.12, 1.35) * wetDamp;
             const emitHz = (14 + intensity * 26) * rateScale;
             this.smokeAcc[i] += emitHz * dt;
 
@@ -990,9 +992,11 @@ export class ForzaVfxController {
         }
 
         // --- D. Wet-Road Rooster-Tail Water Spray Plumes ---
-        if (this.spray && f.active && outValid && contact && wetness > 0.15 && speedMps > 7.0) {
-          const speedNorm = THREE.MathUtils.clamp((speedMps - 7.0) / 48.0, 0.08, 1.35);
-          const wetNorm = THREE.MathUtils.smoothstep(wetness, 0.15, 0.85);
+        // Only spray rooster-tail mist when there is actual standing rain/water (wetness > 0.50),
+        // NOT on dry clear-night asphalt specular sheen (wetness ~0.22-0.42).
+        if (this.spray && f.active && outValid && contact && wetness > 0.50 && speedMps > 9.0) {
+          const speedNorm = THREE.MathUtils.clamp((speedMps - 9.0) / 48.0, 0.08, 1.35);
+          const wetNorm = THREE.MathUtils.smoothstep(wetness, 0.50, 0.95);
           const isRear = i >= 2;
           // Rear tyres throw taller, denser rooster-tails; front tyres throw low side mist
           const axleMul = isRear ? 1.25 : 0.65;

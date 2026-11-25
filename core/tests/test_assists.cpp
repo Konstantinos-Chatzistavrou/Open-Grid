@@ -155,6 +155,36 @@ RS_TEST(esc) {
         if (s->time > 5 && s->last.assists.esc_mode != 0) esc_time += s->dt;
     }
     test::check_range("ESC intervention time in a normal 0.5 g corner", esc_time, 0, 0.2, "s");
+
+    // Regression: accelerating from rest while holding full steer with negative camber and ESC+TC+countersteer
+    // must NEVER trap the car at 18-25 km/h due to false Ackermann CG-sideslip ESC lockup or inner-wheel TC choke.
+    {
+        CarConfig c_cam = cfg;
+        c_cam.front.static_camber_deg = -5.0;
+        c_cam.rear.static_camber_deg = -5.0;
+        c_cam.finalize();
+        auto st = test::make_sim(c_cam);
+        st->vehicle.assists().abs = true;
+        st->vehicle.assists().tc = true;
+        st->vehicle.assists().tc_slip_target = 0.14;
+        st->vehicle.assists().esc = true;
+        Controls ctl(c_cam);
+        ctl.settings.auto_gearbox = true;
+        ctl.settings.auto_clutch = true;
+        ctl.settings.countersteer_assist = true;
+        ctl.settings.countersteer_gain = 0.4;
+        RawInput raw;
+        raw.device = InputDevice::Keyboard;
+        raw.throttle = 1.0;
+        raw.steer = 1.0;
+        double vmax_kmh = 0.0;
+        for (int i = 0; i < 8 * 240; ++i) {
+            drive(*st, ctl, raw);
+            vmax_kmh = std::max(vmax_kmh, st->last.speed * 3.6);
+        }
+        std::printf("         full-steer + -5 deg camber launch with ESC+TC+CS: vmax %.1f km/h\n", vmax_kmh);
+        test::check_range("full-steer + camber launch clears 30 km/h cleanly", vmax_kmh, 40.0, 200.0, "km/h");
+    }
 }
 
 // ---------------------------------------------------------------- controls

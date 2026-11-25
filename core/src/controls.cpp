@@ -72,11 +72,15 @@ DriverInput Controls::update(const RawInput& raw, const VehicleOutput& last, dou
     double steer = steer_;
     if (raw.device != InputDevice::Wheel) steer *= max_steer_fraction(v);
 
-    // ---- countersteer assist: when the rear steps out (sideslip beta), add steering toward the
-    // direction of travel, proportional to beta. Driver input still adds on top.
-    if (s.countersteer_assist && v > 5.0 && std::abs(last.sideslip) > 0.03) {
-        double lock = cfg_.front.max_steer_deg * kPi / 180.0;
-        steer += s.countersteer_gain * last.sideslip / lock;
+    // ---- countersteer assist: when the rear actually steps out (dynamic rear-axle sideslip opposing
+    // yaw rate, NOT geometric low-speed Ackermann CG sideslip), add countersteer toward the slide.
+    if (s.countersteer_assist && v > 5.0) {
+        const double vy_cg = std::tan(last.sideslip) * v;
+        const double beta_rear = std::atan2(vy_cg - last.yaw_rate * cfg_.dist_cg_rear, v);
+        if (std::abs(beta_rear) > 0.04 && beta_rear * last.yaw_rate < 0.0) {
+            double lock = cfg_.front.max_steer_deg * kPi / 180.0;
+            steer += s.countersteer_gain * beta_rear / lock;
+        }
     }
     in.steer = clamp(steer, -1.0, 1.0);
 

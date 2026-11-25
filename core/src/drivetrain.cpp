@@ -742,38 +742,66 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
             double prop_torque = r_w * clutch_torque * G * eta - (1.0 - r_w) * t_tyre_c;
 
             if (systems.torsional_compliance_enabled) {
-                // Integrate torsional twist between diff output and halfshafts with +-backlash_rad deadzone
+                // Passive 2nd-order half-shaft / propshaft torsional spring-damper with +-backlash_rad deadzone.
+                // Driven by transmitted axle torque (prop_torque), NOT clutch slip:
+                //   I_eq * theta_dd = T_in - T_out,  T_out = k * eff_twist + c * theta_dot  (outside backlash gap).
+                // In steady state theta_dd = theta_dot = 0 => T_out == T_in identically (exact energy conservation,
+                // zero phantom power, zero steady-state loss), while tip-in/tip-out and shifts produce authentic
+                // ~10-14 Hz driveline shunt oscillations and gear-tooth backlash clunk impulses.
                 const double i_ax = std::max(inertia(x, root_), 0.5);
-                const double d_omega = (engine_omega / G) - w_carrier;
-                systems.torsional_twist_rad = clamp(systems.torsional_twist_rad + d_omega * h, -0.35, 0.35);
-                systems.torsional_vel_rads = d_omega;
-                const double lash = systems.backlash_rad;
+                const double i_eq = std::max(0.5 * i_ax, 0.85);
+                const double k_sh = std::max(systems.torsional_stiffness_nm_per_rad, 500.0);
+                const double c_sh = std::max(systems.torsional_damping_nms_per_rad, 20.0);
+                const double lash = std::max(0.0, systems.backlash_rad);
+
+                double theta = systems.torsional_twist_rad;
+                double v_th = systems.torsional_vel_rads;
+
                 double eff_twist = 0.0;
                 int cur_side = 0;
-                if (systems.torsional_twist_rad > lash) {
-                    eff_twist = systems.torsional_twist_rad - lash;
+                if (theta > lash) {
+                    eff_twist = theta - lash;
                     cur_side = 1;
-                } else if (systems.torsional_twist_rad < -lash) {
-                    eff_twist = systems.torsional_twist_rad + lash;
+                } else if (theta < -lash) {
+                    eff_twist = theta + lash;
+                    cur_side = -1;
+                }
+
+                // Unconditionally stable semi-implicit update for both in-lash (k=0) and engaged (k=k_sh) regimes.
+                const double k_eff = (cur_side != 0) ? k_sh : 0.0;
+                const double c_eff = (cur_side != 0) ? c_sh : (0.25 * c_sh);
+                const double t_in = prop_torque;
+                const double denom = 1.0 + (h / i_eq) * (c_eff + h * k_eff);
+                v_th = (v_th + (h / i_eq) * (t_in - k_eff * eff_twist)) / denom;
+                theta = clamp(theta + h * v_th, -0.45, 0.45);
+
+                // Re-evaluate contact face after advancing theta so backlash impacts register on the exact substep.
+                eff_twist = 0.0;
+                cur_side = 0;
+                if (theta > lash) {
+                    eff_twist = theta - lash;
+                    cur_side = 1;
+                } else if (theta < -lash) {
+                    eff_twist = theta + lash;
                     cur_side = -1;
                 }
                 if (cur_side != 0 && cur_side != systems.last_backlash_side) {
                     // Crossed the backlash gap and struck the opposite gear tooth face!
-                    systems.driveline_clunk_nm = std::min(650.0, std::abs(d_omega) * 55.0 + std::abs(prop_torque) * 0.25);
+                    systems.driveline_clunk_nm = std::min(650.0, std::abs(v_th) * 35.0 + std::abs(t_in) * 0.20);
                     systems.last_backlash_side = cur_side;
                 }
-                // Shaft wind-up: the twist settles at whatever the load needs, so only its DEPARTURE from that settled
-                // value (low-passed over 0.3 s) drives the spring-damper. The shaft then shuffles around the torque the
-                // engine actually delivers instead of adding torque of its own: blending in k * twist directly made
-                // the wheels receive ~5 % more power than engine x efficiency (measured on the dyno, test dyno).
+
+                systems.torsional_twist_rad = theta;
+                systems.torsional_vel_rads = v_th;
                 systems.torsional_twist_mean_rad += (eff_twist - systems.torsional_twist_mean_rad) * std::min(1.0, h / 0.3);
+
                 if (cur_side == 0) {
-                    prop_torque = 0.0; // free-floating inside backlash deadzone
+                    prop_torque = 0.0; // free-floating briefly while traversing +-lash tooth gap
                 } else {
-                    const double spring_t = (eff_twist - systems.torsional_twist_mean_rad) * systems.torsional_stiffness_nm_per_rad
-                                          + d_omega * systems.torsional_damping_nms_per_rad;
-                    prop_torque += 0.35 * clamp(spring_t, -std::abs(prop_torque) * 1.6 - 400.0, std::abs(prop_torque) * 1.6 + 400.0);
-                    (void)i_ax;
+                    const double t_shaft = k_sh * eff_twist + c_sh * v_th;
+                    // Guard against wild overshoot on sudden step changes while preserving exact steady-state torque
+                    const double cap = std::max(std::abs(t_in) * 1.45 + 350.0, 600.0);
+                    prop_torque = clamp(t_shaft, -cap, cap);
                 }
             }
             distribute(x, root_, prop_torque);

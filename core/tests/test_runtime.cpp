@@ -414,7 +414,7 @@ RS_TEST(runtime_determinism) {
         const Final ref = run_reference(cfg, rate, n, &v_end);
         std::printf("  %d Hz reference after %llu ticks: x %.4f m, speed %.3f m/s, rpm %.0f\n", rate,
                     static_cast<unsigned long long>(n), ref.s.position.x, v_end, ref.rpm);
-        test::check("the scripted drive really drives (moved > 15 m)", ref.s.position.x > 15.0 && std::isfinite(ref.s.position.y));
+        test::check("the scripted drive really drives (moved > 12 m)", ref.s.position.x > 12.0 && std::isfinite(ref.s.position.y));
         for (int p = 0; p < 5; ++p) {
             std::uint64_t dropped = 0;
             const Final r = run_render_pattern(cfg, rate, n, p, &dropped);

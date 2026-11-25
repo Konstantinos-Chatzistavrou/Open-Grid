@@ -88,8 +88,10 @@ RS_TEST(dyno) {
             gm.sample(out, g.engine_rpm(), 1.0 / 240.0, in.throttle);
             return out;
         });
-        std::printf("         dyno, game feature set: peak %.0f kW at the wheels at %.0f rpm\n", gm.peak_wheel_power_w() / 1000, gm.peak_power_rpm());
+        std::printf("         dyno, game feature set: peak %.0f kW at the wheels at %.0f rpm, 0-100 %.2f s\n",
+                    gm.peak_wheel_power_w() / 1000, gm.peak_power_rpm(), gm.zero_to_100_s());
         test::check_range("game feature set: peak wheel power vs engine x efficiency", gm.peak_wheel_power_w() / (p_peak * cfg.drivetrain.efficiency), 0.85, 1.02, "x");
+        test::check_range("game feature set: 0-100 km/h vs baseline dyno (driveline wind-up)", gm.zero_to_100_s() / std::max(meter.zero_to_100_s(), 0.1), 0.97, 1.03, "x");
     }
 
     // The same car on a real (flat) road: same 0-100 and top speed, because it is the same physics.
