@@ -513,7 +513,7 @@ double TireCondition::wlf_rib_grip_factor(double rib_surface_c, const TireParams
 
 void TireCondition::step_rigid_ring_belt(double fx_n, double fy_n, double radius_m, double dt, const TireParams* p) {
     if (dt <= 0.0) return;
-    // Simcenter Tire 2606 MF-Swift Rigid-Ring Belt Model:
+    // MF-Swift-style MF-Swift Rigid-Ring Belt Model:
     // Steel-belted tread ring (m_belt from measured PAC2002 MBELT = 5.4 kg for 245/40 R18, scaled by tire width/radius)
     // suspended on elastic sidewalls whose stiffness scales inversely with aspect ratio (shorter 30-series sidewall = stiffer):
     //   In-plane torsional eigenfrequency:  f_nx = 1/(2 pi) * sqrt(k_torsion / I_belt) ~ 72-82 Hz
@@ -538,7 +538,7 @@ void TireCondition::step_rigid_ring_belt(double fx_n, double fy_n, double radius
 }
 
 double TireCondition::thermal_stiffness_factor(const TireParams* p) const {
-    // Simcenter Tire 2606 T&V (Temperature & Velocity) Stiffness Coupling:
+    // MF-Swift-style T&V (Temperature & Velocity) Stiffness Coupling:
     // Cold rubber (< 55 C) has a higher glassy storage shear modulus G' (+11% higher cornering/slip stiffness slope at small
     // slip angles before breaking away sharply); overheated rubber (> 110 C) softens thermally (-16% lower cornering stiffness).
     const double t_opt = p ? p->temp_optimal_c : 90.0;
@@ -555,7 +555,7 @@ TireAcousticSource TireCondition::compute_acoustics(double wheel_omega_rads, dou
     const double t_gas_k = clamp(inner_air_c, -20.0, 160.0) + 273.15;
     const double c_sound = 343.2 * std::sqrt(t_gas_k / 293.15);
     const double f0_cavity = c_sound / (2.0 * kPi * r_mean); // ~220-238 Hz toroidal cavity fundamental
-    // Simcenter 2606 Doppler frequency split between forward- and backward-traveling acoustic waves in a rotating tire:
+    // MF-Swift-style Doppler frequency split between forward- and backward-traveling acoustic waves in a rotating tire:
     const double doppler_hz = std::abs(wheel_omega_rads) / kPi;
     ac.cavity_mode_low_hz = std::max(120.0, f0_cavity - doppler_hz);
     ac.cavity_mode_high_hz = f0_cavity + doppler_hz;
@@ -591,7 +591,7 @@ double TireCondition::grip_factor(const TireParams* p) const {
 
 double effective_rolling_radius(const TireParams& p, double fz) {
     if (fz <= 0 || p.vertical_stiffness <= 0) return p.radius;
-    // Pacejka Ch. 4 eq. 4.E7 / PAC2002 / Simcenter Tire 2606 non-linear effective rolling radius:
+    // Pacejka Ch. 4 eq. 4.E7 / PAC2002 / MF-Swift-style non-linear effective rolling radius:
     //   delta_Re(fz_norm) = rho_Fz0 * (DREFF * atan(BREFF * fz_norm) + FREFF * fz_norm),  rho_Fz0 = Fz0 / C_Fz0
     // Anchored at p.radius (reference rolling radius at nominal load fz_norm = 1):
     const double fz0 = std::max(p.fz0, 100.0);
@@ -603,12 +603,12 @@ double effective_rolling_radius(const TireParams& p, double fz) {
 }
 
 double effective_rolling_radius_mf62(const TireParams& p, double fz, double gamma, double dpi, double wheel_omega_rads) {
-    // 1. MF 6.2 / Simcenter Tire 2606 pressure-dependent vertical carcass stiffness C_Fz(p) = C_Fz0 * (1 + PFZ1 * dpi):
+    // 1. MF 6.2 / MF-Swift-style pressure-dependent vertical carcass stiffness C_Fz(p) = C_Fz0 * (1 + PFZ1 * dpi):
     const double press_stiff = clamp(1.0 + p.pfz1 * dpi, 0.55, 1.55);
     TireParams p_eff = p;
     p_eff.vertical_stiffness = std::max(50000.0, p.vertical_stiffness * press_stiff);
     const double re0 = effective_rolling_radius(p_eff, fz);
-    // 2. Simcenter 2606 high-speed centrifugal steel-belt radial growth (~2-4 mm expansion at 300 km/h from MBELT = 5.4 kg):
+    // 2. MF-Swift-style high-speed centrifugal steel-belt radial growth (~2-4 mm expansion at 300 km/h from MBELT = 5.4 kg):
     const double v_rim = p.radius * std::abs(wheel_omega_rads);
     const double centrifugal_growth = clamp(0.16 * p.mbelt * v_rim * v_rim / p_eff.vertical_stiffness, 0.0, 0.0055);
     // 3. MF 6.2 camber-conicity asymmetric loaded radius: under inclination gamma, the contact patch shifts toward the
@@ -1068,11 +1068,11 @@ TireForces evaluate_contact_patch_grid(const TireParams& p, double kappa, double
     out.mz = mz_mf + mz_lat_arm + delta_mz_lon;
 
     if (op.enable_mf62_hybrid) {
-        // PAC2002 / Simcenter 2606 gyroscopic steel-belt precession torque M_z,gyr = QTZ1 * MBELT * r * V_x * d(gamma)/dt
+        // PAC2002 / MF-Swift-style gyroscopic steel-belt precession torque M_z,gyr = QTZ1 * MBELT * r * V_x * d(gamma)/dt
         const double mz_gyr = p.qtz1 * p.mbelt * p.radius * op.rolling_speed_mps * clamp(op.gamma_rate_rads, -8.0, 8.0);
         out.mz += mz_gyr;
         if (op.condition) {
-            // Simcenter Tire 2606 MF-Swift 3D Tandem Elliptical Cam Enveloping longitudinal resistance over cleats/curbs
+            // MF-Swift-style MF-Swift 3D Tandem Elliptical Cam Enveloping longitudinal resistance over cleats/curbs
             out.fx -= fz * clamp(op.condition->enveloping_slope_tan, -0.25, 0.25) * 0.35;
         }
     }

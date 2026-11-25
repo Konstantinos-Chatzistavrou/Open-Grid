@@ -3,6 +3,54 @@
 Code: `core/` (C++17, zero engine dependencies). Units SI. World and body frames are right-handed,
 Z up. Body frame (ISO 8855): +X forward, +Y left, +Z up, origin at the centre of gravity (CG).
 
+## 0. What is validated, what is calibrated, what is not (read this first; written 2026-11-25)
+
+**In one line:** the model has most of the ingredients that are publicly described for commercial sims, and it is checked against every
+open dataset we could find; its calibration against real cars and real tyre tests is **not yet proven**.
+Do not call it "the most advanced" or "better than" any other engine: that has not been measured.
+
+| part | state |
+|---|---|
+| Tyre curve shapes (Magic Formula, aligning torque, camber, load sensitivity) | fitted PAC2002 files from Project Chrono (BSD-3), 14 sets; each car's **peak grip is a per-car calibration** |
+| Tyre thermals (3 nodes, 3 ribs, WLF flash), inflation pressure, wear, flat spots, blistering, graining, belt dynamics | present and tested for plausibility and energy balance. **Their constants (heat capacities, conductances, hysteresis, wear rates, belt stiffness) are typical values set by hand from the literature, not fitted to a measured tyre**: no open thermal / wear / pressure test data exists for us (`docs/physics-data-gaps.md`). Earlier comments and commit titles said "Simcenter Tire 2606"; no such software or data was used |
+| Suspension kinematics (double wishbone / MacPherson from hardpoints), dampers, ARBs, load transfer | present; per-car hardpoints and spring/damper rates are mostly design values, not production-car data |
+| Engine, clutch, gearbox, diffs, ABS / TC / ESC | present; only one measured engine curve (Toyota 7A-FE) and EPA axle ratios exist as references |
+| Crash damage, brake thermals, wet grip | present; wet braking fitted to Continental's published stops, the rest plausibility-checked |
+| Real car pace | **only the Tornado GT3 is calibrated** (2026-11-25), to GT3-class public figures and two real qualifying laps: its quasi-steady lap at 100 % of its limits is +4.3 % (Spa) and +1.1 % (Brands Hatch GP) of those laps. The aero and grip numbers are low-confidence. The other 24 cars are de-branded originals with no named real counterpart, so nothing to calibrate them against (`data/physics/gt3-lap-references.json`) |
+| Force feedback | the signal is checked (`web/tools/ffb_signal_check.mjs`); **never run on a wheel** (`docs/ffb_test_plan.md`) |
+
+### Which models are on: the tests and the game differ
+
+The browser game (`web/wasm/bridge.cpp`) and the Unreal plugin (`OpenGridVehicleComponent.cpp`) switch optional models on; the core's
+defaults, and therefore **every reference test, run with default settings, leave most of them off**:
+
+| model | core default (tests) | game / Unreal |
+|---|---|---|
+| 2-DOF unsprung wheel hop + radial carcass (15 Hz, 42 kg unsprung) | off (wheels massless) | on |
+| Chassis torsional flex (22,000 N m/deg default stiffness, no citation in the code) | off | on |
+| Sideslip-dependent drag and rear-wing lift | off | on |
+| Active torque-vectoring yaw moment (up to 1,450 N m) | off | on |
+| Active aero: DRS and braking airbrake | off | on, **for every car** (see below) |
+| DOT 4 brake-fluid boil | off | on |
+| Driveline torsional compliance, dog-box shift cut, H-pattern synchromesh | off | on |
+| Tyre zones, 4x4 contact patch, thermals, pressure, wear, damage | on | on |
+
+`RS_GAME_MODELS=1 ctest --test-dir core/build` runs the whole suite with the game's settings (the same list, `test::enable_game_models`).
+Measured 2026-11-25: 93 of 98 tests pass. The headline numbers do not move (the calibrated GT3: skidpad 1.53 g either way, braking 1.68 vs 1.69 g,
+quasi-steady laps within 0.1 s). The five differences, which are modelling questions and not yet fixed:
+- **Active aero applies to every car, road cars included.** At more than 180 km/h, full throttle, no brake and little steering every car gets
+  drag x0.86 and rear downforce x0.82 (DRS); braking above 22 m/s with the pedal past 55 % gives drag x1.24 and rear downforce x1.22
+  (airbrake). No car spec says whether it has such a system. Top speed is therefore 2.7-4.1 % above the paper balance in the game for
+  Basilisk V12, Mistra 200T, Strix GT7 and the Tornado GT3 (`reference_data_top_speed_balance`). It needs a per-car switch.
+- 0-100 km/h is about 12 % slower than the dyno predicts (`dyno`): the synchromesh and driveline compliance cost shift time. Probably right.
+- The Kestrel's two aero-grip checks fail (`characters`: its fast-corner grip no longer exceeds its skidpad). Cause not investigated.
+- `racing_line`: "no contact behind a slower-cornering car" fails. Cause not investigated.
+- `reference_data_chrono_vehicles`: the HMMWV's yaw response is 0.34 x the bicycle model (limit 0.4). Cause not investigated.
+
+Public descriptions of ISI's isiMotor 2.5 (rFactor 2, Le Mans Ultimate) describe a structural tyre carcass solved offline from tyre construction,
+tyre-maker data (Goodyear), a 2-D dynamic track-rubber system and chassis flex. On paper ours has comparable ingredients (except the offline carcass
+and the 2-D rubber, which are simpler here); what is unproven is the calibration. See `docs/physics-data-gaps.md` for how to close it.
+
 ## 1. Integration architecture
 - The engine integrates the chassis rigid body (so collisions work) at a fixed physics tick
   (target 240 Hz). Each tick: `wheel_rays()` -> engine raycasts -> `update(chassis, contacts, dt)`
@@ -31,8 +79,8 @@ Z up. Body frame (ISO 8855): +X forward, +Y left, +Z up, origin at the centre of
 - Tyre load `Fz = F_susp * (up . n)` + geometric transfer (below). Springs only push.
 - Static geometry is derived from the data: mounts are placed so the car rests exactly at
   `cg_height` with the static compression `x_s = m g w / (2k)`.
-- Simplification: wheels/unsprung mass are massless (no wheel hop). Revisit if kerb behaviour
-  needs it.
+- Wheels/unsprung mass are massless **by default** (the tests). The game and the Unreal plugin switch on a 2-DOF 15 Hz wheel-hop and radial
+  carcass model (`Vehicle::unsprung_dynamics_enabled`, 42 kg unsprung per corner): see section 0.
 
 Rigid body (`RigidBody::integrate`): Euler's equations in body axes with RK4 for the gyroscopic coupling and a second-order
 orientation update (the orientation turns by the mean body rate of the step). Explicit Euler had put 1.5 % kinetic energy into a 3 s
@@ -64,8 +112,9 @@ coupling is so small that no handling number changed to the third digit.
 - Low-speed damping (< 2 m/s, blended out): `F += 2 Fz * v_slip`, capped at mu Fz. Stops the
   relaxation "spring" oscillating when parked. Test: 0.000 m drift in 10 s, holds a 10 % slope.
 - Rolling resistance torque `c_rr Fz r`. Surface grip multiplies mu (asphalt 1.0, kerb 0.92, ...).
-- Hooks (not simulated yet): `TireCondition` (temperature, wear -> grip_factor), `DamageState`.
-- Not modelled yet: aligning moment Mz (needed for force feedback), camber, pressure.
+- Everything that used to be listed here as missing is modelled now: tyre temperature, wear and flat spots (`TireCondition`), aligning moment
+  Mz and pneumatic trail (the force-feedback signal), camber and inflation pressure (MF 6.1 / 6.2 terms), turn slip. Their sections are at the end
+  of this page; their calibration is described in section 0.
 
 ## 5. Drivetrain
 - Engine: `T = thr T_full(rpm) - (1 - thr)(c0 + c1 w)` (engine braking = pumping/friction losses).
@@ -191,6 +240,11 @@ In Godot (`--autotest`): ABS full pedal from 100 km/h = 33.6 m (fixed 0.78 pedal
   `2 + 4 aggression` m/s^2 -> full brake; swerve if the road has room.
 - Validation: careful follower (0.4 s, 0.6 s headway) stops 3.5 m behind a car braking from
   90 km/h; aggressive follower (0.8 s, 0.15 s headway) on a single lane hits it at 41 km/h.
+- Race mode (`racing_line`, 2026-11-25): the line is followed with curvature feed-forward plus heading and cross-track feedback (Stanley-style) instead of pure
+  pursuit; a slide (sideslip over 3 deg, full at 8 deg) is steered into with the throttle lifted; the corner speeds are scaled by a grip estimate
+  that drops 5 % (floor 70 %) when the car slides or runs 2.5 m off the line and recovers at 0.4 % per second. Pure pursuit stays for streets and
+  whenever racecraft or a neighbour moved the line. All 125 laps of 25 cars on 5 real circuits stay on the track (`reference_data_real_tracks_ai`,
+  `RS_ALL_CARS=1`); before it, 4-5 of 10 did. The browser game's AI is separate (`web/src/ai.ts`) and was not changed.
 - Recovery: stuck 2 s with throttle -> 1.6 s reverse. Race rule (core RaceTracker): upside down
   3 s or < 1 km/h for 10 s -> respawn 15 m back on the route, damage kept.
 
@@ -234,8 +288,8 @@ In Godot (`--autotest`): ABS full pedal from 100 km/h = 33.6 m (fixed 0.78 pedal
   past the front peak). Keyboard / gamepad with no input: the wheels caster toward zero front slip angle (the
   countersteer in a slide), like a loosely held wheel. Gamepad rumble from front scrub, rear slide / wheelspin, ABS and
   impacts (dual-rumble).
-- Not modelled, on purpose: chassis torsional flex (a road car's ~20-40 kNm/deg is >10x its suspension roll stiffness:
-  < ~5 % effect, and only with one wheel on a kerb). The limited-slip differential already existed (clutch pack:
+- Chassis torsional flex was left out on purpose on 2026-11-08 (a road car's ~20-40 kNm/deg is >10x its suspension roll stiffness:
+  < ~5 % effect, and only with one wheel on a kerb); it was added later as an optional model (`chassis_flex_enabled`, off by default, on in the game). The limited-slip differential already existed (clutch pack:
   preload + power / coast ramps).
 
 

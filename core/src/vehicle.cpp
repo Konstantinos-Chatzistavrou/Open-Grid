@@ -397,7 +397,7 @@ WheelContact Vehicle::resolve_footprint_16(const WheelFootprint16Rays& footprint
             if (dot(ramp_n, up_dir) > 0.4) normal_acc += ramp_n * 1.6;
         }
     }
-    // Simcenter Tire 2606 MF-Swift 3D Tandem Elliptical Cam Obstacle Enveloping Slope:
+    // MF-Swift-style MF-Swift 3D Tandem Elliptical Cam Obstacle Enveloping Slope:
     // Compares effective enveloped height of the front cam (rows 3-4) vs rear cam (rows 0-1) across contact length 2a
     const double trail_dist = std::min({hits[0].hit ? hits[0].distance : 1e9,
                                         hits[1].hit ? hits[1].distance : 1e9,
@@ -574,7 +574,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         if (unsprung_dynamics_enabled) {
             const double m_u = 42.0; // kg unsprung wheel/tire/hub/brake assembly mass
             const double w_dpi = tire_condition_[w].dpi(cfg_.tire(w));
-            const double k_t = std::max(140000.0, cfg_.tire(w).vertical_stiffness * (1.0 + cfg_.tire(w).pfz1 * w_dpi)); // N/m radial tire carcass stiffness (MF 6.2 / Simcenter 2606 pressure-coupled)
+            const double k_t = std::max(140000.0, cfg_.tire(w).vertical_stiffness * (1.0 + cfg_.tire(w).pfz1 * w_dpi)); // N/m radial tire carcass stiffness (MF 6.2 / MF-Swift-style pressure-coupled)
             const double c_t = std::max(800.0, cfg_.tire(w).vertical_damping); // N s/m radial tire carcass damping (from PAC2002 VERTICAL_DAMPING = 2000)
             // Unsprung mass sits between suspension force pushing down (susp_force[w]) and tire carcass pushing up
             const double sub_dt = std::min(dt, 0.002);

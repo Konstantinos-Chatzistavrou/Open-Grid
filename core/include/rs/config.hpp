@@ -84,13 +84,13 @@ struct TireParams {
     // work (wear 1 = tread gone). Set together by the car file's "compound" (road / semi_slick / slick).
     double start_c = 80;
     double wear_per_mj = 1.0 / 90.0;
-    // PAC2002 / MF 6.2 / Siemens Simcenter Tire 2606 physical carcass, belt & non-linear rolling radius parameters
+    // PAC2002 / MF 6.2 / MF-Swift-style physical carcass, belt & non-linear rolling radius parameters
     // (defaults from measured Audi 245/40 R18 PAC2002 lab dataset, data/tires/audi_245_40R18_pac2002.tir):
     double vertical_damping = 2000.0; // N s/m, radial tire carcass damping (VERTICAL_DAMPING)
     double breff = 8.4;               // low-load stiffness of effective rolling radius (BREFF)
     double dreff = 0.27;              // peak value of effective rolling radius compression (DREFF)
     double freff = 0.07;              // high-load stiffness of effective rolling radius (FREFF)
-    double pfz1 = 0.72;               // MF 6.2 / Simcenter 2606 pressure dependency of vertical stiffness C_Fz(p)
+    double pfz1 = 0.72;               // MF 6.2 / MF-Swift-style pressure dependency of vertical stiffness C_Fz(p)
     double ptx1 = 2.3657, ptx2 = 1.4112, ptx3 = 0.56626; // longitudinal relaxation length coefficients (PTX1..3)
     double pty1 = 2.1439, pty2 = 1.9829;                 // lateral relaxation length coefficients (PTY1..2)
     double qtz1 = 0.20;               // gyroscopic belt precession aligning torque constant (QTZ1)

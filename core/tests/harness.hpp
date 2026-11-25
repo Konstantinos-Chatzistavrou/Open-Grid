@@ -2,6 +2,7 @@
 // would, so we can measure the car). Driver aids for players are a Phase 3 core feature; these
 // controllers exist only in the tests.
 #pragma once
+#include <cstdlib>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -42,10 +43,25 @@ inline void check(const char* what, bool ok) {
 inline std::string data_path(const std::string& rel) { return std::string(RS_DATA_DIR) + "/" + rel; }
 inline rs::CarConfig car() { return rs::load_car_config(data_path("cars/vela_gt.json")); }
 
+// The browser game (web/wasm/bridge.cpp rs_create) and the Unreal plugin (OpenGridVehicleComponent.cpp) switch these optional models on;
+// the core's defaults leave most of them off, and so do the tests unless RS_GAME_MODELS=1 is set. Same list as bridge.cpp.
+inline void enable_game_models(rs::Vehicle& v) {
+    v.unsprung_dynamics_enabled = true;
+    v.tire_zones_enabled = true;
+    v.aero_wake().yaw_aero_enabled = true;
+    v.chassis_dynamics().chassis_flex_enabled = true;
+    v.chassis_dynamics().active_yaw_control_enabled = true;
+    v.chassis_dynamics().active_aero_enabled = true;
+    v.chassis_dynamics().brake_fluid_boil_enabled = true;
+    v.engine_systems().torsional_compliance_enabled = true;
+    v.engine_systems().dog_box_flat_shift_cut = true;
+}
+
 inline std::unique_ptr<rs::Simulation> make_sim(const rs::CarConfig& cfg, double dt = 1.0 / 240.0,
                                                 rs::Vec3 ground_normal = {0, 0, 1}) {
     auto s = std::make_unique<rs::Simulation>(cfg, std::make_shared<rs::PlaneGround>(ground_normal));
     s->dt = dt;
+    if (std::getenv("RS_GAME_MODELS")) enable_game_models(s->vehicle);
     return s;
 }
 

@@ -1,5 +1,14 @@
+// WHAT IS MEASURED AND WHAT IS NOT (docs/physics.md "What is calibrated", docs/physics-data-gaps.md; edited 2026-11-25):
+//   - The Magic Formula curve shapes come from fitted, published PAC2002 tyre files (Project Chrono, BSD-3, data/tires/); each
+//     car's peak grip is a per-car calibration.
+//   - The thermal capacities and conductances, the belt / sidewall stiffnesses, the hysteresis, wear rates, flat-spot and
+//     blistering terms, the Stribeck / WLF factors and the NVH constants are typical values set by hand from the cited
+//     literature. They have NOT been fitted to a measured tyre (no open thermal, wear or pressure test data exists for us:
+//     the data is TTC / Calspan-restricted). The structure follows published models (Pacejka, MF-Swift, Kelly & Sharp); no
+//     commercial tyre software was used, and nothing here is a Simcenter / MF-Tyre result.
+//
 // Tyre model:
-//   - Pacejka Magic Formula (MF 5.2 / 6.1 / 6.2) calibrated to measured PAC2002 tire datasets
+//   - Pacejka Magic Formula (MF 5.2 / 6.1 / 6.2); curve shapes from measured PAC2002 tire datasets
 //   - 4x4 Multi-Point Contact Patch Grid (Winkler elastic foundation + Pacejka Ch. 3 Brush Model adhesion/sliding
 //     zones, Dugoff 1970 combined-slip saturation, per-point yaw spin & camber conicity, kerb/partial-contact loads)
 //   - Explicit 3-Node Thermal & Pressure Dynamics (3-Rib Surface + WLF Flash <-> Carcass/Belt <-> Inner Cavity Air,
@@ -52,13 +61,13 @@ struct TireForces {
     double mz = 0;               // self-aligning moment about contact normal (+ = CCW from above), N m
     double pneumatic_trail = 0;  // instantaneous pneumatic trail t, m
     double effective_rib_mu = 1; // load-weighted 3-rib (Inner/Middle/Outer) + WLF flash-temp grip multiplier
-    double thermal_stiffness_scale = 1; // Simcenter 2606 T&V cornering/slip stiffness modulus factor (stiffer cold, softer hot)
+    double thermal_stiffness_scale = 1; // MF-Swift-style T&V cornering/slip stiffness modulus factor (stiffer cold, softer hot)
     double contact_patch_length_m = 0;  // instantaneous contact patch length 2a (m), sensitive to load & inflation pressure
     double adhesion_ratio = 1.0;        // fraction of contact patch load in brush adhesion zone (1 = grip, 0 = full slide)
     double kerb_load_ratio = 0.0;       // 0..1 share of vertical load carried by raised kerb cells in the 4x4 patch
 };
 
-// Simcenter Tire 2606 Broadband Transient Tire-Road NVH & Cavity Resonance Acoustic Source (for UE5 MetaSounds).
+// MF-Swift-style Broadband Transient Tire-Road NVH & Cavity Resonance Acoustic Source (for UE5 MetaSounds).
 struct TireAcousticSource {
     double cavity_mode_low_hz = 224.0;   // Toroidal air-cavity backward-wave resonance frequency (Hz, Doppler split)
     double cavity_mode_high_hz = 224.0;  // Toroidal air-cavity forward-wave resonance frequency (Hz, Doppler split)
@@ -93,7 +102,7 @@ struct TireCondition {
     double track_surface_c = 30.0;// Asphalt road surface temperature (C) for conductive contact-patch heat transfer
     std::array<double, 3> rib_contact_shares{1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0}; // 16-point 3D geometric load shares (Inner, Middle, Outer)
 
-    // Simcenter Tire 2606 MF-Swift Rigid-Ring Belt Dynamics (40-90 Hz steel-belt carcass ring vibration relative to rim)
+    // MF-Swift-style MF-Swift Rigid-Ring Belt Dynamics (40-90 Hz steel-belt carcass ring vibration relative to rim)
     double belt_torsion_rad = 0.0;      // in-plane torsional deflection of tread belt ring vs wheel rim (rad)
     double belt_torsion_vel_rads = 0.0; // in-plane torsional angular velocity of belt ring vs rim (rad/s)
     double belt_lateral_m = 0.0;        // out-of-plane lateral sidewall deflection of belt ring vs rim (m)
@@ -110,9 +119,9 @@ struct TireCondition {
     /** Ideal gas law gauge pressure (kPa) from inner_air_c: P_abs = P_cold_abs * (T_air_K / 293.15). */
     double ideal_gas_pressure_kpa(const TireParams* p = nullptr) const;
     void step_rigid_ring_belt(double fx_n, double fy_n, double radius_m, double dt, const TireParams* p = nullptr);
-    /** Simcenter Tire 2606 T&V (Temperature & Velocity) shear-modulus stiffness factor for K_xk and K_ya. */
+    /** MF-Swift-style T&V (Temperature & Velocity) shear-modulus stiffness factor for K_xk and K_ya. */
     double thermal_stiffness_factor(const TireParams* p = nullptr) const;
-    /** Simcenter Tire 2606 Broadband Transient Tire-Road NVH & Toroidal Cavity Resonance Acoustic Source. */
+    /** MF-Swift-style Broadband Transient Tire-Road NVH & Toroidal Cavity Resonance Acoustic Source. */
     TireAcousticSource compute_acoustics(double wheel_omega_rads, double radius_m, double carcass_deflection_rate_mps) const;
     void update(double slip_power_w, double load_n, double speed_mps, double dt, const TireParams* p = nullptr);
     void update_zones(double slip_power_w, double load_n, double speed_mps, double camber_rad, double lateral_force_n,
@@ -175,7 +184,7 @@ double mf_pure_fy(const TireParams& p, double alpha, double fz, double mu_scale,
 double mf_aligning_torque(const TireParams& p, double kappa, double alpha, double fz, double mu_scale, double gamma,
                           double fx, double fy_no_svyk, double* out_trail = nullptr);
 
-// Effective rolling radius R_e under vertical load Fz (Pacejka Ch. 4 BREFF/DREFF/FREFF) and MF 6.2/Simcenter 2606
+// Effective rolling radius R_e under vertical load Fz (Pacejka Ch. 4 BREFF/DREFF/FREFF) and MF 6.2/MF-Swift-style
 // camber-conicity, inflation-pressure stiffness PFZ1, and high-speed centrifugal steel-belt growth.
 double effective_rolling_radius(const TireParams& p, double fz);
 double effective_rolling_radius_mf62(const TireParams& p, double fz, double gamma, double dpi = 0.0,
