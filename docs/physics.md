@@ -30,22 +30,31 @@ defaults, and therefore **every reference test, run with default settings, leave
 | Chassis torsional flex (22,000 N m/deg default stiffness, no citation in the code) | off | on |
 | Sideslip-dependent drag and rear-wing lift | off | on |
 | Active torque-vectoring yaw moment (up to 1,450 N m) | off | on |
-| Active aero: DRS and braking airbrake | off | on, **for every car** (see below) |
+| Active aero: DRS and braking airbrake | off | on, **only for cars whose spec declares it** (`aero.drs`, `aero.airbrake`; 5 cars, see below) |
 | DOT 4 brake-fluid boil | off | on |
 | Driveline torsional compliance, dog-box shift cut, H-pattern synchromesh | off | on |
 | Tyre zones, 4x4 contact patch, thermals, pressure, wear, damage | on | on |
 
-`RS_GAME_MODELS=1 ctest --test-dir core/build` runs the whole suite with the game's settings (the same list, `test::enable_game_models`).
-Measured 2026-11-25: 93 of 98 tests pass. The headline numbers do not move (the calibrated GT3: skidpad 1.53 g either way, braking 1.68 vs 1.69 g,
-quasi-steady laps within 0.1 s). The five differences, which are modelling questions and not yet fixed:
-- **Active aero applies to every car, road cars included.** At more than 180 km/h, full throttle, no brake and little steering every car gets
-  drag x0.86 and rear downforce x0.82 (DRS); braking above 22 m/s with the pedal past 55 % gives drag x1.24 and rear downforce x1.22
-  (airbrake). No car spec says whether it has such a system. Top speed is therefore 2.7-4.1 % above the paper balance in the game for
-  Basilisk V12, Mistra 200T, Strix GT7 and the Tornado GT3 (`reference_data_top_speed_balance`). It needs a per-car switch.
-- 0-100 km/h is about 12 % slower than the dyno predicts (`dyno`): the synchromesh and driveline compliance cost shift time. Probably right.
-- The Kestrel's two aero-grip checks fail (`characters`: its fast-corner grip no longer exceeds its skidpad). Cause not investigated.
-- `racing_line`: "no contact behind a slower-cornering car" fails. Cause not investigated.
-- `reference_data_chrono_vehicles`: the HMMWV's yaw response is 0.34 x the bicycle model (limit 0.4). Cause not investigated.
+`RS_GAME_MODELS=1 ctest --test-dir core/build` runs the whole suite with the game's settings (the same list, `test::enable_game_models`;
+`RS_GAME_MODELS_OFF=name,name` leaves some out to find where a difference comes from: unsprung, zones, yaw_aero, flex, ayc, active_aero, brake_boil,
+torsional, dogbox). Measured 2026-11-25: the headline numbers do not move (the calibrated GT3: skidpad 1.53 g either way, braking 1.68 vs
+1.69 g, quasi-steady laps within 0.1 s), and 95 of 98 tests pass. The three that differ, each traced to one model by switching it off:
+- `dyno`: 0-100 km/h is 12 % slower than the dyno predicts. Only the **driveline torsional compliance** model causes it. Whether 12 % is realistic
+  is unproven; a driveline's wind-up should not cost that much, so it is probably too much.
+- `reference_data_chrono_vehicles`: the HMMWV's yaw response is 0.34 x the bicycle model (limit 0.4). Also only **driveline torsional compliance**.
+- `characters`: the Kestrel's two aero-grip checks fail (its fast-corner grip no longer exceeds its skidpad). Only the **dog-box flat-shift cut**
+  setting causes it: the torque cut during the test's gear changes in the corner, not the aero.
+
+**Active aero (fixed 2026-11-25).** Until then every car, road cars included, got DRS (above 180 km/h at full throttle: drag x0.86, rear downforce x0.82)
+and an airbrake (braking above 22 m/s past 55 % pedal: drag x1.24, rear downforce x1.22) in the game, which put top speed 2.7-4.1 % above the paper
+balance for four cars. Now a car has them only if its spec says so: `"aero": {"drs": true, "airbrake": true}` (default false; core `AeroParams::drs`,
+`airbrake`). Declared: Strix GT7, Aether Borealis R, Kestrel GT, Falcorn 9R GT and 9R RS Weissach, the five cars with a real downforce wing (lift area
+0.85-1.15 m^2; every other car has 0.7 or less). Not declared: all road cars, and the Tornado GT3 (GT3 cars have a fixed wing, and it is calibrated
+against real GT3 laps without one). Checked in the WASM the game runs: Vela GT, Tornado GT3 and Mistra 200T never deploy it in 40 s at full throttle
+plus hard braking; the five declared cars do. The HUD indicators and the wing animation follow the physics flags, so they follow automatically.
+The multipliers are `kDrsDragMult` etc. in `core/include/rs/config.hpp`. One other effect hangs off the same host switch and is unchanged: the
+front-splitter stall (front downforce x0.74 when the splitter bottoms out above 35 m/s) applies to every car, which is a ride-height effect and
+not active aero.
 
 Public descriptions of ISI's isiMotor 2.5 (rFactor 2, Le Mans Ultimate) describe a structural tyre carcass solved offline from tyre construction,
 tyre-maker data (Goodyear), a 2-D dynamic track-rubber system and chassis flex. On paper ours has comparable ingredients (except the offline carcass

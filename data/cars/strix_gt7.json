@@ -528,7 +528,9 @@
     "downforce_area_m2": 0.85,
     "front_balance": 0.42,
     "ground_effect_per_m": 2,
-    "pitch_balance_per_m": 1.2
+    "pitch_balance_per_m": 1.2,
+    "drs": true,
+    "airbrake": true
   },
   "surface_grip": {
     "asphalt": 1,

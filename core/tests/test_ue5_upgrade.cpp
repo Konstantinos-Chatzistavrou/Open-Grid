@@ -312,7 +312,9 @@ RS_TEST(ue5_upgrade) {
 
     // 13. Active Aerodynamics (DRS Low-Drag Straight Mode + 35-Deg Braking Airbrake) & DOT 4 Brake Fluid Vapor Lock
     {
-        Simulation sim_aero(cfg, flat);
+        CarConfig cfg_wing = cfg;            // a car that declares the wing ("aero": {"drs": true, "airbrake": true})
+        cfg_wing.aero.drs = cfg_wing.aero.airbrake = true;
+        Simulation sim_aero(cfg_wing, flat);
         sim_aero.vehicle.chassis_dynamics().active_aero_enabled = true;
         sim_aero.vehicle.chassis_dynamics().brake_fluid_boil_enabled = true;
         sim_aero.reset({}, 0.0, 56.0, 5); // 201.6 km/h
@@ -336,6 +338,18 @@ RS_TEST(ue5_upgrade) {
                     sim_aero.last.airbrake_active && !sim_aero.last.drs_active && sim_aero.last.slipstream_drag_scale > 1.15);
         test::check("boiled DOT 4 caliper fluid (> 260 C) causes vapor-lock spongy brake pressure loss",
                     sim_aero.last.brake_vapor_lock_sponge > 0.20);
+
+        // the same manoeuvres on a car whose spec declares no active wing (every road car, the fixed-wing GT3): nothing deploys
+        CarConfig cfg_fixed = cfg;
+        cfg_fixed.aero.drs = cfg_fixed.aero.airbrake = false;
+        Simulation sim_fixed(cfg_fixed, flat);
+        sim_fixed.vehicle.chassis_dynamics().active_aero_enabled = true;
+        sim_fixed.reset({}, 0.0, 56.0, 5);
+        sim_fixed.step(fast_straight);
+        const double drag_wot = sim_fixed.last.slipstream_drag_scale;
+        sim_fixed.step(hard_brake);
+        test::check("a car without a declared active wing gets no DRS and no airbrake, whatever the host enables",
+                    !sim_fixed.last.drs_active && !sim_fixed.last.airbrake_active && drag_wot > 0.99 && sim_fixed.last.slipstream_drag_scale < 1.01);
     }
 
     // 14. 4-Wheel Asymmetric Split-Mu Hydroplaning & Braking Yaw Pull

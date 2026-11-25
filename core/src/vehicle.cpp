@@ -1063,11 +1063,12 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     // Downforce: F = 1/2 rho ClA v_x^2, split between the axles by aero balance (with dirty-air front loss, yaw stall & Active Aero).
     const AeroParams& a = cfg_.aero;
     double v = length(s.velocity);
-    out.drs_active = chassis_dyn_.active_aero_enabled && out.speed > 50.0 && input_.throttle > 0.75
+    // Only a car whose spec declares the wing has it (aero.drs / aero.airbrake): road cars and fixed-wing race cars never switch it.
+    out.drs_active = chassis_dyn_.active_aero_enabled && a.drs && out.speed > 50.0 && input_.throttle > 0.75
                    && input_.brake < 0.05 && std::abs(input_.steer) < 0.12;
-    out.airbrake_active = chassis_dyn_.active_aero_enabled && out.speed > 22.0 && input_.brake > 0.55;
-    const double active_drag_mult = out.drs_active ? 0.86 : (out.airbrake_active ? 1.24 : 1.0);
-    const double active_rear_down_mult = out.drs_active ? 0.82 : (out.airbrake_active ? 1.22 : 1.0);
+    out.airbrake_active = chassis_dyn_.active_aero_enabled && a.airbrake && out.speed > 22.0 && input_.brake > 0.55;
+    const double active_drag_mult = out.drs_active ? kDrsDragMult : (out.airbrake_active ? kAirbrakeDragMult : 1.0);
+    const double active_rear_down_mult = out.drs_active ? kDrsRearDownMult : (out.airbrake_active ? kAirbrakeRearDownMult : 1.0);
 
     const double sin_beta = std::sin(clamp(out.sideslip, -1.2, 1.2));
     const double yaw_drag_mult = aero_wake_.yaw_aero_enabled ? (1.0 + 0.35 * sin_beta * sin_beta) : 1.0;

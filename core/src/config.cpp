@@ -366,6 +366,8 @@ CarConfig parse_car_config(const std::string& text) {
     c.aero.drag_area = num(a, "drag_area_m2", "aero");
     c.aero.lift_area = num(a, "downforce_area_m2", "aero");
     c.aero.front_balance = num(a, "front_balance", "aero");
+    if (a.contains("drs")) c.aero.drs = a.at("drs").get<bool>();             // optional: only cars that have such a wing say so
+    if (a.contains("airbrake")) c.aero.airbrake = a.at("airbrake").get<bool>();
     c.aero.air_density = num_or(a, "air_density", 1.225);
     c.aero.ground_effect_per_m = num_or(a, "ground_effect_per_m", c.aero.ground_effect_per_m);
     c.aero.pitch_balance_per_m = num_or(a, "pitch_balance_per_m", c.aero.pitch_balance_per_m);

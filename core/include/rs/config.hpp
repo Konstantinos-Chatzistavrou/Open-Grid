@@ -217,7 +217,15 @@ struct DrivetrainParams {
     SynchroParams synchro;
 };
 
+// Active aerodynamics. A car has it only if its spec says so ("aero": {"drs": true, "airbrake": true}); the vehicle also needs
+// chassis_dynamics().active_aero_enabled (the game and the Unreal plugin switch that on). DRS: a flat, low-drag wing at full throttle
+// on a straight above 50 m/s. Airbrake: a steep wing that adds drag and rear downforce under hard braking above 22 m/s.
+inline constexpr double kDrsDragMult = 0.86, kDrsRearDownMult = 0.82;
+inline constexpr double kAirbrakeDragMult = 1.24, kAirbrakeRearDownMult = 1.22;
+
 struct AeroParams {
+    bool drs = false;                 // the car has a DRS-style low-drag wing mode
+    bool airbrake = false;            // the car has an airbrake wing mode
     double air_density = 1.225;
     double drag_area = 0.68;          // Cd * A, m^2
     double lift_area = 0.3;           // Cl * A (downforce positive), m^2

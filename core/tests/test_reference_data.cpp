@@ -123,7 +123,9 @@ Paper paper_top_speed(const CarConfig& cfg) {
         const double f_drive = curve_at(cfg.engine.torque_curve, rpm) * G * cfg.drivetrain.efficiency / r;
         const double q = 0.5 * cfg.aero.air_density * v * v;
         const double crr = rolling_resistance_coeff(cfg.tire_rear, v);
-        const double f_res = q * cfg.aero.drag_area + crr * (cfg.mass * kGravity + q * cfg.aero.lift_area);
+        // a car with a DRS wing runs it flat out on a straight when the game's models are on (RS_GAME_MODELS=1)
+        const double drag_area = cfg.aero.drag_area * (cfg.aero.drs && std::getenv("RS_GAME_MODELS") ? kDrsDragMult : 1.0);
+        const double f_res = q * drag_area + crr * (cfg.mass * kGravity + q * cfg.aero.lift_area);
         if (f_drive < f_res) {
             p.v_mps = v;
             p.rev_limited = false;

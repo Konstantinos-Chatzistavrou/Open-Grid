@@ -46,15 +46,20 @@ inline rs::CarConfig car() { return rs::load_car_config(data_path("cars/vela_gt.
 // The browser game (web/wasm/bridge.cpp rs_create) and the Unreal plugin (OpenGridVehicleComponent.cpp) switch these optional models on;
 // the core's defaults leave most of them off, and so do the tests unless RS_GAME_MODELS=1 is set. Same list as bridge.cpp.
 inline void enable_game_models(rs::Vehicle& v) {
-    v.unsprung_dynamics_enabled = true;
-    v.tire_zones_enabled = true;
-    v.aero_wake().yaw_aero_enabled = true;
-    v.chassis_dynamics().chassis_flex_enabled = true;
-    v.chassis_dynamics().active_yaw_control_enabled = true;
-    v.chassis_dynamics().active_aero_enabled = true;
-    v.chassis_dynamics().brake_fluid_boil_enabled = true;
-    v.engine_systems().torsional_compliance_enabled = true;
-    v.engine_systems().dog_box_flat_shift_cut = true;
+    // RS_GAME_MODELS_OFF=name,name leaves those out (to find which model a difference comes from): unsprung, zones, yaw_aero, flex,
+    // ayc, active_aero, brake_boil, torsional, dogbox
+    const char* off = std::getenv("RS_GAME_MODELS_OFF");
+    const std::string skip = off ? std::string(",") + off + "," : std::string();
+    auto on = [&](const char* name) { return skip.find(std::string(",") + name + ",") == std::string::npos; };
+    if (on("unsprung")) v.unsprung_dynamics_enabled = true;
+    if (on("zones")) v.tire_zones_enabled = true;
+    if (on("yaw_aero")) v.aero_wake().yaw_aero_enabled = true;
+    if (on("flex")) v.chassis_dynamics().chassis_flex_enabled = true;
+    if (on("ayc")) v.chassis_dynamics().active_yaw_control_enabled = true;
+    if (on("active_aero")) v.chassis_dynamics().active_aero_enabled = true;
+    if (on("brake_boil")) v.chassis_dynamics().brake_fluid_boil_enabled = true;
+    if (on("torsional")) v.engine_systems().torsional_compliance_enabled = true;
+    if (on("dogbox")) v.engine_systems().dog_box_flat_shift_cut = true;
 }
 
 inline std::unique_ptr<rs::Simulation> make_sim(const rs::CarConfig& cfg, double dt = 1.0 / 240.0,
