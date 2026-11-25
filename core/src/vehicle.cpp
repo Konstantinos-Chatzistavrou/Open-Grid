@@ -930,8 +930,13 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     //   Normal:  clean normal shifts; slamming rapid shifts shortens hold and can slow-sync / grind
     //   Poor:    brief / sloppy declutch while keeping partial throttle -> can miss shifts & damage gearbox
     since_shift_timer_ += dt;
-    if (input_.auto_clutch && drivetrain_.systems.transmission != TransmissionType::AutomaticTorqueConverter) {
-        const AutoClutchQuality q = input_.auto_clutch_quality;
+    // A dual-clutch box has no clutch pedal at all: its mechatronics launch the car and swap the clutches on every shift, whatever
+    // clutch assist the player picked, and it does it as well as a perfect driver (so it can never miss a shift). The assist and
+    // its quality setting are for cars with a clutch pedal (manual synchromesh, sequential dog-box). A torque converter has no
+    // clutch to manage at all (fluid coupling + lock-up clutch, in the drivetrain).
+    const bool box_clutches_itself = drivetrain_.systems.transmission == TransmissionType::DualClutchDct;
+    if ((input_.auto_clutch || box_clutches_itself) && drivetrain_.systems.transmission != TransmissionType::AutomaticTorqueConverter) {
+        const AutoClutchQuality q = box_clutches_itself ? AutoClutchQuality::Perfect : input_.auto_clutch_quality;
         if (input_.gear != last_gear_) {
             if (input_.gear != 1) {
                 if (q == AutoClutchQuality::Perfect) {

@@ -444,6 +444,7 @@
   },
   "drivetrain": {
     "layout": "rwd",
+    "transmission": "auto_tc",
     "gear_ratios": [
       -3.2,
       0,

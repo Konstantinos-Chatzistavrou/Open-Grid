@@ -659,12 +659,16 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         const double sr_thresh = systems.tc_lockup_engaged ? (tc.lockup_speed_ratio - 0.06) : tc.lockup_speed_ratio;
         const bool want_lock = (systems.engaged_gear >= tc.lockup_min_gear) && (sr >= sr_thresh)
                             && (std::abs(in.airspeed_mps) >= tc.lockup_min_speed_mps)
-                            && (in.throttle < 0.88) && (in.brake < 0.15) && (in.clutch < 0.1);
+                            && (in.brake < 0.15) && (in.clutch < 0.1)
+                            && (in.throttle < 0.88 || systems.engaged_gear >= static_cast<int>(cfg_.drivetrain.gear_ratios.size()) - 2);
+        // A full-throttle stab (kickdown) opens the lock-up in the lower gears, but in the top two gears a modern lock-up clutch holds
+        // at full throttle. Refusing to lock there left the converter slipping all the way up the box and cost ~3 % of top speed.
         const double ramp_step = 4.0 * h; // 0.25 s smooth lock-up / unlock
         systems.tc_lockup_frac = clamp(systems.tc_lockup_frac + (want_lock ? ramp_step : -ramp_step), 0.0, 1.0);
 
         double t_pump_total = t_pump_fluid;
         double t_turb_total = t_turb_fluid;
+        double tcc_slip_w = 0.0;   // power burnt in the lock-up CLUTCH while it is not yet fully locked
         if (systems.tc_lockup_frac > 0.01) {
             const double lock_cap = systems.tc_lockup_frac * cfg_.drivetrain.clutch_max_torque;
             const double t_lock = solve_karnopp(engine_omega, t_engine / e.inertia, e.inertia,
@@ -673,6 +677,7 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
             t_pump_total = (1.0 - f) * t_pump_fluid + f * t_lock;
             t_turb_total = (1.0 - f) * t_turb_fluid + f * t_lock;
             systems.tc_lockup_engaged = (f > 0.90 && systems.clutch_locked);
+            if (!systems.tc_lockup_engaged) tcc_slip_w = f * std::abs(t_lock * (engine_omega - w_shaft));
         } else {
             systems.clutch_locked = false;
             systems.tc_lockup_engaged = false;
@@ -682,7 +687,10 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         systems.clutch_slip_rads = systems.tc_lockup_engaged ? 0.0 : (engine_omega - w_shaft);
         systems.tc_slip_ratio = systems.tc_lockup_engaged ? 1.0 : sr;
         systems.tc_torque_ratio = systems.tc_lockup_engaged ? 1.0 : lerp(tr_fluid, 1.0, systems.tc_lockup_frac);
-        slip_power_w = std::max(0.0, t_pump_total * engine_omega - t_turb_total * w_shaft);
+        // Only the lock-up clutch's own slip heats and wears a friction lining. The fluid coupling's slip (pump power minus turbine
+        // power) goes into the transmission fluid: feeding it to the dry-clutch wear model wore a converter's "clutch" out during
+        // ordinary acceleration (clutch health 63 % after one 30 s pull).
+        slip_power_w = tcc_slip_w;
 
         const double r_w = i_wheels / i_shaft;
         const double t_tyre_c = free_accel(x, root_) * inertia(x, root_);

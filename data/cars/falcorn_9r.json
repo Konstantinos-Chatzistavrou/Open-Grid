@@ -452,6 +452,7 @@
   },
   "drivetrain": {
     "layout": "rwd",
+    "transmission": "dct",
     "gear_ratios": [
       -3.2,
       0,

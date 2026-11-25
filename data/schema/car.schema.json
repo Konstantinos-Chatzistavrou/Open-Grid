@@ -42,6 +42,7 @@
       "required": ["layout", "gear_ratios", "final_drive", "efficiency", "clutch_max_torque_nm", "driveline_inertia_kgm2"],
       "properties": {
         "layout": { "enum": ["rwd", "fwd", "awd"] },
+        "transmission": { "enum": ["h_pattern", "dog_box", "dct", "auto_tc"], "description": "The car's gearbox: manual synchromesh (needs a clutch, can miss shifts), sequential dog-box, dual-clutch (clutches itself, cannot miss a shift) or torque-converter automatic. Absent = the engine default (the browser build uses h_pattern)." },
         "gear_ratios": { "type": "array", "description": "[reverse (<0), 0 = neutral, 1st, 2nd, ...]" },
         "front_diff": { "$ref": "#/$defs/diff" }, "rear_diff": { "$ref": "#/$defs/diff" }, "centre_diff": { "$ref": "#/$defs/diff" },
         "awd_front_split": { "type": "number", "minimum": 0, "maximum": 1 }
