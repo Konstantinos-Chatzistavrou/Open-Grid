@@ -423,6 +423,50 @@ PresetSpec getPreset(EngineVoice voice) {
             s.acoustic = { 102.0f, 4.8f, 460.0f, 1.6f, 4.2f, 2250.0f, 2.1f, 5.6f, 640.0f, 0.38f, 2.7f, 3.2f, 0.35f, 1.90f, 10200.0f, 4.0f, true, false };
             break;
         }
+        case EngineVoice::I4Turbo: {
+            // 2.0L Forged Rally / JDM Twin-Scroll Turbo Inline-4 (1-3-4-2, 8200 RPM)
+            s.name = "OpenGrid Rally 2.0L Turbo I4";
+            s.redlineRpm = 8400.0;
+            s.boreMm = 86.0; s.strokeMm = 86.0; s.rodMm = 148.0; s.chamberCc = 48.0;
+            s.numBanks = 1; s.bank0Deg = 0.0; s.bank1Deg = 0.0; s.tdcDeg = 90.0;
+            s.crankMassKg = 11.5; s.flywheelMassKg = 7.5; s.frictionLbFt = 4.2;
+            s.intakePlenumL = 0.95; s.intakeFlowCfm = 620.0; s.runnerFlowCfm = 195.0; s.runnerLenIn = 14.0;
+            s.exOutletCfm = 980.0; s.exPrimaryLenIn = 30.0; s.exPrimaryCfm = 420.0;
+            s.exLen0In = 86.0; s.exLen1In = 88.0; s.exVol0 = 0.24; s.exVol1 = 0.24; s.exVelDecay = 0.78;
+            s.camDurDeg = 232.0; s.camGamma = 0.98; s.camLiftMm = 11.8; s.flowAtten = 1.12;
+            s.journalDegs = { 0.0, 180.0, 180.0, 0.0 };
+            s.cyls = {
+                {0, 0, 0,   0.0, 4.2, 0.94},
+                {0, 1, 0, 540.0, 3.0, 0.98},
+                {0, 2, 1, 180.0, 3.0, 0.96},
+                {0, 3, 1, 360.0, 4.2, 0.92},
+            };
+            s.acoustic = { 78.0f, 5.4f, 275.0f, 1.45f, 4.6f, 1420.0f, 1.85f, 4.8f, 420.0f, 0.42f, 4.1f, 4.5f, 0.31f, 1.88f, 8200.0f, 2.0f, true, false };
+            break;
+        }
+        case EngineVoice::I5Turbo: {
+            // 2.5L Group-B / Quattro 5-Cylinder Turbo (1-2-4-5-3 odd-harmonic warble, 8000 RPM)
+            s.name = "OpenGrid Group-B 2.5L Turbo I5";
+            s.redlineRpm = 8200.0;
+            s.boreMm = 82.5; s.strokeMm = 92.8; s.rodMm = 144.0; s.chamberCc = 50.0;
+            s.numBanks = 1; s.bank0Deg = 0.0; s.bank1Deg = 0.0; s.tdcDeg = 90.0;
+            s.crankMassKg = 13.0; s.flywheelMassKg = 8.5; s.frictionLbFt = 4.6;
+            s.intakePlenumL = 1.05; s.intakeFlowCfm = 680.0; s.runnerFlowCfm = 200.0; s.runnerLenIn = 15.0;
+            s.exOutletCfm = 1080.0; s.exPrimaryLenIn = 32.0; s.exPrimaryCfm = 450.0;
+            s.exLen0In = 90.0; s.exLen1In = 96.0; s.exVol0 = 0.28; s.exVol1 = 0.28; s.exVelDecay = 0.80;
+            s.camDurDeg = 230.0; s.camGamma = 1.00; s.camLiftMm = 11.6; s.flowAtten = 1.16;
+            // 72-deg crank throws, classic 1-2-4-5-3 firing every 144 deg -> unmistakable 2.5x half-order warble!
+            s.journalDegs = { 0.0, 144.0, 576.0, 288.0, 432.0 };
+            s.cyls = {
+                {0, 0, 0,   0.0, 5.2, 0.92},
+                {0, 1, 0, 144.0, 3.8, 0.98},
+                {0, 2, 0, 576.0, 2.8, 0.95},
+                {0, 3, 1, 288.0, 3.8, 1.00},
+                {0, 4, 1, 432.0, 5.2, 0.94},
+            };
+            s.acoustic = { 82.0f, 6.0f, 310.0f, 1.50f, 4.9f, 1540.0f, 1.90f, 5.0f, 455.0f, 0.40f, 3.8f, 4.4f, 0.34f, 1.92f, 8000.0f, 2.5f, true, false };
+            break;
+        }
         case EngineVoice::V8Supercharged:
         case EngineVoice::V8Crossplane:
         default: {
@@ -712,7 +756,11 @@ struct EngineAudioSynth::Impl {
     float smoothWallL = 0.0f;
     float smoothWallR = 0.0f;
     float smoothGearWhine = 0.0f;
+    float smoothGearWhineHz = 0.0f;
     float smoothSpeedMps = 0.0f;
+    float smoothWetRoad = 0.0f;
+    float smoothOverpass = 0.0f;
+    float camCrossoverEnv = 0.0f;
     float exhaustGasTemp = 0.20f; // 0..1 normalized header gas temp (shifts standing-wave speed of sound up to ~6%)
 
     // Smooth camera perspective crossfade (~40 ms time constant -> zero-click camera switching!)
@@ -746,15 +794,18 @@ struct EngineAudioSynth::Impl {
     float gearPhase1 = 0.0f;
     float gearPhase2 = 0.0f;
 
-    // Exhaust waveguide + early asphalt reflections + stereo canyon walls + 4-tap concrete tunnel FDN
+    // Exhaust waveguide + early asphalt reflections + stereo canyon walls + 8-channel orthogonal Householder tunnel FDN
     DelayLine<1024> headerCombL, headerCombR;
     DelayLine<2048> erDelayL, erDelayR;
     DelayLine<512> haasDelayR;
     DelayLine<4096> wallDelayL, wallDelayR;
-    std::array<DelayLine<8192>, 4> tunnelFdn{};
-    std::array<float, 4> fdnLp{};
+    std::array<DelayLine<8192>, 8> tunnelFdn{};
+    std::array<float, 8> fdnLp{};
     float fdnInHpL = 0.0f, fdnInHpR = 0.0f;
     float wallLpL = 0.0f, wallLpR = 0.0f;
+    Biquad wetSpecHpL, wetSpecHpR;
+    Biquad wastegateBp;
+    Biquad camBarkEq;
 
     // Forced induction DSP (Turbo spool + compressor surge BOV flutter + Helical Supercharger)
     float turboPhase = 0.0f;
@@ -871,6 +922,10 @@ struct EngineAudioSynth::Impl {
         gearBp.setBandpass(fs, 1200.0f, 1.55f);
         gearLp.setLowpass(fs, 4400.0f, 0.75f);
         starterBp.setBandpass(fs, 380.0f, 1.25f);
+        wetSpecHpL.setHighpass(fs, 2400.0f, 0.707f);
+        wetSpecHpR.setHighpass(fs, 2400.0f, 0.707f);
+        wastegateBp.setBandpass(fs, 1450.0f, 1.25f);
+        camBarkEq.setPeaking(fs, a.intakeHz * 2.2f, 1.6f, 0.0f);
 
         updatePerspectiveFilters(fs);
     }
@@ -892,6 +947,8 @@ struct EngineAudioSynth::Impl {
         gearBp.reset(); gearLp.reset();
         turboNoiseBp.reset(); flutterBp.reset();
         starterBp.reset();
+        wetSpecHpL.reset(); wetSpecHpR.reset();
+        wastegateBp.reset(); camBarkEq.reset();
 
         headerCombL.reset();
         headerCombR.reset();
@@ -1396,7 +1453,10 @@ struct EngineAudioSynth::Impl {
         smoothWallL += (clampf(ctrl.wallProximityL, 0.0f, 1.0f) - smoothWallL) * envAlpha;
         smoothWallR += (clampf(ctrl.wallProximityR, 0.0f, 1.0f) - smoothWallR) * envAlpha;
         smoothGearWhine += (clampf(ctrl.gearWhineLevel, 0.0f, 1.0f) - smoothGearWhine) * envAlpha;
+        smoothGearWhineHz += (clampf(ctrl.gearWhineHz, 0.0f, 6000.0f) - smoothGearWhineHz) * rpmAlpha;
         smoothSpeedMps += (clampf(ctrl.vehicleSpeedMps, 0.0f, 140.0f) - smoothSpeedMps) * envAlpha;
+        smoothWetRoad += (clampf(ctrl.wetRoadReflection, 0.0f, 1.0f) - smoothWetRoad) * envAlpha;
+        smoothOverpass += (clampf(ctrl.overpassReflection, 0.0f, 1.0f) - smoothOverpass) * envAlpha;
 
         // Track smoothed RPM rate (RPM/s) for realistic decel-only automatic overrun burbles
         const float instRpmSlope = (smoothRpm - prevSmoothRpm) / std::max(1e-4f, blockDt);
@@ -1462,8 +1522,18 @@ struct EngineAudioSynth::Impl {
         decelEqL.setPeaking(fs, a.bodyHz * (1.35f + 0.55f * rpmNorm), 2.1f, decelAmt * 5.2f);
         decelEqR.setPeaking(fs, a.bodyHz * (1.35f + 0.55f * rpmNorm), 2.1f, decelAmt * 5.2f);
 
-        // Intake carbon-airbox formant sweeps subtly up with RPM
-        intakeBp.setBandpass(fs, a.intakeHz * (0.82f + 0.75f * rpmNorm), 1.35f);
+        // VTEC / VarioCam high-cam lobe crossover above ~62% of redline under high load (crisp induction bark!)
+        const bool camSupported = (cfg.voice == EngineVoice::Flat6Na || cfg.voice == EngineVoice::V12Na ||
+                                   cfg.voice == EngineVoice::V10Screamer || cfg.voice == EngineVoice::V8Flatplane ||
+                                   cfg.voice == EngineVoice::I4Turbo);
+        const float camThresh = clampf(ctrl.camCrossoverFrac, 0.35f, 0.90f);
+        const float targetCam = (camSupported && rpmNorm >= camThresh && loadEff > 0.62f)
+                              ? clampf((rpmNorm - camThresh) / 0.12f, 0.0f, 1.0f) : 0.0f;
+        camCrossoverEnv += (targetCam - camCrossoverEnv) * (1.0f - std::exp(-blockDt / 0.055f));
+        camBarkEq.setPeaking(fs, clampf(a.intakeHz * (1.85f + 0.55f * rpmNorm), 600.0f, 4200.0f), 1.55f, camCrossoverEnv * 4.2f);
+
+        // Intake carbon-airbox formant sweeps subtly up with RPM (and opens brighter on high cam!)
+        intakeBp.setBandpass(fs, a.intakeHz * (0.82f + 0.75f * rpmNorm + 0.18f * camCrossoverEnv), 1.35f);
 
         // Primary header comb waveguide delay lengths (samples, shortened dynamically by exhaust gas temperature!)
         const float combSampsL = a.pipeCombMsL * 0.001f * fs * tempDelayScale;
@@ -1481,11 +1551,14 @@ struct EngineAudioSynth::Impl {
         const int wallTapR1 = std::max(1, static_cast<int>(0.0091f * fs));
         const int wallTapR2 = std::max(1, static_cast<int>(0.0234f * fs));
 
-        // 4-tap metallic concrete tunnel FDN delay lengths (29, 37, 47, 59 ms)
-        const int tunTap0 = std::max(1, static_cast<int>(0.029f * fs));
-        const int tunTap1 = std::max(1, static_cast<int>(0.037f * fs));
-        const int tunTap2 = std::max(1, static_cast<int>(0.047f * fs));
-        const int tunTap3 = std::max(1, static_cast<int>(0.059f * fs));
+        // 8-channel mutually-prime concrete tunnel & street-canyon Householder FDN (23..83 ms)
+        const int tunTap[8] = {
+            std::max(1, static_cast<int>(0.023f * fs)), std::max(1, static_cast<int>(0.029f * fs)),
+            std::max(1, static_cast<int>(0.037f * fs)), std::max(1, static_cast<int>(0.043f * fs)),
+            std::max(1, static_cast<int>(0.053f * fs)), std::max(1, static_cast<int>(0.061f * fs)),
+            std::max(1, static_cast<int>(0.071f * fs)), std::max(1, static_cast<int>(0.083f * fs)),
+        };
+        const int overpassTap = std::max(1, static_cast<int>(0.0145f * fs)); // ~5 m bridge deck reflection (~14.5 ms)
 
         // One-pole coefficients for tunnel air absorption (~3.2 kHz), tunnel DC/mud HP (~90 Hz), wall LP (~4.8 kHz), burble band (140..420 Hz)
         const float fdnDampAlpha = 1.0f - std::exp(-twoPi * 3200.0f * invFs);
@@ -1518,12 +1591,24 @@ struct EngineAudioSynth::Impl {
             turboNoiseBp.setBandpass(fs, clampf(2100.0f + turboSpoolLevel * 3400.0f, 1400.0f, 7500.0f), 2.6f);
         }
 
-        // Straight-cut motorsport gearbox whine parameters (load-modulated + coasting flank pitch shift!)
+        // Straight-cut motorsport gearbox whine parameters (exact physical gear_whine_hz when provided, else speed fallback)
         const float speedNorm = clampf(smoothSpeedMps / 5.5f, 0.0f, 1.0f);
         const float coastShift = 1.0f + 0.032f * decelAmt;
         const float loadPitchMod = 1.0f + 0.018f * loadEff;
-        const float gearMeshHz1 = clampf((210.0f + smoothSpeedMps * 27.5f + smoothRpm * 0.038f) * coastShift * loadPitchMod, 180.0f, 3400.0f);
-        const float gearMeshHz2 = clampf(gearMeshHz1 * 1.492f, 260.0f, 5100.0f);
+        const float rawMeshHz = (smoothGearWhineHz > 40.0f)
+                              ? (smoothGearWhineHz * coastShift * loadPitchMod)
+                              : ((210.0f + smoothSpeedMps * 27.5f + smoothRpm * 0.038f) * coastShift * loadPitchMod);
+        const float gearMeshHz1 = clampf(rawMeshHz, 180.0f, 4200.0f);
+        const float gearMeshHz2 = clampf(gearMeshHz1 * 1.492f, 260.0f, 6200.0f);
+
+        // External wastegate screamer-pipe level (opens raw exhaust bypass above 0.95 bar under WOT!)
+        const float wgOpen = (hasTurbo && (ctrl.externalWastegate || cfg.exhaustStage == ExhaustStage::RaceTitanium)
+                              && smoothBoost > 0.92f && loadEff > 0.72f)
+                           ? clampf((smoothBoost - 0.92f) / 0.55f, 0.0f, 1.0f) * clampf((loadEff - 0.72f) / 0.25f, 0.0f, 1.0f)
+                           : 0.0f;
+        if (wgOpen > 0.01f) {
+            wastegateBp.setBandpass(fs, clampf(1150.0f + rpmNorm * 1350.0f + smoothBoost * 320.0f, 700.0f, 3600.0f), 1.35f);
+        }
         const float gearBaseAmp = smoothGearWhine * (0.28f + 0.62f * loadEff + 0.42f * decelAmt)
                                 * (0.06f * rpmNorm + 0.94f * speedNorm)
                                 * (0.55f + 0.45f * clampf(smoothSpeedMps / 65.0f, 0.0f, 1.0f)) * 0.16f;
@@ -1711,9 +1796,10 @@ struct EngineAudioSynth::Impl {
             sL = cabinDampEqL.process(cabinBoomEqL.process(cabinExLpL.process(sL))) * curPersp.exhaustGain;
             sR = cabinDampEqR.process(cabinBoomEqR.process(cabinExLpR.process(sR))) * curPersp.exhaustGain;
 
-            // 5. Real Intake Manifold Plenum Roar (centered carbon-airbox bark, +5 dB in HoodBumper!)
-            const float inFiltered = intakeLp.process(intakeBp.process(inSig) + 0.35f * inSig);
-            const float inSat = std::tanh(inFiltered * 1.4f) * baseIntakeGain * curPersp.intakeGain;
+            // 5. Real Intake Manifold Plenum Roar (centered carbon-airbox bark, +5 dB in HoodBumper + VTEC cam crossover!)
+            const float inFiltered = camBarkEq.process(intakeLp.process(intakeBp.process(inSig) + 0.35f * inSig));
+            const float inSat = std::tanh(inFiltered * (1.4f + 0.35f * camCrossoverEnv))
+                              * baseIntakeGain * (1.0f + 0.32f * camCrossoverEnv) * curPersp.intakeGain;
 
             // 6. Valvetrain / Fuel-Injector Mechanical Texture from real engine-sim `mechPulse` tap
             const float mechDiff = mechSig - prevMechSample;
@@ -1745,6 +1831,11 @@ struct EngineAudioSynth::Impl {
                 const float airRush = turboNoiseBp.process(rng.nextSigned());
                 const float turbineTone = std::sin(turboPhase) * 0.014f;
                 fiMono += (turbineTone + airRush * 0.12f) * std::pow(turboSpoolLevel, 1.2f) * (0.30f + 0.70f * loadEff);
+            }
+            if (wgOpen > 0.01f) {
+                // External wastegate screamer pipe: raw bypass pulse + broadband exhaust hiss
+                const float wgSrc = (exL + exR) * 0.55f + rng.nextSigned() * 0.45f;
+                fiMono += std::tanh(wastegateBp.process(wgSrc) * 2.1f) * wgOpen * 0.24f;
             }
             if (flutterEnv > 0.005f) {
                 flutterAge += invFs;
@@ -1798,38 +1889,39 @@ struct EngineAudioSynth::Impl {
             const float slapL = (wallLpL * 0.80f + wallLpR * 0.22f) * 0.46f;
             const float slapR = (wallLpR * 0.80f + wallLpL * 0.22f) * 0.46f;
 
-            // 11b. 4-tap metallic concrete tunnel FDN (29, 37, 47, 59 ms + 3.2 kHz air damping + Hadamard mix)
+            // 11b. 8-channel orthogonal Householder metallic concrete tunnel FDN (23..83 ms + 3.2 kHz air damping)
+            // Householder matrix H = I - (2/N) * 1*1^T is strictly orthogonal -> lush, dense, zero metallic ringing!
             fdnInHpL += (refBusL - fdnInHpL) * fdnHpAlpha;
             fdnInHpR += (refBusR - fdnInHpR) * fdnHpAlpha;
             const float tunInL = refBusL - fdnInHpL;
             const float tunInR = refBusR - fdnInHpR;
 
-            const float d0 = tunnelFdn[0].read(tunTap0);
-            const float d1 = tunnelFdn[1].read(tunTap1);
-            const float d2 = tunnelFdn[2].read(tunTap2);
-            const float d3 = tunnelFdn[3].read(tunTap3);
+            float fdnSum = 0.0f;
+            for (int c = 0; c < 8; ++c) {
+                const float dc = tunnelFdn[c].read(tunTap[c]);
+                fdnLp[c] += (dc - fdnLp[c]) * fdnDampAlpha;
+                fdnSum += fdnLp[c];
+            }
+            const float hAvg = 0.25f * fdnSum; // (2/8) * sum
+            for (int c = 0; c < 8; ++c) {
+                const float hc = fdnLp[c] - hAvg;
+                const float inj = (c & 1) ? ((c & 2) ? (0.72f * tunInR - 0.28f * tunInL) : tunInR)
+                                          : ((c & 2) ? (0.72f * tunInL - 0.28f * tunInR) : tunInL);
+                tunnelFdn[c].push(clampf(hc * tunFb + inj * tunDrive * 0.72f, -2.0f, 2.0f));
+            }
 
-            fdnLp[0] += (d0 - fdnLp[0]) * fdnDampAlpha;
-            fdnLp[1] += (d1 - fdnLp[1]) * fdnDampAlpha;
-            fdnLp[2] += (d2 - fdnLp[2]) * fdnDampAlpha;
-            fdnLp[3] += (d3 - fdnLp[3]) * fdnDampAlpha;
+            const float tunOutL = (fdnLp[0] + fdnLp[2] + fdnLp[4] - 0.55f * fdnLp[6]) * 0.30f;
+            const float tunOutR = (fdnLp[1] + fdnLp[3] + fdnLp[5] - 0.55f * fdnLp[7]) * 0.30f;
 
-            const float h0 = 0.5f * ( fdnLp[0] + fdnLp[1] + fdnLp[2] + fdnLp[3]);
-            const float h1 = 0.5f * ( fdnLp[0] - fdnLp[1] + fdnLp[2] - fdnLp[3]);
-            const float h2 = 0.5f * ( fdnLp[0] + fdnLp[1] - fdnLp[2] - fdnLp[3]);
-            const float h3 = 0.5f * ( fdnLp[0] - fdnLp[1] - fdnLp[2] + fdnLp[3]);
+            // Overhead bridge/overpass slapback + rain-slick asphalt high-frequency specular exhaust reflection
+            const float ovL = smoothOverpass > 0.01f ? (wallDelayL.read(overpassTap) * smoothOverpass * 0.34f) : 0.0f;
+            const float ovR = smoothOverpass > 0.01f ? (wallDelayR.read(overpassTap) * smoothOverpass * 0.34f) : 0.0f;
+            const float wetL = smoothWetRoad > 0.01f ? (wetSpecHpL.process(erL) * smoothWetRoad * 0.32f) : 0.0f;
+            const float wetR = smoothWetRoad > 0.01f ? (wetSpecHpR.process(erR) * smoothWetRoad * 0.32f) : 0.0f;
 
-            tunnelFdn[0].push(clampf(h0 * tunFb + tunInL * tunDrive, -2.0f, 2.0f));
-            tunnelFdn[1].push(clampf(h1 * tunFb + tunInR * tunDrive, -2.0f, 2.0f));
-            tunnelFdn[2].push(clampf(h2 * tunFb + (tunInL * 0.72f - tunInR * 0.28f) * tunDrive, -2.0f, 2.0f));
-            tunnelFdn[3].push(clampf(h3 * tunFb + (tunInR * 0.72f - tunInL * 0.28f) * tunDrive, -2.0f, 2.0f));
-
-            const float tunOutL = (fdnLp[0] + fdnLp[2] - 0.35f * fdnLp[1]) * 0.44f;
-            const float tunOutR = (fdnLp[1] + fdnLp[3] - 0.35f * fdnLp[0]) * 0.44f;
-
-            // Cabin-glass lowpass on exterior wall & tunnel reflections (wide open in exterior views)
-            const float envWetL = cabinRefLpL.process(slapL + tunOutL) * curPersp.envRefGain;
-            const float envWetR = cabinRefLpR.process(slapR + tunOutR) * curPersp.envRefGain;
+            // Cabin-glass lowpass on exterior wall, overpass, wet specular & tunnel reflections
+            const float envWetL = cabinRefLpL.process(slapL + tunOutL + ovL + wetL) * curPersp.envRefGain;
+            const float envWetR = cabinRefLpR.process(slapR + tunOutR + ovR + wetR) * curPersp.envRefGain;
 
             // Dynamic overall master presence (clean 10-14 dB crest factor, strictly bounded [-1, 1] via tanh!)
             const float master = (0.42f + 0.36f * loadEff) * (0.76f + 0.24f * rpmNorm);
@@ -1935,6 +2027,8 @@ EngineVoice EngineAudioSynth::parseVoice(const std::string& id) {
     if (id == "i6_forged" || id == "i6") return EngineVoice::I6Forged;
     if (id == "v6_tt" || id == "v6") return EngineVoice::V6TwinTurbo;
     if (id == "rotary_4" || id == "rotary") return EngineVoice::Rotary4;
+    if (id == "i4_turbo" || id == "i4") return EngineVoice::I4Turbo;
+    if (id == "i5_turbo" || id == "i5") return EngineVoice::I5Turbo;
     return EngineVoice::V8Crossplane;
 }
 
@@ -1950,6 +2044,8 @@ const char* EngineAudioSynth::voiceName(EngineVoice v) {
         case EngineVoice::I6Forged: return "i6_forged";
         case EngineVoice::V6TwinTurbo: return "v6_tt";
         case EngineVoice::Rotary4: return "rotary_4";
+        case EngineVoice::I4Turbo: return "i4_turbo";
+        case EngineVoice::I5Turbo: return "i5_turbo";
     }
     return "v8_crossplane";
 }

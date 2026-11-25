@@ -702,6 +702,10 @@ public:
     UFUNCTION(BlueprintCallable, Category="OpenGrid|Config")
     bool PreloadCarSpec() { return EnsureCarLoaded(); }
 
+    /** Native C++ accessors for sibling UE5 components (e.g., UOpenGridAudioComponent). */
+    const rs::CarConfig& GetCarConfig() const { return Config_; }
+    const rs::VehicleOutput& GetLastVehicleOutput() const { return LastRecord_.out; }
+
 private:
     void CreateVehicle();
     void ApplyFeatureFlags();

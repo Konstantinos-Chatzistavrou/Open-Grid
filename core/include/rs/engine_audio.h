@@ -31,6 +31,8 @@ enum class EngineVoice : uint8_t {
     I6Forged,
     V6TwinTurbo,
     Rotary4,
+    I4Turbo,
+    I5Turbo,
 };
 
 enum class ExhaustStage : uint8_t {
@@ -61,7 +63,12 @@ struct EngineAudioControl {
     float wallProximityL = 0.0f;      // 0..1 left canyon/building wall early reflection
     float wallProximityR = 0.0f;      // 0..1 right canyon/building wall early reflection
     float gearWhineLevel = 0.0f;      // 0..1 straight-cut motorsport gearbox whine
-    float vehicleSpeedMps = 0.0f;     // vehicle speed in m/s (drives gear mesh pitch)
+    float gearWhineHz = 0.0f;         // >0: exact physical gear-tooth mesh Hz from rs::VehicleOutput::gear_whine_hz
+    float vehicleSpeedMps = 0.0f;     // vehicle speed in m/s (fallback gear mesh pitch when gearWhineHz <= 0)
+    float wetRoadReflection = 0.0f;   // 0..1 rain-slick asphalt high-frequency specular exhaust reflection
+    float overpassReflection = 0.0f;  // 0..1 overhead concrete bridge/overpass tight slapback
+    bool externalWastegate = false;   // true: screamer-pipe bypass bark above target boost under WOT
+    float camCrossoverFrac = 0.62f;   // RPM fraction (0..1) where high-revving VTEC / VarioCam lobe opens
 };
 
 struct EngineAudioConfig {
