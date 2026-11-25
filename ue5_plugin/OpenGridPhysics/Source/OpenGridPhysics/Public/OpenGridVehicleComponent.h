@@ -550,6 +550,30 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float StreetMarblesAtCar = 0.0f;
 
+    /** Driver steering-wheel rim torque (N m) after hydraulic/EPS power steering, rack friction & column damping. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float SteeringColumnTorqueNm = 0.0f;
+
+    /** Hydraulic / EPS power-steering assist torque applied at the rack (N m). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float SteeringAssistTorqueNm = 0.0f;
+
+    /** Active speed-sensitive power-steering boost share (0 = unassisted .. 0.92). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float PowerSteeringGain = 0.0f;
+
+    /** Hydraulic torque converter turbine/pump speed ratio SR (0 at stall .. 1.0 locked). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float TorqueConverterSlipRatio = 1.0f;
+
+    /** Hydraulic torque converter torque multiplication ratio TR(SR) (up to ~2.15 at stall). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    float TorqueConverterTorqueRatio = 1.0f;
+
+    /** True when the automatic transmission's TCC mechanical lock-up clutch is engaged. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
+    bool bTorqueConverterLocked = false;
+
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float AirDensityKgPerM3 = 1.225f;
 

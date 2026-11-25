@@ -97,6 +97,8 @@ Drivetrain::Drivetrain(const CarConfig& cfg) : cfg_(cfg) {
         systems.transmission = TransmissionType::SequentialDogBox;
     } else if (cfg.drivetrain.transmission == "dct") {
         systems.transmission = TransmissionType::DualClutchDct;
+    } else if (cfg.drivetrain.transmission == "auto_tc") {
+        systems.transmission = TransmissionType::AutomaticTorqueConverter;
     }
     auto leaf = [&](int w) { nodes_.push_back(Node{w}); return (int)nodes_.size() - 1; };
     auto diff = [&](int a, int b, double s, const DiffParams* p) {
@@ -607,7 +609,83 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         return sign(dv) * t_slip;
     };
 
-    if (G != 0.0 && T_s > 0.0 && !stalled) {
+    if (G != 0.0 && systems.transmission == TransmissionType::AutomaticTorqueConverter && !stalled) {
+        // ---- Hydraulic Torque Converter (Kotwicki fluid coupling + stator multiplication) & TCC Lock-Up Clutch
+        const TorqueConverterParams& tc = cfg_.drivetrain.torque_converter;
+        const double eta = std::max(cfg_.drivetrain.efficiency, 0.1);
+        const double i_wheels = inertia(x, root_) / (G * G);
+        const double i_shaft = cfg_.drivetrain.driveline_inertia + i_wheels;
+        const double w_shaft = G * w_carrier;
+        const double a_shaft = G * free_accel(x, root_) * i_wheels / i_shaft;
+        const double w_pump = std::max(engine_omega, 1.0);
+        const double sr = clamp(w_shaft / std::max(w_pump, 10.0), 0.0, 1.30);
+        const double k_rad = std::max(tc.stall_k_factor, 40.0) * kRpmToRad;
+        const double c_stall = 1.0 / (k_rad * k_rad);
+        const double c_sr = std::max(tc.coupling_speed_ratio, 0.25);
+        const double tr_fluid = (sr < c_sr)
+                              ? (1.0 + (std::max(1.0, tc.stall_torque_ratio) - 1.0) * (1.0 - sr / c_sr))
+                              : 1.0;
+
+        double t_pump_fluid = 0.0;
+        double t_turb_fluid = 0.0;
+        if (sr <= 1.0) {
+            const double c_p = c_stall * clamp(1.0 - 0.92 * sr * sr, 0.02, 1.0);
+            t_pump_fluid = c_p * w_pump * w_pump;
+            // Unconditional substep stability cap: fluid coupling cannot overshoot pump/turbine equilibrium in step h.
+            const double denom = h * (1.0 / e.inertia + tr_fluid * eta / i_shaft);
+            const double t_eq = ((w_pump - w_shaft) + h * (t_engine / e.inertia - a_shaft)) / std::max(denom, 1e-9);
+            if (t_eq > 0.0) t_pump_fluid = std::min(t_pump_fluid, t_eq);
+            else t_pump_fluid = 0.0;
+            t_turb_fluid = t_pump_fluid * tr_fluid;
+        } else {
+            // Overrun / coast engine braking: turbine drives pump with ~35% reverse fluid coupling
+            const double c_coast = 0.35 * c_stall * (sr - 1.0);
+            t_pump_fluid = -c_coast * w_shaft * std::abs(w_shaft);
+            const double denom = h * (1.0 / e.inertia + eta / i_shaft);
+            const double t_eq = ((w_pump - w_shaft) + h * (t_engine / e.inertia - a_shaft)) / std::max(denom, 1e-9);
+            if (t_eq < 0.0) t_pump_fluid = std::max(t_pump_fluid, t_eq);
+            else t_pump_fluid = 0.0;
+            t_turb_fluid = t_pump_fluid;
+        }
+
+        // Hydraulic TCC mechanical lock-up clutch (engages smoothly in 3rd+ at cruise, unlocks on kickdown/brake)
+        const double sr_thresh = systems.tc_lockup_engaged ? (tc.lockup_speed_ratio - 0.06) : tc.lockup_speed_ratio;
+        const bool want_lock = (systems.engaged_gear >= tc.lockup_min_gear) && (sr >= sr_thresh)
+                            && (std::abs(in.airspeed_mps) >= tc.lockup_min_speed_mps)
+                            && (in.throttle < 0.88) && (in.brake < 0.15) && (in.clutch < 0.1);
+        const double ramp_step = 4.0 * h; // 0.25 s smooth lock-up / unlock
+        systems.tc_lockup_frac = clamp(systems.tc_lockup_frac + (want_lock ? ramp_step : -ramp_step), 0.0, 1.0);
+
+        double t_pump_total = t_pump_fluid;
+        double t_turb_total = t_turb_fluid;
+        if (systems.tc_lockup_frac > 0.01) {
+            const double lock_cap = systems.tc_lockup_frac * cfg_.drivetrain.clutch_max_torque;
+            const double t_lock = solve_karnopp(engine_omega, t_engine / e.inertia, e.inertia,
+                                                w_shaft, a_shaft, i_shaft / eta, lock_cap, lock_cap * 0.85);
+            const double f = systems.tc_lockup_frac;
+            t_pump_total = (1.0 - f) * t_pump_fluid + f * t_lock;
+            t_turb_total = (1.0 - f) * t_turb_fluid + f * t_lock;
+            systems.tc_lockup_engaged = (f > 0.90 && systems.clutch_locked);
+        } else {
+            systems.clutch_locked = false;
+            systems.tc_lockup_engaged = false;
+        }
+
+        clutch_torque = t_pump_total;
+        systems.clutch_slip_rads = systems.tc_lockup_engaged ? 0.0 : (engine_omega - w_shaft);
+        systems.tc_slip_ratio = systems.tc_lockup_engaged ? 1.0 : sr;
+        systems.tc_torque_ratio = systems.tc_lockup_engaged ? 1.0 : lerp(tr_fluid, 1.0, systems.tc_lockup_frac);
+        slip_power_w = std::max(0.0, t_pump_total * engine_omega - t_turb_total * w_shaft);
+
+        const double r_w = i_wheels / i_shaft;
+        const double t_tyre_c = free_accel(x, root_) * inertia(x, root_);
+        const double prop_torque = r_w * t_turb_total * G * eta - (1.0 - r_w) * t_tyre_c;
+        distribute(x, root_, prop_torque);
+    } else if (G != 0.0 && T_s > 0.0 && !stalled) {
+        systems.tc_slip_ratio = 1.0;
+        systems.tc_torque_ratio = 1.0;
+        systems.tc_lockup_frac = 0.0;
+        systems.tc_lockup_engaged = false;
         // Heavily damaged gearbox teeth cap transmitted torque (gearbox_health < 0.45).
         double t_gb_cap = std::numeric_limits<double>::infinity();
         if (systems.gearbox_health < 0.45) {

@@ -46,9 +46,10 @@ struct AtmosphericEnvironment {
 };
 
 enum class TransmissionType : int {
-    HPatternSynchro = 0,     // Manual H-pattern synchromesh: baulk-ring cone clutch; grinds & misses if forced without sync
-    SequentialDogBox = 1,    // Motorsport sequential dog-box: flat-foot upshifts via 55 ms ignition-cut or matched speed
-    DualClutchDct = 2        // Dual-clutch (DCT): 15 ms seamless torque handoff with zero boost drop
+    HPatternSynchro = 0,          // Manual H-pattern synchromesh: baulk-ring cone clutch; grinds & misses if forced without sync
+    SequentialDogBox = 1,         // Motorsport sequential dog-box: flat-foot upshifts via 55 ms ignition-cut or matched speed
+    DualClutchDct = 2,            // Dual-clutch (DCT): 15 ms seamless torque handoff with zero boost drop
+    AutomaticTorqueConverter = 3  // Planetary automatic with hydraulic fluid torque converter & TCC lock-up clutch
 };
 
 enum class SyncState : int {
@@ -89,6 +90,12 @@ struct EngineSystemState {
     double clutch_clamp_frac = 1.0;        // 0..1 normalized clamp force from pedal travel curve
     double clutch_slip_rads = 0.0;         // engine_omega - input_shaft_omega (rad/s)
     bool clutch_locked = false;            // Karnopp stick state (true = locked without chatter)
+
+    // Hydraulic Torque Converter & Lock-Up Clutch (TCC) live telemetry (when transmission == AutomaticTorqueConverter)
+    double tc_slip_ratio = 1.0;            // turbine / pump speed ratio SR (0 at stall .. 1.0 locked)
+    double tc_torque_ratio = 1.0;          // hydraulic torque multiplication TR(SR) (up to ~2.15 at stall)
+    double tc_lockup_frac = 0.0;           // 0..1 smooth TCC lock-up clutch engagement ramp
+    bool tc_lockup_engaged = false;        // true when TCC mechanical lock-up clutch is engaged
 
     // Transmission Archetype (H-Pattern Synchro Cone Clutch / Sequential Dog-Box Flat-Shift Cut / DCT)
     TransmissionType transmission = TransmissionType::SequentialDogBox;

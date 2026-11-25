@@ -121,6 +121,11 @@ inline StepRecord blend(const StepRecord& a, const StepRecord& b, double alpha) 
     r.out.front_ride_height_m = rs::lerp(a.out.front_ride_height_m, b.out.front_ride_height_m, t);
     r.out.rear_ride_height_m = rs::lerp(a.out.rear_ride_height_m, b.out.rear_ride_height_m, t);
     r.out.aero_balance_front = rs::lerp(a.out.aero_balance_front, b.out.aero_balance_front, t);
+    r.out.steering_column_torque_nm = rs::lerp(a.out.steering_column_torque_nm, b.out.steering_column_torque_nm, t);
+    r.out.steering_assist_torque_nm = rs::lerp(a.out.steering_assist_torque_nm, b.out.steering_assist_torque_nm, t);
+    r.out.power_steering_gain = rs::lerp(a.out.power_steering_gain, b.out.power_steering_gain, t);
+    r.out.tc_slip_ratio = rs::lerp(a.out.tc_slip_ratio, b.out.tc_slip_ratio, t);
+    r.out.tc_torque_ratio = rs::lerp(a.out.tc_torque_ratio, b.out.tc_torque_ratio, t);
 
     for (std::size_t i = 0; i < 4; ++i) {
         WheelOutput& w = r.out.wheels[i];

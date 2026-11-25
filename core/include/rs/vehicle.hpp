@@ -129,6 +129,7 @@ struct ChassisDynamicsConfig {
     bool active_aero_enabled = false;                // DRS straight-line low-drag (-14% drag > 180 km/h) + Braking Airbrake (+22% rear downforce)
     bool brake_fluid_boil_enabled = false;           // DOT 4 caliper fluid boiling (> 260 C) causes vapor-lock spongy brake pressure loss
     bool bushing_compliance_enabled = false;         // Elastokinematic bushing compliance (toe/camber/recession under Fx/Fy)
+    bool progressive_bump_stops_enabled = false;     // Smooth exponential polyurethane jounce packers (when axle uses linear default)
 };
 
 // Aerodynamic slipstream (drafting tow), turbulent dirty-air front downforce loss, and drift yaw-angle aero scaling.
@@ -195,6 +196,14 @@ struct VehicleOutput {
     double rear_ride_height_m = 0.125;       // m, live rear diffuser height above road
     double aero_balance_front = 0.45;        // live front share of aerodynamic downforce (0..1)
     bool diffuser_stalled = false;           // true when excessive rear-high rake stalls underbody diffuser
+    // Physical steering column & speed-sensitive power steering (EPS / Hydraulic)
+    double steering_column_torque_nm = 0.0;  // N m at steering wheel rim (after power steering + friction + damping + inertia)
+    double steering_assist_torque_nm = 0.0;  // N m hydraulic/EPS assist torque applied to rack
+    double power_steering_gain = 0.0;        // 0..1 active speed-sensitive power-steering boost fraction
+    // Hydraulic torque converter telemetry (AutomaticTorqueConverter)
+    double tc_slip_ratio = 1.0;              // turbine / pump speed ratio SR (0 at stall .. 1.0 locked)
+    double tc_torque_ratio = 1.0;            // hydraulic torque multiplication TR(SR)
+    bool tc_lockup_engaged = false;          // true when TCC mechanical lock-up clutch is locked
 };
 
 // Physical effect multipliers (filled from DamageModel each tick when damage is enabled).
@@ -320,6 +329,8 @@ private:
     double shift_release_timer_ = 0;        // auto-clutch: smooth post-sync clutch release ramp (s)
     double since_shift_timer_ = 10.0;       // auto-clutch: time since previous shift (detects rapid shift slamming)
     double missed_recover_timer_ = 0.0;     // auto-clutch: brief neutral penalty before recovering a missed shift
+    double prev_steer_rad_ = 0.0;           // previous tick average front road-wheel steer angle (for column damping/inertia)
+    double prev_steer_vel_rads_ = 0.0;      // previous tick steering wheel angular velocity (rad/s)
 
     double steer_angle(int wheel) const;
     double roll_centre(int wheel) const;      // roll centre height of the wheel's axle, m (migrates with heave)

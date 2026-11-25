@@ -172,6 +172,7 @@ void UOpenGridVehicleComponent::ApplyFeatureFlags()
     Vehicle_->chassis_dynamics().active_aero_enabled = true;
     Vehicle_->chassis_dynamics().brake_fluid_boil_enabled = true;
     Vehicle_->chassis_dynamics().bushing_compliance_enabled = true;
+    Vehicle_->chassis_dynamics().progressive_bump_stops_enabled = true;
     Vehicle_->engine_systems().torsional_compliance_enabled = true;
     Vehicle_->engine_systems().dog_box_flat_shift_cut = true;
     Vehicle_->atmosphere().enabled = true;
@@ -650,6 +651,12 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
         StreetRubberAtCar = static_cast<float>(Bridge_->street_rubber_at_car());
         StreetMarblesAtCar = static_cast<float>(Bridge_->street_marbles_at_car());
     }
+    SteeringColumnTorqueNm = static_cast<float>(Out.steering_column_torque_nm);
+    SteeringAssistTorqueNm = static_cast<float>(Out.steering_assist_torque_nm);
+    PowerSteeringGain = static_cast<float>(Out.power_steering_gain);
+    TorqueConverterSlipRatio = static_cast<float>(Out.tc_slip_ratio);
+    TorqueConverterTorqueRatio = static_cast<float>(Out.tc_torque_ratio);
+    bTorqueConverterLocked = Out.tc_lockup_engaged;
     AirDensityKgPerM3 = static_cast<float>(Out.air_density_kg_m3);
     BrakeVaporLockSponge = static_cast<float>(Out.brake_vapor_lock_sponge);
 

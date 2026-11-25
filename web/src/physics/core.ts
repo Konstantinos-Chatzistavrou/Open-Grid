@@ -299,6 +299,13 @@ export const OUT = {
   diffuserStalled: 389,                 // rear underbody diffuser rake-stall flag (0/1)
   streetRubber: 390,                    // dynamic street rubber laydown under tyres, 0..1
   streetMarbles: 391,                   // off-line rubber marbles & street grit under tyres, 0..1
+  // Physical steering column + speed-sensitive power steering & hydraulic torque converter [392..397]
+  steeringColumnTorque: 392,            // driver steering-wheel rim torque, N m
+  steeringAssistTorque: 393,            // hydraulic/EPS assist torque at rack, N m
+  powerSteeringGain: 394,               // active speed-sensitive boost share, 0..1
+  tcSlipRatio: 395,                     // torque converter turbine/pump speed ratio SR
+  tcTorqueRatio: 396,                   // torque converter torque multiplication TR(SR)
+  tcLockupEngaged: 397,                 // torque converter TCC mechanical lock-up clutch (0/1)
 } as const;
 
 export interface LapInfo { laps: number; current: number; last: number; best: number; distance: number; position: number; finished: boolean; routeLength: number }

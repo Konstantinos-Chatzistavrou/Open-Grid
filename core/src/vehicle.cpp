@@ -127,6 +127,12 @@ void Vehicle::reset_motion(double v, int gear) {
     sys.clutch_temp_c = 40.0;
     sys.clutch_health = 1.0;
     sys.clutch_locked = false;
+    sys.tc_slip_ratio = 1.0;
+    sys.tc_torque_ratio = 1.0;
+    sys.tc_lockup_frac = 0.0;
+    sys.tc_lockup_engaged = false;
+    prev_steer_rad_ = 0.0;
+    prev_steer_vel_rads_ = 0.0;
     sys.gearbox_health = 1.0;
     sys.missed_shifts = 0;
     sys.missed_shift_event = false;
@@ -548,8 +554,27 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const AxleParams& ax = cfg_.axle(w);
         double k = ax.spring_rate * damage_.suspension_stiffness[w];
         double f = k * comp[w];
-        double bump_start = cfg_.wheels[w].static_compression + ax.max_compression;
-        if (comp[w] > bump_start) f += ax.bump_stop_rate * (comp[w] - bump_start);
+        if (ax.spring_progressive_rate > 0.0) {
+            const double dz_prog = comp[w] - cfg_.wheels[w].static_compression;
+            f += ax.spring_progressive_rate * damage_.suspension_stiffness[w] * dz_prog * std::abs(dz_prog);
+        }
+        const double bump_start = cfg_.wheels[w].static_compression + ax.max_compression;
+        double bs_exp = ax.bump_stop_exponent;
+        double bs_gap = ax.bump_stop_gap_m;
+        if (chassis_dyn_.progressive_bump_stops_enabled && bs_exp <= 1.001 && bs_gap <= 1e-6) {
+            bs_gap = 0.012; // 12 mm progressive polyurethane jounce packer lead-in
+            bs_exp = 2.35;  // cellular elastomer exponential stiffening (smooth onset, steep coil-bind ceiling)
+        }
+        if (bs_exp > 1.001 || bs_gap > 1e-6) {
+            const double bump_onset = std::max(0.0, bump_start - bs_gap);
+            if (comp[w] > bump_onset) {
+                constexpr double kBumpRef = 0.015;
+                const double delta = comp[w] - bump_onset;
+                f += ax.bump_stop_rate * kBumpRef * std::pow(delta / kBumpRef, std::max(bs_exp, 1.0));
+            }
+        } else if (comp[w] > bump_start) {
+            f += ax.bump_stop_rate * (comp[w] - bump_start);
+        }
         {
             // digressive damper: c below the knee speed, c * ratio above it (blow-off valving)
             const double c = comp_rate[w] > 0 ? ax.damper_bump : ax.damper_rebound, v = std::abs(comp_rate[w]), knee = ax.damper_knee_mps;
@@ -860,7 +885,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     //   Normal:  clean normal shifts; slamming rapid shifts shortens hold and can slow-sync / grind
     //   Poor:    brief / sloppy declutch while keeping partial throttle -> can miss shifts & damage gearbox
     since_shift_timer_ += dt;
-    if (input_.auto_clutch) {
+    if (input_.auto_clutch && drivetrain_.systems.transmission != TransmissionType::AutomaticTorqueConverter) {
         const AutoClutchQuality q = input_.auto_clutch_quality;
         if (input_.gear != last_gear_) {
             if (input_.gear != 1) {
@@ -1255,6 +1280,40 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     out.missed_shift_event = missed_this_tick;
     out.clutch_torque_nm = drivetrain_.clutch_torque;
     out.clutch_locked = drivetrain_.systems.clutch_locked;
+    out.tc_slip_ratio = drivetrain_.systems.tc_slip_ratio;
+    out.tc_torque_ratio = drivetrain_.systems.tc_torque_ratio;
+    out.tc_lockup_engaged = drivetrain_.systems.tc_lockup_engaged;
+
+    // ---- Physical Steering Column & Speed-Sensitive Power Steering (EPS / Hydraulic)
+    // Preserves raw rack torque in out.steer_torque while computing driver steering-wheel rim torque
+    // (N m) after hydraulic/EPS boost + relief-valve saturation + rack Coulomb friction + column damping & inertia.
+    {
+        const SteeringParams& sp = cfg_.steering;
+        const double ratio = std::max(sp.steer_ratio, 4.0);
+        const double steer_avg = 0.5 * (out.wheels[FL].steer_angle + out.wheels[FR].steer_angle);
+        const double dt_safe = std::max(dt, 1e-4);
+        const double omega_sw = ratio * (steer_avg - prev_steer_rad_) / dt_safe;
+        const double alpha_sw = clamp((omega_sw - prev_steer_vel_rads_) / dt_safe, -80.0, 80.0);
+        prev_steer_rad_ = steer_avg;
+        prev_steer_vel_rads_ = omega_sw;
+
+        double boost_frac = 0.0;
+        if (sp.assist_mode != PowerSteeringMode::Manual) {
+            const double v_u = clamp(std::abs(out.speed) / std::max(sp.assist_speed_ref_mps, 5.0), 0.0, 1.0);
+            const double smooth_u = v_u * v_u * (3.0 - 2.0 * v_u);
+            boost_frac = clamp(lerp(sp.assist_gain_low_speed, sp.assist_gain_high_speed, smooth_u), 0.0, 0.92);
+        }
+        const double max_assist = std::max(0.0, sp.max_assist_torque_nm);
+        const double assist_rack_nm = -clamp(out.steer_torque * boost_frac, -max_assist, max_assist);
+        const double rack_net_nm = out.steer_torque + assist_rack_nm;
+        const double fric_rim_nm = (sp.rack_friction_nm / ratio) * std::tanh(omega_sw / 0.25);
+        const double damp_rim_nm = (sp.column_damping_nms_per_rad / (ratio * ratio)) * omega_sw;
+        const double inert_rim_nm = sp.column_inertia_kgm2 * alpha_sw;
+        out.power_steering_gain = boost_frac;
+        out.steering_assist_torque_nm = assist_rack_nm;
+        out.steering_column_torque_nm = (rack_net_nm / ratio) - fric_rim_nm - damp_rim_nm - inert_rim_nm;
+    }
+
     out.slipstream_drag_scale = eff_drag_scale;
     out.dirty_air_downforce_scale = eff_front_down_scale;
     return out;

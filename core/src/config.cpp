@@ -99,6 +99,9 @@ AxleParams parse_axle(const json& j, const std::string& ctx) {
     a.spring_rest_length = num(j, "spring_rest_length_m", ctx);
     a.max_compression = num(j, "max_compression_m", ctx);
     a.bump_stop_rate = num_or(j, "bump_stop_rate_n_per_m", 300000);
+    a.spring_progressive_rate = num_or(j, "spring_progressive_rate_n_per_m2", 0.0);
+    a.bump_stop_gap_m = num_or(j, "bump_stop_gap_m", 0.0);
+    a.bump_stop_exponent = num_or(j, "bump_stop_exponent", 1.0);
     a.damper_bump = num(j, "damper_bump_ns_per_m", ctx);
     a.damper_rebound = num(j, "damper_rebound_ns_per_m", ctx);
     a.anti_roll_rate = num(j, "anti_roll_rate_n_per_m", ctx);
@@ -397,6 +400,32 @@ CarConfig parse_car_config(const std::string& text) {
         sp.num_cones = sy.value("num_cones", sp.num_cones);
         sp.engage_tol_rads = num_or(sy, "engage_tol_rads", sp.engage_tol_rads);
         sp.dog_engage_tol_rads = num_or(sy, "dog_engage_tol_rads", sp.dog_engage_tol_rads);
+    }
+    if (d.contains("torque_converter")) {
+        const json& tc = d.at("torque_converter");
+        TorqueConverterParams& tp = c.drivetrain.torque_converter;
+        tp.stall_torque_ratio = num_or(tc, "stall_torque_ratio", tp.stall_torque_ratio);
+        tp.coupling_speed_ratio = num_or(tc, "coupling_speed_ratio", tp.coupling_speed_ratio);
+        tp.stall_k_factor = num_or(tc, "stall_k_factor", tp.stall_k_factor);
+        tp.lockup_speed_ratio = num_or(tc, "lockup_speed_ratio", tp.lockup_speed_ratio);
+        tp.lockup_min_speed_mps = num_or(tc, "lockup_min_speed_mps", tp.lockup_min_speed_mps);
+        tp.lockup_min_gear = tc.value("lockup_min_gear", tp.lockup_min_gear);
+    }
+    if (j.contains("steering")) {
+        const json& st = j.at("steering");
+        SteeringParams& sp = c.steering;
+        const std::string mode = st.value("power_steering", std::string("hydraulic"));
+        if (mode == "none" || mode == "manual") sp.assist_mode = PowerSteeringMode::Manual;
+        else if (mode == "eps" || mode == "electric") sp.assist_mode = PowerSteeringMode::ElectricEps;
+        else sp.assist_mode = PowerSteeringMode::Hydraulic;
+        sp.steer_ratio = num_or(st, "steer_ratio", sp.steer_ratio);
+        sp.assist_gain_low_speed = num_or(st, "assist_gain_low_speed", sp.assist_gain_low_speed);
+        sp.assist_gain_high_speed = num_or(st, "assist_gain_high_speed", sp.assist_gain_high_speed);
+        sp.assist_speed_ref_mps = num_or(st, "assist_speed_ref_mps", sp.assist_speed_ref_mps);
+        sp.max_assist_torque_nm = num_or(st, "max_assist_torque_nm", sp.max_assist_torque_nm);
+        sp.rack_friction_nm = num_or(st, "rack_friction_nm", sp.rack_friction_nm);
+        sp.column_damping_nms_per_rad = num_or(st, "column_damping_nms_per_rad", sp.column_damping_nms_per_rad);
+        sp.column_inertia_kgm2 = num_or(st, "column_inertia_kgm2", sp.column_inertia_kgm2);
     }
     if (d.contains("front_diff")) c.drivetrain.front_diff = parse_diff(d.at("front_diff"));
     if (d.contains("rear_diff")) c.drivetrain.rear_diff = parse_diff(d.at("rear_diff"));

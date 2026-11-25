@@ -103,6 +103,7 @@ EMSCRIPTEN_KEEPALIVE int rs_create(const char* json) {
         c->vehicle->chassis_dynamics().active_aero_enabled = true;
         c->vehicle->chassis_dynamics().brake_fluid_boil_enabled = true;
         c->vehicle->chassis_dynamics().bushing_compliance_enabled = true;
+        c->vehicle->chassis_dynamics().progressive_bump_stops_enabled = true;
         c->vehicle->engine_systems().torsional_compliance_enabled = true;
         c->vehicle->engine_systems().dog_box_flat_shift_cut = true;
         // Street/GT cars without an explicit dog_box/dct spec run the physical H-pattern synchromesh cone clutch.
@@ -454,6 +455,13 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     b[389] = c.out.diffuser_stalled ? 1.0 : 0.0;
     b[390] = c.last_street_rubber;
     b[391] = c.last_street_marbles;
+    // Physical steering column + power steering & torque converter telemetry [392..397]
+    b[392] = c.out.steering_column_torque_nm;
+    b[393] = c.out.steering_assist_torque_nm;
+    b[394] = c.out.power_steering_gain;
+    b[395] = c.out.tc_slip_ratio;
+    b[396] = c.out.tc_torque_ratio;
+    b[397] = c.out.tc_lockup_engaged ? 1.0 : 0.0;
 }
 }  // namespace
 

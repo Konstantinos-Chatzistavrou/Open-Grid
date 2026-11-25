@@ -1041,4 +1041,141 @@ RS_TEST(tire_patch) {
         test::check("GT3 2D aero map shifts balance dynamically through dip/braking and settles without porpoising blow-up",
                     settled && (max_bal - min_bal) > 0.03 && (saw_splitter_stall || min_frh < 0.035));
     }
+
+    // =========================================================================
+    // 20. Physical Steering Column + Speed-Sensitive Power Steering (Manual vs Hydraulic vs EPS)
+    // =========================================================================
+    {
+        CarConfig c_man = cfg;
+        c_man.steering.assist_mode = PowerSteeringMode::Manual;
+        CarConfig c_eps = cfg;
+        c_eps.steering.assist_mode = PowerSteeringMode::ElectricEps;
+        c_eps.steering.assist_gain_low_speed = 0.72;
+        c_eps.steering.assist_gain_high_speed = 0.30;
+        c_eps.steering.assist_speed_ref_mps = 35.0;
+
+        auto s_man = test::make_sim(c_man, 1.0 / 400.0);
+        auto s_eps_lo = test::make_sim(c_eps, 1.0 / 400.0);
+        auto s_eps_hi = test::make_sim(c_eps, 1.0 / 400.0);
+        s_man->reset({}, 0.0, 12.0, 2);
+        s_eps_lo->reset({}, 0.0, 12.0, 2);
+        s_eps_hi->reset({}, 0.0, 42.0, 5);
+
+        DriverInput turn_lo; turn_lo.steer = 0.25; turn_lo.throttle = 0.15; turn_lo.gear = 2; turn_lo.auto_clutch = true;
+        DriverInput turn_hi; turn_hi.steer = 0.06; turn_hi.throttle = 0.35; turn_hi.gear = 5; turn_hi.auto_clutch = true;
+        for (int i = 0; i < 160; ++i) {
+            s_man->step(turn_lo);
+            s_eps_lo->step(turn_lo);
+            s_eps_hi->step(turn_hi);
+        }
+        const double rim_man = std::abs(s_man->last.steering_column_torque_nm);
+        const double rim_eps_lo = std::abs(s_eps_lo->last.steering_column_torque_nm);
+        const double gain_lo = s_eps_lo->last.power_steering_gain;
+        const double gain_hi = s_eps_hi->last.power_steering_gain;
+
+        // Straight line must produce zero column buzz/offset
+        auto s_str = test::make_sim(c_eps, 1.0 / 400.0);
+        s_str->reset({}, 0.0, 40.0, 5);
+        DriverInput straight; straight.throttle = 0.25; straight.gear = 5; straight.auto_clutch = true;
+        for (int i = 0; i < 120; ++i) s_str->step(straight);
+        const double straight_rim = std::abs(s_str->last.steering_column_torque_nm);
+
+        std::printf("         power steering: manual rim=%.2f Nm vs EPS(low v) rim=%.2f Nm | boost lo=%.2f -> hi=%.2f | straight=%.4f Nm\n",
+                    rim_man, rim_eps_lo, gain_lo, gain_hi, straight_rim);
+        test::check("EPS reduces low-speed steering-wheel rim torque vs unassisted manual rack",
+                    rim_man > 3.0 && rim_eps_lo < rim_man * 0.55);
+        test::check("speed-sensitive EPS reduces boost gain at highway speed and stays silent on a straight",
+                    gain_lo > gain_hi + 0.25 && straight_rim < 0.05);
+    }
+
+    // =========================================================================
+    // 21. Hydraulic Torque Converter (Fluid Coupling + Stator Multiplication + TCC Lock-Up)
+    // =========================================================================
+    {
+        CarConfig c_tc = cfg;
+        c_tc.drivetrain.transmission = "auto_tc";
+        auto s_tc = test::make_sim(c_tc, 1.0 / 400.0);
+        s_tc->reset({}, 0.0, 0.0, 2); // 1st gear at standstill
+
+        // A. Brake held in Drive -> engine idles smoothly without stalling!
+        DriverInput hold_brk; hold_brk.gear = 2; hold_brk.brake = 0.6;
+        for (int i = 0; i < 400; ++i) s_tc->step(hold_brk);
+        const double hold_rpm = s_tc->last.engine_rpm;
+        const bool no_stall = !s_tc->last.engine_stalled && hold_rpm > 500.0 && hold_rpm < 1500.0;
+
+        // B. Lift off brake with zero throttle -> realistic automatic idle creep!
+        DriverInput creep; creep.gear = 2; creep.brake = 0.0; creep.throttle = 0.0;
+        for (int i = 0; i < 800; ++i) s_tc->step(creep);
+        const double creep_speed = s_tc->last.speed;
+
+        // C. Full-throttle launch from rest (1.5 s, TC on so 2.1x torque doesn't just light up the rears) -> TR > 1.7!
+        s_tc->reset({}, 0.0, 0.0, 2);
+        s_tc->vehicle.assists().tc = true;
+        DriverInput wot; wot.gear = 2; wot.throttle = 1.0;
+        double peak_tr = 1.0;
+        for (int i = 0; i < 600; ++i) {
+            s_tc->step(wot);
+            peak_tr = std::max(peak_tr, s_tc->last.tc_torque_ratio);
+        }
+        const double launch_speed = s_tc->last.speed;
+
+        // D. Highway cruise in 4th gear -> TCC lock-up clutch engages cleanly, then unlocks on full kickdown!
+        s_tc->reset({}, 0.0, 28.0, 5); // 100 km/h in 4th (gear index 5)
+        DriverInput cruise; cruise.gear = 5; cruise.throttle = 0.25;
+        for (int i = 0; i < 400; ++i) s_tc->step(cruise);
+        const bool locked_cruise = s_tc->last.tc_lockup_engaged && s_tc->last.tc_slip_ratio > 0.98;
+        DriverInput kick; kick.gear = 5; kick.throttle = 1.0;
+        for (int i = 0; i < 200; ++i) s_tc->step(kick);
+        const bool unlocked_kickdown = !s_tc->last.tc_lockup_engaged;
+
+        std::printf("         torque converter: holdRPM=%.0f noStall=%d | creep=%.2f m/s | peakTR=%.2fx launch=%.1f m/s | lockup=%d kickUnlock=%d\n",
+                    hold_rpm, no_stall ? 1 : 0, creep_speed, peak_tr, launch_speed,
+                    locked_cruise ? 1 : 0, unlocked_kickdown ? 1 : 0);
+        test::check("torque converter never stalls at brake-held idle and creeps forward on brake release",
+                    no_stall && creep_speed > 0.8 && creep_speed < 8.0);
+        test::check("torque converter multiplies launch torque (>1.7x), locks TCC at cruise and unlocks on kickdown",
+                    peak_tr > 1.70 && launch_speed > 8.0 && locked_cruise && unlocked_kickdown);
+    }
+
+    // =========================================================================
+    // 22. Nonlinear Progressive Coil Springs & Exponential Polyurethane Bump-Stop Packers
+    // =========================================================================
+    {
+        CarConfig c_lin = cfg;
+        CarConfig c_prog = cfg;
+        c_prog.front.spring_progressive_rate = 450000.0; // N/m^2 progressive stiffening
+        c_prog.front.bump_stop_gap_m = 0.015;
+        c_prog.front.bump_stop_exponent = 2.5;
+        c_prog.rear.spring_progressive_rate = 450000.0;
+        c_prog.rear.bump_stop_gap_m = 0.015;
+        c_prog.rear.bump_stop_exponent = 2.5;
+
+        auto s_lin = test::make_sim(c_lin, 1.0 / 400.0);
+        auto s_prog = test::make_sim(c_prog, 1.0 / 400.0);
+        s_lin->vehicle.chassis_dynamics().progressive_bump_stops_enabled = false;
+        s_lin->reset({}, 0.0, 0.0, 1);
+        s_prog->reset({}, 0.0, 0.0, 1);
+        DriverInput idle; idle.gear = 1; idle.handbrake = 1.0;
+        for (int i = 0; i < 400; ++i) { s_lin->step(idle); s_prog->step(idle); }
+        const double z_diff_static = std::abs(s_prog->body.state.position.z - s_lin->body.state.position.z);
+
+        // Drop test from +0.25 m above static ride height -> compresses deeply into bump stops with smooth exponential stiffening
+        s_lin->reset({}, 0.0, 0.0, 1);
+        s_prog->reset({}, 0.0, 0.0, 1);
+        s_lin->body.state.position.z += 0.25;
+        s_prog->body.state.position.z += 0.25;
+        double max_comp_lin = 0.0, max_comp_prog = 0.0;
+        bool finite_drop = true;
+        for (int i = 0; i < 400; ++i) {
+            s_lin->step(idle);
+            s_prog->step(idle);
+            max_comp_lin = std::max(max_comp_lin, s_lin->last.wheels[FL].compression);
+            max_comp_prog = std::max(max_comp_prog, s_prog->last.wheels[FL].compression);
+            if (!std::isfinite(s_prog->last.wheels[FL].load)) finite_drop = false;
+        }
+        std::printf("         progressive springs/bump-stops: static dZ=%.4f m | drop maxComp lin=%.1f mm vs prog=%.1f mm\n",
+                    z_diff_static, max_comp_lin * 1000.0, max_comp_prog * 1000.0);
+        test::check("progressive springs & exponential polyurethane bump stops preserve static ride height and resist bottoming smoothly",
+                    finite_drop && z_diff_static < 0.002 && max_comp_prog < max_comp_lin - 0.003);
+    }
 }

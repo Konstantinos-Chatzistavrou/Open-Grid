@@ -140,6 +140,9 @@ struct AxleParams {
     double spring_rest_length = 0.25; // m, free length mount->wheel centre (also max droop)
     double max_compression = 0.12;    // m, travel from static before the bump stop
     double bump_stop_rate = 300000;   // N/m beyond max_compression
+    double spring_progressive_rate = 0.0; // N/m^2 quadratic progressive coil stiffening beyond static ride height (0 = linear)
+    double bump_stop_gap_m = 0.0;     // m, progressive polyurethane packer lead-in before max_compression (0 = hard edge)
+    double bump_stop_exponent = 1.0;  // 1.0 = linear bump stop; ~2.2-3.0 = exponential polyurethane jounce bumper
     double damper_bump = 3500;        // N s/m, compression
     double damper_rebound = 6500;     // N s/m, extension
     double anti_roll_rate = 20000;    // N/m, force per metre of left/right compression difference
@@ -224,6 +227,36 @@ struct SynchroParams {
     double dog_engage_tol_rads = 95.0;        // rad/s (~900 RPM) dog-box engagement window without shift cut
 };
 
+// Hydraulic torque converter + lock-up clutch (TCC) parameters for automatic transmissions ("transmission": "auto_tc").
+// Kotwicki / Hrovat-Tobler fluid coupling model: T_pump = C(SR) * w_pump^2, T_turbine = TR(SR) * T_pump.
+struct TorqueConverterParams {
+    double stall_torque_ratio = 2.15;     // torque multiplication at stall (SR = 0; typically 1.8 .. 2.4)
+    double coupling_speed_ratio = 0.85;   // SR where stator freewheels and TR(SR) reaches 1.0
+    double stall_k_factor = 145.0;        // RPM / sqrt(N m): lower = tighter sport converter, higher = looser high-stall
+    double lockup_speed_ratio = 0.86;     // SR above which the TCC mechanical lock-up clutch engages
+    double lockup_min_speed_mps = 14.0;   // m/s (~50 km/h) minimum road speed for TCC lock-up
+    int lockup_min_gear = 4;              // gear index (0=R, 1=N, 2=1st, 3=2nd, 4=3rd) for TCC lock-up
+};
+
+enum class PowerSteeringMode : int {
+    Manual = 0,       // Unassisted rack-and-pinion (raw mechanical feel)
+    Hydraulic = 1,    // Engine-driven hydraulic boost with relief-valve saturation
+    ElectricEps = 2   // Speed-sensitive electric power steering (light parking, firm at speed)
+};
+
+// Physical steering column & speed-sensitive power-steering boost parameters (feeds steering_column_torque_nm FFB).
+struct SteeringParams {
+    PowerSteeringMode assist_mode = PowerSteeringMode::Hydraulic;
+    double steer_ratio = 14.5;               // steering wheel angle / front road-wheel angle
+    double assist_gain_low_speed = 0.65;     // low-speed rack load boost fraction (0 = manual .. 0.85 = very light)
+    double assist_gain_high_speed = 0.35;    // high-speed rack load boost fraction (firms up at speed)
+    double assist_speed_ref_mps = 35.0;      // m/s (~126 km/h) speed where boost transitions to high-speed gain
+    double max_assist_torque_nm = 340.0;     // N m rack-side relief / EPS saturation ceiling (kerb hits punch through)
+    double rack_friction_nm = 4.5;           // N m rack & kingpin dry/seal Coulomb friction
+    double column_damping_nms_per_rad = 18.0;// N m s/rad hydraulic/column viscous damping at rack scale
+    double column_inertia_kgm2 = 0.045;      // kg m^2 steering wheel + column rotational inertia
+};
+
 struct DrivetrainParams {
     std::vector<double> gear_ratios;          // index 0 = reverse (negative), 1 = neutral (0), 2.. forward
     std::vector<std::array<int, 2>> gear_teeth; // optional [driven, drive] tooth pairs per gear (0=R, 1=N=[0,0], 2.. fwd)
@@ -233,11 +266,12 @@ struct DrivetrainParams {
     double clutch_max_torque = 900;           // N m static capacity at fully released pedal (used if max_clamp_force_n <= 0)
     double driveline_inertia = 0.05;          // kg m^2 gearbox + driveshaft inertia reflected to input shaft
     std::string layout = "rwd";               // "rwd", "fwd", "awd"
-    std::string transmission;                 // optional: "" (default), "h_pattern", "dog_box", "dct"
+    std::string transmission;                 // optional: "" (default), "h_pattern", "dog_box", "dct", "auto_tc"
     double awd_front_split = 0.4;             // torque fraction to the front (centre diff)
     DiffParams front_diff, rear_diff, centre_diff;
     ClutchParams clutch;
     SynchroParams synchro;
+    TorqueConverterParams torque_converter;
 };
 
 // Active aerodynamics. A car has it only if its spec says so ("aero": {"drs": true, "airbrake": true}); the vehicle also needs
@@ -295,6 +329,7 @@ struct CarConfig {
     EngineParams engine;
     DrivetrainParams drivetrain;
     AeroParams aero;
+    SteeringParams steering;
     std::vector<std::pair<std::string, double>> surface_grip;   // surface name -> grip multiplier
 
     // derived (set by finalize())
