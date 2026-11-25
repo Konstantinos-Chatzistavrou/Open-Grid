@@ -24,6 +24,7 @@
 #include "rs/race.hpp"
 #include "rs/route.hpp"
 #include "rs/street_surface.hpp"
+#include "rs/tempest.hpp"
 #include "rs/vehicle.hpp"
 
 namespace {
@@ -84,6 +85,8 @@ struct Car {
 
 std::vector<std::unique_ptr<Car>> g_cars;
 std::string g_error;
+rs::TempestWeather g_tempest;
+bool g_tempest_enabled = false;
 
 }  // namespace
 
@@ -186,6 +189,35 @@ EMSCRIPTEN_KEEPALIVE void rs_set_street_surface(int id, int road_class, double r
     c.street_micro_enabled = (enable_micro != 0);
 }
 
+// Configure & step the deterministic C++17 OpenGrid Tempest mesoscale weather engine (shared 1:1 with UE 5.8).
+// preset: 0=Clear, 1=PartlyCloudy, 2=DynamicFront, 3=LightRain, 4=HeavyStorm, 5=DryingTrack, <0=disable
+EMSCRIPTEN_KEEPALIVE void rs_tempest_configure(int preset, int seed, double local_hour, double latitude_deg,
+                                               int day_of_year, double time_scale, double base_air_c,
+                                               double base_wind_mps, double wind_dir_deg) {
+    if (preset < 0) {
+        g_tempest_enabled = false;
+        return;
+    }
+    rs::TempestConfig cfg;
+    cfg.preset = static_cast<rs::TempestPreset>(std::max(0, std::min(5, preset)));
+    cfg.seed = static_cast<std::uint32_t>(seed > 0 ? seed : 1337);
+    cfg.start_hour_local = local_hour;
+    cfg.latitude_deg = latitude_deg;
+    cfg.day_of_year = std::max(1, std::min(365, day_of_year));
+    cfg.time_scale = std::max(0.0, time_scale);
+    cfg.base_ambient_c = base_air_c;
+    cfg.base_wind_mps = std::max(0.0, base_wind_mps);
+    cfg.wind_direction_deg = wind_dir_deg;
+    g_tempest.configure(cfg);
+    g_tempest_enabled = true;
+}
+
+EMSCRIPTEN_KEEPALIVE void rs_tempest_step(double dt) {
+    if (g_tempest_enabled && dt > 0.0) {
+        g_tempest.step(std::min(dt, 1.0));
+    }
+}
+
 EMSCRIPTEN_KEEPALIVE void rs_set_atmosphere(int id, double air_c, double track_c, double altitude_m, double humidity) {
     Car& c = *g_cars[id];
     auto& atm = c.vehicle->atmosphere();
@@ -280,6 +312,13 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     const int asphalt_idx = c.cfg.surface_index("asphalt");
     double rubber_sum = 0.0, marbles_sum = 0.0;
     int asphalt_hits = 0;
+    rs::TempestSample tempest_here{};
+    if (!c.dyno_road && g_tempest_enabled) {
+        tempest_here = g_tempest.sample(c.cs.position.x, c.cs.position.y);
+        g_tempest.apply_to_atmosphere(c.cs.position.x, c.cs.position.y,
+                                      c.vehicle->atmosphere(), c.vehicle->road_water_mm);
+        c.rain_mm_per_hr = tempest_here.rain_mm_per_hr;
+    }
     if (!c.dyno_road && c.street_evo_enabled) {
         c.weather_dt_accum += dt;
         if (++c.weather_tick_counter >= 20) {
@@ -320,6 +359,10 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
                                 + std::abs(c.out.wheels[w].fy * std::sin(c.out.wheels[w].slip_angle) * std::max(v_car, 1.0));
             c.street_evo.deposit_wheel_world(live_contacts[w].point.x, live_contacts[w].point.y,
                                              slip_p, v_car, c.out.wheels[w].load, dt);
+            if (g_tempest_enabled) {
+                g_tempest.deposit_tyre_wake(live_contacts[w].point.x, live_contacts[w].point.y,
+                                            v_car, c.out.wheels[w].load, dt);
+            }
         }
         if (asphalt_hits > 0) {
             c.last_street_rubber = rubber_sum / asphalt_hits;
@@ -466,6 +509,20 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     b[399] = c.out.gear_whine_hz;
     b[431] = double(int(c.vehicle->engine_systems().transmission));
     b[432] = c.out.auto_blip_active ? 1.0 : 0.0;
+    // OpenGrid Tempest weather telemetry at car position [433..445]
+    b[433] = tempest_here.rain_mm_per_hr;
+    b[434] = tempest_here.cloud_cover_0_to_1;
+    b[435] = tempest_here.track_surface_c;
+    b[436] = tempest_here.ambient_air_c;
+    b[437] = tempest_here.humidity_0_to_1;
+    b[438] = tempest_here.barometric_kpa;
+    b[439] = tempest_here.wind_speed_mps;
+    b[440] = tempest_here.puddle_depth_mm;
+    b[441] = tempest_here.visibility_m;
+    b[442] = tempest_here.solar_irradiance_w_m2;
+    b[443] = tempest_here.lightning_flash_0_to_1;
+    b[444] = tempest_here.wetness_0_to_1;
+    b[445] = tempest_here.drying_line_factor;
 }
 }  // namespace
 

@@ -16,6 +16,9 @@ interface RsModule {
   _rs_set_atmosphere(id: number, airC: number, trackC: number, altitudeM: number, humidity: number): void;
   _rs_set_road_water(id: number, mm: number): void;
   _rs_set_street_surface(id: number, roadClass: number, rainMmPerHr: number, enableMicro: number): void;
+  _rs_tempest_configure(preset: number, seed: number, localHour: number, latitudeDeg: number, dayOfYear: number,
+                        timeScale: number, baseAirC: number, baseWindMps: number, windDirDeg: number): void;
+  _rs_tempest_step(dt: number): void;
   _rs_dyno_begin(id: number): void;
   _rs_dyno_end(id: number): void;
   _rs_dyno_reset_meter(id: number): void;
@@ -52,6 +55,18 @@ export function incandescence(tempC: number): Float64Array {
 }
 export async function loadCore(): Promise<void> {
   mod = (await createRsCore({ locateFile: () => wasmUrl })) as RsModule;
+}
+
+/** Configure the shared C++17 OpenGrid Tempest mesoscale weather engine (identical to UE 5.8). */
+export function configureTempest(preset: number, seed = 1337, localHour = 22.5, latitudeDeg = 40.75,
+                                 dayOfYear = 172, timeScale = 4.0, baseAirC = 19.0, baseWindMps = 4.8,
+                                 windDirDeg = 245.0): void {
+  mod?._rs_tempest_configure(preset, seed, localHour, latitudeDeg, dayOfYear, timeScale, baseAirC, baseWindMps, windDirDeg);
+}
+
+/** Advance OpenGrid Tempest storm advection, solar-thermal asphalt, wind gusts & 2D hydrology by dt (s). */
+export function stepTempest(dt: number): void {
+  mod?._rs_tempest_step(dt);
 }
 
 export interface RawInput {
@@ -310,6 +325,20 @@ export const OUT = {
   gearWhineHz: 399,                     // transmission tooth-mesh frequency, Hz
   transmissionType: 431,                // 0=HPattern, 1=DogBox, 2=DCT, 3=AutoTC, 4=AMT
   autoBlip: 432,                        // closed-loop electronic downshift auto-blip active (0/1)
+  // OpenGrid Tempest mesoscale weather telemetry at car position [433..445]
+  tempestRainMmHr: 433,                 // local advecting rainfall intensity, mm/hr
+  tempestCloudCover: 434,               // local cloud coverage 0..1
+  tempestTrackTempC: 435,               // asphalt slab temperature from solar/cloud/rain energy balance, C
+  tempestAirTempC: 436,                 // local ambient air temperature, C
+  tempestHumidity: 437,                 // local relative humidity 0..1
+  tempestBaroKpa: 438,                  // local barometric pressure, kPa
+  tempestWindMps: 439,                  // live gusting wind speed, m/s
+  tempestPuddleMm: 440,                 // local standing puddle depth, mm
+  tempestVisibilityM: 441,              // meteorological visibility, m
+  tempestSolarWm2: 442,                 // surface solar irradiance, W/m^2
+  tempestLightning: 443,                // convective lightning flash intensity 0..1
+  tempestWetness: 444,                  // shader/MPC asphalt wetness 0..1
+  tempestDryingLine: 445,               // tyre-wake drying groove factor 0..1
 } as const;
 
 export interface LapInfo { laps: number; current: number; last: number; best: number; distance: number; position: number; finished: boolean; routeLength: number }

@@ -1404,10 +1404,14 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     }
 
     // ------------------------------------------------------------------ aerodynamics
-    // Drag:      F = -1/2 rho CdA |v| v * slipstream_drag_scale * yaw_drag_mult * active_aero_drag_mult
-    // Downforce: F = 1/2 rho ClA v_x^2, split between the axles by aero balance (with dirty-air front loss, yaw stall & Active Aero).
+    // Relative air velocity includes 3D Tempest wind + gusts (v_air = v_chassis - v_wind when enabled).
+    // Drag:      F = -1/2 rho CdA |v_air| v_air * slipstream_drag_scale * yaw_drag_mult * active_aero_drag_mult
+    // Downforce: F = 1/2 rho ClA v_air_x^2, split between the axles by aero balance (with dirty-air, yaw stall & Active Aero).
     const AeroParams& a = cfg_.aero;
-    double v = length(s.velocity);
+    const Vec3 v_air = atmosphere_.enabled ? (s.velocity - atmosphere_.wind_world_mps) : s.velocity;
+    const double v = length(v_air);
+    const Vec3 v_air_body = s.orientation.inv_rotate(v_air);
+    const double aero_beta = (std::abs(v_air_body.x) > 2.0) ? std::atan2(v_air_body.y, std::abs(v_air_body.x)) : out.sideslip;
     // Only a car whose spec declares the wing has it (aero.drs / aero.airbrake): road cars and fixed-wing race cars never switch it.
     out.drs_active = chassis_dyn_.active_aero_enabled && a.drs && out.speed > 50.0 && input_.throttle > 0.75
                    && input_.brake < 0.05 && std::abs(input_.steer) < 0.12;
@@ -1415,7 +1419,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     const double active_drag_mult = out.drs_active ? kDrsDragMult : (out.airbrake_active ? kAirbrakeDragMult : 1.0);
     const double active_rear_down_mult = out.drs_active ? kDrsRearDownMult : (out.airbrake_active ? kAirbrakeRearDownMult : 1.0);
 
-    const double sin_beta = std::sin(clamp(out.sideslip, -1.2, 1.2));
+    const double sin_beta = std::sin(clamp(aero_beta, -1.2, 1.2));
     const double yaw_drag_mult = aero_wake_.yaw_aero_enabled ? (1.0 + 0.35 * sin_beta * sin_beta) : 1.0;
     const double yaw_rear_down_mult = aero_wake_.yaw_aero_enabled ? (1.0 - 0.30 * sin_beta * sin_beta) : 1.0;
     const double eff_drag_scale = clamp(aero_wake_.drag_scale, 0.65, 1.2) * yaw_drag_mult * active_drag_mult;
@@ -1456,8 +1460,18 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         diffuser_scale = 0.82;
     }
 
-    force += s.velocity * (-0.5 * rho_air * cd_area * damage_.aero_drag * eff_drag_scale * v);
-    double vx_body = dot(s.velocity, s.orientation.rotate({1, 0, 0}));
+    force += v_air * (-0.5 * rho_air * cd_area * damage_.aero_drag * eff_drag_scale * v);
+    // Crosswind lateral aero side-force & mild yaw weathercocking when wind_world_mps is active
+    if (atmosphere_.enabled && length(atmosphere_.wind_world_mps) > 0.1) {
+        const double q_cross = 0.5 * rho_air * v * v;
+        const double side_area = 2.6 * cd_area; // approx lateral silhouette area (m^2)
+        const double cy = -1.65 * clamp(std::sin(aero_beta), -1.0, 1.0);
+        const Vec3 f_side = s.orientation.rotate({0.0, q_cross * side_area * cy, 0.0});
+        force += f_side;
+        // Centre of lateral pressure sits slightly ahead of rear axle (~0.12 m forward of CG -> mild crosswind steering tug)
+        torque += cross(s.orientation.rotate({0.12, 0.0, 0.0}), f_side);
+    }
+    const double vx_body = v_air_body.x;
     const double q_dyn = 0.5 * rho_air * vx_body * vx_body;
     const double f_down_front = q_dyn * cl_front_area * eff_front_down_scale;
     const double f_down_rear = q_dyn * cl_rear_area * yaw_rear_down_mult * active_rear_down_mult * diffuser_scale;

@@ -18,7 +18,7 @@ import { Garage } from './scene/garage';
 import { createNavScreen } from './scene/navScreen';
 import { SHOW_PRESETS, ShowroomPost } from './showroomPost';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { CoreCar, CoreRace, OUT, loadCore, type LapInfo, type RawInput } from './physics/core';
+import { CoreCar, CoreRace, OUT, configureTempest, loadCore, stepTempest, type LapInfo, type RawInput } from './physics/core';
 import { CarBody, DT, PhysicsWorld, loadRapier, type CarShape } from './physics/world';
 import { PhysicsWorkerClient } from './physics/workerClient';
 import { CityLighting, loadCity } from './scene/city';
@@ -3319,29 +3319,46 @@ async function main() {
       carMeet.syncCarPose(pos, quat, kmhNow);
       carMeet.update(frame, inFreeRoam && !photoMode.active && !replay.active, pos, (c) => input.isKeyDown(c));
 
-      // World 1:4 Time-of-Day Clock, Real-Life Season, 1-in-5 Rain & Realistic Traffic Density Curve
+      // OpenGrid Tempest (C++17 mesoscale storm advection, solar-thermal asphalt, wind aero & 2D hydrology — shared 1:1 with UE 5.8)
       worldClock.update(frame, scene, moon);
+      if (driving()) {
+        stepTempest(frame);
+        const flash = car.out[OUT.tempestLightning] || 0;
+        if (flash > 0.02) moon.intensity = Math.max(moon.intensity, 0.25 + flash * 1.6);
+      }
       if (driving() && now - lastDensityAt > 2000) {
         lastDensityAt = now;
-        const ct = worldClock.hudText();
+        const baseAirC = worldClock.season.id === 'winter' ? 4 : worldClock.season.id === 'summer' ? 28 : 16;
+        const tempestParam = (params.get('tempest') || '').toLowerCase();
+        const desiredPreset =
+          tempestParam === 'storm' ? 4 :
+          tempestParam === 'rain' ? 3 :
+          tempestParam === 'front' ? 2 :
+          tempestParam === 'cloudy' ? 1 :
+          tempestParam === 'drying' ? 5 :
+          tempestParam === 'clear' ? 0 :
+          (worldClock.weather === 'rain' ? 3 : 0);
+        if ((worldClock as unknown as { _tempestPreset?: number })._tempestPreset !== desiredPreset) {
+          (worldClock as unknown as { _tempestPreset?: number })._tempestPreset = desiredPreset;
+          const doy = worldClock.season.id === 'winter' ? 15 : worldClock.season.id === 'spring' ? 110 : worldClock.season.id === 'summer' ? 185 : 285;
+          configureTempest(desiredPreset, 1337, worldClock.hour, 40.75, doy, 4.0, baseAirC, desiredPreset >= 3 ? 8.5 : 4.2, 245);
+        }
+        const tRain = car.out[OUT.tempestRainMmHr] || 0;
+        const tTrack = car.out[OUT.tempestTrackTempC] || baseAirC;
+        const tAir = car.out[OUT.tempestAirTempC] || baseAirC;
+        const tHum = car.out[OUT.tempestHumidity] || 0.5;
+        const tWindKmh = Math.round((car.out[OUT.tempestWindMps] || 0) * 3.6);
+        const tWet = car.out[OUT.tempestWetness] || 0;
+        const tWaterMm = Math.max(worldClock.roadWaterMm, (car.out[OUT.tempestPuddleMm] || 0) + tWet * 0.9);
+        const ct = `${worldClock.hudText()} · ${Math.round(tTrack)}°C · WIND ${tWindKmh} km/h${tRain > 0.3 ? ` · ${tRain.toFixed(1)} mm/h` : ''}`;
         if (ct !== lastClockText) { worldClockEl.textContent = lastClockText = ct; }
         if (ai.mode === 'cruise') ai.setCruiseDensity(worldClock.trafficDensity);
-        // Sync live climate & asphalt temperature into C++ ISA air density, NA/Turbo engine power & tire road conduction
-        const baseAirC = worldClock.season.id === 'winter' ? 4 : worldClock.season.id === 'summer' ? 28 : 16;
-        const rainDrop = worldClock.weather === 'rain' ? -4 : 0;
-        const nightDrop = (worldClock.hour >= 20 || worldClock.hour < 6) ? -5 : 4;
-        const airC = baseAirC + rainDrop + nightDrop;
-        const trackC = worldClock.weather === 'rain' ? airC - 2 : airC + (nightDrop > 0 ? 11 : -1);
-        const humidity = worldClock.weather === 'rain' ? 0.92 : 0.48;
-        workerAirC = airC; workerTrackC = trackC; workerHumidity = humidity;
-        core.setAtmosphere(airC, trackC, 15, humidity);
-        core.setRoadWater(worldClock.roadWaterMm);
-        p2Core?.setRoadWater(worldClock.roadWaterMm);
-        audio.roadWaterMm = worldClock.roadWaterMm;
-        const rainRate = worldClock.weather === 'rain' ? Math.max(4, worldClock.roadWaterMm * 14) : 0;
-        core.setStreetSurface(1, rainRate, true);
-        p2Core?.setStreetSurface(1, rainRate, true);
-        setGroundWetness(worldClock.wetness);
+        workerAirC = tAir; workerTrackC = tTrack; workerHumidity = tHum;
+        p2Core?.setRoadWater(tWaterMm);
+        audio.roadWaterMm = tWaterMm;
+        core.setStreetSurface(1, tRain, true);
+        p2Core?.setStreetSurface(1, tRain, true);
+        setGroundWetness(Math.max(worldClock.wetness, tWet));
       }
 
       // Engine Health, Temperature, Nitrous Oxide ([X] purge) & Dual-Stage Mach-Diamond Exhaust VFX + Wet-Road Bounce

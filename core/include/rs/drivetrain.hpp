@@ -4,6 +4,7 @@
 #include <array>
 #include <vector>
 #include "rs/config.hpp"
+#include "rs/math.hpp"
 
 namespace rs {
 
@@ -30,10 +31,12 @@ struct DrivetrainInput {
 // International Standard Atmosphere (ISA) barometric altitude, ambient air Celsius, asphalt track Celsius & humidity model.
 struct AtmosphericEnvironment {
     bool enabled = false;
-    double altitude_m = 0.0;            // meters above sea level (0 m NYC coast .. 2,200 m mountain touge / volcano)
-    double ambient_air_c = 25.0;        // ambient air temperature (C: -10 C winter night .. +42 C summer heat)
-    double track_surface_c = 30.0;      // asphalt road surface temperature (C: -8 C freezing .. +62 C sun-baked)
-    double humidity_0_to_1 = 0.35;      // relative humidity (0..1; water vapor is less dense than dry O2/N2)
+    double altitude_m = 0.0;              // meters above sea level (0 m NYC coast .. 2,200 m mountain touge / volcano)
+    double ambient_air_c = 25.0;          // ambient air temperature (C: -10 C winter night .. +42 C summer heat)
+    double track_surface_c = 30.0;        // asphalt road surface temperature (C: -8 C freezing .. +62 C sun-baked)
+    double humidity_0_to_1 = 0.35;        // relative humidity (0..1; water vapor is less dense than dry O2/N2)
+    double barometric_offset_kpa = 0.0;   // synoptic pressure anomaly vs ISA 101.325 kPa (-3.5 storm .. +2.0 high)
+    Vec3 wind_world_mps{0.0, 0.0, 0.0};   // 3D world-frame wind velocity (m/s; Tempest gusts & crosswinds)
 
     /** Barometric pressure P(h) in kPa via ISA tropospheric lapse formula (101.325 kPa at 0 m -> 77.5 kPa at 2,200 m). */
     double barometric_pressure_kpa() const;

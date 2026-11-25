@@ -29,5 +29,6 @@ THIRD_PARTY_INCLUDES_START
 #include "src/gameplay.cpp"
 #include "src/pinnacle.cpp"
 #include "src/esports.cpp"
+#include "src/tempest.cpp"
 #include "src/telemetry.cpp"
 THIRD_PARTY_INCLUDES_END
