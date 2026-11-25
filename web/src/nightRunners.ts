@@ -257,12 +257,16 @@ export function applyNightRunnersToPhysics(phys: any, eng: EngineState, st: Stan
     d.chassis.mass_kg = Math.max(850, d.chassis.mass_kg + sw.massDeltaKg);
   }
   // Apply Stance & Suspension tuning directly to axle physics (hitboxes/ride height match visuals!)
-  for (const [k, camb] of [['front', st.camberFront], ['rear', st.camberRear]] as const) {
-    if (!d[k]) continue;
-    d[k].static_camber_deg = camb;
-    if (typeof d[k].spring_rate === 'number') d[k].spring_rate *= st.springMul;
-    if (typeof d[k].spring_rest_length === 'number') {
-      d[k].spring_rest_length = Math.max(0.14, d[k].spring_rest_length + st.rideHeightMm / 1000);
+  for (const [k, camb] of [['front_axle', st.camberFront], ['rear_axle', st.camberRear]] as const) {
+    const ax = d[k] ?? d[k.replace('_axle', '')];
+    if (!ax) continue;
+    ax.static_camber_deg = camb;
+    if (typeof ax.spring_rate_n_per_m === 'number') ax.spring_rate_n_per_m *= st.springMul;
+    else if (typeof ax.spring_rate === 'number') ax.spring_rate *= st.springMul;
+    if (typeof ax.spring_rest_length_m === 'number') {
+      ax.spring_rest_length_m = Math.max(0.14, ax.spring_rest_length_m + st.rideHeightMm / 1000);
+    } else if (typeof ax.spring_rest_length === 'number') {
+      ax.spring_rest_length = Math.max(0.14, ax.spring_rest_length + st.rideHeightMm / 1000);
     }
   }
   if (d.chassis && typeof d.chassis.cg_height_m === 'number') {

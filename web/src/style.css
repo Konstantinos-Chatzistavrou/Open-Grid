@@ -23,7 +23,7 @@ html, body { margin: 0; height: 100%; overscroll-behavior: none; touch-action: n
 #load-msg { margin-top: 14px; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; }
 
 /* ---- HUD ---------------------------------------------------------------------------------- */
-#hud { position: fixed; inset: 0; pointer-events: none; contain: strict; }
+#hud { position: fixed; inset: 0; z-index: 6; pointer-events: none; contain: strict; }
 #hud[hidden], #touch[hidden] { display: none !important; }
 body.menu #hud, body.menu #hud-actions, body.menu #touch, body.menu #minimap, body.menu #mirror,
 body.menu #spectate, body.menu #countdown, body.menu #launch, body.menu #split-hud { display: none !important; }
@@ -530,6 +530,7 @@ body.touch.spectating #board { top: calc(54px + env(safe-area-inset-top)); }
 /* expanded: wide north-up overview keeping the exact same slim bezel thickness */
 #minimap.expanded { left: 50%; top: 50%; bottom: auto; height: auto; width: min(960px, 94vw, calc((100vh - 90px) * 1.6 + 12px)); transform: translate(-50%, -50%); pointer-events: auto; }
 body.touch #minimap { --gps-bezel: 6px; --gps-chin: 12px; --gps-radius: 13px;
+  position: fixed; z-index: 16;
   left: calc(10px + env(safe-area-inset-left)); top: auto; bottom: calc(58px + env(safe-area-inset-bottom)); width: 220px; height: auto; }
 body.touch #minimap .gps-chin i { width: 16px; height: 3px; }
 body.touch #minimap .gps-chin b { width: 3.5px; height: 3.5px; }

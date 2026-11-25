@@ -432,6 +432,7 @@ export class GameAudio {
   private workletGain: GainNode | null = null;
   private wasmAudioReady = false;
   private wasmAudioLoading = false;
+  wasmAudioError = '';
   private wasmTelBuf = new Float32Array(128);
   private lastWasmVoice = -1;
   private lastWasmStage = -1;
@@ -688,6 +689,7 @@ export class GameAudio {
           this.syncWasmVoice();
         } else if (msg.type === 'error') {
           this.wasmAudioReady = false;
+          this.wasmAudioError = String(msg.error || 'worklet error');
         }
       };
       this.workletNode = node;
@@ -704,9 +706,10 @@ export class GameAudio {
         },
         [wasmBinary],
       );
-    } catch {
+    } catch (err) {
       // Graceful automatic fallback: existing WebAudio stems + harmonic synth stay active.
       this.wasmAudioReady = false;
+      this.wasmAudioError = String(err);
     } finally {
       this.wasmAudioLoading = false;
     }

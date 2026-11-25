@@ -35,8 +35,31 @@ em++ -std=c++17 -O3 -flto -fexceptions -D__forceinline=inline -include cstdlib -
 mv "$out/_rs_audio_core.wasm" "$out/rs_audio.wasm"
 # Patch Emscripten's internal default wasm filename reference (wasmBinary is passed directly in worklet)
 sed -i 's/_rs_audio_core\.wasm/rs_audio.wasm/g' "$tmp_js"
-# Bundle single self-contained AudioWorklet script (zero imports, zero fetch inside AudioWorkletGlobalScope!)
-cat "$tmp_js" "$here/rs_audio_worklet_body.js" > "$out/opengrid-audio-worklet.js"
+# Bundle single self-contained AudioWorklet script (zero imports, zero fetch inside AudioWorkletGlobalScope!).
+# Prepend minimal polyfills because browser AudioWorkletGlobalScope omits TextDecoder & performance.
+{
+  cat <<'POLYFILL'
+if (typeof globalThis.TextDecoder === 'undefined') {
+  globalThis.TextDecoder = class TextDecoder {
+    decode(buf) {
+      if (!buf) return '';
+      const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf.buffer || buf, buf.byteOffset || 0, buf.byteLength || buf.length || 0);
+      let s = '';
+      for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+      return s;
+    }
+  };
+}
+if (typeof globalThis.performance === 'undefined') {
+  globalThis.performance = { now: () => Date.now() };
+}
+if (typeof globalThis.setTimeout === 'undefined') {
+  globalThis.setTimeout = (fn) => { if (typeof fn === 'function') fn(); return 0; };
+  globalThis.clearTimeout = () => {};
+}
+POLYFILL
+  cat "$tmp_js" "$here/rs_audio_worklet_body.js"
+} > "$out/opengrid-audio-worklet.js"
 # Also keep an ES-exportable helper copy for Node verification scripts (gitignored or kept in wasm/)
 rm -f "$tmp_js"
 
