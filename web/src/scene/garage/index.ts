@@ -21,7 +21,7 @@ export class Garage {
   /** unfiltered cube of the room, for consumers that prefilter into their own target (the car's reflection probe) */
   readonly cube: THREE.CubeRenderTarget;
   private cubeCam: THREE.CubeCamera;
-  private envRT: THREE.RenderTarget;
+  private envRT: THREE.CubeRenderTarget;
   private room!: GarageRoom;
   private parked: THREE.Object3D[] = [];
   /** set when the props have arrived and the environment should be captured again */

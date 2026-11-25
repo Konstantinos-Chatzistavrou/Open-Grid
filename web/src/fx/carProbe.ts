@@ -12,7 +12,7 @@ import * as THREE from 'three/webgpu';
 export class CarProbe {
   private rt: THREE.CubeRenderTarget;
   private cube: THREE.CubeCamera;
-  private filtered: THREE.RenderTarget;
+  private filtered: THREE.CubeRenderTarget;
   private face = 0;
   private tick = 0;
   private hidden: THREE.Object3D[] = [];

@@ -330,7 +330,8 @@ export function setupCarMaterials(model: THREE.Object3D, cfg: CarVisualConfig, p
           nodePaint.ior = 1.52;
           nodePaint.specularIntensity = 1.08;
           nodePaint.iridescenceIOR = 1.7;
-          nodePaint.iridescenceThicknessRange = [200, 520];
+          nodePaint.iridescenceThicknessMinimum = 200;   // r187: replaces iridescenceThicknessRange = [200, 520]
+          nodePaint.iridescenceThicknessMaximum = 520;
           nodePaint.envMapIntensity = 1.45;
           nodePaint.color.copy(color);
           nodePaint.userData.livery = installLivery(nodePaint as unknown as THREE.MeshPhysicalMaterial);   // dual-layer WGSL car paint + liveries + dirt/wear
