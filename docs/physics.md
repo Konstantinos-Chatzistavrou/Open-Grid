@@ -56,6 +56,30 @@ The multipliers are `kDrsDragMult` etc. in `core/include/rs/config.hpp`. One oth
 front-splitter stall (front downforce x0.74 when the splitter bottoms out above 35 m/s) applies to every car, which is a ride-height effect and
 not active aero.
 
+### What a 40-lap stint does (measured 2026-11-25, `RS_STINT=40 core/build/rs_tests reference_data_stint`)
+
+The Tornado GT3 (slicks) driven by the race AI round Brands Hatch GP for 40 laps, game models on; one lap printed per row, so the run is
+repeatable (`RS_SKILL`, `RS_AIR_C`, `RS_TRACK_C`, `RS_GAME_MODELS` change the driver and the weather; not in the ctest list, a stint takes
+20 s to 2 min). The tyre models are present and the mechanisms work in isolation, **but at race pace they barely act**:
+
+| conditions | carcass / surface at lap 40 | grip factor lap 1 -> 40 | lap 2 -> lap 40 |
+|---|---|---|---|
+| 25 C air / 30 C track, AI at the default pace (86 % of the car's limit) | 65 / 59 C | 0.997 -> 0.977 | 98.31 -> 98.33 s (+0.02 %) |
+| same, AI pushing 15 % harder | 72 / 65 C | 0.997 -> 0.974 | 93.46 -> 94.22 s (+0.8 %) |
+| 35 C air / 50 C track, pushing harder | 75 / 68 C | 0.999 -> 0.976 | 93.88 -> 94.65 s (+0.8 %) |
+| 40 C air / 60 C track (sun-baked), pushing harder | 81 / 74 C | 1.000 -> 0.978 | 94.35 -> 94.82 s (+0.5 %) |
+
+- The slicks stay at or below the bottom of their own 75-105 C working window in all but the hottest case; blistering (core over 118 C and
+  surface over 145 C) and graining never start; pressure moves by 2-8 kPa. Forty laps of wear cost at most 2.8 % of grip (wear 0.28-0.38 of
+  the tread; the penalty is `1 - 0.15 wear^2`, smooth, with no cliff).
+- Real GT3 slicks run hot at race pace and lose roughly a second a lap or more over a stint. **This is a calibration problem, not a missing
+  mechanism**: the heat capacities, conductances and wear rates are hand-set (section 0 above), and with them the tyre never gets hot enough for
+  its thermal terms to matter. Only a driver pushed past the limit sees a cliff (skill 1.30: +7.7 % by lap 40), and that is the AI's grip governor
+  backing off, not the tyre.
+- Flat spots: a locked wheel builds a flat spot (up to 3 mm, fixed to a wheel angle) that produces a once-per-revolution thump in the **steering torque of a
+  front tyre**. It does not change grip and does not shake the car or the wheel load. There is no sidewall, rim or bead model, so a hard kerb strike
+  cannot roll a sidewall or cut a tyre; a kerb changes the contact-patch load distribution and the surface grip only.
+
 Public descriptions of ISI's isiMotor 2.5 (rFactor 2, Le Mans Ultimate) describe a structural tyre carcass solved offline from tyre construction,
 tyre-maker data (Goodyear), a 2-D dynamic track-rubber system and chassis flex. On paper ours has comparable ingredients (except the offline carcass
 and the 2-D rubber, which are simpler here); what is unproven is the calibration. See `docs/physics-data-gaps.md` for how to close it.

@@ -822,6 +822,61 @@ RS_TEST(reference_data_real_tracks_ai) {
     test::check_range("AI laps completed on the track (all of them)", clean, total, total, "laps");
 }
 
+// ---- a long stint: what do the tyres do over 40 laps? --------------------------------------------------------------------------
+// NOT in the ctest list (a stint takes minutes); run it as  RS_STINT=40 [RS_GAME_MODELS=1] [RS_CAR=tornado_gt3] [RS_TRACK=Brands] [RS_SKILL=0.95] [RS_AIR_C=25 RS_TRACK_C=30]
+// build/rs_tests reference_data_stint . The race AI drives the car round a real circuit, and each lap prints its time and the
+// state of the four tyres (carcass and surface temperature, pressure, wear, the grip factor the tyre model applies). It is a
+// measurement, not a pass/fail test: the question it answers is whether the thermal, pressure and wear models change the lap
+// over a stint, and by how much.
+RS_TEST(reference_data_stint) {
+    const char* env = std::getenv("RS_STINT");
+    if (!env) { std::printf("         skipped: set RS_STINT=<laps> to run (see the comment above this test)\n"); return; }
+    const int laps = std::max(2, std::atoi(env));
+    const std::string car_id = std::getenv("RS_CAR") ? std::getenv("RS_CAR") : "tornado_gt3";
+    const std::string track = std::getenv("RS_TRACK") ? std::getenv("RS_TRACK") : "Brands";
+    const std::string rel = track == "Brands" ? "validation/racetrack-database/BrandsHatch.csv" : "validation/tracks-extra/" + track + ".csv";
+    const CarConfig cfg = load_car_config(test::data_path("cars/" + car_id + ".json"));
+    const Route r = load_tum_track(rel);
+    AIParams p;
+    p.racing_line = true;
+    if (std::getenv("RS_SKILL")) p.skill = std::atof(std::getenv("RS_SKILL"));   // 0.95 default: how much of the grip it dares
+    const RouteSample s0 = r.at(0);
+    LapCar car(cfg, r, p, s0.p, s0.heading, 25);
+    if (std::getenv("RS_AIR_C") || std::getenv("RS_TRACK_C")) {   // the weather the game sets through rs_set_atmosphere
+        AtmosphericEnvironment& atm = car.sim->vehicle.atmosphere();
+        atm.enabled = true;
+        if (std::getenv("RS_AIR_C")) atm.ambient_air_c = std::atof(std::getenv("RS_AIR_C"));
+        if (std::getenv("RS_TRACK_C")) atm.track_surface_c = std::atof(std::getenv("RS_TRACK_C"));
+    }
+    car.sim->settle(0.2);
+    std::printf("         %s on %s, %d laps of %.2f km (game models %s)\n", cfg.name.c_str(), track.c_str(), laps, r.length() / 1000, std::getenv("RS_GAME_MODELS") ? "on" : "off");
+    std::printf("         lap   time s | carcass C  surface C  pressure kPa  wear (mean of 4) | grip factor mean / worst | flat spot mm | AI grip scale\n");
+    double travelled = 0, last_s = car.ai->route_s, t_lap0 = 0, first_flying = 0, last_lap = 0;
+    int lap = 0;
+    while (lap < laps && car.sim->time < laps * 3.0 * r.length() / 15.0) {
+        car.step();
+        travelled += r.delta(last_s, car.ai->route_s);
+        last_s = car.ai->route_s;
+        if (travelled >= r.length()) {
+            travelled -= r.length();
+            ++lap;
+            const double t = car.sim->time - t_lap0;
+            t_lap0 = car.sim->time;
+            double tc = 0, ts = 0, pr = 0, wr = 0, gf = 0, gmin = 1e9, flat = 0;
+            for (int w = 0; w < 4; ++w) {
+                const TireCondition& c = car.sim->last.wheels[w].condition;
+                tc += c.temperature_c / 4; ts += c.surface_c / 4; pr += c.pressure_kpa / 4; wr += c.wear / 4;
+                const double g = c.grip_factor(&cfg.tire(w));
+                gf += g / 4; gmin = std::min(gmin, g); flat = std::max(flat, c.flat_spot_depth_mm);
+            }
+            std::printf("         %3d  %7.2f | %9.1f %10.1f %13.1f %10.3f          | %6.3f / %6.3f        | %8.2f     | %5.2f\n", lap, t, tc, ts, pr, wr, gf, gmin, flat, car.ai->grip_scale);
+            if (lap == 2) first_flying = t;
+            last_lap = t;
+        }
+    }
+    if (lap >= 3) std::printf("         lap 2 %.2f s -> lap %d %.2f s: %+.2f %%\n", first_flying, lap, last_lap, (last_lap / first_flying - 1) * 100);
+}
+
 // ---- aero reference bands, applied to what the simulation actually does --------------------------------------------------------
 // tools/physics/aero_check.mjs holds the JSON values of each car against the envelopes of data/physics/aero_reference.json
 // (DrivAer wind-tunnel Cd x frontal area for road cars, NACA 0012 cl_max x a 1 m^2 device for downforce, the CFD front-share
