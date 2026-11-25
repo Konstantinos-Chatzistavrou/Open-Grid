@@ -618,6 +618,17 @@ double profile_time(const std::vector<double>& v) {
     for (int i = 0; i < n; ++i) t += 2.0 / (0.5 * (v[i] + v[(i + 1) % n]));
     return t;
 }
+// Deterministic shard parser for parallel CTest execution: RS_SHARD="k/N" (0 <= k < N).
+// When unset, runs all items (0/1) with zero change to manual CLI invocations.
+std::pair<int, int> parse_shard() {
+    const char* s = std::getenv("RS_SHARD");
+    if (!s || !*s) return {0, 1};
+    int idx = 0, total = 1;
+    if (std::sscanf(s, "%d/%d", &idx, &total) == 2 && total >= 1 && idx >= 0 && idx < total) {
+        return {idx, total};
+    }
+    return {0, 1};
+}
 }  // namespace
 
 RS_TEST(reference_data_real_tracks) {
@@ -627,7 +638,27 @@ RS_TEST(reference_data_real_tracks) {
         {"Suzuka", "validation/tracks-extra/Suzuka.csv"}}};
     // every shipped car: the Vela GT and the Tornado GT3 on all five circuits, the other 23 on Monza (RS_ALL_CARS=1: all 25 on all five)
     const bool all = std::getenv("RS_ALL_CARS") != nullptr;
-    for (const CarConfig& cfg : all_cars()) {
+    const auto [shard_idx, shard_total] = parse_shard();
+    const std::vector<CarConfig> cars_list = all_cars();
+    std::vector<int> car_shard(cars_list.size(), 0);
+    std::vector<int> shard_load(static_cast<std::size_t>(shard_total), 0);
+    auto assign_pass = [&](bool want_full) {
+        for (std::size_t i = 0; i < cars_list.size(); ++i) {
+            const CarConfig& c = cars_list[i];
+            const bool is_full = all || c.name == "Vela GT" || c.name == "Tornado GT3";
+            if (is_full != want_full) continue;
+            int best = 0;
+            for (int s = 1; s < shard_total; ++s)
+                if (shard_load[s] < shard_load[best]) best = s;
+            car_shard[i] = best;
+            shard_load[best] += is_full ? 5 : 1;
+        }
+    };
+    assign_pass(true);
+    assign_pass(false);
+    for (std::size_t ci = 0; ci < cars_list.size(); ++ci) {
+        if (car_shard[ci] != shard_idx) continue;
+        const CarConfig& cfg = cars_list[ci];
         const std::string car_id = cfg.name == "Vela GT" ? "vela_gt" : cfg.name == "Tornado GT3" ? "tornado_gt3" : cfg.name;
         const bool full = all || car_id == "vela_gt" || car_id == "tornado_gt3";
         const double a_lat = sheet::skidpad(cfg), stop = abs_stop_m(cfg, 100 / 3.6);
@@ -767,10 +798,13 @@ RS_TEST(reference_data_real_tracks_ai) {
         {"Suzuka", "validation/tracks-extra/Suzuka.csv"}}};
     int clean = 0, total = 0;
     // the Vela GT and the Tornado GT3 (RS_ALL_CARS=1: every shipped car, 125 laps)
+    const auto [shard_idx, shard_total] = parse_shard();
     std::vector<CarConfig> cars;
     if (std::getenv("RS_ALL_CARS")) cars = all_cars();
     else for (const char* car_id : {"vela_gt", "tornado_gt3"}) cars.push_back(load_car_config(test::data_path(std::string("cars/") + car_id + ".json")));
-    for (const CarConfig& cfg : cars) {
+    for (std::size_t ci = 0; ci < cars.size(); ++ci) {
+        if (static_cast<int>(ci % static_cast<std::size_t>(shard_total)) != shard_idx) continue;
+        const CarConfig& cfg = cars[ci];
         const double a_lat = sheet::skidpad(cfg), stop = abs_stop_m(cfg, 100 / 3.6);
         const double a_brake = (100 / 3.6) * (100 / 3.6) / (2 * stop) / kGravity, v_top = paper_top_speed(cfg).v_mps;
         for (const auto& [name, rel] : tracks) {
