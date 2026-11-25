@@ -1,11 +1,11 @@
-// Apache-2.0 — OpenGrid Tempest: Mesoscale Dynamic Weather, Solar-Thermal Asphalt & 2D Surface Hydrology Engine.
+// Apache-2.0 — OpenGrid Dynamic Weather: Mesoscale Dynamic Weather, Solar-Thermal Asphalt & 2D Surface Hydrology Engine.
 //
 // Pure C++17, zero external dependencies, zero per-tick heap allocations, 100% deterministic.
-// Transfers identically across Unreal Engine 5.8 (UOpenGridTempestSubsystem -> VolumetricCloud, SkyAtmosphere,
+// Transfers identically across Unreal Engine 5.8 (UOpenGridWeatherSubsystem -> VolumetricCloud, SkyAtmosphere,
 // DirectionalLight, ExponentialHeightFog, Niagara rain/spray, Wetness/Puddle MPC & Chaos vehicle physics)
 // and WebGPU (rs_core.wasm).
 //
-// Physical sub-models (iRacing Tempest-class architecture):
+// Physical sub-models (mesoscale meteorology & surface hydrology architecture):
 //   1. 2D Mesoscale Storm & Cloud Cell Advection driven by live synoptic wind vector (spatial rain/dry patches).
 //   2. Solar Ephemeris (latitude, day-of-year, solar hour) + cloud optical depth -> surface irradiance (W/m^2).
 //   3. Asphalt Slab Energy Balance (solar heating, cloud-shadow cooling, wind convection, evaporative rain quenching).
@@ -22,7 +22,7 @@
 
 namespace rs {
 
-enum class TempestPreset : int {
+enum class WeatherPreset : int {
     Clear = 0,          // High-pressure sunny / clear night, crisp dry asphalt, light breeze
     PartlyCloudy = 1,   // Advecting cumulus clouds casting moving thermal shadows on asphalt
     DynamicFront = 2,   // Approaching mesoscale rain front: dry start -> scattered showers -> passing storm -> drying track
@@ -31,7 +31,7 @@ enum class TempestPreset : int {
     DryingTrack = 5     // Post-storm clearing skies: flooded puddles draining & cars carving a drying racing line
 };
 
-struct TempestStormCell {
+struct StormCell {
     bool active = false;
     double x_m = 0.0;                 // world center X (m)
     double y_m = 0.0;                 // world center Y (m)
@@ -43,8 +43,8 @@ struct TempestStormCell {
     double lifetime_s = 3600.0;       // total cell lifecycle (s)
 };
 
-struct TempestConfig {
-    TempestPreset preset = TempestPreset::DynamicFront;
+struct WeatherConfig {
+    WeatherPreset preset = WeatherPreset::DynamicFront;
     std::uint32_t seed = 1337u;
     double latitude_deg = 40.75;          // geographic latitude (NYC 40.75 N; Brands Hatch 51.35 N; Spa 50.43 N)
     int day_of_year = 172;                // 1..365 (172 = summer solstice, 355 = winter solstice)
@@ -59,7 +59,7 @@ struct TempestConfig {
 };
 
 // Local weather, atmospheric, aerodynamic wind, hydrology & UE 5.8 rendering state at world position (x, y).
-struct TempestSample {
+struct WeatherSample {
     // Spatial precipitation & sky
     double rain_mm_per_hr = 0.0;          // local rainfall rate at (x, y), mm/hr
     double cloud_cover_0_to_1 = 0.0;      // local overhead cloud coverage (0..1)
@@ -94,8 +94,8 @@ struct TempestSample {
     double thunder_delay_s = -1.0;        // > 0 when a thunderclap is scheduled (distance / 343 m/s)
 };
 
-// Compact 16x16 weather radar snapshot (for in-cockpit GPS/Tempest radar & UE 5.8 UI widgets).
-struct TempestRadarGrid {
+// Compact 16x16 weather radar snapshot (for in-cockpit GPS/Dynamic Weather radar & UE 5.8 UI widgets).
+struct WeatherRadarGrid {
     static constexpr int kSize = 16;
     double center_x_m = 0.0;
     double center_y_m = 0.0;
@@ -106,41 +106,41 @@ struct TempestRadarGrid {
     double rain_chance_30m = 0.0;                           // 0..1 predicted rain probability over center in +30 min
 };
 
-class TempestWeather {
+class WeatherSystem {
 public:
     static constexpr int kMaxCells = 8;
     static constexpr int kHydroRes = 32;  // 32x32 local surface hydrology & drainage basin grid
 
-    TempestWeather() { configure(TempestConfig{}); }
-    explicit TempestWeather(const TempestConfig& cfg) { configure(cfg); }
+    WeatherSystem() { configure(WeatherConfig{}); }
+    explicit WeatherSystem(const WeatherConfig& cfg) { configure(cfg); }
 
     /** Reset and deterministically initialize storm cells, solar clock, wind & 2D hydrology grid. */
-    void configure(const TempestConfig& cfg);
+    void configure(const WeatherConfig& cfg);
 
     /** Advance storm advection, wind turbulence, solar-thermal asphalt balance, evaporation & 2D drainage by dt (s). */
     void step(double dt);
 
     /** Sample full weather, thermodynamics, wind & surface hydrology at world position (x_m, y_m). */
-    TempestSample sample(double x_m, double y_m) const;
+    WeatherSample sample(double x_m, double y_m) const;
 
     /** Pump standing water out of a passing tyre's cell (carving a real drying racing line & splashing edges). */
     void deposit_tyre_wake(double x_m, double y_m, double speed_mps, double load_n, double dt);
 
-    /** Apply live Tempest sample at (x_m, y_m) straight into a Vehicle's AtmosphericEnvironment & road_water_mm. */
+    /** Apply live Dynamic Weather sample at (x_m, y_m) straight into a Vehicle's AtmosphericEnvironment & road_water_mm. */
     void apply_to_atmosphere(double x_m, double y_m, AtmosphericEnvironment& atm, double& out_road_water_mm) const;
 
-    /** Build a 16x16 Tempest radar reflectivity snapshot & 15/30-min upstream wind-advection forecast. */
-    TempestRadarGrid sample_radar(double center_x_m, double center_y_m, double range_m = 8000.0) const;
+    /** Build a 16x16 Dynamic Weather radar reflectivity snapshot & 15/30-min upstream wind-advection forecast. */
+    WeatherRadarGrid sample_radar(double center_x_m, double center_y_m, double range_m = 8000.0) const;
 
     /** Accessors for inspection, serialization & UE 5.8 multiplayer replication. */
-    const TempestConfig& config() const { return cfg_; }
+    const WeatherConfig& config() const { return cfg_; }
     double sim_time_s() const { return sim_time_s_; }
     double local_hour() const { return local_hour_; }
-    const std::array<TempestStormCell, kMaxCells>& cells() const { return cells_; }
+    const std::array<StormCell, kMaxCells>& cells() const { return cells_; }
     void set_local_hour(double hour) { local_hour_ = std::fmod(std::fmod(hour, 24.0) + 24.0, 24.0); }
 
 private:
-    TempestConfig cfg_{};
+    WeatherConfig cfg_{};
     double sim_time_s_ = 0.0;
     double local_hour_ = 14.0;
     double baro_kpa_ = 101.325;
@@ -155,7 +155,7 @@ private:
     double last_thunder_delay_s_ = -1.0;
     std::uint32_t rng_state_ = 1337u;
 
-    std::array<TempestStormCell, kMaxCells> cells_{};
+    std::array<StormCell, kMaxCells> cells_{};
     // 2D local hydrology grid: water depth (mm), static basin depression depth (mm), tyre-wake drying groove (0..1)
     std::array<double, kHydroRes * kHydroRes> hydro_water_mm_{};
     std::array<double, kHydroRes * kHydroRes> hydro_basin_mm_{};

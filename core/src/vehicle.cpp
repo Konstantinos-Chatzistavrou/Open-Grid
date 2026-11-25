@@ -1404,7 +1404,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     }
 
     // ------------------------------------------------------------------ aerodynamics
-    // Relative air velocity includes 3D Tempest wind + gusts (v_air = v_chassis - v_wind when enabled).
+    // Relative air velocity includes 3D Dynamic Weather wind + gusts (v_air = v_chassis - v_wind when enabled).
     // Drag:      F = -1/2 rho CdA |v_air| v_air * slipstream_drag_scale * yaw_drag_mult * active_aero_drag_mult
     // Downforce: F = 1/2 rho ClA v_air_x^2, split between the axles by aero balance (with dirty-air, yaw stall & Active Aero).
     const AeroParams& a = cfg_.aero;

@@ -1,13 +1,13 @@
-// Apache-2.0 — OpenGrid Tempest Weather Implementation (pure C++17, zero per-tick allocations).
-#include "rs/tempest.hpp"
+// Apache-2.0 — OpenGrid Dynamic Weather Weather Implementation (pure C++17, zero per-tick allocations).
+#include "rs/weather.hpp"
 #include <algorithm>
 #include <cmath>
 
 namespace rs {
 namespace {
 
-constexpr double kTempestDegToRad = kPi / 180.0;
-constexpr double kTempestRadToDeg = 180.0 / kPi;
+constexpr double kWeatherDegToRad = kPi / 180.0;
+constexpr double kWeatherRadToDeg = 180.0 / kPi;
 
 double magnus_dew_point_c(double temp_c, double rh_0_to_1) {
     const double rh = clamp(rh_0_to_1, 0.05, 1.0);
@@ -23,7 +23,7 @@ double saturation_vapor_kpa(double temp_c) {
 
 }  // namespace
 
-double TempestWeather::next_rand_01() {
+double WeatherSystem::next_rand_01() {
     // Xorshift32: fast, portable, 100% deterministic across x64, ARM, MSVC, GCC, Clang & Emscripten WASM
     std::uint32_t x = rng_state_ ? rng_state_ : 2463534242u;
     x ^= x << 13;
@@ -33,14 +33,14 @@ double TempestWeather::next_rand_01() {
     return static_cast<double>(x & 0x00FFFFFFu) / static_cast<double>(0x01000000u);
 }
 
-Vec3 TempestWeather::synoptic_wind_mps() const {
+Vec3 WeatherSystem::synoptic_wind_mps() const {
     // Meteorological wind direction = direction wind blows FROM; velocity vector points opposite (+180 deg)
     // Core coordinates: +X = East/Forward, +Y = North/Left, +Z = Up
-    const double to_rad = (cfg_.wind_direction_deg + 180.0) * kTempestDegToRad;
+    const double to_rad = (cfg_.wind_direction_deg + 180.0) * kWeatherDegToRad;
     return {cfg_.base_wind_mps * std::sin(to_rad), cfg_.base_wind_mps * std::cos(to_rad), 0.0};
 }
 
-int TempestWeather::hydro_index(double x_m, double y_m, int* out_ix, int* out_iy) const {
+int WeatherSystem::hydro_index(double x_m, double y_m, int* out_ix, int* out_iy) const {
     const double span = std::max(2.0 * cfg_.domain_half_extent_m, 100.0);
     auto wrap_idx = [&](double v) {
         double u = std::fmod(v + cfg_.domain_half_extent_m, span);
@@ -54,9 +54,9 @@ int TempestWeather::hydro_index(double x_m, double y_m, int* out_ix, int* out_iy
     return iy * kHydroRes + ix;
 }
 
-void TempestWeather::spawn_cell(int slot, bool initial_scatter) {
-    TempestStormCell& c = cells_[slot];
-    c = TempestStormCell{};
+void WeatherSystem::spawn_cell(int slot, bool initial_scatter) {
+    StormCell& c = cells_[slot];
+    c = StormCell{};
     const double domain = std::max(cfg_.domain_half_extent_m * 2.5, 9000.0);
     const Vec3 w = synoptic_wind_mps();
     const double w_len = std::hypot(w.x, w.y);
@@ -81,17 +81,17 @@ void TempestWeather::spawn_cell(int slot, bool initial_scatter) {
     c.cloud_radius_m = c.rain_radius_m * (2.1 + 0.7 * next_rand_01());
 
     switch (cfg_.preset) {
-        case TempestPreset::Clear:
+        case WeatherPreset::Clear:
             c.active = (slot < 2);
             c.peak_cloud_cover = 0.14 + 0.12 * next_rand_01();
             c.peak_rain_mm_hr = 0.0;
             break;
-        case TempestPreset::PartlyCloudy:
+        case WeatherPreset::PartlyCloudy:
             c.active = (slot < 6);
             c.peak_cloud_cover = 0.48 + 0.34 * next_rand_01();
             c.peak_rain_mm_hr = 0.0;
             break;
-        case TempestPreset::DynamicFront:
+        case WeatherPreset::DynamicFront:
             c.active = (slot < 6);
             if (initial_scatter && slot == 0) {
                 // Place primary rain front ~2.8 km upstream so races start dry/damp and transition naturally into rain!
@@ -107,7 +107,7 @@ void TempestWeather::spawn_cell(int slot, bool initial_scatter) {
                 c.peak_rain_mm_hr = (slot < 4) ? (4.0 + 10.0 * next_rand_01()) : 0.0;
             }
             break;
-        case TempestPreset::LightRain:
+        case WeatherPreset::LightRain:
             c.active = (slot < 7);
             if (initial_scatter && slot == 0) {
                 c.x_m = 0.0;
@@ -121,7 +121,7 @@ void TempestWeather::spawn_cell(int slot, bool initial_scatter) {
                 c.peak_rain_mm_hr = 2.5 + 4.0 * next_rand_01();
             }
             break;
-        case TempestPreset::HeavyStorm:
+        case WeatherPreset::HeavyStorm:
             c.active = true;
             if (initial_scatter && slot == 0) {
                 c.x_m = 0.0;
@@ -135,7 +135,7 @@ void TempestWeather::spawn_cell(int slot, bool initial_scatter) {
                 c.peak_rain_mm_hr = 10.0 + 18.0 * next_rand_01();
             }
             break;
-        case TempestPreset::DryingTrack:
+        case WeatherPreset::DryingTrack:
             c.active = (slot < 5);
             // Place departing rain cell downstream so rain is ending & track begins drying immediately
             if (initial_scatter && slot == 0) {
@@ -151,7 +151,7 @@ void TempestWeather::spawn_cell(int slot, bool initial_scatter) {
     }
 }
 
-void TempestWeather::configure(const TempestConfig& cfg) {
+void WeatherSystem::configure(const WeatherConfig& cfg) {
     cfg_ = cfg;
     sim_time_s_ = 0.0;
     local_hour_ = std::fmod(std::fmod(cfg.start_hour_local, 24.0) + 24.0, 24.0);
@@ -165,19 +165,19 @@ void TempestWeather::configure(const TempestConfig& cfg) {
     double init_water_mm = 0.0;
     baro_kpa_ = 101.6;
     global_humidity_ = clamp(cfg.base_humidity, 0.15, 0.98);
-    if (cfg.preset == TempestPreset::Clear) {
+    if (cfg.preset == WeatherPreset::Clear) {
         baro_kpa_ = 102.2;
         global_humidity_ = std::min(global_humidity_, 0.45);
-    } else if (cfg.preset == TempestPreset::LightRain) {
+    } else if (cfg.preset == WeatherPreset::LightRain) {
         baro_kpa_ = 100.3;
         global_humidity_ = std::max(global_humidity_, 0.84);
         init_water_mm = 0.85;
-    } else if (cfg.preset == TempestPreset::HeavyStorm) {
+    } else if (cfg.preset == WeatherPreset::HeavyStorm) {
         baro_kpa_ = 99.1;
         global_humidity_ = std::max(global_humidity_, 0.94);
         init_water_mm = 2.60;
         if (cfg_.base_wind_mps < 9.0) cfg_.base_wind_mps = 11.5;
-    } else if (cfg.preset == TempestPreset::DryingTrack) {
+    } else if (cfg.preset == WeatherPreset::DryingTrack) {
         baro_kpa_ = 101.1;
         global_humidity_ = 0.68;
         init_water_mm = 1.45;
@@ -208,42 +208,42 @@ void TempestWeather::configure(const TempestConfig& cfg) {
     compute_sun_angles(sun_elev, sun_azim);
     double r0 = 0.0, cl0 = 0.0;
     evaluate_cells_at(0.0, 0.0, 0.0, r0, cl0);
-    const double sin_e = std::max(0.0, std::sin(sun_elev * kTempestDegToRad));
+    const double sin_e = std::max(0.0, std::sin(sun_elev * kWeatherDegToRad));
     const double solar_w = 960.0 * std::pow(sin_e, 1.15) * (1.0 - 0.78 * cl0 * cl0);
     global_air_c_ = cfg.base_ambient_c;
     const double solar_lift = (init_water_mm > 0.2 ? 0.005 : 0.018) * solar_w;
     global_track_c_ = clamp(global_air_c_ + solar_lift - (r0 > 0.5 ? 2.5 : 0.0), -15.0, 68.0);
 }
 
-void TempestWeather::compute_sun_angles(double& out_elev_deg, double& out_azim_deg) const {
+void WeatherSystem::compute_sun_angles(double& out_elev_deg, double& out_azim_deg) const {
     // NOAA / Spencer solar declination & hour angle approximation (accurate to ~0.5 deg)
-    const double lat = clamp(cfg_.latitude_deg, -85.0, 85.0) * kTempestDegToRad;
-    const double decl = 23.44 * kTempestDegToRad * std::sin((2.0 * kPi / 365.0) * (cfg_.day_of_year - 81));
-    const double ha = (local_hour_ - 12.0) * 15.0 * kTempestDegToRad;
+    const double lat = clamp(cfg_.latitude_deg, -85.0, 85.0) * kWeatherDegToRad;
+    const double decl = 23.44 * kWeatherDegToRad * std::sin((2.0 * kPi / 365.0) * (cfg_.day_of_year - 81));
+    const double ha = (local_hour_ - 12.0) * 15.0 * kWeatherDegToRad;
     const double sin_el = clamp(std::sin(lat) * std::sin(decl) + std::cos(lat) * std::cos(decl) * std::cos(ha), -1.0, 1.0);
     const double el = std::asin(sin_el);
-    out_elev_deg = el * kTempestRadToDeg;
+    out_elev_deg = el * kWeatherRadToDeg;
     const double cos_el = std::max(std::cos(el), 1e-4);
     const double cos_az = clamp((std::sin(decl) - std::sin(lat) * sin_el) / (std::cos(lat) * cos_el), -1.0, 1.0);
-    double az = std::acos(cos_az) * kTempestRadToDeg;
+    double az = std::acos(cos_az) * kWeatherRadToDeg;
     if (ha > 0.0) az = 360.0 - az;
     out_azim_deg = az;
 }
 
-void TempestWeather::evaluate_cells_at(double x_m, double y_m, double time_offset_s,
+void WeatherSystem::evaluate_cells_at(double x_m, double y_m, double time_offset_s,
                                        double& out_rain_mm_hr, double& out_cloud_0_1) const {
     const Vec3 w = synoptic_wind_mps();
     // Mesoscale frontal / storm-band translation speed (~0.55x surface wind -> ~2.5-6.5 m/s = 9-23 km/h)
     const double adv_x = w.x * 0.55 * time_offset_s;
     const double adv_y = w.y * 0.55 * time_offset_s;
-    double rain_sum = (cfg_.preset == TempestPreset::HeavyStorm) ? 8.5
-                    : (cfg_.preset == TempestPreset::LightRain)  ? 2.2
+    double rain_sum = (cfg_.preset == WeatherPreset::HeavyStorm) ? 8.5
+                    : (cfg_.preset == WeatherPreset::LightRain)  ? 2.2
                     : 0.0;
-    double clear_prod = (cfg_.preset == TempestPreset::HeavyStorm) ? 0.08
-                      : (cfg_.preset == TempestPreset::LightRain)  ? 0.25
+    double clear_prod = (cfg_.preset == WeatherPreset::HeavyStorm) ? 0.08
+                      : (cfg_.preset == WeatherPreset::LightRain)  ? 0.25
                       : 1.0;
 
-    for (const TempestStormCell& c : cells_) {
+    for (const StormCell& c : cells_) {
         if (!c.active) continue;
         const double age = c.age_s + time_offset_s;
         if (age < 0.0 || age > c.lifetime_s) continue;
@@ -277,7 +277,7 @@ void TempestWeather::evaluate_cells_at(double x_m, double y_m, double time_offse
     out_cloud_0_1 = clamp(1.0 - clear_prod, 0.0, 1.0);
 }
 
-void TempestWeather::step(double dt) {
+void WeatherSystem::step(double dt) {
     if (dt <= 0.0) return;
     const double scaled_dt = dt * std::max(cfg_.time_scale, 0.0);
     sim_time_s_ += scaled_dt;
@@ -290,7 +290,7 @@ void TempestWeather::step(double dt) {
     const double steer_y = w_syn.y * 0.55;
     const double max_dist = std::max(cfg_.domain_half_extent_m * 3.8, 14000.0);
     for (int i = 0; i < kMaxCells; ++i) {
-        TempestStormCell& c = cells_[i];
+        StormCell& c = cells_[i];
         if (!c.active) continue;
         c.x_m += steer_x * scaled_dt;
         c.y_m += steer_y * scaled_dt;
@@ -322,7 +322,7 @@ void TempestWeather::step(double dt) {
     // 5. Solar-thermal asphalt slab energy balance (C_asphalt ~ 18 kJ/(m^2 K) active top 15 mm layer)
     double sun_elev = 0.0, sun_azim = 180.0;
     compute_sun_angles(sun_elev, sun_azim);
-    const double sin_e = std::max(0.0, std::sin(sun_elev * kTempestDegToRad));
+    const double sin_e = std::max(0.0, std::sin(sun_elev * kWeatherDegToRad));
     const double solar_w_m2 = 960.0 * std::pow(sin_e, 1.15) * (1.0 - 0.78 * center_cloud * center_cloud);
     // Diurnal air temp swing (+-3.5 C around baseline, cooled by rain downdrafts)
     const double diurnal = -3.5 * std::cos((local_hour_ - 15.0) * (2.0 * kPi / 24.0)) * (1.0 - 0.45 * center_cloud);
@@ -415,7 +415,7 @@ void TempestWeather::step(double dt) {
     }
 }
 
-void TempestWeather::deposit_tyre_wake(double x_m, double y_m, double speed_mps, double load_n, double dt) {
+void WeatherSystem::deposit_tyre_wake(double x_m, double y_m, double speed_mps, double load_n, double dt) {
     if (dt <= 0.0 || load_n <= 100.0) return;
     const double v = std::abs(speed_mps);
     if (v < 3.0) return;
@@ -436,13 +436,13 @@ void TempestWeather::deposit_tyre_wake(double x_m, double y_m, double speed_mps,
     hydro_water_mm_[k_r] = std::min(10.0, hydro_water_mm_[k_r] + splash);
 }
 
-TempestSample TempestWeather::sample(double x_m, double y_m) const {
-    TempestSample s;
+WeatherSample WeatherSystem::sample(double x_m, double y_m) const {
+    WeatherSample s;
     evaluate_cells_at(x_m, y_m, 0.0, s.rain_mm_per_hr, s.cloud_cover_0_to_1);
     s.cloud_shadow_0_to_1 = clamp(s.cloud_cover_0_to_1 * s.cloud_cover_0_to_1 * 0.88, 0.0, 0.92);
 
     compute_sun_angles(s.sun_elevation_deg, s.sun_azimuth_deg);
-    const double sin_e = std::max(0.0, std::sin(s.sun_elevation_deg * kTempestDegToRad));
+    const double sin_e = std::max(0.0, std::sin(s.sun_elevation_deg * kWeatherDegToRad));
     s.solar_irradiance_w_m2 = 960.0 * std::pow(sin_e, 1.15) * (1.0 - s.cloud_shadow_0_to_1);
 
     // Local micro-climate modulation by local cell rain/shadow
@@ -482,8 +482,8 @@ TempestSample TempestWeather::sample(double x_m, double y_m) const {
     return s;
 }
 
-void TempestWeather::apply_to_atmosphere(double x_m, double y_m, AtmosphericEnvironment& atm, double& out_road_water_mm) const {
-    const TempestSample s = sample(x_m, y_m);
+void WeatherSystem::apply_to_atmosphere(double x_m, double y_m, AtmosphericEnvironment& atm, double& out_road_water_mm) const {
+    const WeatherSample s = sample(x_m, y_m);
     atm.enabled = true;
     atm.ambient_air_c = s.ambient_air_c;
     atm.track_surface_c = s.track_surface_c;
@@ -493,12 +493,12 @@ void TempestWeather::apply_to_atmosphere(double x_m, double y_m, AtmosphericEnvi
     out_road_water_mm = s.surface_water_mm;
 }
 
-TempestRadarGrid TempestWeather::sample_radar(double center_x_m, double center_y_m, double range_m) const {
-    TempestRadarGrid g;
+WeatherRadarGrid WeatherSystem::sample_radar(double center_x_m, double center_y_m, double range_m) const {
+    WeatherRadarGrid g;
     g.center_x_m = center_x_m;
     g.center_y_m = center_y_m;
     g.range_m = std::max(range_m, 500.0);
-    constexpr int N = TempestRadarGrid::kSize;
+    constexpr int N = WeatherRadarGrid::kSize;
     const double step_m = (2.0 * g.range_m) / N;
     for (int iy = 0; iy < N; ++iy) {
         const double y = center_y_m - g.range_m + (iy + 0.5) * step_m;
@@ -510,7 +510,7 @@ TempestRadarGrid TempestWeather::sample_radar(double center_x_m, double center_y
             g.cloud_cover[iy * N + ix] = static_cast<float>(cl);
         }
     }
-    // Upstream advection nowcast across 0..15 min and 15..30 min windows (matches iRacing Tempest radar forecast)
+    // Upstream advection nowcast across 0..15 min and 15..30 min windows (matches mesoscale radar advection nowcast)
     double peak_r15 = 0.0, peak_c15 = 0.0, peak_r30 = 0.0, peak_c30 = 0.0;
     for (int k = 1; k <= 5; ++k) {
         double r = 0.0, cl = 0.0;

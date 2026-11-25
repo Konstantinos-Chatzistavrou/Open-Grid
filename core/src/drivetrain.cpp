@@ -205,7 +205,7 @@ double Drivetrain::max_boost_for_stage(int stage) {
 
 double AtmosphericEnvironment::barometric_pressure_kpa() const {
     const double h = clamp(altitude_m, -200.0, 5500.0);
-    // ISA barometric formula + live synoptic pressure front anomaly (Tempest storm lows / high pressure)
+    // ISA barometric formula + live synoptic pressure front anomaly (Dynamic Weather storm lows / high pressure)
     const double isa_kpa = 101.325 * std::pow(1.0 - (0.0065 * h) / 288.15, 5.25588);
     return clamp(isa_kpa + barometric_offset_kpa, 45.0, 108.0);
 }

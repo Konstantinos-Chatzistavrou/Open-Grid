@@ -1,34 +1,34 @@
-// Apache-2.0 — Unreal Engine 5.8 World Subsystem implementation for OpenGrid Tempest.
-#include "OpenGridTempestSubsystem.h"
+// Apache-2.0 — Unreal Engine 5.8 World Subsystem implementation for OpenGrid Dynamic Weather.
+#include "OpenGridWeatherSubsystem.h"
 
-void UOpenGridTempestSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+void UOpenGridWeatherSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
-    rs::TempestConfig Cfg;
-    Cfg.preset = rs::TempestPreset::DynamicFront;
-    Tempest_.configure(Cfg);
+    rs::WeatherConfig Cfg;
+    Cfg.preset = rs::WeatherPreset::DynamicFront;
+    Weather_.configure(Cfg);
 }
 
-void UOpenGridTempestSubsystem::Tick(float DeltaTime)
+void UOpenGridWeatherSubsystem::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
     if (DeltaTime > 0.0f)
     {
-        Tempest_.step(static_cast<double>(FMath::Clamp(DeltaTime, 0.0f, 0.25f)));
+        Weather_.step(static_cast<double>(FMath::Clamp(DeltaTime, 0.0f, 0.25f)));
     }
 }
 
-TStatId UOpenGridTempestSubsystem::GetStatId() const
+TStatId UOpenGridWeatherSubsystem::GetStatId() const
 {
-    RETURN_QUICK_DECLARE_CYCLE_STAT(UOpenGridTempestSubsystem, STATGROUP_Tickables);
+    RETURN_QUICK_DECLARE_CYCLE_STAT(UOpenGridWeatherSubsystem, STATGROUP_Tickables);
 }
 
-void UOpenGridTempestSubsystem::ConfigureTempest(EOpenGridTempestPreset Preset, int32 Seed, float LocalHour,
+void UOpenGridWeatherSubsystem::ConfigureWeather(EOpenGridWeatherPreset Preset, int32 Seed, float LocalHour,
                                                  float LatitudeDeg, int32 DayOfYear, float TimeScale,
                                                  float BaseAmbientC, float BaseWindMps, float WindDirectionDeg)
 {
-    rs::TempestConfig Cfg;
-    Cfg.preset = static_cast<rs::TempestPreset>(static_cast<int>(Preset));
+    rs::WeatherConfig Cfg;
+    Cfg.preset = static_cast<rs::WeatherPreset>(static_cast<int>(Preset));
     Cfg.seed = static_cast<std::uint32_t>(Seed > 0 ? Seed : 1337);
     Cfg.start_hour_local = static_cast<double>(LocalHour);
     Cfg.latitude_deg = static_cast<double>(LatitudeDeg);
@@ -37,17 +37,17 @@ void UOpenGridTempestSubsystem::ConfigureTempest(EOpenGridTempestPreset Preset, 
     Cfg.base_ambient_c = static_cast<double>(BaseAmbientC);
     Cfg.base_wind_mps = static_cast<double>(FMath::Max(0.0f, BaseWindMps));
     Cfg.wind_direction_deg = static_cast<double>(WindDirectionDeg);
-    Tempest_.configure(Cfg);
+    Weather_.configure(Cfg);
 }
 
-FOpenGridTempestSample UOpenGridTempestSubsystem::SampleAtLocationCm(const FVector& WorldLocationCm) const
+FOpenGridWeatherSample UOpenGridWeatherSubsystem::SampleAtLocationCm(const FVector& WorldLocationCm) const
 {
     // Unreal cm (left-handed: X fwd, Y right, Z up) -> rs_core m (right-handed: X fwd, Y left, Z up)
     const double Xm = static_cast<double>(WorldLocationCm.X) * 0.01;
     const double Ym = -static_cast<double>(WorldLocationCm.Y) * 0.01;
-    const rs::TempestSample S = Tempest_.sample(Xm, Ym);
+    const rs::WeatherSample S = Weather_.sample(Xm, Ym);
 
-    FOpenGridTempestSample Out;
+    FOpenGridWeatherSample Out;
     Out.RainMmPerHr = static_cast<float>(S.rain_mm_per_hr);
     Out.CloudCover01 = static_cast<float>(S.cloud_cover_0_to_1);
     Out.CloudShadow01 = static_cast<float>(S.cloud_shadow_0_to_1);
@@ -76,21 +76,21 @@ FOpenGridTempestSample UOpenGridTempestSubsystem::SampleAtLocationCm(const FVect
     return Out;
 }
 
-void UOpenGridTempestSubsystem::DepositWheelWakeCm(const FVector& WorldLocationCm, float SpeedMps, float LoadN, float DeltaTime)
+void UOpenGridWeatherSubsystem::DepositWheelWakeCm(const FVector& WorldLocationCm, float SpeedMps, float LoadN, float DeltaTime)
 {
     const double Xm = static_cast<double>(WorldLocationCm.X) * 0.01;
     const double Ym = -static_cast<double>(WorldLocationCm.Y) * 0.01;
-    Tempest_.deposit_tyre_wake(Xm, Ym, static_cast<double>(SpeedMps), static_cast<double>(LoadN), static_cast<double>(DeltaTime));
+    Weather_.deposit_tyre_wake(Xm, Ym, static_cast<double>(SpeedMps), static_cast<double>(LoadN), static_cast<double>(DeltaTime));
 }
 
-FOpenGridTempestRadar UOpenGridTempestSubsystem::SampleRadarGridCm(const FVector& WorldLocationCm, float RangeMeters) const
+FOpenGridWeatherRadar UOpenGridWeatherSubsystem::SampleRadarGridCm(const FVector& WorldLocationCm, float RangeMeters) const
 {
     const double Xm = static_cast<double>(WorldLocationCm.X) * 0.01;
     const double Ym = -static_cast<double>(WorldLocationCm.Y) * 0.01;
-    const rs::TempestRadarGrid G = Tempest_.sample_radar(Xm, Ym, static_cast<double>(RangeMeters));
+    const rs::WeatherRadarGrid G = Weather_.sample_radar(Xm, Ym, static_cast<double>(RangeMeters));
 
-    FOpenGridTempestRadar Out;
-    Out.GridSize = rs::TempestRadarGrid::kSize;
+    FOpenGridWeatherRadar Out;
+    Out.GridSize = rs::WeatherRadarGrid::kSize;
     Out.RangeMeters = static_cast<float>(G.range_m);
     Out.RainMmPerHr.Append(G.rain_mm_hr.data(), static_cast<int32>(G.rain_mm_hr.size()));
     Out.CloudCover01.Append(G.cloud_cover.data(), static_cast<int32>(G.cloud_cover.size()));

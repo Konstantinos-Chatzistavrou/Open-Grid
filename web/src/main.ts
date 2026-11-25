@@ -18,7 +18,7 @@ import { Garage } from './scene/garage';
 import { createNavScreen } from './scene/navScreen';
 import { SHOW_PRESETS, ShowroomPost } from './showroomPost';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { CoreCar, CoreRace, OUT, configureTempest, loadCore, stepTempest, type LapInfo, type RawInput } from './physics/core';
+import { CoreCar, CoreRace, OUT, configureWeather, loadCore, stepWeather, type LapInfo, type RawInput } from './physics/core';
 import { CarBody, DT, PhysicsWorld, loadRapier, type CarShape } from './physics/world';
 import { PhysicsWorkerClient } from './physics/workerClient';
 import { CityLighting, loadCity } from './scene/city';
@@ -3319,37 +3319,37 @@ async function main() {
       carMeet.syncCarPose(pos, quat, kmhNow);
       carMeet.update(frame, inFreeRoam && !photoMode.active && !replay.active, pos, (c) => input.isKeyDown(c));
 
-      // OpenGrid Tempest (C++17 mesoscale storm advection, solar-thermal asphalt, wind aero & 2D hydrology — shared 1:1 with UE 5.8)
+      // OpenGrid Dynamic Weather (C++17 mesoscale storm advection, solar-thermal asphalt, wind aero & 2D hydrology — shared 1:1 with UE 5.8)
       worldClock.update(frame, scene, moon);
       if (driving()) {
-        stepTempest(frame);
-        const flash = car.out[OUT.tempestLightning] || 0;
+        stepWeather(frame);
+        const flash = car.out[OUT.weatherLightning] || 0;
         if (flash > 0.02) moon.intensity = Math.max(moon.intensity, 0.25 + flash * 1.6);
       }
       if (driving() && now - lastDensityAt > 2000) {
         lastDensityAt = now;
         const baseAirC = worldClock.season.id === 'winter' ? 4 : worldClock.season.id === 'summer' ? 28 : 16;
-        const tempestParam = (params.get('tempest') || '').toLowerCase();
+        const weatherParam = (params.get('weather_preset') || '').toLowerCase();
         const desiredPreset =
-          tempestParam === 'storm' ? 4 :
-          tempestParam === 'rain' ? 3 :
-          tempestParam === 'front' ? 2 :
-          tempestParam === 'cloudy' ? 1 :
-          tempestParam === 'drying' ? 5 :
-          tempestParam === 'clear' ? 0 :
+          weatherParam === 'storm' ? 4 :
+          weatherParam === 'rain' ? 3 :
+          weatherParam === 'front' ? 2 :
+          weatherParam === 'cloudy' ? 1 :
+          weatherParam === 'drying' ? 5 :
+          weatherParam === 'clear' ? 0 :
           (worldClock.weather === 'rain' ? 3 : 0);
-        if ((worldClock as unknown as { _tempestPreset?: number })._tempestPreset !== desiredPreset) {
-          (worldClock as unknown as { _tempestPreset?: number })._tempestPreset = desiredPreset;
+        if ((worldClock as unknown as { _weatherPreset?: number })._weatherPreset !== desiredPreset) {
+          (worldClock as unknown as { _weatherPreset?: number })._weatherPreset = desiredPreset;
           const doy = worldClock.season.id === 'winter' ? 15 : worldClock.season.id === 'spring' ? 110 : worldClock.season.id === 'summer' ? 185 : 285;
-          configureTempest(desiredPreset, 1337, worldClock.hour, 40.75, doy, 4.0, baseAirC, desiredPreset >= 3 ? 8.5 : 4.2, 245);
+          configureWeather(desiredPreset, 1337, worldClock.hour, 40.75, doy, 4.0, baseAirC, desiredPreset >= 3 ? 8.5 : 4.2, 245);
         }
-        const tRain = car.out[OUT.tempestRainMmHr] || 0;
-        const tTrack = car.out[OUT.tempestTrackTempC] || baseAirC;
-        const tAir = car.out[OUT.tempestAirTempC] || baseAirC;
-        const tHum = car.out[OUT.tempestHumidity] || 0.5;
-        const tWindKmh = Math.round((car.out[OUT.tempestWindMps] || 0) * 3.6);
-        const tWet = car.out[OUT.tempestWetness] || 0;
-        const tWaterMm = Math.max(worldClock.roadWaterMm, (car.out[OUT.tempestPuddleMm] || 0) + tWet * 0.9);
+        const tRain = car.out[OUT.weatherRainMmHr] || 0;
+        const tTrack = car.out[OUT.weatherTrackTempC] || baseAirC;
+        const tAir = car.out[OUT.weatherAirTempC] || baseAirC;
+        const tHum = car.out[OUT.weatherHumidity] || 0.5;
+        const tWindKmh = Math.round((car.out[OUT.weatherWindMps] || 0) * 3.6);
+        const tWet = car.out[OUT.weatherWetness] || 0;
+        const tWaterMm = Math.max(worldClock.roadWaterMm, (car.out[OUT.weatherPuddleMm] || 0) + tWet * 0.9);
         const ct = `${worldClock.hudText()} · ${Math.round(tTrack)}°C · WIND ${tWindKmh} km/h${tRain > 0.3 ? ` · ${tRain.toFixed(1)} mm/h` : ''}`;
         if (ct !== lastClockText) { worldClockEl.textContent = lastClockText = ct; }
         if (ai.mode === 'cruise') ai.setCruiseDensity(worldClock.trafficDensity);
