@@ -245,8 +245,10 @@ std::array<std::uint8_t, kSimHubPacketBytes> pack_simhub_udp(const TelemetrySamp
     p[304] = clamp_u8(s.brake * 255.0);
     p[305] = clamp_u8(s.clutch * 255.0);
     p[306] = clamp_u8(s.handbrake * 255.0);
-    // Forza gear: 0 = R, 1..10 = forward gears (map rs_core 0=R, 1=N->0, 2=1st->1)
-    p[307] = static_cast<std::uint8_t>(s.gear <= 1 ? 0 : std::min(10, s.gear - 1));
+    // Forza gear byte: 0 = reverse, 1..10 = forward gears. Forza has NO separate neutral value: a stopped or clutch-in car
+    // reports 1. So rs_core 0 (R) -> 0, 1 (N) -> 1, 2 (1st) -> 1, 3 (2nd) -> 2, ... Neutral used to be sent as 0, which every
+    // dash showed as "R". A dashboard that wants "N" derives it from the clutch byte (305) and the speed, as with Forza itself.
+    p[307] = static_cast<std::uint8_t>(s.gear <= 0 ? 0 : std::min(10, std::max(1, s.gear - 1)));
     p[308] = static_cast<std::uint8_t>(clamp_i8(-s.steer * 127.0));
     p[309] = 0;  // normalized driving line
     p[310] = 0;  // normalized AI brake diff

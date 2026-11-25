@@ -571,3 +571,16 @@ RS_TEST(ur_dyno_rpm_alignment) {
     test::check_range("peak power is read at the rpm it was made", meter.peak_power_rpm(), 5300.0, 5700.0, "rpm");
     test::check_range("peak power is only rounded off by the 0.5 s smoothing (not lost)", meter.peak_wheel_power_w() / 220000.0, 0.88, 1.01, "x");
 }
+
+// ---------------------------------------------------------------- SimHub gear byte: neutral must not read as reverse
+RS_TEST(ur_telemetry_gear_byte) {
+    auto byte_for = [](int gear) {
+        TelemetrySample s;
+        s.gear = gear;   // rs_core: 0 = R, 1 = N, 2 = 1st, ...
+        return pack_simhub_udp(s)[307];
+    };
+    test::check("reverse -> 0", byte_for(0) == 0);
+    test::check("neutral -> 1 like Forza (not 0, which dashes show as R)", byte_for(1) == 1);
+    test::check("1st -> 1, 2nd -> 2, 3rd -> 3", byte_for(2) == 1 && byte_for(3) == 2 && byte_for(4) == 3);
+    test::check("gears above 10 stay on the byte's 10", byte_for(14) == 10);
+}

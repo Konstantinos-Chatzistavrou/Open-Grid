@@ -6,7 +6,7 @@ finding was checked against the code before anything was changed; the ones that 
 regression test (`core/tests/test_ultrareview.cpp`, names `ur_*`) that was **checked to fail on the old code** by putting the
 original line back and rebuilding.
 
-Result: 120 of 120 CTest tests pass (103 existing + 17 new), the core also compiles clean as the single C++20 unit the Unreal
+Result: 121 of 121 CTest tests pass (103 existing + 18 new), the core also compiles clean as the single C++20 unit the Unreal
 build uses, and the new tests are clean under ASan + UBSan.
 
 ## Physics (chassis, tyres, suspension, road)
@@ -33,6 +33,7 @@ build uses, and the new tests are clean under ASan + UBSan.
 | One NaN / inf in telemetry poisoned the smoothers, solver and filters for good (both clamp helpers let NaN through) | NaN-safe clamps, last-finite-value sanitising where telemetry enters, a finite output guard and limiter guard | `ur_audio_non_finite` |
 | Blocks over ~6000 frames reallocated the solver batches on the audio thread | `renderStereo` works in chunks of at most 1024 frames | `ur_engine_audio_step_count` |
 | SimHub / Forza packet velocity was written in the world frame (the format wants the car's frame) | new `velocity_body`, packed instead | `ur_telemetry_velocity_frame` |
+| The SimHub gear byte sent neutral as 0, the same as reverse, so every dash showed "R" in neutral | Forza has no neutral value (reverse 0, forward gears 1-10, a stopped car reports 1), so neutral is now sent as 1; a dash derives "N" from the clutch byte and the speed. Source: the Forza note you pasted; the official page itself returned HTTP 403 for me | `ur_telemetry_gear_byte` |
 | SimHub packet power and torque were always 0 | torque from the clutch, power = torque x engine speed | `ur_telemetry_power_torque` |
 | MoTeC export stamped one fixed 60 Hz on samples recorded once per game frame (a 144 fps game gave a 2.4x too long trace), and kept every ~1 KB sample forever (~0.5 GB per hour) | `record()` resamples to the declared rate by `time_s` (skip when faster, hold when slower, no back-fill of pauses), stores only the 18 exported channels as float32 (about 15 MB per hour) and stops after one hour; lap beacons are relative to the first row | `ur_motec_time_base` |
 | Cylinder count and UE auto-voice were guessed from case-sensitive substrings of the car name: most cars got a V8 / 8 cylinders | every car file now has `engine.cylinders` and `engine.voice` (same ids as `catalog.json` `engineVoice` and `brands.ts`); `select_voice_for_car` uses it | `ur_engine_voice_data` |
@@ -54,8 +55,6 @@ These were fixed from reading the code; **nothing here was compiled** (no Unreal
 
 ## Not changed, and why
 
-- **Neutral shares byte 0 with reverse in the SimHub gear field.** True, but I could not confirm Forza's encoding for neutral
-  (the official page returned HTTP 403), so I did not guess. Check SimHub's Forza parser, then change `p[307]`.
 - **The WebAssembly build is not rebuilt.** There is no emscripten on this machine. The committed `rs_core.wasm` and the audio
   worklet still contain the old core until you run the usual emsdk build; the C++ here compiles as before.
 - **The engine-audio libraries are still not compiled by Unreal itself.** The build now fails early with a clear message instead
