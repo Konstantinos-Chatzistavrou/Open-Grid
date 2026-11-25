@@ -12,7 +12,7 @@ jobs:
     name: C++17 Physics Core + ASan/UBSan + CTest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure & Build rs_core (Release)
         run: |
           cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Release
@@ -32,7 +32,7 @@ jobs:
     name: C++ Core on Windows (MSVC) + Unreal-style single-unit compile
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure & Build rs_core (MSVC, Release)
         run: |
           cmake -S core -B core/build -A x64
@@ -55,10 +55,10 @@ jobs:
     name: Mod Validator, WebGPU Build & Cloud Worker
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - name: Validate Car Physics Assets (Anti-Cheat / Poly Bounds)
         run: node tools/validate_mod.mjs --dir data/cars
       - name: Licence ledgers (kit and car assets) and the CREDITS.md "Kit assets" section
