@@ -64,8 +64,8 @@ export interface AssistToggles {
   abs: boolean; tc: boolean; esc: boolean; autoGearbox: boolean;
   /** strengths (assists.ts levels): ABS / TC wheel-slip targets, countersteer gain; 0 / absent = core default / off */
   absSlip?: number; tcSlip?: number; countersteer?: number;
-  /** auto-clutch assist quality (default 'perfect'): 'off' = full manual clutch */
-  autoClutch?: 'off' | 'poor' | 'normal' | 'perfect';
+  /** auto-clutch assist (default 'perfect'): 'off' = you work a real clutch pedal */
+  autoClutch?: 'off' | 'perfect';
 }
 
 export interface CarInfo {
@@ -172,7 +172,7 @@ export class CoreCar {
     b[93] = assists.absSlip ?? 0; b[94] = assists.tcSlip ?? 0; b[95] = assists.countersteer ?? 0;
     b[92] = raw.directGear ?? -99;
     b[41] = raw.lineLock ?? 0;
-    b[40] = assists.autoClutch === 'off' ? -1 : assists.autoClutch === 'poor' ? 2 : assists.autoClutch === 'normal' ? 1 : 0;
+    b[40] = assists.autoClutch === 'off' ? -1 : 0;
     mod!._rs_step(this.id, dt);
     return b;
   }
@@ -217,7 +217,7 @@ export class CoreCar {
     b[93] = assists.absSlip ?? 0; b[94] = assists.tcSlip ?? 0; b[95] = assists.countersteer ?? 0;
     b[92] = raw.directGear ?? -99;
     b[41] = raw.lineLock ?? 0;
-    b[40] = assists.autoClutch === 'off' ? -1 : assists.autoClutch === 'poor' ? 2 : assists.autoClutch === 'normal' ? 1 : 0;
+    b[40] = assists.autoClutch === 'off' ? -1 : 0;
   }
 
   /** Multi-point curb patch step: contacts12 = 12 x [hit, px, py, pz, nx, ny, nz, surface] (96 doubles). */
@@ -230,7 +230,7 @@ export class CoreCar {
     b[93] = assists.absSlip ?? 0; b[94] = assists.tcSlip ?? 0; b[95] = assists.countersteer ?? 0;
     b[92] = raw.directGear ?? -99;
     b[41] = raw.lineLock ?? 0;
-    b[40] = assists.autoClutch === 'off' ? -1 : assists.autoClutch === 'poor' ? 2 : assists.autoClutch === 'normal' ? 1 : 0;
+    b[40] = assists.autoClutch === 'off' ? -1 : 0;
     mod!._rs_step_patch(this.id, dt);
     return b;
   }

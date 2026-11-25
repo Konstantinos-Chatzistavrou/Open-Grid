@@ -11,7 +11,9 @@ import type { AssistToggles } from './physics/core';
 
 export type AbsLevel = 'off' | 'weak' | 'default';
 export type CounterLevel = 'off' | 'weak' | 'strong';
-export type AutoClutchLevel = 'off' | 'poor' | 'normal' | 'perfect';
+/** 'perfect': the car clutches for you (a dual-clutch / automatic box always does, whatever this says). 'off': you work a real clutch
+ * pedal (wheel + pedals). There is deliberately no sloppy-clutch choice: nobody wants a clutch that fails on purpose. */
+export type AutoClutchLevel = 'off' | 'perfect';
 export type LineMode = 'off' | 'braking' | 'full';
 export type Preset = 'beginner' | 'intermediate' | 'expert' | 'custom';
 export interface AssistSettings {
@@ -28,7 +30,7 @@ export interface AssistSettings {
 export const PRESETS: Record<Exclude<Preset, 'custom'>, Omit<AssistSettings, 'preset'>> = {
   beginner: { abs: 'default', tc: 5, stability: true, countersteer: 'strong', gearbox: 'auto', autoClutch: 'perfect', line: 'full' },
   intermediate: { abs: 'default', tc: 3, stability: true, countersteer: 'weak', gearbox: 'auto', autoClutch: 'perfect', line: 'braking' },
-  expert: { abs: 'weak', tc: 0, stability: false, countersteer: 'off', gearbox: 'manual', autoClutch: 'normal', line: 'off' },
+  expert: { abs: 'weak', tc: 0, stability: false, countersteer: 'off', gearbox: 'manual', autoClutch: 'perfect', line: 'off' },
 };
 export const PRESET_INFO: Record<Preset, string> = {
   beginner: 'Every aid on. The car helps you catch slides and shows where to brake.',
@@ -54,7 +56,9 @@ export function loadAssists(): AssistSettings {
       if (typeof s.stability === 'boolean') d.stability = s.stability;
       if (['off', 'weak', 'strong'].includes(s.countersteer)) d.countersteer = s.countersteer;
       if (s.gearbox === 'auto' || s.gearbox === 'manual') d.gearbox = s.gearbox;
-      if (['off', 'poor', 'normal', 'perfect'].includes(s.autoClutch)) d.autoClutch = s.autoClutch;
+      // 'poor' and 'normal' were removed: a setting saved with either becomes the clutch assist (they could wreck the gearbox)
+      if (s.autoClutch === 'off') d.autoClutch = 'off';
+      else if (['poor', 'normal', 'perfect'].includes(s.autoClutch)) d.autoClutch = 'perfect';
       if (['off', 'braking', 'full'].includes(s.line)) d.line = s.line;
     }
   } catch { /* storage blocked */ }
