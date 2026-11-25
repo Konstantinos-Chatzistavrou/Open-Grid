@@ -400,6 +400,8 @@
     "bias_front": 0.67
   },
   "engine": {
+    "cylinders": 8,
+    "voice": "v8_flatplane",
     "torque_curve": [
       [
         1000,

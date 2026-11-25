@@ -383,6 +383,7 @@
   },
   "engine": {
     "cylinders": 4,
+    "voice": "i4_turbo",
     "torque_curve": [
       [
         800,

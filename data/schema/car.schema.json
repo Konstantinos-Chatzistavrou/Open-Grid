@@ -31,7 +31,11 @@
     "engine": {
       "type": "object",
       "required": ["torque_curve", "idle_rpm", "redline_rpm", "inertia_kgm2", "friction_const_nm", "friction_linear_nm_per_radps"],
-      "properties": { "torque_curve": { "type": "array", "minItems": 2, "items": { "type": "array", "prefixItems": [{ "type": "number" }, { "type": "number" }] } } }
+      "properties": {
+        "torque_curve": { "type": "array", "minItems": 2, "items": { "type": "array", "prefixItems": [{ "type": "number" }, { "type": "number" }] } },
+        "cylinders": { "type": "integer", "minimum": 1, "description": "Firing pulses per two crank revolutions (a rotary counts its rotors x 2). Drives the exhaust firing frequency." },
+        "voice": { "enum": ["v8_crossplane", "v8_flatplane", "v8_supercharged", "v8_twin_turbo", "v12_na", "v10_screamer", "v6_tt", "flat6_na", "i6_forged", "rotary_4", "i4_turbo", "i5_turbo"], "description": "Engine sound id (same ids as data/cars/catalog.json engineVoice). Absent = guessed from the car name / cylinders." }
+      }
     },
     "drivetrain": {
       "type": "object",

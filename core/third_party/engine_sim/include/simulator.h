@@ -36,6 +36,11 @@ public:
     void releaseSimulation();
 
     virtual void startFrame(double dt);
+    // OpenGrid addition: run exactly `steps` solver steps this frame. startFrame(dt) rescales the step count by +-10 % to
+    // steer the synthesizer's input latency toward its target, which only makes sense when the synthesizer's own audio
+    // thread consumes that input. We read the solver's per-step outputs directly, so the rescaling would just detune the
+    // engine (it changes how much engine time each audio block covers).
+    void startFrameSteps(int steps);
     bool simulateStep();
     virtual double getTotalExhaustFlow() const;
     int readAudioOutput(int samples, int16_t *target);

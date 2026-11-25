@@ -118,6 +118,8 @@ public:
     EngineVoice voice() const;
     int sampleRate() const;
     float measuredRpm() const;
+    /** Solver steps run since initialize(): over any span it equals frames * simFrequency / sampleRate (a diagnostic / test hook). */
+    unsigned long long solverStepsRun() const;
     bool isInitialized() const;
 
     static EngineVoice parseVoice(const std::string& id);

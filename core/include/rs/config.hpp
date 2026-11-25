@@ -193,6 +193,7 @@ struct EngineParams {
     double friction_const = 20;       // N m, engine braking: T = c0 + c1 * omega (throttle off)
     double friction_linear = 0.03;    // N m / (rad/s)
     int cylinders = 8;                // cylinder count for 4-stroke primary exhaust pulse frequency (rpm * cyl / 120)
+    std::string voice;                // engine sound id from the car file ("v12_na", "flat6_na", ...); empty = guess from the name
 };
 
 // Physical dry friction clutch disc parameters.

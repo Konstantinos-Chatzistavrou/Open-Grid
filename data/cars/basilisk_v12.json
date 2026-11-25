@@ -400,6 +400,8 @@
     "bias_front": 0.67
   },
   "engine": {
+    "cylinders": 12,
+    "voice": "v12_na",
     "torque_curve": [
       [
         1000,

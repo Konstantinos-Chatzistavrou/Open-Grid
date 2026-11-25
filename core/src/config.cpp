@@ -305,6 +305,7 @@ CarConfig parse_car_config(const std::string& text) {
     c.engine.inertia = num(e, "inertia_kgm2", "engine");
     c.engine.friction_const = num(e, "friction_const_nm", "engine");
     c.engine.friction_linear = num(e, "friction_linear_nm_per_radps", "engine");
+    if (e.contains("voice") && e.at("voice").is_string()) c.engine.voice = e.at("voice").get<std::string>();
     if (e.contains("cylinders") && e.at("cylinders").is_number_integer()) {
         c.engine.cylinders = std::max(1, e.at("cylinders").get<int>());
     } else {

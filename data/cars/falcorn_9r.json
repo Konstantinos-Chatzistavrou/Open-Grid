@@ -400,6 +400,8 @@
     "bias_front": 0.66
   },
   "engine": {
+    "cylinders": 6,
+    "voice": "flat6_na",
     "torque_curve": [
       [
         1000,

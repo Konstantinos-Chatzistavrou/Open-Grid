@@ -36,12 +36,14 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846;
 
+// NaN-safe: a NaN fails every comparison, so `v < lo ? lo : (v > hi ? hi : v)` passed it straight through and one NaN
+// in a one-pole smoother or filter state never left. Here NaN becomes `lo`.
 inline float clampf(float v, float lo, float hi) {
-    return v < lo ? lo : (v > hi ? hi : v);
+    return !(v >= lo) ? lo : (v > hi ? hi : v);
 }
 
 inline double clampd(double v, double lo, double hi) {
-    return v < lo ? lo : (v > hi ? hi : v);
+    return !(v >= lo) ? lo : (v > hi ? hi : v);
 }
 
 // Fast lock-free xorshift32 PRNG for audio-thread air-rush / combustion micro-jitter
@@ -1328,9 +1330,10 @@ struct EngineAudioSynth::Impl {
         engine->setSpeedControl(clampd(static_cast<double>(thr), 0.03, 1.0));
         engine->getIgnitionModule()->m_enabled = !ignCut;
 
-        // Pass exact duration + 0.5-step epsilon so Simulator::startFrame(dt) NEVER truncates steps to 0!
-        const double dtFrame = (static_cast<double>(steps) + 0.5) / static_cast<double>(cfg.simFrequency);
-        sim->startFrame(dtFrame);
+        // Exactly `steps` solver steps: render() stretches this batch over the block's audio frames, so the step count IS
+        // the engine time the block covers. (Simulator::startFrame(dt) would change it by about +-10 % every block to steer
+        // the synthesizer's input latency, which nothing here consumes: the pitch would sit ~10 % low and jump every second.)
+        sim->startFrameSteps(steps);
         while (sim->simulateStep()) {
             outExL.push_back(static_cast<float>(sim->getLastExhaustLeft()));
             outExR.push_back(static_cast<float>(sim->getLastExhaustRight()));
@@ -1338,17 +1341,15 @@ struct EngineAudioSynth::Impl {
             outMech.push_back(static_cast<float>(sim->getLastMechPulse()));
         }
         sim->endFrame();
-
-        // Keep Synthesizer's internal buffer drained cleanly without running its slow O(N*M) convolution
-        if (sim->synthesizer().getLatency() > 256) {
-            int16_t trash[256];
-            sim->synthesizer().readAudioOutput(256, trash);
-        }
         measuredRpm = static_cast<float>(std::abs(engine->getRpm()));
     }
 
-    // Reusable scratch buffers (pre-reserved in init() -> zero heap allocations inside render loop!)
+    // Reusable scratch buffers (pre-reserved in init() -> zero heap allocations inside render loop!). One render() call covers
+    // at most kMaxRenderFrames frames, i.e. at most 1024 * 12000 / 22050 = 557 solver steps (the clamped config extremes), so
+    // the 1024 reserved in init() always suffices.
+    static constexpr int kMaxRenderFrames = 1024;
     std::vector<float> batchExL, batchExR, batchIn, batchMech;
+    unsigned long long solverStepsRun = 0;   // solver steps run since init (diagnostics / tests)
 
     void spawnPop(float intensity) {
         ExhaustPopVoice* slot = nullptr;
@@ -1630,6 +1631,7 @@ struct EngineAudioSynth::Impl {
         stepSolverBatch(nSteps, smoothRpm, std::max(0.05f, smoothThr), ctrl.ignitionCut,
                         batchExL, batchExR, batchIn, batchMech);
         const int actualSteps = static_cast<int>(batchExL.size());
+        solverStepsRun += static_cast<unsigned long long>(actualSteps);
 
         for (int i = 0; i < numFrames; ++i) {
             // Smooth camera perspective parameters (~40ms crossfade -> click-free mid-rev switching!)
@@ -1925,8 +1927,11 @@ struct EngineAudioSynth::Impl {
 
             // Dynamic overall master presence (clean 10-14 dB crest factor, strictly bounded [-1, 1] via tanh!)
             const float master = (0.42f + 0.36f * loadEff) * (0.76f + 0.24f * rpmNorm);
-            const float finalL = std::tanh((wideL + erL * reverbWet * curPersp.envRefGain + envWetL) * master);
-            const float finalR = std::tanh((wideR + erR * reverbWet * curPersp.envRefGain + envWetR) * master);
+            float finalL = std::tanh((wideL + erL * reverbWet * curPersp.envRefGain + envWetL) * master);
+            float finalR = std::tanh((wideR + erR * reverbWet * curPersp.envRefGain + envWetR) * master);
+            // Never hand a non-finite sample to the host (tanh(NaN) = NaN): silence beats a speaker-damaging burst.
+            if (!std::isfinite(finalL)) finalL = 0.0f;
+            if (!std::isfinite(finalR)) finalR = 0.0f;
 
             if (outL) outL[i] = finalL;
             if (outR) outR[i] = finalR;
@@ -1977,7 +1982,26 @@ void EngineAudioSynth::warmup(float seconds, float rpm, float throttle) {
 }
 
 void EngineAudioSynth::setControl(const EngineAudioControl& ctrl) {
-    impl_->ctrl = ctrl;
+    // Telemetry can be non-finite for a tick (a physics blow-up, a teleport). Keep the last finite value instead of letting
+    // a NaN into the smoothers, the solver's dyno and the filter states, where it would stay for good.
+    EngineAudioControl c = ctrl;
+    const EngineAudioControl& keep = impl_->ctrl;
+    auto fin = [](float& v, float last) { if (!std::isfinite(v)) v = last; };
+    fin(c.rpm, keep.rpm);
+    fin(c.throttle, keep.throttle);
+    fin(c.load, keep.load);
+    fin(c.boostBar, keep.boostBar);
+    fin(c.reverbMix, keep.reverbMix);
+    fin(c.tunnelReflection, keep.tunnelReflection);
+    fin(c.wallProximityL, keep.wallProximityL);
+    fin(c.wallProximityR, keep.wallProximityR);
+    fin(c.gearWhineLevel, keep.gearWhineLevel);
+    fin(c.gearWhineHz, keep.gearWhineHz);
+    fin(c.vehicleSpeedMps, keep.vehicleSpeedMps);
+    fin(c.wetRoadReflection, keep.wetRoadReflection);
+    fin(c.overpassReflection, keep.overpassReflection);
+    fin(c.camCrossoverFrac, keep.camCrossoverFrac);
+    impl_->ctrl = c;
 }
 
 void EngineAudioSynth::triggerExhaustPop(float intensity) {
@@ -1997,7 +2021,12 @@ void EngineAudioSynth::triggerOverrunBurble(float intensity) {
 }
 
 void EngineAudioSynth::renderStereo(float* outL, float* outR, int numFrames) {
-    impl_->render(outL, outR, numFrames);
+    // In chunks of at most kMaxRenderFrames, so the solver batches (reserved once in init) never reallocate on the audio
+    // thread however large a block the host asks for.
+    for (int off = 0; off < numFrames; off += Impl::kMaxRenderFrames) {
+        const int n = std::min(Impl::kMaxRenderFrames, numFrames - off);
+        impl_->render(outL ? outL + off : nullptr, outR ? outR + off : nullptr, n);
+    }
 }
 
 void EngineAudioSynth::renderMono(float* outMono, int numFrames) {
@@ -2015,6 +2044,7 @@ void EngineAudioSynth::renderMono(float* outMono, int numFrames) {
 EngineVoice EngineAudioSynth::voice() const { return impl_->cfg.voice; }
 int EngineAudioSynth::sampleRate() const { return impl_->cfg.sampleRate; }
 float EngineAudioSynth::measuredRpm() const { return impl_->measuredRpm; }
+unsigned long long EngineAudioSynth::solverStepsRun() const { return impl_->solverStepsRun; }
 bool EngineAudioSynth::isInitialized() const { return impl_->initialized; }
 
 EngineVoice EngineAudioSynth::parseVoice(const std::string& id) {

@@ -100,6 +100,11 @@ TelemetrySample make_telemetry_sample(
     s.engine_max_rpm = cfg.engine.redline_rpm > 0 ? cfg.engine.redline_rpm : 8000.0;
     s.engine_idle_rpm = cfg.engine.idle_rpm > 0 ? cfg.engine.idle_rpm : 900.0;
     s.gear = out.gear;
+    s.drivetrain_type = cfg.drivetrain.layout == "fwd" ? 0 : (cfg.drivetrain.layout == "awd" ? 2 : 1);
+    s.num_cylinders = cfg.engine.cylinders;
+    // Engine torque as delivered through the clutch (negative on engine braking, as Forza reports it) and the power it makes.
+    s.torque_nm = out.clutch_torque_nm;
+    s.power_w = s.torque_nm * out.engine_rpm * 2.0 * kPi / 60.0;
     s.throttle = out.throttle_applied;
     s.brake = out.brake_applied;
     s.clutch = input.clutch;
@@ -107,6 +112,7 @@ TelemetrySample make_telemetry_sample(
     s.steer = input.steer;
 
     s.velocity_world = chassis.velocity;
+    s.velocity_body = chassis.orientation.inv_rotate(chassis.velocity);
     s.angular_vel_body = chassis.orientation.inv_rotate(chassis.angular_velocity);
     s.accel_body_mps2 = out.accel;
     s.sideslip_rad = out.sideslip;
@@ -178,10 +184,11 @@ std::array<std::uint8_t, kSimHubPacketBytes> pack_simhub_udp(const TelemetrySamp
     put_f32(p, 24, static_cast<float>(s.accel_body_mps2.z));
     put_f32(p, 28, static_cast<float>(s.accel_body_mps2.x));
 
-    // Velocity world
-    put_f32(p, 32, static_cast<float>(-s.velocity_world.y));
-    put_f32(p, 36, static_cast<float>(s.velocity_world.z));
-    put_f32(p, 40, static_cast<float>(s.velocity_world.x));
+    // Velocity in the car's frame (Forza: X right, Y up, Z forward), the same mapping as the acceleration above. (The world
+    // frame would show part of the forward speed as sideways velocity whenever the car does not point along +X.)
+    put_f32(p, 32, static_cast<float>(-s.velocity_body.y));
+    put_f32(p, 36, static_cast<float>(s.velocity_body.z));
+    put_f32(p, 40, static_cast<float>(s.velocity_body.x));
 
     // Angular velocity body
     put_f32(p, 44, static_cast<float>(s.angular_vel_body.y));
@@ -213,8 +220,8 @@ std::array<std::uint8_t, kSimHubPacketBytes> pack_simhub_udp(const TelemetrySamp
     put_i32(p, 212, 1001);
     put_i32(p, 216, 4);    // S-class
     put_i32(p, 220, 820);
-    put_i32(p, 224, 1);    // RWD
-    put_i32(p, 228, 8);
+    put_i32(p, 224, s.drivetrain_type);   // 0 = FWD, 1 = RWD, 2 = AWD
+    put_i32(p, 228, s.num_cylinders);
 
     // Dash V2 extension (232..310)
     // Position X,Y,Z (232..243) = 0
@@ -313,16 +320,85 @@ bool UdpTelemetrySender::send(const TelemetrySample& sample) {
 
 // ---- MotecLogger (.ld binary + .ldx XML) --------------------------------------------------
 
+namespace {
+
+// The 18 channels of the .ld file, in file order. record() stores their values (float32) instead of whole TelemetrySamples.
+struct ChanDef {
+    const char* name;
+    const char* short_name;
+    const char* unit;
+    float (*extract)(const TelemetrySample&);
+};
+const ChanDef kChannels[] = {
+    {"Ground Speed", "Speed", "km/h", [](const TelemetrySample& s) { return static_cast<float>(std::fabs(s.speed_ms) * 3.6); }},
+    {"Engine RPM", "RPM", "rpm", [](const TelemetrySample& s) { return static_cast<float>(s.engine_rpm); }},
+    {"Throttle Pos", "Thr", "%", [](const TelemetrySample& s) { return static_cast<float>(s.throttle * 100.0); }},
+    {"Brake Pos", "Brk", "%", [](const TelemetrySample& s) { return static_cast<float>(s.brake * 100.0); }},
+    {"Steering Angle", "Steer", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.steer * 360.0); }},
+    {"Gear", "Gear", "", [](const TelemetrySample& s) { return static_cast<float>(s.gear - 1); }},
+    {"G Force Lat", "GLat", "G", [](const TelemetrySample& s) { return static_cast<float>(s.accel_body_mps2.y / kG); }},
+    {"G Force Long", "GLong", "G", [](const TelemetrySample& s) { return static_cast<float>(s.accel_body_mps2.x / kG); }},
+    {"Susp Pos FL", "SuspFL", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.susp_travel_m[0] * 1000.0); }},
+    {"Susp Pos FR", "SuspFR", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.susp_travel_m[1] * 1000.0); }},
+    {"Susp Pos RL", "SuspRL", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.susp_travel_m[2] * 1000.0); }},
+    {"Susp Pos RR", "SuspRR", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.susp_travel_m[3] * 1000.0); }},
+    {"Tire Temp FL", "TTmpFL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_c[0]); }},
+    {"Tire Temp FR", "TTmpFR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_c[1]); }},
+    {"Tire Temp RL", "TTmpRL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_c[2]); }},
+    {"Tire Temp RR", "TTmpRR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_c[3]); }},
+    {"Sideslip Angle", "Slip", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.sideslip_rad * kRadToDeg); }},
+    {"Yaw Rate", "YawR", "deg/s", [](const TelemetrySample& s) { return static_cast<float>(s.angular_vel_body.z * kRadToDeg); }},
+};
+constexpr std::size_t kNumChans = sizeof(kChannels) / sizeof(kChannels[0]);
+static_assert(kNumChans == MotecLogger::kChannelCount, "MotecLogger::kChannelCount must match the channel table");
+
+}  // namespace
+
 MotecLogger::MotecLogger(TelemetryMeta meta) : meta_(std::move(meta)) {}
 
 void MotecLogger::reset(TelemetryMeta meta) {
     meta_ = std::move(meta);
-    samples_.clear();
+    rows_.clear();
     beacons_.clear();
+    have_last_ = false;
+    last_row_ = Row{};
+    next_t_ = t0_ = 0.0;
+}
+
+double MotecLogger::log_rate_hz() const {
+    // What build_ld() writes into every channel header (integer Hz, 1..1000).
+    return static_cast<double>(std::clamp(std::lround(meta_.sample_rate_hz), 1L, 1000L));
+}
+
+std::size_t MotecLogger::max_rows() const {
+    return static_cast<std::size_t>(log_rate_hz() * kMaxSeconds);
 }
 
 void MotecLogger::record(const TelemetrySample& sample) {
-    samples_.push_back(sample);
+    if (rows_.size() >= max_rows()) return;   // full: keep what was recorded, do not grow without bound
+
+    Row row;
+    for (std::size_t c = 0; c < kNumChans; ++c) row[c] = kChannels[c].extract(sample);
+
+    const double dt = 1.0 / log_rate_hz();
+    constexpr double eps = 1e-6;   // s: a frame landing a hair early on the grid still counts as on it
+    if (!have_last_) {
+        have_last_ = true;
+        t0_ = next_t_ = sample.time_s;
+    }
+    // The exported time axis is rows * dt, so the rows must sit on that grid. A frame older than the next grid time adds
+    // nothing (the game runs faster than the log); a frame past it first fills the grid times it skipped with the value
+    // that was current then (the previous frame's row: slower than the log), then adds its own row on the grid.
+    if (sample.time_s - next_t_ > kMaxHoldSeconds) next_t_ = sample.time_s;   // pause / hitch: restart the grid, no back-fill
+    while (next_t_ < sample.time_s - eps && rows_.size() < max_rows()) {
+        rows_.push_back(last_row_);
+        next_t_ += dt;
+    }
+    if (next_t_ <= sample.time_s + eps && rows_.size() < max_rows()) {
+        rows_.push_back(row);
+        next_t_ += dt;
+    }
+    last_row_ = row;
 }
 
 void MotecLogger::mark_lap(double lap_end_time_s) {
@@ -334,37 +410,9 @@ std::vector<std::uint8_t> MotecLogger::build_ld() const {
     //   [0x0000 .. 0x06E1]  1762-byte main file header (magic 0x0040, event/venue/vehicle metadata)
     //   [meta_ptr ..]       linked list of 124-byte channel headers
     //   [data_ptr ..]       contiguous float32 channel sample arrays (datatype 0x07, 4 bytes/sample)
-    struct ChanDef {
-        const char* name;
-        const char* short_name;
-        const char* unit;
-        float (*extract)(const TelemetrySample&);
-    };
-    static const ChanDef kChannels[] = {
-        {"Ground Speed", "Speed", "km/h", [](const TelemetrySample& s) { return static_cast<float>(std::fabs(s.speed_ms) * 3.6); }},
-        {"Engine RPM", "RPM", "rpm", [](const TelemetrySample& s) { return static_cast<float>(s.engine_rpm); }},
-        {"Throttle Pos", "Thr", "%", [](const TelemetrySample& s) { return static_cast<float>(s.throttle * 100.0); }},
-        {"Brake Pos", "Brk", "%", [](const TelemetrySample& s) { return static_cast<float>(s.brake * 100.0); }},
-        {"Steering Angle", "Steer", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.steer * 360.0); }},
-        {"Gear", "Gear", "", [](const TelemetrySample& s) { return static_cast<float>(s.gear - 1); }},
-        {"G Force Lat", "GLat", "G", [](const TelemetrySample& s) { return static_cast<float>(s.accel_body_mps2.y / kG); }},
-        {"G Force Long", "GLong", "G", [](const TelemetrySample& s) { return static_cast<float>(s.accel_body_mps2.x / kG); }},
-        {"Susp Pos FL", "SuspFL", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.susp_travel_m[0] * 1000.0); }},
-        {"Susp Pos FR", "SuspFR", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.susp_travel_m[1] * 1000.0); }},
-        {"Susp Pos RL", "SuspRL", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.susp_travel_m[2] * 1000.0); }},
-        {"Susp Pos RR", "SuspRR", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.susp_travel_m[3] * 1000.0); }},
-        {"Tire Temp FL", "TTmpFL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_c[0]); }},
-        {"Tire Temp FR", "TTmpFR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_c[1]); }},
-        {"Tire Temp RL", "TTmpRL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_c[2]); }},
-        {"Tire Temp RR", "TTmpRR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_c[3]); }},
-        {"Sideslip Angle", "Slip", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.sideslip_rad * kRadToDeg); }},
-        {"Yaw Rate", "YawR", "deg/s", [](const TelemetrySample& s) { return static_cast<float>(s.angular_vel_body.z * kRadToDeg); }},
-    };
-
     constexpr std::size_t kHeaderSize = 1762;
     constexpr std::size_t kChanHdrSize = 124;
-    constexpr std::size_t kNumChans = sizeof(kChannels) / sizeof(kChannels[0]);
-    const std::size_t n_samples = samples_.size();
+    const std::size_t n_samples = rows_.size();
     const std::uint32_t meta_ptr = static_cast<std::uint32_t>(kHeaderSize);
     const std::uint32_t data_ptr = meta_ptr + static_cast<std::uint32_t>(kNumChans * kChanHdrSize);
     const std::size_t chan_bytes = n_samples * sizeof(float);
@@ -388,7 +436,7 @@ std::vector<std::uint8_t> MotecLogger::build_ld() const {
     put_str(b, 0x15E, 64, meta_.venue);
     put_str(b, 0x19E, 64, meta_.event);
 
-    const std::uint16_t freq = static_cast<std::uint16_t>(std::clamp(std::lround(meta_.sample_rate_hz), 1L, 1000L));
+    const std::uint16_t freq = static_cast<std::uint16_t>(log_rate_hz());
     for (std::size_t c = 0; c < kNumChans; ++c) {
         const std::uint32_t hdr_off = meta_ptr + static_cast<std::uint32_t>(c * kChanHdrSize);
         const std::uint32_t prev_ptr = c == 0 ? 0u : hdr_off - static_cast<std::uint32_t>(kChanHdrSize);
@@ -412,7 +460,7 @@ std::vector<std::uint8_t> MotecLogger::build_ld() const {
         put_str(b, hdr_off + 0x48, 12, kChannels[c].unit);
 
         for (std::size_t i = 0; i < n_samples; ++i) {
-            put_f32(b, static_cast<std::size_t>(c_data_ptr) + i * sizeof(float), kChannels[c].extract(samples_[i]));
+            put_f32(b, static_cast<std::size_t>(c_data_ptr) + i * sizeof(float), rows_[i][c]);
         }
     }
     return out;
@@ -427,7 +475,7 @@ std::string MotecLogger::build_ldx() const {
        << "      <MarkerBlock>\n"
        << "        <MarkerGroup Name=\"Beacons\" Index=\"" << beacons_.size() << "\">\n";
     for (std::size_t i = 0; i < beacons_.size(); ++i) {
-        const long long us = static_cast<long long>(std::llround(beacons_[i] * 1e6));
+        const long long us = static_cast<long long>(std::llround((beacons_[i] - t0_) * 1e6));   // the .ld starts at row 0
         ss << "          <Marker Version=\"100\" ClassName=\"BCN\" Name=\"Lap " << (i + 1)
            << "\" Flags=\"77\" Time=\"" << us << "\"/>\n";
     }

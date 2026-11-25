@@ -380,6 +380,8 @@
     "bias_front": 0.67
   },
   "engine": {
+    "cylinders": 6,
+    "voice": "v6_tt",
     "torque_curve": [
       [
         1000,

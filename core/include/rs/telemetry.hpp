@@ -6,6 +6,7 @@
 // Pure C++17, zero engine dependencies — compiles identically in standalone tests, WASM (MoTeC/packer),
 // and Unreal Engine 5 C++ plugins.
 #pragma once
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -35,16 +36,19 @@ struct TelemetrySample {
     double engine_rpm = 0.0;
     double engine_max_rpm = 8000.0;
     double engine_idle_rpm = 900.0;
-    double power_w = 0.0;
-    double torque_nm = 0.0;
+    double power_w = 0.0;    // W, torque_nm * engine speed (make_telemetry_sample: from the clutch torque; negative on engine braking)
+    double torque_nm = 0.0;  // N m, engine torque delivered through the clutch
     int gear = 1;            // 0 = R, 1 = N, 2 = 1st, ...
+    int drivetrain_type = 1; // Forza code: 0 = FWD, 1 = RWD, 2 = AWD (make_telemetry_sample: from the car's layout)
+    int num_cylinders = 8;   // firing pulses per two crank revolutions (make_telemetry_sample: from the car's engine)
     double throttle = 0.0;   // 0..1
     double brake = 0.0;      // 0..1
     double clutch = 0.0;     // 0..1
     double handbrake = 0.0;  // 0..1
     double steer = 0.0;      // -1..+1
 
-    Vec3 velocity_world{};
+    Vec3 velocity_world{};   // m/s, world frame
+    Vec3 velocity_body{};    // m/s, the car's frame (X forward, Y left, Z up): what the Forza / SimHub packet carries
     Vec3 angular_vel_body{};
     Vec3 accel_body_mps2{};  // longitudinal X, lateral Y, vertical Z (m/s^2)
     double yaw_rad = 0.0;
@@ -135,28 +139,48 @@ private:
 };
 
 /// MoTeC i2 Pro (.ld binary + .ldx XML beacon) recorder & exporter.
+///
+/// The log has a FIXED time base: every channel is written at meta.sample_rate_hz (60 Hz by default). record() is meant to be
+/// called once per game frame at whatever rate the game runs, and resamples to that time base by TelemetrySample::time_s:
+/// frames that arrive faster than the log rate are skipped, slower ones are zero-order held, so the exported time axis is
+/// right at any (even varying) frame rate. Only the 18 exported channels are stored (as float32), and the log stops growing
+/// after kMaxSeconds, so it can stay on for a whole session.
 class MotecLogger {
 public:
+    static constexpr std::size_t kChannelCount = 18;   // channels in the .ld file
+    static constexpr double kMaxSeconds = 3600.0;      // a log never holds more than this much time
+    static constexpr double kMaxHoldSeconds = 0.5;     // a longer gap (pause, hitch) is not back-filled with held rows
+
     explicit MotecLogger(TelemetryMeta meta = {});
 
     void reset(TelemetryMeta meta = {});
     void record(const TelemetrySample& sample);
+    /// Lap end in the same time base as TelemetrySample::time_s.
     void mark_lap(double lap_end_time_s);
 
-    std::size_t sample_count() const { return samples_.size(); }
+    std::size_t sample_count() const { return rows_.size(); }
+    bool full() const { return rows_.size() >= max_rows(); }
     const std::vector<double>& lap_beacons() const { return beacons_; }
 
     /// Build complete MoTeC i2 Pro binary `.ld` payload in memory.
     std::vector<std::uint8_t> build_ld() const;
-    /// Build matching MoTeC `.ldx` XML lap-beacon sidecar file.
+    /// Build matching MoTeC `.ldx` XML lap-beacon sidecar file (beacon times are relative to the first recorded sample).
     std::string build_ldx() const;
     /// Write both `<base_path>.ld` and `<base_path>.ldx` to disk.
     bool write_files(const std::string& base_path) const;
 
 private:
+    using Row = std::array<float, kChannelCount>;
+    std::size_t max_rows() const;
+    double log_rate_hz() const;
+
     TelemetryMeta meta_;
-    std::vector<TelemetrySample> samples_;
+    std::vector<Row> rows_;
     std::vector<double> beacons_;
+    bool have_last_ = false;
+    Row last_row_{};
+    double next_t_ = 0.0;   // time of the next row on the fixed time base
+    double t0_ = 0.0;       // time of the first row
 };
 
 }  // namespace rs

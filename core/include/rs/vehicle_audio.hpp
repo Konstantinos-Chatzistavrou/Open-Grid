@@ -41,8 +41,9 @@ constexpr float kPiF = 3.14159265358979323846f;
 constexpr float kTwoPiF = 6.28318530717958647692f;
 constexpr float kSpeedOfSoundMps = 343.0f;
 
+// NaN-safe (NaN -> lo): `v < lo ? lo : (v > hi ? hi : v)` returned a NaN unchanged.
 inline float clampf(float v, float lo, float hi) {
-    return v < lo ? lo : (v > hi ? hi : v);
+    return !(v >= lo) ? lo : (v > hi ? hi : v);
 }
 
 struct FastRng {
@@ -145,8 +146,9 @@ public:
     }
 
     inline void process(float& ioL, float& ioR) {
-        const float inL = ioL;
-        const float inR = ioR;
+        // A non-finite sample would poison the envelope and gain state (every later comparison is false): treat it as silence.
+        const float inL = std::isfinite(ioL) ? ioL : 0.0f;
+        const float inR = std::isfinite(ioR) ? ioR : 0.0f;
         const float peak = std::max(std::abs(inL), std::abs(inR));
 
         if (peak > envPeak_) envPeak_ = peak + attackCoeff_ * (envPeak_ - peak);
@@ -332,6 +334,9 @@ private:
 // 2. Car-to-EngineVoice Automatic Mapper
 // =============================================================================
 inline EngineVoice select_voice_for_car(const CarConfig& cfg) {
+    // The car file names its engine sound (the same ids as data/cars/catalog.json "engineVoice" and the web build): that is
+    // authoritative. Only a car without one is guessed from its name and cylinder count below.
+    if (!cfg.engine.voice.empty()) return EngineAudioSynth::parseVoice(cfg.engine.voice);
     const std::string& n = cfg.name;
     if (n.find("Rotary") != std::string::npos || n.find("Kurogane") != std::string::npos || n.find("26B") != std::string::npos)
         return EngineVoice::Rotary4;
@@ -420,6 +425,57 @@ struct VehicleAudioTelemetry {
     bool external_wastegate = false;
 
     std::array<WheelAudioTelemetry, 4> wheels{};
+
+    /** This telemetry with every non-finite float replaced by the same field of `last` (the last accepted values). */
+    VehicleAudioTelemetry sanitized(const VehicleAudioTelemetry& last) const {
+        VehicleAudioTelemetry t = *this;
+        auto fin = [](float& v, float keep) { if (!std::isfinite(v)) v = keep; };
+        fin(t.rpm, last.rpm);
+        fin(t.redline_rpm, last.redline_rpm);
+        fin(t.throttle, last.throttle);
+        fin(t.brake, last.brake);
+        fin(t.load, last.load);
+        fin(t.boost_bar, last.boost_bar);
+        fin(t.gear_whine_hz, last.gear_whine_hz);
+        fin(t.gear_whine_level, last.gear_whine_level);
+        fin(t.driveline_clunk_nm, last.driveline_clunk_nm);
+        fin(t.tc_slip_ratio, last.tc_slip_ratio);
+        fin(t.tc_torque_ratio, last.tc_torque_ratio);
+        fin(t.speed_mps, last.speed_mps);
+        fin(t.sideslip_rad, last.sideslip_rad);
+        fin(t.last_impact_kj, last.last_impact_kj);
+        fin(t.reverb_mix, last.reverb_mix);
+        fin(t.tunnel_reflection, last.tunnel_reflection);
+        fin(t.wall_proximity_l, last.wall_proximity_l);
+        fin(t.wall_proximity_r, last.wall_proximity_r);
+        fin(t.overpass_reflection, last.overpass_reflection);
+        fin(t.road_water_mm, last.road_water_mm);
+        fin(t.street_marbles, last.street_marbles);
+        for (int w = 0; w < 4; ++w) {
+            WheelAudioTelemetry& a = t.wheels[w];
+            const WheelAudioTelemetry& b = last.wheels[w];
+            fin(a.load_n, b.load_n);
+            fin(a.slip_ratio, b.slip_ratio);
+            fin(a.slip_angle_rad, b.slip_angle_rad);
+            fin(a.angular_velocity, b.angular_velocity);
+            fin(a.radius_m, b.radius_m);
+            fin(a.surface_temp_c, b.surface_temp_c);
+            fin(a.brake_temp_c, b.brake_temp_c);
+            fin(a.pressure_kpa, b.pressure_kpa);
+            fin(a.flat_spot_depth_mm, b.flat_spot_depth_mm);
+            fin(a.rim_strike_force_n, b.rim_strike_force_n);
+            fin(a.puncture_leak_rate, b.puncture_leak_rate);
+            fin(a.marble_pickup, b.marble_pickup);
+            fin(a.hydroplaning_lift, b.hydroplaning_lift);
+            fin(a.kerb_load_ratio, b.kerb_load_ratio);
+            fin(a.surface_excitation, b.surface_excitation);
+            fin(a.cavity_mode_low_hz, b.cavity_mode_low_hz);
+            fin(a.cavity_mode_high_hz, b.cavity_mode_high_hz);
+            fin(a.cavity_ring_gain, b.cavity_ring_gain);
+            fin(a.tread_pitch_hz, b.tread_pitch_hz);
+        }
+        return t;
+    }
 
     static VehicleAudioTelemetry from_vehicle_output(const VehicleOutput& out, const CarConfig& cfg,
                                                      const std::array<int, 4>& wheel_surfaces = {0, 0, 0, 0},
@@ -528,7 +584,11 @@ public:
         }
     }
 
-    void setTelemetry(const VehicleAudioTelemetry& t) {
+    void setTelemetry(const VehicleAudioTelemetry& incoming) {
+        // A non-finite value for one tick (a physics blow-up, a teleport) must not reach the smoothers, phases and filters,
+        // where it would stay for good: keep the last finite value of that field instead.
+        const VehicleAudioTelemetry t = incoming.sanitized(tel_);
+
         // Detect rising edges for physical one-shot acoustic events!
         if (t.bov_venting && !prevBov_) engine_.triggerTurboFlutter(std::max(0.4f, t.boost_bar));
         prevBov_ = t.bov_venting;

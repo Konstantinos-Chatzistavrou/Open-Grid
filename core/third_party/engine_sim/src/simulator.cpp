@@ -92,6 +92,24 @@ void Simulator::startFrame(double dt) {
     }
 }
 
+void Simulator::startFrameSteps(int steps) {
+    if (m_engine == nullptr) {
+        m_steps = 0;
+        return;
+    }
+
+    m_simulationStart = std::chrono::steady_clock::now();
+    m_currentIteration = 0;
+    m_synthesizer.setInputSampleRate(m_simulationFrequency * m_simulationSpeed);
+    m_steps = steps > 0 ? steps : 0;
+
+    if (m_steps > 0) {
+        for (int i = 0; i < m_engine->getIntakeCount(); ++i) {
+            m_engine->getIntake(i)->m_flowRate = 0;
+        }
+    }
+}
+
 bool Simulator::simulateStep() {
     if (getCurrentIteration() >= simulationSteps()) {
         auto s1 = std::chrono::steady_clock::now();

@@ -400,6 +400,8 @@
     "bias_front": 0.67
   },
   "engine": {
+    "cylinders": 8,
+    "voice": "rotary_4",
     "torque_curve": [
       [
         1000,

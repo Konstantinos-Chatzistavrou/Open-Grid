@@ -400,6 +400,8 @@
     "bias_front": 0.64
   },
   "engine": {
+    "cylinders": 10,
+    "voice": "v10_screamer",
     "torque_curve": [
       [
         1000,
