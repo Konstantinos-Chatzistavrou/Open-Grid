@@ -234,11 +234,13 @@ function stepOnce(dt: number): void {
   intersectGroundPlanes(b);
   b.set(contactsPatch, 280);
 
-  // Auto-gearbox neutral-to-1st kick matching CarBody.tick
+  // Auto-gearbox neutral-to-1st kick: the same rule as CarBody.tick (world.ts). Only when the car is nearly stopped and the box is
+  // not grinding: a car rolling through neutral in the middle of a normal shift (the synchro model passes through it) must not get
+  // a shiftUp, or each shift is pushed one gear higher again and fails (a spiral that ended in a 0 % gearbox stuck in neutral).
   const autoGear = assists[3] > 0.5;
   const curGear = Math.round(b[104] || 1);
   let shiftUp = shiftUpPending;
-  if (autoGear && curGear === 1 && raw[1] > 0.05 && raw[2] < 0.1) shiftUp = true;
+  if (autoGear && curGear === 1 && Math.abs(b[102]) < 1.0 && !(b[279] > 0.5) && raw[1] > 0.05 && raw[2] < 0.1) shiftUp = true;
 
   b[80] = raw[0]; b[81] = raw[1]; b[82] = raw[2]; b[83] = raw[3]; b[84] = raw[4];
   b[85] = shiftUp ? 1 : 0;
