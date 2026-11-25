@@ -7,10 +7,10 @@
     "export-cars": "node export_cars_for_ue.mjs"
   },
   "dependencies": {
-    "@gltf-transform/core": "4.1.1",
-    "@gltf-transform/extensions": "4.1.1",
+    "@gltf-transform/core": "4.5.1",
+    "@gltf-transform/extensions": "4.5.1",
     "@gltf-transform/functions": "4.5.1",
-    "meshoptimizer": "0.22.0",
+    "meshoptimizer": "1.3.0",
     "sharp": "0.35.5"
   }
 }
