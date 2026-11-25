@@ -1,7 +1,7 @@
 // Vehicle model: suspension, tyres, drivetrain, brakes, aero.
 //
 // HOW AN ENGINE USES IT (Godot wrapper in Phase 2, or the headless Simulation in tests):
-//   every physics tick (e.g. 240 Hz):
+//   every physics tick (e.g. 400 Hz):
 //     1. rays = vehicle.wheel_rays(chassis)          -> engine casts 4 rays
 //     2. out  = vehicle.update(chassis, contacts, dt) -> engine applies out.force / out.torque
 //                                                        at the CG, plus gravity, and integrates
@@ -272,7 +272,7 @@ private:
     DamageState damage_;
     DamageModel damage_model_;
     double time_ = 0;
-    double last_dt_ = 1.0 / 240.0;
+    double last_dt_ = 1.0 / 400.0;
     AssistSettings assists_;
     std::array<double, 4> abs_pressure_{1, 1, 1, 1};
     double tc_cut_ = 0;

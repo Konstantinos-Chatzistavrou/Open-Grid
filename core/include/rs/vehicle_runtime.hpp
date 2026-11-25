@@ -1,7 +1,7 @@
 // Threaded vehicle runtime: rs::Vehicle on a physics thread, driven and read from a game / render thread through
 // lock-free rings (header-only, C++17, std::thread only; no engine dependencies).
 //
-//   game / render thread                         physics thread (fixed rate: 1000, 360 or 240 Hz)
+//   game / render thread                         physics thread (fixed rate: 1000, 400, 360 or 240 Hz)
 //   --------------------                         ----------------------------------------------
 //   submit(VehicleCommand)  --SpscRing-->        step(chassis, contacts, dt):
 //   submit_impact(...)      --SpscRing-->          apply due commands, crash impulses

@@ -141,9 +141,11 @@ int main(int argc, char** argv) {
     const rs::CarConfig cfg = rs::load_car_config(path);
     std::printf("Native C++17 rs_core runtime benchmark (16 cars, all web/AAA features on, %s)\n", path);
     bench_rate(cfg, 16, 1000, 3.0, true);
+    bench_rate(cfg, 16, 400, 3.0, true);
     bench_rate(cfg, 16, 360, 3.0, true);
     bench_rate(cfg, 16, 240, 3.0, true);
     bench_rate(cfg, 16, 1000, 3.0, false);
+    bench_rate(cfg, 16, 400, 3.0, false);
     bench_rate(cfg, 16, 360, 3.0, false);
     return 0;
 }

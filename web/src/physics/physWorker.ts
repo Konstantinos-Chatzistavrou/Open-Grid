@@ -1,4 +1,4 @@
-// Dedicated Web Worker running rs_core WASM + 6-DOF rigid-body integration at a fixed rate (240 / 360 / 1000 Hz)
+// Dedicated Web Worker running rs_core WASM + 6-DOF rigid-body integration at a fixed rate (400 / 360 / 1000 Hz)
 // behind ?physworker=1. Communicates with the main thread exclusively through lock-free SharedArrayBuffer + Atomics
 // SPSC ring buffers (no postMessage allocations per tick).
 //
@@ -59,7 +59,7 @@ let Ix = 2400, Iy = 2600, Iz = 600;
 
 let cmdRing: SabSpscRing | null = null;
 let snapRing: SabSpscRing | null = null;
-let rateHz = 240;
+let rateHz = 400;
 let running = false;
 
 // Chassis state (three.js Y-up, origin = CG)

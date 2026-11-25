@@ -5,11 +5,11 @@
 // in the core, finds the ground under each ray, steps rs::Vehicle and applies the resulting force and torque at the CG.
 //
 // Two stepping paths:
-//   - Async physics tick (default, needs Project Settings > Physics > "Tick Physics Async"): the core runs once per
-//     fixed physics step on the physics thread with fresh body state. Line traces stay on the game thread: every frame
-//     the component traces the latest rays and caches the ground plane under each one; the physics thread intersects
-//     its fresh rays with those planes. That keeps suspension compression exact between frames without physics-thread
-//     scene queries.
+//   - Async physics tick (default, needs Project Settings > Physics > "Tick Physics Async" at 400 Hz / 0.0025 s):
+//     the core runs once per fixed physics step on the physics thread with fresh body state. Line traces stay on the game
+//     thread: every frame the component traces the latest rays and caches the ground plane under each one; the physics
+//     thread intersects its fresh rays with those planes. That keeps suspension compression exact between frames without
+//     physics-thread scene queries.
 //   - Frame tick (fallback when async physics is off): one trace + one step per rendered frame, dt capped at 1/30 s.
 //     Handling then depends on frame rate; use it only to get something on screen.
 #pragma once

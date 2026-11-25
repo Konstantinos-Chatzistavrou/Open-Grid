@@ -468,7 +468,7 @@ async function main() {
   let core = new CoreCar(coreJson());
   core.setTurboStage(turboStageOf());
   // Optional SharedArrayBuffer + Atomics Web Worker physics prototype (?physworker=1, default OFF).
-  const physWorkerRate = Math.max(60, Math.min(1000, Math.round(num('physrate', 240))));
+  const physWorkerRate = Math.max(60, Math.min(1000, Math.round(num('physrate', 400))));
   const physWorker = params.get('physworker') === '1'
     ? await PhysicsWorkerClient.create(coreJson(), physWorkerRate)
     : null;
@@ -1209,7 +1209,7 @@ async function main() {
     + (party ? ` · party ${party.code} · ${party.members.length} driver${party.members.length > 1 ? 's' : ''}` : ''));
   setExtra();
 
-  // --- loop: fixed 240 Hz physics, render every frame -----------------------------------------
+  // --- loop: fixed 400 Hz physics, render every frame -----------------------------------------
   let acc = 0, prev = performance.now(), ticks = 0;
   const frameTimes: number[] = [];
   // Graphics tuning. It runs ONLY from the title menu, behind an opaque cover (menu.ts), so no
@@ -2976,7 +2976,7 @@ async function main() {
     prev = now;
     const inShowroom = isShowroom(state);
     const frozenByCreator = photoMode.active || replay.active || raceNodes.matchmaking || carMeet.walking;
-    const live = state !== 'paused' && !frozenByCreator && (!inShowroom || settledShowroom < 24);
+    const live = state !== 'paused' && !frozenByCreator && (!inShowroom || settledShowroom < 40);
     // Slow-motion 0.22x time scale during totaled Crash Cinematic before entering Spectate
     const simDt = crashCineT > 0 ? frame * 0.22 : frame;
     if (live) acc += simDt; else acc = 0;
@@ -3024,7 +3024,7 @@ async function main() {
         const a = stepAcc.set(v.x - lastVel.x, v.y - lastVel.y, v.z - lastVel.z).divideScalar(dtSpan);
         lastVel.set(v.x, v.y, v.z);
         carAcc.lerp(a.clampLength(0, 60), 1 - Math.exp(-dtSpan / 0.025));
-        ticks += drained * (240 / physWorker.rateHz);
+        ticks += drained * (1 / (DT * physWorker.rateHz));
         steps = drained;
       }
       if (workerLive) {
@@ -3042,7 +3042,7 @@ async function main() {
         car.body.setAngvel(physWorker.currAngVel, true);
       }
       acc = 0;
-    } else while (acc >= DT && steps < 24) {
+    } else while (acc >= DT && steps < 40) {
       prevPos.copy(physPos);
       prevQuat.copy(physQuat);
       if (splitActive && p2Car) {
@@ -3124,7 +3124,7 @@ async function main() {
       if (lt !== lastLaunchText) launchEl.textContent = lastLaunchText = lt;
     }
     prof.sim += performance.now() - tSim;
-    if (!physWorker && steps === 24) acc = 0;   // too slow to keep up: drop time rather than spiral
+    if (!physWorker && steps === 40) acc = 0;   // too slow to keep up: drop time rather than spiral
     const alpha = physWorker && !inShowroom && !splitActive ? physWorker.alpha(now) : Math.min(1, acc / DT);
     pos.lerpVectors(prevPos, physPos, alpha);
     quat.slerpQuaternions(prevQuat, physQuat, alpha);
@@ -3138,7 +3138,7 @@ async function main() {
     heatEl.hidden = raceLaps() === 0 && driving();
     if (!copsOnNow && cops.active) cops.breakOff();
     playerS = cops.nearest(pos, playerS);
-    if (state === 'race' && copsOnNow && !copSpawned && ticks > 360) {
+    if (state === 'race' && copsOnNow && !copSpawned && ticks * DT > 1.5) {
       copSpawned = true;
       cops.spawn(playerS, pos, Math.max(1, heat.level));
     }
@@ -3224,7 +3224,7 @@ async function main() {
         p2Visual.update(p2Pos, p2Quat, p2Car.out, p2PrevPos, p2PrevQuat);
         p2Visual.setExhaustFlame(p2Car.nosThrustN > 0 ? 1.25 : 0, p2Car.nosThrustN > 0, worldClock.wetness);
       }
-      if (!inShowroom || settledShowroom <= 24) {
+      if (!inShowroom || settledShowroom <= 40) {
         ai.update(alpha, camera);
         damage.update(live ? frame : 0, () => core.damage());
       }

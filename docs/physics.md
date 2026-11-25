@@ -77,8 +77,8 @@ rim soak, thermal wear acceleration, late-stint slick wear cliff, flat-spot grip
 - **24-node deformable flexible-ring carcass (`CarcassRing`, `core/src/tire.cpp`)**: each tyre runs a 24-node circumferential belt ring on a
   pressurized viscoelastic sidewall foundation (radial, lateral, and tangential DOFs per node, pneumatic membrane tension, steel-belt bending,
   hoop-restored centrifugal radial growth of ~3.3 mm at 300 km/h, and direct viscoelastic flexing hysteresis into the carcass thermal node).
-  Measured CPU cost (`rs_bench`, 8 cars at 240 Hz on i3-1315U): `BASELINE` physics 37.60 us/car/tick (1.731 ms/frame total for 8 cars),
-  `MAXED AAA` physics 46.07 us/car/tick (2.418 ms/frame total for 8 cars — ~+0.6 ms/frame vs pre-carcass baseline).
+  Measured CPU cost (`rs_bench`, 8 cars at 400 Hz on i3-1315U): `BASELINE` physics 21.94 us/car/tick (1.994 ms/frame total for 8 cars),
+  `MAXED AAA` physics 29.17 us/car/tick (3.114 ms/frame total for 8 cars); `rs_bench_runtime` 16 cars 3-ray AAA at 400 Hz: 18.67 us/step/car (1.99 ms @60fps, 11.9 % of 1 core).
 - **Flat spots**: ground directly into the 24 rotating belt nodes; reduce both steady and instantaneous contact-patch grip, modulate vertical
   wheel load and chassis vertical acceleration once per revolution on all four wheels, and excite steering torque (fronts) and cavity acoustics.
 - **Sidewall rollover, bead & rim kerb strike**: under-inflation, punctures, or lateral kerb strikes roll the belt over onto the un-treaded
@@ -90,15 +90,16 @@ rim soak, thermal wear acceleration, late-stint slick wear cliff, flat-spot grip
 
 ## 1. Integration architecture
 - The engine integrates the chassis rigid body (so collisions work) at a fixed physics tick
-  (target 240 Hz). Each tick: `wheel_rays()` -> engine raycasts -> `update(chassis, contacts, dt)`
+  (target 400 Hz, 2.5 ms). Each tick: `wheel_rays()` -> engine raycasts -> `update(chassis, contacts, dt)`
   -> engine applies `force`/`torque` at the CG plus gravity.
 - Inside `update()`, the stiff rotating parts (4 wheel spins, engine, clutch, diffs, tyre slip
-  states) are sub-stepped at h <= 1 ms (5 sub-steps at 240 Hz) with the chassis velocity frozen.
+  states) are sub-stepped at h <= 1 ms (3 sub-steps = 1,200 Hz at 400 Hz) with the chassis velocity frozen,
+  and the 24-node deformable carcass ring sub-steps at h <= 0.5 ms (2,400 Hz).
   Tyre forces are averaged over the sub-steps.
 - Headless `Simulation` (tests) integrates the chassis with semi-implicit Euler:
   `v += F/m dt`, Euler's equations in body axes `I dw/dt = tau - w x (I w)`,
   `dq/dt = 1/2 (0, w) q`, then `x += v dt`.
-- Verified: braking distance differs by 0.1 % between 240 Hz and 1000 Hz.
+- Verified (`timestep` test): braking distance is 39.403 m @240 Hz, 39.405 m @400 Hz, 39.406 m @1000 Hz (0.0025 % between 400 Hz and 1000 Hz).
 
 ## 2. Suspension (per wheel, raycast)
 - Ray from the top mount along body -Z, length = spring free length + tyre radius.

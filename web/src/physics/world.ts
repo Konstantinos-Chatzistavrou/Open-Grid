@@ -6,7 +6,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three/webgpu';
 import { CoreCar, OUT, type AssistToggles, type RawInput } from './core';
 
-export const DT = 1 / 240;
+export const DT = 1 / 400;
 
 // Collision groups ((membership << 16) | filter): cars never collide with their own debris, so a
 // bumper that breaks off inside the car's hull doesn't register as a second crash.

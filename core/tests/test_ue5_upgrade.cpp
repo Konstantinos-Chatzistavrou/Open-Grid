@@ -33,7 +33,7 @@ RS_TEST(ue5_upgrade) {
         wot.gear = 4;
         wot.auto_clutch = true;
 
-        for (int i = 0; i < 180; ++i) { // 0.75 s at WOT
+        for (int i = 0; i < 300; ++i) { // 0.75 s at WOT (400 Hz)
             sim_na.step(wot);
             sim_turbo.step(wot);
         }
@@ -66,7 +66,7 @@ RS_TEST(ue5_upgrade) {
         in_nos.nos = true;
 
         const double start_nos = sim_nos.vehicle.engine_systems().nos_bottles_l;
-        for (int i = 0; i < 120; ++i) {
+        for (int i = 0; i < 200; ++i) { // 0.50 s at 400 Hz
             sim_dry.step(in_dry);
             sim_nos.step(in_nos);
         }
@@ -92,7 +92,7 @@ RS_TEST(ue5_upgrade) {
         wot.auto_clutch = true;
 
         bool saw_misfire = false;
-        for (int i = 0; i < 120; ++i) {
+        for (int i = 0; i < 200; ++i) { // 0.50 s at 400 Hz
             sim_healthy.step(wot);
             sim_worn.step(wot);
             if (sim_worn.last.engine_misfire) saw_misfire = true;
@@ -258,7 +258,7 @@ RS_TEST(ue5_upgrade) {
         wot.throttle = 1.0;
         wot.gear = 4;
         wot.auto_clutch = true;
-        for (int i = 0; i < 180; ++i) sim_f.step(wot);
+        for (int i = 0; i < 300; ++i) sim_f.step(wot); // 0.75 s at 400 Hz
 
         test::check("turbo boost heats intake air temperature (IAT) & WOT load burns fuel",
                     sim_f.last.intake_air_temp_c > start_iat + 4.0 && sim_f.last.fuel_liters < start_fuel - 0.001);

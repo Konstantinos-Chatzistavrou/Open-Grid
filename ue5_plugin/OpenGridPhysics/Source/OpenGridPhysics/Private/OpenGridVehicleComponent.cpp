@@ -377,7 +377,7 @@ int32 UOpenGridVehicleComponent::TraceGroundStrips(UPrimitiveComponent* Body, fl
     const int32 Lanes = FMath::Clamp(GroundStripLanes, 1, 5);
     const int32 MaxSamples = FMath::Clamp(GroundStripMaxSamples, 4, 256);
     // Cover where the wheel will be until the next frame (this frame's dt as the estimate, plus half again).
-    const double Horizon = FMath::Max(static_cast<double>(FrameDt), 1.0 / 240.0) * 1.5;
+    const double Horizon = FMath::Max(static_cast<double>(FrameDt), 1.0 / 400.0) * 1.5;
     constexpr double Behind = 0.30, Margin = 0.30;   // m: the 3-ray patch and 16-point footprint reach ~0.15-0.3 m
 
     int32 Traces = 0;

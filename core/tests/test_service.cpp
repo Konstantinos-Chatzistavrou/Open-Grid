@@ -27,7 +27,7 @@ RS_TEST(service) {
     Vec3 prev_inertia = inertia_spec;
     bool mono_mass = true;
     bool mono_inertia = true;
-    for (int i = 0; i < 240 * 5; ++i) {
+    for (int i = 0; i < 400 * 5; ++i) {
         burn.step(wot);   // 5 s
         if (burn.last.mass_kg > prev_mass + 1e-12) mono_mass = false;
         if (burn.last.effective_inertia.x > prev_inertia.x + 1e-12 ||
@@ -58,7 +58,7 @@ RS_TEST(service) {
     dry.vehicle.engine_systems().fuel_consumption_enabled = true;
     dry.vehicle.engine_systems().fuel_liters = 0.0;
     dry.reset({}, 0.0, 20.0, 3);
-    for (int i = 0; i < 240 * 2; ++i) dry.step(wot);
+    for (int i = 0; i < 400 * 2; ++i) dry.step(wot);
     test::check("empty tank: full throttle does not accelerate", dry.last.speed < 20.0);
 
     // 3. Service refuels and restores the engine
@@ -68,7 +68,7 @@ RS_TEST(service) {
                 dry.vehicle.engine_systems().fuel_liters == dry.vehicle.engine_systems().fuel_capacity_liters);
     test::check("service restores engine health", dry.vehicle.engine_systems().engine_health == 1.0);
     const double v0 = dry.last.speed;
-    for (int i = 0; i < 240 * 2; ++i) dry.step(wot);
+    for (int i = 0; i < 400 * 2; ++i) dry.step(wot);
     test::check("after service the car accelerates again", dry.last.speed > v0 + 2.0);
 
     // 4. Fuel weight: the spec mass is with a full tank; an almost empty tank makes the car lighter and quicker
@@ -81,7 +81,7 @@ RS_TEST(service) {
     wot5.gear = 6;
     full.reset({}, 0.0, 30.0, 6);
     light.reset({}, 0.0, 30.0, 6);
-    for (int i = 0; i < 240 * 4; ++i) { full.step(wot5); light.step(wot5); }
+    for (int i = 0; i < 400 * 4; ++i) { full.step(wot5); light.step(wot5); }
     std::printf("         after 4 s: full tank %.3f m/s, 2 L left %.3f m/s\n", full.last.speed, light.last.speed);
     const double tank_kg = (full.vehicle.engine_systems().fuel_capacity_liters - 2.0) * 0.745;
     test::check_range("mass difference full vs 2 L left", full.last.mass_kg - light.last.mass_kg, tank_kg - 0.5, tank_kg + 0.5, "kg");

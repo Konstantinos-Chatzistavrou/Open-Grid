@@ -1,6 +1,6 @@
 // Fixed-timestep clock and render interpolation (header-only, C++17, no engine dependencies).
 //
-// The physics always advances in steps of exactly 1 / rate seconds (1000, 360 or 240 Hz), whatever the frame rate.
+// The physics always advances in steps of exactly 1 / rate seconds (1000, 400, 360 or 240 Hz), whatever the frame rate.
 // The renderer runs at its own rate and shows the state BETWEEN the last two physics states (alpha = how far real
 // time has moved past the last step), so motion is smooth at 30, 60 or 144 fps and the simulation result never
 // depends on the frame rate.

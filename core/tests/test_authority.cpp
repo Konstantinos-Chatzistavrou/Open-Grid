@@ -15,7 +15,7 @@ RS_TEST(authority) {
 
     CarConfig cfg = test::car();
 
-    // 1. Honest client replay: 120 ticks (0.5 s at 240 Hz) of full throttle passes verify_ticks
+    // 1. Honest client replay: 200 ticks (0.5 s at 400 Hz) of full throttle passes verify_ticks
     //    with valid == true, position_error_m == 0, and matching 64-bit state_hash.
     {
         AuthorityServerSim server(cfg);
@@ -25,8 +25,8 @@ RS_TEST(authority) {
         client_sim.reset({0, 0, 0}, 0.0, 20.0, 3);
 
         std::vector<TickInputFrame> frames;
-        frames.reserve(120);
-        for (std::uint32_t tick = 1; tick <= 120; ++tick) {
+        frames.reserve(200);
+        for (std::uint32_t tick = 1; tick <= 200; ++tick) {
             DriverInput in{};
             in.throttle = 1.0;
             in.gear = 3;
@@ -36,21 +36,21 @@ RS_TEST(authority) {
         }
 
         ClientStateClaim claim{};
-        claim.tick = 120;
+        claim.tick = 200;
         claim.chassis = client_sim.body.state;
         claim.engine_rpm = client_sim.vehicle.engine_rpm();
         claim.gear = client_sim.last.gear;
         claim.state_hash = hash_chassis_state(claim.chassis, claim.engine_rpm, claim.gear);
 
         VerificationResult res = server.verify_ticks(frames, claim);
-        test::check("honest 120-tick full-throttle replay accepted",
+        test::check("honest 200-tick full-throttle replay accepted",
                     res.valid && res.violation == CheatViolation::None);
         test::check("honest replay zero position error", near_val(res.position_error_m, 0.0, 1e-12));
         test::check("honest replay matching 64-bit FNV-1a state_hash",
                     res.authoritative_hash == claim.state_hash && res.authoritative_hash != 0);
     }
 
-    // 2. 5,000 hp / speed hack detection: a client claiming higher speed/position after 120 ticks
+    // 2. 5,000 hp / speed hack detection: a client claiming higher speed/position after 200 ticks
     //    is rejected with CheatViolation::SpeedOrPowerTamper.
     {
         AuthorityServerSim server(cfg);
@@ -67,8 +67,8 @@ RS_TEST(authority) {
         cheater_sim.reset({0, 0, 0}, 0.0, 20.0, 3);
 
         std::vector<TickInputFrame> frames;
-        frames.reserve(120);
-        for (std::uint32_t tick = 1; tick <= 120; ++tick) {
+        frames.reserve(200);
+        for (std::uint32_t tick = 1; tick <= 200; ++tick) {
             DriverInput in{};
             in.throttle = 1.0;
             in.gear = 3;
@@ -78,7 +78,7 @@ RS_TEST(authority) {
         }
 
         ClientStateClaim claim{};
-        claim.tick = 120;
+        claim.tick = 200;
         claim.chassis = cheater_sim.body.state;
         claim.engine_rpm = cheater_sim.vehicle.engine_rpm();
         claim.gear = cheater_sim.last.gear;
@@ -86,7 +86,7 @@ RS_TEST(authority) {
 
         VerificationResult res = server.verify_ticks(frames, claim);
         test::check("5,000 hp speed/power tamper rejected",
-                    !res.valid && res.violation == CheatViolation::SpeedOrPowerTamper && res.failed_tick == 120);
+                    !res.valid && res.violation == CheatViolation::SpeedOrPowerTamper && res.failed_tick == 200);
     }
 
     // 3. Input injection detection: a client sending throttle = 5.0 or NaN is rejected on that

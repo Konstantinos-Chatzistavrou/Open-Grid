@@ -5,7 +5,7 @@
 import * as THREE from 'three/webgpu';
 import { OUT, type AssistToggles, type CoreCar, type RawInput } from './physics/core';
 
-const STEP = 1 / 240;
+const STEP = 1 / 400;
 const PLATFORM_H = 0.12;   // the car stands on the platforms this high
 const DRUM_R = 0.32;       // drum radius (m); its top is flush with the platform
 
@@ -59,7 +59,7 @@ export class GarageDyno {
     this.panel = null;
   }
 
-  /** Fixed 240 Hz steps for this frame. Returns the output buffer (same layout as a road step: audio, wheels, HUD). */
+  /** Fixed 400 Hz steps for this frame. Returns the output buffer (same layout as a road step: audio, wheels, HUD). */
   step(core: CoreCar, raw: RawInput, assists: AssistToggles, frameDt: number): Float64Array {
     this.acc = Math.min(this.acc + frameDt, 0.1);
     let out = core.buf;

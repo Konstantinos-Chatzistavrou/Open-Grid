@@ -1,5 +1,5 @@
 // CPU cost of the core for a full grid: AI + controls, physics and race tracker for 8 cars on the
-// real city route, 30 simulated seconds at 240 Hz. Headless, no engine. Run after any change to
+// real city route, 30 simulated seconds at 400 Hz. Headless, no engine. Run after any change to
 // the core that runs every tick, and compare with docs/performance.md.
 //   core/build/rs_bench data/cars/vela_gt.json data/tracks/city_route.json
 #include <chrono>
@@ -25,7 +25,7 @@ static void run_bench(const CarConfig& cfg, const Route& r, bool max_aaa) {
     for (int k = 0; k < n; ++k) {
         RouteSample p = r.at(75.0 - 9.0 * k);
         auto s = std::make_unique<Simulation>(cfg, std::make_shared<PlaneGround>(Vec3{0, 0, 1}));
-        s->dt = 1.0 / 240.0;
+        s->dt = 1.0 / 400.0;
         s->vehicle.assists().abs = s->vehicle.assists().tc = true;
         if (max_aaa) {
             s->use_footprint_16 = true;
@@ -58,7 +58,7 @@ static void run_bench(const CarConfig& cfg, const Route& r, bool max_aaa) {
         ctls.push_back(std::move(c));
     }
     double t_ai = 0, t_phys = 0, t_race = 0;
-    const int N = 240 * 30;
+    const int N = 400 * 30;
     for (int i = 0; i < N; ++i) {
         std::vector<OtherCar> all;
         std::vector<Vec3> all_pos;
@@ -89,7 +89,7 @@ static void run_bench(const CarConfig& cfg, const Route& r, bool max_aaa) {
                                                sims[k]->last.gear, sims[k]->last.speed);
             }
             auto c = clk::now();
-            race.update(k, sims[k]->body.state.position, i / 240.0);
+            race.update(k, sims[k]->body.state.position, i / 400.0);
             auto d = clk::now();
             t_ai += std::chrono::duration<double, std::micro>(b - a).count();
             t_phys += std::chrono::duration<double, std::micro>(c - b).count();
@@ -99,7 +99,7 @@ static void run_bench(const CarConfig& cfg, const Route& r, bool max_aaa) {
     double per = 1.0 / (N * n);
     std::printf("[%s]\n", max_aaa ? "MAXED AAA (ALL 15 SUBSYSTEMS ON)" : "BASELINE");
     std::printf("  per car per tick: AI+controls %.2f us, physics %.2f us, race tracker %.2f us\n", t_ai * per, t_phys * per, t_race * per);
-    std::printf("  8 cars, 4 ticks per 60 fps frame: %.3f ms per frame total\n", (t_ai + t_phys + t_race) / N * 4 / 1000.0);
+    std::printf("  8 cars, 400 Hz (6.67 ticks per 60 fps frame): %.3f ms per frame total\n", (t_ai + t_phys + t_race) / N * (400.0 / 60.0) / 1000.0);
 }
 
 int main(int, char** argv) {

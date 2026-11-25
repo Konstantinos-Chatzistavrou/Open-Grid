@@ -299,10 +299,12 @@ RS_TEST(acceleration) {
 RS_TEST(timestep) {
     CarConfig cfg = test::car();
     double d240 = brake_distance(cfg, 25, 0.6, 1.0 / 240.0);
+    double d400 = brake_distance(cfg, 25, 0.6, 1.0 / 400.0);
     double d480 = brake_distance(cfg, 25, 0.6, 1.0 / 480.0);
     double d1000 = brake_distance(cfg, 25, 0.6, 1.0 / 1000.0);
-    std::printf("         braking distance @240 Hz %.3f m, @480 Hz %.3f m, @1000 Hz %.3f m\n", d240, d480, d1000);
+    std::printf("         braking distance @240 Hz %.3f m, @400 Hz %.3f m, @480 Hz %.3f m, @1000 Hz %.3f m\n", d240, d400, d480, d1000);
     test::check_range("240 Hz vs 1000 Hz relative difference", std::abs(d240 - d1000) / d1000, 0, 0.02, "-");
+    test::check_range("400 Hz vs 1000 Hz relative difference", std::abs(d400 - d1000) / d1000, 0, 0.02, "-");
     test::check_range("480 Hz vs 1000 Hz relative difference", std::abs(d480 - d1000) / d1000, 0, 0.02, "-");
 }
 

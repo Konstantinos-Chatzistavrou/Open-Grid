@@ -166,6 +166,7 @@ RS_TEST(ground_strip_drive) {
     const CarConfig cfg = load_car_config(std::string(RS_DATA_DIR) + "/cars/kestrel_gt.json");
     auto flat = std::make_shared<PlaneGround>();
     Simulation sim(cfg, flat);
+    sim.dt = 1.0 / 240.0;
     sim.use_contact_patch = true;
     sim.reset({}, 0.0, 27.8, 6);
     sim.settle(0.0);

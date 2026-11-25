@@ -49,7 +49,7 @@ export class PhysicsWorkerClient {
     this.rateHz = rateHz;
   }
 
-  static async create(carJson: string, rateHz = 240): Promise<PhysicsWorkerClient | null> {
+  static async create(carJson: string, rateHz = 400): Promise<PhysicsWorkerClient | null> {
     if (!globalThis.crossOriginIsolated || typeof SharedArrayBuffer === 'undefined') {
       console.warn(
         `[physworker] SharedArrayBuffer unavailable (crossOriginIsolated=${Boolean(globalThis.crossOriginIsolated)}). Falling back to main-thread physics.`,

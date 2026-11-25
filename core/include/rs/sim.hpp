@@ -71,7 +71,7 @@ public:
     void step(const DriverInput& in);          // advances by dt
     void settle(double seconds);               // run with no input (car settles on its springs)
 
-    double dt = 1.0 / 240.0;
+    double dt = 1.0 / 400.0;
     double time = 0;
     bool use_contact_patch = false;   // true: cast 3-ray circular-arc tire contact patch per wheel (smooth curb climbing)
     bool use_footprint_16 = false;    // true: cast 16-point 2D cylindrical & cambered tire footprint per wheel (lateral + longitudinal curb resolution)
