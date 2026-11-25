@@ -24,6 +24,25 @@ std::array<Vec3, 4> wheel_points(const CarConfig& c) {
     for (int w = 0; w < 4; ++w) p[w] = {c.wheels[w].x, c.wheels[w].y, 0};
     return p;
 }
+
+// The multi-ray resolvers rebuild a contact's GEOMETRY (distance, point, normal, height profile) from several ray hits, but
+// the ground also reports non-geometric data on each hit: the water film, the street-surface grip multiplier, rubber marbles
+// and the per-cell grip of the patch (wet manhole iron, paint). Carry that over from the hit that set the contact
+// (`surface_hit`) and the centre ray, or the same road would grip differently depending on the ray mode. (Heights are not
+// copied: the resolvers build them from the ray hits themselves.)
+void carry_ground_data(WheelContact& out, const WheelContact& surface_hit, const WheelContact& centre_hit) {
+    out.surface_mu_mult = surface_hit.surface_mu_mult;
+    out.marble_density = surface_hit.marble_density;
+    const ContactPatchProfile& src = centre_hit.patch_profile;
+    ContactPatchProfile& dst = out.patch_profile;
+    bool uneven = false;
+    for (int i = 0; i < kPatchPoints; ++i) {
+        dst.mu_cell[i] *= src.mu_cell[i];
+        if (!src.contact_mask[i]) dst.contact_mask[i] = false;
+        if (src.mu_cell[i] < 0.99 || !src.contact_mask[i]) uneven = true;
+    }
+    if (uneven) dst.has_height_map = true;   // "non-uniform" covers the grip cells and the mask as well as the heights
+}
 }  // namespace
 
 Vehicle::Vehicle(const CarConfig& cfg)
@@ -169,6 +188,13 @@ void Vehicle::reset_motion(double v, int gear) {
     }
     prev_axle_fy_ = {0, 0};
     prev_fy_ = {0, 0, 0, 0};
+    // The rest of the per-step carry-over, so a reset car starts like a fresh Vehicle (a replay after reset() is then
+    // repeatable): last step's tyre Fx (anti-dive / anti-squat and bushing compliance), the suspension travel the
+    // kinematics lookups start from, and the ABS / traction-control intervention state.
+    prev_fx_ = {0, 0, 0, 0};
+    dz_ = {0, 0, 0, 0};
+    abs_pressure_ = {1, 1, 1, 1};
+    tc_cut_ = 0;
 }
 
 // Steering: evaluated from the precomputed 3D suspension kinematics table (incorporates
@@ -195,11 +221,13 @@ double Vehicle::roll_centre(int w) const {
 std::array<WheelRay, 4> Vehicle::wheel_rays(const ChassisState& s) const {
     std::array<WheelRay, 4> rays;
     Vec3 down = s.orientation.rotate({0, 0, -1});
+    const Vec3 body_fwd = s.orientation.rotate({1, 0, 0});
     for (int w = 0; w < 4; ++w) {
         const WheelGeom& g = cfg_.wheels[w];
         rays[w].origin = s.position + s.orientation.rotate({g.x, g.y, g.mount_z});
         rays[w].direction = down;
         rays[w].length = cfg_.axle(w).spring_rest_length + cfg_.tire(w).radius;
+        rays[w].forward = body_fwd;
     }
     return rays;
 }
@@ -220,6 +248,7 @@ std::array<WheelContactPatchRays, 4> Vehicle::wheel_contact_patch_rays(const Cha
             out[w].rays[i].origin = mount + wheel_fwd * out[w].longitudinal_offsets_m[i];
             out[w].rays[i].direction = down;
             out[w].rays[i].length = len;
+            out[w].rays[i].forward = wheel_fwd;
         }
     }
     return out;
@@ -233,6 +262,7 @@ WheelContact Vehicle::resolve_contact_patch(const WheelContactPatchRays& patch,
     double best_eff_dist = 1e9;
     Vec3 normal_acc{0, 0, 0};
     double weight_sum = 0.0;
+    int best_i = 0;
 
     for (int i = 0; i < 3; ++i) {
         if (!hits[i].hit) continue;
@@ -246,7 +276,9 @@ WheelContact Vehicle::resolve_contact_patch(const WheelContactPatchRays& patch,
             best.distance = eff_dist;
             best.point = patch.rays[0].origin + patch.rays[0].direction * eff_dist;
             best.surface = hits[i].surface;
+            best_i = i;
         }
+        best.water_depth_mm = std::max(best.water_depth_mm, hits[i].water_depth_mm);   // the deepest film under the patch
         const double w = (i == 0) ? 1.0 : 0.65;
         normal_acc += hits[i].normal * w;
         weight_sum += w;
@@ -299,6 +331,7 @@ WheelContact Vehicle::resolve_contact_patch(const WheelContactPatchRays& patch,
             }
         }
     }
+    carry_ground_data(best, hits[best_i], hits[0].hit ? hits[0] : hits[best_i]);
     return best;
 }
 
@@ -331,6 +364,7 @@ std::array<WheelFootprint16Rays, 4> Vehicle::wheel_footprint_16_rays(const Chass
                 out[w].rays[idx].origin = mount + wheel_fwd * dx + wheel_outward * dy;
                 out[w].rays[idx].direction = down;
                 out[w].rays[idx].length = len;
+                out[w].rays[idx].forward = wheel_fwd;
                 ++idx;
             }
         }
@@ -341,6 +375,7 @@ std::array<WheelFootprint16Rays, 4> Vehicle::wheel_footprint_16_rays(const Chass
         out[w].rays[15].origin = mount + wheel_fwd * (0.40 * r);
         out[w].rays[15].direction = down;
         out[w].rays[15].length = len;
+        out[w].rays[15].forward = wheel_fwd;
     }
     return out;
 }
@@ -354,9 +389,11 @@ WheelContact Vehicle::resolve_footprint_16(const WheelFootprint16Rays& footprint
     Vec3 normal_acc{0, 0, 0};
     double weight_sum = 0.0;
     std::array<double, 3> rib_min_dist{1e9, 1e9, 1e9};
+    int best_i = 7;
 
     for (int i = 0; i < 16; ++i) {
         if (!hits[i].hit) continue;
+        best.water_depth_mm = std::max(best.water_depth_mm, hits[i].water_depth_mm);   // the deepest film under the footprint
         const double dx = footprint.longitudinal_offsets_m[i];
         const double dy = footprint.lateral_offsets_m[i];
         // 3D cylindrical tire arc + lateral shoulder crown profile
@@ -372,7 +409,7 @@ WheelContact Vehicle::resolve_footprint_16(const WheelFootprint16Rays& footprint
             best.distance = eff_dist;
             best.point = footprint.rays[7].origin + footprint.rays[7].direction * eff_dist; // ray[7] is (0,0) center
             best.surface = hits[i].surface;
-            best.water_depth_mm = std::max(best.water_depth_mm, hits[i].water_depth_mm);
+            best_i = i;
         }
         const double w = (std::abs(dx) < 0.01 && std::abs(dy) < 0.01) ? 1.2 : 0.6;
         normal_acc += hits[i].normal * w;
@@ -476,6 +513,7 @@ WheelContact Vehicle::resolve_footprint_16(const WheelFootprint16Rays& footprint
         best.patch_profile.road_dz_m = grid_dz;
         best.patch_profile.contact_mask = grid_mask;
     }
+    carry_ground_data(best, hits[best_i], hits[7].hit ? hits[7] : hits[best_i]);
     return best;
 }
 
@@ -680,11 +718,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const WheelKinematicSample left_s = cfg_.axle_kinematics[a]->sample_left(dz_[wl], u_rack);
         const WheelKinematicSample right_unmirrored = cfg_.axle_kinematics[a]->sample_left(dz_[wr], -u_rack);
         wheel_kin[wl] = left_s;
-        wheel_kin[wr] = right_unmirrored;
-        wheel_kin[wr].steer_rad = -right_unmirrored.steer_rad;
-        wheel_kin[wr].wheel_offset.y = -right_unmirrored.wheel_offset.y;
-        wheel_kin[wr].cp_y = -right_unmirrored.cp_y;
-        wheel_kin[wr].fvic_y = -right_unmirrored.fvic_y;
+        wheel_kin[wr] = AxleKinematicsTable::mirror_to_right(right_unmirrored);
 
         axle_rc[a] = compute_axle_roll_centre(left_s, right_unmirrored);
         axle_rch[a] = clamp(axle_rc[a].height_m, -0.25, 0.45);

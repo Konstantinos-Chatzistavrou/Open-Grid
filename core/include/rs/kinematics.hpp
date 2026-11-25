@@ -204,6 +204,10 @@ public:
     //   - wheel_offset.y: body frame (+ = left)
     WheelKinematicSample sample_wheel(bool left_wheel, double dz, double u_rack) const;
 
+    // Turn a sample taken with sample_left(dz, -u_rack) into the RIGHT wheel's: exact XZ-plane mirror symmetry. The one
+    // place that says which fields change sign (sample_wheel and Vehicle::update both use it).
+    static WheelKinematicSample mirror_to_right(WheelKinematicSample s);
+
     // Dynamic axle roll centre height from left & right wheel travels and normalized rack input u_rack in [-1, +1].
     AxleRollCentre roll_centre(double dz_left, double dz_right, double u_rack) const;
 

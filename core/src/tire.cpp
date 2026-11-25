@@ -563,8 +563,12 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
                          ? clamp((pressure_kpa - p_nom) / p_nom, -0.5, 0.5) : 0.0;
     const double fz_ref = p ? std::max(p->fz0, 1000.0) : 4000.0;
 
-    // Negative top-inward tilt (-wheel_side_sign * camber_rad < 0, e.g. negative static camber) biases straight-line heating onto inner_c
-    const double top_inward_rad = std::max(-camber_rad, wheel_side_sign * camber_rad);
+    // Top-inward tilt of THIS wheel: camber_rad is the inclination angle gamma (+ = top tilted toward +left) and
+    // wheel_side_sign is -1 on the left wheels, +1 on the right ones, so wheel_side_sign * gamma is + when the top leans
+    // toward the car (e.g. negative static camber) and - when it leans outward. The same convention as the 3-rib grip
+    // weights in magic_formula(). Top-inward tilt biases straight-line heating onto inner_c, top-outward onto outer_c.
+    // (max(-gamma, side * gamma) = |gamma| on the right wheels counted outward tilt as inward there.)
+    const double top_inward_rad = wheel_side_sign * camber_rad;
     const double camber_bias = clamp(top_inward_rad * 9.0, -0.75, 0.75);
 
     // Hard cornering load shifts heating onto outer_c

@@ -138,13 +138,19 @@ DriverInput Controls::update(const RawInput& raw, const VehicleOutput& last, dou
         if (std::abs(v) < 1.0 && brake_ > 0.2) set_gear(2);   // stopped: back to first
     }
     // ---- reverse by pedal (see ControlSettings): brake held at a standstill -> R, pedals swap;
-    // throttle held at a standstill while pedal-reversing -> 1st. Works with either gearbox; an
-    // explicit shift into R (manual) keeps the normal pedals.
-    if (s.pedal_reverse && !raw.shift_up && !raw.shift_down) {
+    // throttle held at a standstill while pedal-reversing -> 1st. Works with either gearbox; a
+    // gear the driver chose keeps the normal pedals: an explicit shift into R (paddles) and the H-pattern
+    // shifter (the lever decides, so the pedals never swap).
+    if (raw.direct_gear != -99) {
+        pedal_reverse_ = false;
+        reverse_timer_ = 0;
+    } else if (s.pedal_reverse && !raw.shift_up && !raw.shift_down) {
         const bool stopped = std::abs(v) < s.reverse_speed;
         const double want = pedal_reverse_ ? throttle_ : brake_;   // the pedal that asks to switch
         const double other = pedal_reverse_ ? brake_ : throttle_;
-        if (stopped && want > s.reverse_brake && other < 0.05) reverse_timer_ += dt;
+        // Already in R without pedal-reversing: the driver selected it, so the brake is a brake (not a throttle).
+        const bool can_switch = pedal_reverse_ || gear_ != 0;
+        if (stopped && can_switch && want > s.reverse_brake && other < 0.05) reverse_timer_ += dt;
         else reverse_timer_ = 0;
         if (reverse_timer_ > s.reverse_delay) {
             bool to_reverse = !pedal_reverse_;

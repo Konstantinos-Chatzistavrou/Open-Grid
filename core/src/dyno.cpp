@@ -4,6 +4,13 @@
 
 namespace rs {
 
+namespace {
+// A shift dumps the spinning engine's energy into the wheels as the clutch closes (and the power dips while it is open): like
+// dyno software, ignore the first seconds of every gear and smooth the power with a first-order filter.
+constexpr double kShiftHoldoffS = 2.0;   // s ignored after every gear change (the filter below has settled by then)
+constexpr double kSmoothS = 0.5;         // s, time constant of the power (and rpm) smoothing
+}  // namespace
+
 // ---------------------------------------------------------------- road
 DynoRoad::DynoRoad(const CarConfig& cfg) {
     body_.mass = cfg.mass;
@@ -56,7 +63,7 @@ void DynoMeter::reset() {
     for (std::size_t i = 0; i < curve_.size(); ++i) curve_[i].rpm = 100.0 * (double)i;
     peak_p_ = peak_p_rpm_ = peak_t_ = peak_t_rpm_ = 0;
     last_gear_ = -99;
-    holdoff_ = power_f_ = 0;
+    holdoff_ = power_f_ = rpm_f_ = 0;
     top_speed_ = max_speed_ = steady_t_ = prev_speed_ = accel_f_ = 0;
     run_t_ = t100_ = -1;
     rpm = speed_mps = wheel_force_n = wheel_power_w = crank_torque_nm = 0;
@@ -73,22 +80,27 @@ void DynoMeter::sample(const VehicleOutput& out, double engine_rpm, double dt, d
     crank_torque_nm = omega_e > 50.0 ? wheel_power_w / (efficiency_ * omega_e) : 0.0;
 
     const bool full = out.throttle_applied > 0.95 && out.gear >= 2;
-    // A shift dumps the spinning engine's energy into the wheels as the clutch closes (and the power dips while it is
-    // open): like dyno software, ignore 0.6 s after every gear change and smooth the power over 0.1 s.
-    if (out.gear != last_gear_) { holdoff_ = 2.0; last_gear_ = out.gear; }
+    if (out.gear != last_gear_) { holdoff_ = kShiftHoldoffS; last_gear_ = out.gear; }
     holdoff_ = std::max(0.0, holdoff_ - dt);
-    power_f_ += (wheel_power_w - power_f_) * std::min(1.0, dt / 0.5);
+    const double k = std::min(1.0, dt / kSmoothS);
+    if (rpm_f_ <= 0) rpm_f_ = engine_rpm;
+    power_f_ += (wheel_power_w - power_f_) * k;
+    // The engine rpm goes through the SAME filter: during a pull the rpm climbs thousands per minute every second, so the
+    // smoothed power lags the live rpm by about kSmoothS, and binning it against the live rpm put every reading ~0.5 s of
+    // revs too high (a low peak power and torque, read at too high an rpm). Power and rpm smoothed alike belong together.
+    rpm_f_ += (engine_rpm - rpm_f_) * k;
+    const double omega_f = rpm_f_ * 2.0 * kPi / 60.0;
     // curve: best steady full-throttle reading per 100 rpm bin
-    if (full && holdoff_ <= 0 && power_f_ > 0 && engine_rpm > 500) {
-        const double crank = omega_e > 50.0 ? power_f_ / (efficiency_ * omega_e) : 0.0;
-        const std::size_t bin = std::min(curve_.size() - 1, (std::size_t)std::lround(engine_rpm / 100.0));
+    if (full && holdoff_ <= 0 && power_f_ > 0 && rpm_f_ > 500) {
+        const double crank = omega_f > 50.0 ? power_f_ / (efficiency_ * omega_f) : 0.0;
+        const std::size_t bin = std::min(curve_.size() - 1, (std::size_t)std::lround(rpm_f_ / 100.0));
         DynoPoint& p = curve_[bin];
         if (power_f_ > p.wheel_power_w) {
             p.wheel_power_w = power_f_;
             p.crank_torque_nm = crank;
         }
-        if (power_f_ > peak_p_) { peak_p_ = power_f_; peak_p_rpm_ = engine_rpm; }
-        if (crank > peak_t_) { peak_t_ = crank; peak_t_rpm_ = engine_rpm; }
+        if (power_f_ > peak_p_) { peak_p_ = power_f_; peak_p_rpm_ = rpm_f_; }
+        if (crank > peak_t_) { peak_t_ = crank; peak_t_rpm_ = rpm_f_; }
     }
     // top speed: pedal flat and the speed has stopped rising (< 0.03 m/s^2 for 3 s), also when that is on the limiter
     const bool pedal_full = (driver_throttle >= 0 ? driver_throttle : out.throttle_applied) > 0.95 && out.gear >= 2;

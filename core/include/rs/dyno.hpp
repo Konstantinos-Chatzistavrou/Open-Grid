@@ -71,7 +71,7 @@ private:
     double top_speed_ = 0, max_speed_ = 0, steady_t_ = 0, prev_speed_ = 0, accel_f_ = 0;
     double run_t_ = -1, t100_ = -1;
     int last_gear_ = -99;
-    double holdoff_ = 0, power_f_ = 0;   // shift hold-off (s) and smoothed wheel power
+    double holdoff_ = 0, power_f_ = 0, rpm_f_ = 0;   // shift hold-off (s), smoothed wheel power and the engine rpm smoothed the same way
 };
 
 }  // namespace rs

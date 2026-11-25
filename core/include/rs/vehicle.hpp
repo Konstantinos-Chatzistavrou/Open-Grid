@@ -50,6 +50,8 @@ struct WheelRay {
     Vec3 origin;            // world, suspension top mount
     Vec3 direction;         // world, unit, pointing down the suspension axis
     double length = 0;      // m, rest length + tyre radius
+    Vec3 forward{1, 0, 0};  // world, unit: the tyre's rolling direction (a Ground that builds a per-cell patch profile around
+                            // the hit needs it; the vehicle fills it in, steered for the multi-ray modes, body heading otherwise)
 };
 
 // 3-ray circular-arc tire contact patch query (center, leading edge, trailing edge along steered wheel plane).

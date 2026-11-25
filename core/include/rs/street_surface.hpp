@@ -115,16 +115,23 @@ public:
                 }
             }
             // Crown drainage: water flows outward from center lane toward curb gutters (lanes 0 and kLanes-1),
-            // while curb storm drains slowly remove excess water above 1.2 mm.
-            for (int l = mid; l > 0; --l) {
-                const double flow = w_next[l] * drain_k;
-                w_next[l] -= flow;
-                w_next[l - 1] += flow;
-            }
-            for (int l = mid; l < kLanes - 1; ++l) {
-                const double flow = w_next[l] * drain_k;
-                w_next[l] -= flow;
-                w_next[l + 1] += flow;
+            // while curb storm drains slowly remove excess water above 1.2 mm. Every lane sheds from the same snapshot, so
+            // the crown lane gives both sides the same amount (draining the left side first and the right from what was left
+            // made the street lopsided) and water moves one lane per step, not a cascade down the whole half-street.
+            const std::array<double, kLanes> w_src = w_next;
+            for (int l = 1; l < kLanes - 1; ++l) {
+                const double flow = w_src[l] * drain_k;
+                if (l == mid) {
+                    w_next[l] -= 2.0 * flow;
+                    w_next[l - 1] += flow;
+                    w_next[l + 1] += flow;
+                } else if (l < mid) {
+                    w_next[l] -= flow;
+                    w_next[l - 1] += flow;
+                } else {
+                    w_next[l] -= flow;
+                    w_next[l + 1] += flow;
+                }
             }
             // Gutter storm-drain outflow
             const double gutter_drain = clamp(0.04 * dt, 0.0, 0.25);
@@ -350,7 +357,12 @@ public:
         c.normal = normal_at(c.point.x, c.point.y);
         c.surface = surface_;
         c.water_depth_mm = water_depth_at(c.point.x, c.point.y);
-        fill_patch_profile(c.point, {1, 0, 0}, {0, 1, 0}, 0.085, 0.11, c.patch_profile);
+        // The profile's rows run trailing -> leading and its columns right -> left in the TYRE frame, so build it along the
+        // ray's rolling direction (the world X / Y axes were only right for a car heading along +X).
+        Vec3 fwd{ray.forward.x, ray.forward.y, 0.0};
+        fwd = length(fwd) > 1e-6 ? normalized(fwd) : Vec3{1, 0, 0};
+        const Vec3 lat{-fwd.y, fwd.x, 0.0};   // + = left
+        fill_patch_profile(c.point, fwd, lat, 0.085, 0.11, c.patch_profile);
         return c;
     }
 

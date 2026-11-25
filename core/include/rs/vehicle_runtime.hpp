@@ -65,6 +65,7 @@ struct ImpactCommand {
     Vec3 point_world;
     double impulse = 0;
     std::uint64_t other = 0;
+    std::uint64_t apply_tick = 0;   // first physics tick this applies to; 0 = the next step (as VehicleCommand::apply_tick)
 };
 
 /** Physics thread -> game / render thread: everything one tick produced. */
@@ -201,10 +202,13 @@ public:
     /** One physics step from `chassis` with these wheel contacts. Returns the output (forces to apply now). */
     const VehicleOutput& step(const ChassisState& chassis, const std::array<WheelContact, 4>& contacts, double dt) {
         apply_due_commands();
-        ImpactCommand imp;
-        while (impacts_.try_pop(imp)) {
-            const Vec3 body = chassis.orientation.inv_rotate(imp.point_world - chassis.position);
-            vehicle_->add_contact(imp.other, body, imp.impulse);
+        // Crash impulses apply on their stamped tick, like commands, so a scripted or replayed collision reaches the damage
+        // model on the same step whatever the thread timing (damage events group impulses by time, and damage feeds forces).
+        while (const ImpactCommand* imp = impacts_.front()) {
+            if (imp->apply_tick > tick_) break;   // scripted for later: keep it (and everything queued after it)
+            const Vec3 body = chassis.orientation.inv_rotate(imp->point_world - chassis.position);
+            vehicle_->add_contact(imp->other, body, imp->impulse);
+            impacts_.pop();
         }
         if (repair_) {
             vehicle_->damage_model().repair();
@@ -280,9 +284,10 @@ private:
         a.tc = s.tc;
         a.esc = s.esc;
         controls_->settings.auto_gearbox = s.auto_gearbox;
-        if (s.street_surface_enabled || s.road_water_mm > 0.0) {
-            vehicle_->road_water_mm = std::max(0.0, s.road_water_mm);
-        }
+        // Settings are levels: the road water follows the latest one every time, including back to 0. (Applying it only
+        // while the street surface was on, or the water above 0, ignored the command that ended the rain and left the
+        // road wet for good.)
+        vehicle_->road_water_mm = std::max(0.0, s.road_water_mm);
     }
 
     Vehicle* vehicle_;

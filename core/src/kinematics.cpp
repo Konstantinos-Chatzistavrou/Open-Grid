@@ -253,10 +253,16 @@ KinematicPose KinematicSolver::solve_pose(double dz, double y_rack,
 
         const double h = 1e-5;
         double dummy_u = phi_u, dummy_psi = psi;
+        double dtheta = h;   // the angle step of the probe actually used: the derivative is dz / dtheta
         KinematicPose p2 = pose_from_theta(theta + h, y_rack, phi_u, psi, dummy_u, dummy_psi);
-        if (!p2.valid) p2 = pose_from_theta(theta - h, y_rack, phi_u, psi, dummy_u, dummy_psi);
+        if (!p2.valid) {
+            dtheta = -h;
+            p2 = pose_from_theta(theta - h, y_rack, phi_u, psi, dummy_u, dummy_psi);
+        }
         if (!p2.valid) break;
-        const double dz_dtheta = (p2.wheel_center.z - p.wheel_center.z) / (p2.lca_outer.z >= p.lca_outer.z ? h : -h);
+        // (Taking the sign from whether lca_outer rose is only right while a larger theta raises the ball joint; with the
+        // hinge axis pointing the other way (lca_front behind lca_rear) it flipped the slope and Newton walked away.)
+        const double dz_dtheta = (p2.wheel_center.z - p.wheel_center.z) / dtheta;
         if (std::abs(dz_dtheta) < 1e-9) break;
         const double step = clamp(err / dz_dtheta, -0.25, 0.25);
         theta -= step;
@@ -609,15 +615,18 @@ WheelKinematicSample AxleKinematicsTable::sample_left(double dz, double u_rack) 
     return lerp_sample(lerp_sample(q00, q01, ts), lerp_sample(q10, q11, ts), tz);
 }
 
-WheelKinematicSample AxleKinematicsTable::sample_wheel(bool left_wheel, double dz, double u_rack) const {
-    if (left_wheel) return sample_left(dz, u_rack);
-    // Exact XZ-plane mirror symmetry for the right wheel
-    WheelKinematicSample s = sample_left(dz, -u_rack);
+WheelKinematicSample AxleKinematicsTable::mirror_to_right(WheelKinematicSample s) {
     s.steer_rad = -s.steer_rad;
     s.wheel_offset.y = -s.wheel_offset.y;
     s.cp_y = -s.cp_y;
     s.fvic_y = -s.fvic_y;
     return s;
+}
+
+WheelKinematicSample AxleKinematicsTable::sample_wheel(bool left_wheel, double dz, double u_rack) const {
+    if (left_wheel) return sample_left(dz, u_rack);
+    // Exact XZ-plane mirror symmetry for the right wheel
+    return mirror_to_right(sample_left(dz, -u_rack));
 }
 
 AxleRollCentre AxleKinematicsTable::roll_centre(double dz_left, double dz_right, double u_rack) const {
