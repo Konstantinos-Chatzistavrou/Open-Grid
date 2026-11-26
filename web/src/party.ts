@@ -93,6 +93,16 @@ export interface GarageWalkNetMsg {
   skin?: string;
 }
 
+/** Underground street radio transmission (race-wide in Races, 5 km proximity filtered in Free Roam). */
+export interface RadioChatNetMsg {
+  from: string;
+  text: string;
+  x: number;
+  z: number;
+  mode: 'race' | 'free';
+  ts: number;
+}
+
 type Msg =
   | { t: 'hello'; name: string; car: string; paint: number; skin?: string; look?: Custom; city?: string }
   | { t: 'lobby'; members: Member[]; mode: PartyMode; laps: number; realism: boolean; copMode: boolean; phase: Phase }
@@ -111,6 +121,7 @@ type Msg =
   | { t: 'gstate'; id?: string; g: GarageStateNetMsg | null }
   | { t: 'gevent'; id?: string; e: GarageEventNetMsg }
   | { t: 'gwalk'; id?: string; w: GarageWalkNetMsg }
+  | { t: 'radio'; id?: string; r: RadioChatNetMsg }
   | { t: 'bye'; reason: string };
 
 export interface PartyHooks {
@@ -143,6 +154,8 @@ export interface PartyHooks {
   garageEvent?(fromId: string, e: GarageEventNetMsg): void;
   /** live walking position of a friend hanging out in the garage */
   garageWalk?(fromId: string, w: GarageWalkNetMsg): void;
+  /** incoming underground street radio text transmission (race-wide or 5 km proximity in Free Roam) */
+  radio?(fromId: string, r: RadioChatNetMsg): void;
   /** incoming WebRTC peer voice stream (0-cost P2P walkie-talkie / Car Meet proximity voice) */
   remoteVoice?(peerId: string, stream: MediaStream): void;
   /** remote peer closed their voice stream */
@@ -496,6 +509,13 @@ export class Party {
     else this.sendHost(m);
   }
 
+  /** Broadcast an underground street radio message with sender XZ coordinates (5 km proximity in Free Roam, grid-wide in Race). */
+  sendRadio(r: RadioChatNetMsg) {
+    const m: Msg = { t: 'radio', r };
+    if (this.isHost) this.broadcast({ ...m, id: this.selfId });
+    else this.sendHost(m);
+  }
+
   /** We left the session (lobby, menu): the others take our car off the road. */
   sendGone() {
     if (this.isHost) this.broadcast({ t: 'gone', id: this.selfId });
@@ -606,6 +626,22 @@ export class Party {
           this.broadcast({ t: 'gwalk', id: from, w: m.w }, from);
           this.hooks.garageWalk?.(from, m.w);
           break;
+        case 'radio':
+          if (!this.conns.has(from) || !m.r || typeof m.r.text !== 'string' || !finite(m.r as unknown as Record<string, unknown>, ['x', 'z'])) return;
+          {
+            const cleanR: RadioChatNetMsg = {
+              from: cleanName(m.r.from),
+              text: m.r.text.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 120),
+              x: m.r.x,
+              z: m.r.z,
+              mode: m.r.mode === 'race' ? 'race' : 'free',
+              ts: Number.isFinite(m.r.ts) ? m.r.ts : Date.now(),
+            };
+            if (!cleanR.text) return;
+            this.broadcast({ t: 'radio', id: from, r: cleanR }, from);
+            this.hooks.radio?.(from, cleanR);
+          }
+          break;
       }
       return;
     }
@@ -641,6 +677,7 @@ export class Party {
       }
       case 'gevent': if (m.id && m.id !== this.selfId && m.e) this.hooks.garageEvent?.(m.id, m.e); break;
       case 'gwalk': if (m.id && m.id !== this.selfId && m.w) this.hooks.garageWalk?.(m.id, m.w); break;
+      case 'radio': if (m.id && m.id !== this.selfId && m.r && typeof m.r.text === 'string') this.hooks.radio?.(m.id, m.r); break;
       case 'bye': this.end(m.reason); break;
     }
   }

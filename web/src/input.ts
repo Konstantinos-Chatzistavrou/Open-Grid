@@ -118,6 +118,8 @@ export class Input {
   onCarMeet = () => {};
   /** Step out of car / get back in (walkable driver avatar in Car Meet, KeyO). */
   onStepOut = () => {};
+  /** Open Underground Street Radio chat transmit bar (KeyY). */
+  onRadioChat = () => {};
   /** Interact with nearby Free Roam Race Node to enter Matchmaking Lobby (Enter). */
   onInteract = () => {};
   /** Expand / collapse full-screen interactive map for GPS waypoints (Tab). */
@@ -175,6 +177,7 @@ export class Input {
       else if (e.code === b.stepOut) this.onStepOut();
       else if (e.code === b.interact) this.onInteract();
       else if (e.code === 'Tab') { e.preventDefault(); this.onFullMap(); }
+      else if (e.code === 'KeyY') { e.preventDefault(); this.onRadioChat(); }
       else if (e.code === 'KeyZ') this.onVoicePtt(true);
       else if (e.code === b.garage) this.onGarage();
       else if (e.code === 'Digit1') { this.assists.abs = !this.assists.abs; this.onAssistKey(); }

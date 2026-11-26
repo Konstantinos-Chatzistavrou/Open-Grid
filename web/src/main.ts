@@ -78,6 +78,7 @@ import { WorldClock } from './worldClock';
 import { AUCTION_LOTS, ENGINE_SWAPS, applyNightRunnersToPhysics, engineOf, loadNightRunners, saveNightRunners, stanceOf, tickEngineAndNos } from './nightRunners';
 import { PARTY_BONUS_MUL, advanceChallenge, loadRetention, saveRetention, triggerPrestigeReset } from './retention';
 import { VoiceChat } from './voice';
+import { RadioComms, FREE_ROAM_RADIO_RANGE_M } from './radioComms';
 import { RaceSpotter, type SpotterCar } from './spotter';
 import { ACADEMY_LESSONS, PenaltyTracker, markLessonDone } from './careerEvents';
 import { assetUrl, loadGLTF } from './scene/loaders';
@@ -723,11 +724,11 @@ async function main() {
   };
   /** Race rules: full realism (no resets; wrecked / rolled over / stuck = DNF, then spectate) or respawns. A party uses the leader's. */
   const realism = () => raceLaps() > 0 && (sel.mode === 'online' ? party?.realism !== false : sel.realism);
-  /** Tactical Police AI runs ONLY in Race Events (never Free Roam); patrolled downtown cities (NYC, London) always enable cops. */
-  const copsActiveInRace = () => {
-    if (raceLaps() === 0) return false;
+  /** Speed cameras & realistic police pursuits run in Night Street Races (Cop Mode ON) and Free Roam (never Sanctioned Day Circuits or ?cops=0). */
+  const copsActiveNow = () => {
     if (sanctionedMode) return false;
     if (params.get('cops') === '0') return false;
+    if (raceLaps() === 0) return true; // Free Roam: cruise under limit = zero cops; blow past a speed camera = dispatch + realistic chase!
     return cityInfo.mandatoryCops || (sel.mode === 'online' ? (party?.copMode ?? true) : sel.copMode);
   };
   /** Out of the race (realism): why, or '' while racing. */
@@ -758,14 +759,25 @@ async function main() {
    * Uses rear-quarter PIT maneuvers (Rapier lateral/yaw impulse), flanking box-in, and physical roadblocks.
    */
   const copsEl = document.getElementById('cops')!;
+  const speedCamEl = document.getElementById('speed-cam-hud')!;
   let lastCopsText = '';
+  let lastSpeedCamHtml = '';
   // cop line-of-sight ray, reused every frame (Rapier's Ray keeps references to these two objects)
   const copRayO = { x: 0, y: 0, z: 0 }, copRayD = { x: 0, y: 0, z: 1 };
   const copRay = new RAPIERLib.Ray(copRayO, copRayD);
   let copMsg = '';
   let copMsgUntil = 0;
   let escapedCopsThisRace = false;
+  let lastAiCamChatter = 0;
   const copNote = (t: string, ms = 3500) => { copMsg = t; copMsgUntil = performance.now() + ms; };
+  const radioComms = new RadioComms({
+    onSend: (text) => {
+      party?.sendRadio({ from: sel.name, text, x: pos.x, z: pos.z, mode: raceLaps() > 0 ? 'race' : 'free', ts: Date.now() });
+    },
+    getMode: () => (raceLaps() > 0 ? 'race' : 'free'),
+    getUsername: () => sel.name,
+    isDriving: () => driving() && state !== 'paused' && state !== 'busy' && !photoMode.active && !replay.active,
+  });
   const pitRight = new THREE.Vector3();
   const cops = new Cops(new Lane(route.samples, route.closed !== false), {
     bust: () => {
@@ -790,18 +802,35 @@ async function main() {
       hud.toast('PURSUIT EVADED', '+25% ESCAPE BONUS');
     },
     onPitNudge: (latSign, intensity) => {
-      // Realistic rear-quarter PIT kick: lateral slip + yaw rotation that skilled counter-steer can catch.
+      // Realistic rear-quarter PIT kick: gentler lateral slip + yaw rotation that skilled counter-steer catches cleanly.
       pitRight.set(1, 0, 0).applyQuaternion(quat).setY(0).normalize();
       const lv = car.body.linvel();
       const av = car.body.angvel();
-      const latDv = latSign * intensity * 4.2;
-      const yawDw = latSign * intensity * 1.65;
+      const latDv = latSign * intensity * 2.9;
+      const yawDw = latSign * intensity * 1.15;
       car.body.setLinvel({ x: lv.x + pitRight.x * latDv, y: lv.y, z: lv.z + pitRight.z * latDv }, true);
       car.body.setAngvel({ x: av.x, y: av.y + yawDw, z: av.z }, true);
-      audio.impact(24, false);
-      rumbleKj = Math.max(rumbleKj, 24);
+      audio.impact(20, false);
+      rumbleKj = Math.max(rumbleKj, 20);
     },
-    onAlert: (msg) => copNote(msg, 3500),
+    onAlert: (msg) => copNote(msg, 3800),
+    onCameraFlash: (cam, speedKmh, overKmh) => {
+      radioComms.triggerCameraFlash();
+      bumpHeat(1);
+      hud.toast(`📸 ${cam.name} · ${cam.limitKmh} LIMIT`, `${speedKmh} km/h (+${overKmh})`);
+      const nowMs = performance.now();
+      if (raceLaps() > 0 && ai.cars.length && nowMs - lastAiCamChatter > 25_000) {
+        lastAiCamChatter = nowMs;
+        const bot = ai.cars[Math.floor(Math.random() * ai.cars.length)];
+        const call = bot?.name.split(' ')[0] || '#Bot2';
+        setTimeout(() => {
+          if (driving()) radioComms.aiStreetRadio(call, `Heads up! ${sel.name} just tripped ${cam.name} at ${speedKmh} km/h — scanners are hot!`);
+        }, 1600);
+      }
+    },
+    onRadio: (unit, text, speak) => {
+      radioComms.policeIntercept(unit, text, speak !== false);
+    },
   });
   // Patrol cruiser prototype: cloned into interceptor + flanker + 2-cruiser tactical roadblock with Rapier colliders,
   // AND 2 parked Friends' Cars in the background bays of the Garage showroom.
@@ -1962,6 +1991,7 @@ async function main() {
   input.onMap = () => minimap.show(!minimap.visible);
   input.onFullMap = () => { if (driving()) minimap.toggleExpand(); };
   input.onVoicePtt = (down) => voice.setPushToTalk(down);
+  input.onRadioChat = () => radioComms.toggleInput();
   // 3D glowing gold GPS Waypoint beacon synced with clicks on the expanded full map
   const waypointBeacon = new THREE.Mesh(
     new THREE.CylinderGeometry(0.45, 0.85, 42, 12, 1, true),
@@ -2143,6 +2173,7 @@ async function main() {
   (g.__game as Record<string, unknown>).wagers = wagers;
   (g.__game as Record<string, unknown>).zones = zones;
   (g.__game as Record<string, unknown>).cops = cops;
+  (g.__game as Record<string, unknown>).radioComms = radioComms;
   (g.__game as Record<string, unknown>).ai = ai;
   (g.__game as Record<string, unknown>).telemetry = telemetry;
   (g.__game as Record<string, unknown>).photoMode = photoMode;
@@ -2349,6 +2380,10 @@ async function main() {
       },
       garageWalk: (fromId, w) => {
         if (inGarage) garageVisitors.setWalk(fromId, w.x, w.z, w.yaw, w.name, w.skin);
+      },
+      radio: (fromId, r) => {
+        if (voice.blockedPeers.has(fromId)) return;
+        radioComms.receiveNet(r, pos, raceLaps() === 0);
       },
       remoteVoice: (id, stream) => { voice.attachRemoteStream(id, stream); },
       remoteVoiceGone: (id) => { voice.detachRemoteStream(id); },
@@ -2870,6 +2905,13 @@ async function main() {
     // grid: single-player race = P4 of 6 between the rivals; Free Roam = live cruising AI traffic + Speed Traps / Drift Zones (NO COPS);
     // online race = party grid slots (8-12 max).
     const isFreeSession = mode === 'free' || (mode === 'online' && party?.mode === 'free');
+    radioComms.clearSession();
+    radioComms.setMode(isFreeSession ? 'free' : 'race');
+    if (!isFreeSession && !sanctionedMode) {
+      radioComms.systemNotice('Tuned to 146.52 MHz Illegal Race Freq · Watch roadside speed cameras!');
+    } else if (isFreeSession) {
+      radioComms.systemNotice('Tuned to 146.52 MHz Local Street Radio (5.0 km range) · Speed cameras active.');
+    }
     { const w = params.get('weather'); if (w === 'dry' || w === 'rain') worldClock.setWeather(w); else worldClock.rollWeather(!isFreeSession); }
     kitSky?.setWeather(worldClock.weather);
     zones.setVisible(isFreeSession);
@@ -3056,7 +3098,7 @@ async function main() {
   }
 
   function finishRace() {
-    const copsOn = copsActiveInRace();
+    const copsOn = copsActiveNow();
     cops.breakOff();
     if (copsOn) {
       bumpHeat(1);   // Heat lives strictly in Cop Race Events (never Free Roam)
@@ -3571,18 +3613,37 @@ async function main() {
       p2Quat.slerpQuaternions(p2PrevQuat, p2PhysQuat, alpha);
     }
     post.carPos.copy(pos);
-    // Tactical Police Pursuit: ONLY active in Race Events with Cop Mode ON (never in Free Roam!).
-    const copsOnNow = copsActiveInRace();
-    heatEl.hidden = raceLaps() === 0 && driving();
-    if (!copsOnNow && cops.active) cops.breakOff();
+    // Realistic Speed-Camera Triggered Police Pursuit (Night Street Races + Free Roam; NEVER Sanctioned Day Circuits!).
+    // Cops stay in standby until a roadside speed camera catches you exceeding the posted speed limit!
+    const copsOnNow = copsActiveNow();
+    const liveKmh = Math.abs(car.out[OUT.speed]) * 3.6;
+    const isDrivingNow = driving() && state !== 'paused' && state !== 'busy' && !photoMode.active && !replay.active;
+    heatEl.hidden = !copsOnNow && driving();
+    if (!copsOnNow && (cops.active || cops.dispatched)) cops.breakOff();
     playerS = cops.nearest(pos, playerS);
-    if (state === 'race' && copsOnNow && !copSpawned && ticks * DT > 1.5) {
-      copSpawned = true;
-      cops.spawn(playerS, pos, Math.max(1, heat.level));
+    cops.updateCameras(frame, playerS, pos, liveKmh, state === 'race' && copsOnNow, Math.max(1, heat.level));
+    cops.update(frame, playerS, pos, liveKmh);
+    void copSpawned;
+
+    // Roadside Speed Camera proximity indicator (posted speed limit circle + distance)
+    const nc = state === 'race' && copsOnNow ? cops.nextCamera : null;
+    const camOver = nc ? liveKmh > nc.limitKmh + 15 : false;
+    const camHtml = nc
+      ? `<span class="sc-limit ${camOver ? 'over' : ''}">${nc.limitKmh}</span><span class="sc-meta"><b>📷 ${nc.name}</b><i>${nc.distM} m${camOver ? ' · SLOW DOWN!' : ''}</i></span>`
+      : '';
+    if (camHtml !== lastSpeedCamHtml) {
+      lastSpeedCamHtml = camHtml;
+      speedCamEl.hidden = !camHtml;
+      speedCamEl.innerHTML = camHtml;
     }
-    cops.update(frame, playerS, pos, Math.abs(car.out[OUT.speed]) * 3.6);
+
+    radioComms.setVisible(isDrivingNow);
+    radioComms.setMode(raceLaps() > 0 ? 'race' : 'free');
+    radioComms.setPoliceScannerActive(cops.active || cops.dispatched);
+    radioComms.tick(now);
+
     if (cops.active) {
-      // Line of sight: ray from lead patrol unit to player car; building hits break visual lock.
+      // Line of sight: ray from lead patrol unit to player car; building hits trigger EVADING cooldown cleanly.
       const from = cops.world, to = pos;
       const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
       const len = Math.hypot(dx, dy, dz) || 1;
@@ -3591,7 +3652,16 @@ async function main() {
       const hit = pw.world.castRay(copRay, len - 2, true);
       cops.see(!!hit, frame);
       audio.siren(cops.proximity);
-      const ct = `🚨 ${cops.tactic} · ${Math.round(cops.distance)} m`;
+      const bp = cops.bustProgress;
+      const ct = bp > 0.05
+        ? `🚨 BUSTING ${Math.round(bp * 100)}% — FLOOR IT!`
+        : cops.tactic === 'EVADING'
+        ? `💨 EVADING PURSUIT · ${Math.round(cops.evadeProgress * 100)}%`
+        : `🚨 ${cops.tactic} · ${Math.round(cops.distance)} m`;
+      if (ct !== lastCopsText) copsEl.textContent = lastCopsText = ct;
+    } else if (cops.dispatched) {
+      audio.siren(0.18);
+      const ct = '📻 POLICE DISPATCHED · INTERCEPTOR INBOUND';
       if (ct !== lastCopsText) copsEl.textContent = lastCopsText = ct;
     } else {
       audio.siren(0);
@@ -3874,10 +3944,14 @@ async function main() {
         for (const rb of raceNodes.minimapBlips(pal.raceNode)) blipsBuf.push(rb);
         const fin = wagers.finishWorld;
         if (fin) blipsBuf.push({ x: fin.x, z: fin.z, color: pal.dragFinish });
-      } else if (cops.active) {
-        for (const u of cops.unitPositions()) blipsBuf.push({ x: u.x, z: u.z, color: pal.cop });
-        const rb = cops.roadblockWorld;
-        if (rb) blipsBuf.push({ x: rb.x, z: rb.z, color: pal.roadblock });
+      }
+      if (copsOnNow) {
+        for (const cam of cops.cameraPositions()) blipsBuf.push({ x: cam.x, z: cam.z, color: '#ffb02e' });
+        if (cops.active) {
+          for (const u of cops.unitPositions()) blipsBuf.push({ x: u.x, z: u.z, color: pal.cop });
+          const rb = cops.roadblockWorld;
+          if (rb) blipsBuf.push({ x: rb.x, z: rb.z, color: pal.roadblock });
+        }
       }
       const L = lap?.routeLength ?? route.length_m;
       minimap.clockSec = worldClock.gameSeconds;
@@ -3982,7 +4056,7 @@ async function main() {
           forzaVfx.emitSparks(pos.x, pos.y - 0.15, pos.z, lv.x, lv.y + 0.8, lv.z, 6 + sInt * 10, sInt, pos.y - visual.cg.y);
         }
         // Wrecking during a Cop Race Event raises Heat (never in Free Roam!).
-        if (copsActiveInRace() && impulse > 5000 && Date.now() - heat.lastGain > 20_000) bumpHeat(1);
+        if (copsActiveNow() && impulse > 5000 && Date.now() - heat.lastGain > 20_000) bumpHeat(1);
       });
       city.update(camera);
     }
@@ -4109,7 +4183,10 @@ async function main() {
               if (!rc) continue;
               const rp = rc.root.position;
               rivals.push({ x: rp.x, z: rp.z });
-              if (voice.enabled) voice.setPeerDistance(id, Math.hypot(rp.x - p.x, rp.z - p.z));
+              if (voice.enabled) {
+                const maxRange = (carMeet.walking || carMeet.panelOpen) ? 45 : raceLaps() === 0 ? FREE_ROAM_RADIO_RANGE_M : Infinity;
+                voice.setPeerDistance(id, Math.hypot(rp.x - p.x, rp.z - p.z), maxRange);
+              }
             }
           }
           const call = spotter.update(now, p.x, p.z, fwdX / flen, fwdZ / flen, Math.abs(car.out[OUT.speed]), rivals);

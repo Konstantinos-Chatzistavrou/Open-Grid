@@ -1275,3 +1275,131 @@ body.touch #zone-hud {
   display: block; height: 100%; border-radius: 99px;
   background: linear-gradient(90deg, #00e5ff, #ffcf40 72%, #ff2d6a);
 }
+
+/* ---- Roadside Speed Camera Flash Overlay + Posted Speed Limit Sign ---------------------------------------------- */
+#cam-flash {
+  position: fixed; inset: 0; z-index: 44; pointer-events: none;
+  background: radial-gradient(circle at 68% 36%, rgba(255, 250, 232, 0.92), rgba(255, 196, 120, 0.45) 55%, rgba(255, 255, 255, 0.25) 100%);
+  opacity: 0;
+}
+#cam-flash.go { animation: camdoubleflash 0.52s ease-out forwards; }
+@keyframes camdoubleflash {
+  0%   { opacity: 0; }
+  10%  { opacity: 0.78; }
+  26%  { opacity: 0.08; }
+  42%  { opacity: 0.62; }
+  100% { opacity: 0; }
+}
+
+#speed-cam-hud {
+  display: inline-flex; align-items: center; gap: 9px; margin-top: 2px;
+  padding: 5px 11px 5px 7px; background: rgba(8, 11, 18, 0.86);
+  border: 1px solid rgba(255, 176, 46, 0.42); clip-path: var(--cut);
+}
+#speed-cam-hud[hidden] { display: none; }
+#speed-cam-hud .sc-limit {
+  display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  background: #f8fafc; color: #0b0e14; border: 3.5px solid #e11d48;
+  font: 900 13px/1 var(--display); letter-spacing: 0;
+}
+#speed-cam-hud .sc-limit.over {
+  background: #ff2d55; color: #fff; border-color: #fff;
+  animation: heatpulse 0.55s ease-in-out infinite;
+}
+#speed-cam-hud .sc-meta { display: flex; flex-direction: column; gap: 1px; }
+#speed-cam-hud .sc-meta b { font: 800 12px/1 var(--display); letter-spacing: .12em; color: #ffd166; }
+#speed-cam-hud .sc-meta i { font: 600 11px/1.1 var(--text); font-style: normal; color: #e2e8f0; }
+
+/* ---- Underground Street Radio Comms + CH-04 Police Scanner Terminal --------------------------------------------- */
+#radio-comms {
+  position: fixed; left: 16px; bottom: 332px; width: min(352px, calc(100vw - 32px));
+  z-index: 26; pointer-events: auto;
+  background: rgba(7, 10, 17, 0.84); border: 1px solid rgba(255, 255, 255, 0.14);
+  border-left: 3px solid var(--cy); clip-path: var(--cut);
+  transition: opacity .25s ease, border-color .2s ease;
+}
+@media (max-width: 1100px) {
+  #radio-comms { bottom: 224px; width: min(312px, calc(100vw - 32px)); }
+}
+#radio-comms[hidden] { display: none; }
+#radio-comms.idle { opacity: 0.48; }
+#radio-comms.idle:hover, #radio-comms.open, #radio-comms.police-hot { opacity: 1; }
+#radio-comms.police-hot { border-left-color: var(--hot); border-color: rgba(255, 45, 106, 0.45); }
+
+#radio-comms .rc-head {
+  display: flex; align-items: center; gap: 7px; padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09); background: rgba(255, 255, 255, 0.03);
+}
+#radio-comms .rc-led {
+  width: 7px; height: 7px; border-radius: 50%; background: #22c55e;
+  box-shadow: 0 0 8px #22c55e; flex: none;
+}
+#radio-comms.police-hot .rc-led {
+  background: #ff2d55; box-shadow: 0 0 10px #ff2d55;
+  animation: heatpulse 0.7s ease-in-out infinite;
+}
+#radio-comms .rc-freq {
+  font: 700 11px/1 var(--display); letter-spacing: .16em; color: var(--cy);
+  text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#radio-comms .rc-scan {
+  font: 800 10px/1 var(--display); letter-spacing: .14em; padding: 2px 6px;
+  background: rgba(255, 45, 106, 0.24); color: #ff8aa8; border: 1px solid rgba(255, 45, 106, 0.5);
+  white-space: nowrap;
+}
+#radio-comms .rc-btn {
+  margin-left: auto; font: 700 10.5px/1 var(--display); letter-spacing: .14em;
+  padding: 4px 8px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f8fafc; cursor: pointer; text-transform: uppercase;
+}
+#radio-comms .rc-btn:hover { background: rgba(25, 211, 255, 0.22); border-color: var(--cy); }
+
+#radio-comms .rc-feed {
+  display: flex; flex-direction: column; gap: 3px; padding: 6px 9px;
+  max-height: 92px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+#radio-comms .rc-feed::-webkit-scrollbar { width: 5px; }
+#radio-comms .rc-feed::-webkit-scrollbar-track { background: transparent; }
+#radio-comms .rc-feed::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.22); }
+#radio-comms .rc-line {
+  display: flex; align-items: baseline; gap: 6px; font: 500 12px/1.32 var(--text); color: #e2e8f0;
+}
+#radio-comms .rc-line b {
+  font: 800 11.5px/1 var(--display); letter-spacing: .09em; text-transform: uppercase;
+  color: var(--cy); white-space: nowrap;
+}
+#radio-comms .rc-line.police { color: #ffe4e6; background: rgba(255, 45, 106, 0.12); padding: 3px 6px; border-left: 2px solid #ff2d55; }
+#radio-comms .rc-line.police b { color: #ff6b8b; }
+#radio-comms .rc-line.system { color: #94a3b8; font-size: 11px; }
+#radio-comms .rc-line.system b, #radio-comms .rc-line.sys span {
+  font: 700 10px/1 var(--display); letter-spacing: .14em; color: #64748b;
+}
+#radio-comms .rc-line em { font-style: normal; flex: 1; min-width: 0; word-break: break-word; }
+#radio-comms .rc-sig {
+  font: 700 10px/1 ui-monospace, monospace; font-style: normal; color: #67e8f9;
+  white-space: nowrap; opacity: 0.85;
+}
+#radio-comms .rc-sig.pol { color: #fb7185; }
+
+#radio-comms .rc-drawer {
+  padding: 7px 9px 9px; border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(5, 7, 12, 0.92); display: flex; flex-direction: column; gap: 6px;
+}
+#radio-comms .rc-drawer[hidden] { display: none; }
+#radio-comms .rc-quicks { display: flex; flex-wrap: wrap; gap: 4px; }
+#radio-comms .rc-q {
+  font: 600 10.5px/1 var(--text); padding: 4px 7px; cursor: pointer;
+  background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.16); color: #e2e8f0;
+}
+#radio-comms .rc-q:hover { background: rgba(255, 45, 106, 0.24); border-color: var(--hot); color: #fff; }
+#radio-comms .rc-row { display: flex; gap: 6px; }
+#radio-comms #rc-input {
+  flex: 1; min-width: 0; padding: 6px 9px; font: 500 12.5px/1.2 var(--text);
+  background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(25, 211, 255, 0.4); color: #fff; outline: none;
+}
+#radio-comms .rc-send {
+  font: 800 12px/1 var(--display); letter-spacing: .14em; padding: 0 12px; cursor: pointer;
+  background: linear-gradient(100deg, var(--hot), var(--hot2)); border: 0; color: #fff;
+}
+body.touch #radio-comms { left: 10px; bottom: auto; top: 96px; width: min(260px, 56vw); }
