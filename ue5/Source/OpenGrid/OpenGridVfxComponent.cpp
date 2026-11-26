@@ -356,15 +356,25 @@ void UOpenGridVfxComponent::UpdateBrakeThermals(float DeltaTime, const FOpenGrid
     // Convective airflow cooling coefficient: (TempC - AmbientC) * (0.045 + 0.011 * SpeedMps^0.8)
     const float ConvectiveCoeff = 0.045f + 0.011f * FMath::Pow(SpeedMps, 0.8f);
     const float GlowSpan = FMath::Max(1.0f, BrakeGlowMaxTempC - BrakeGlowMinTempC);
+    const float BiasFront = FMath::Clamp(Telemetry.EffectiveBrakeBiasFront, 0.25f, 0.85f);
+    const float FrontBiasScale = FMath::Clamp(BiasFront / 0.62f, 0.45f, 1.45f);
+    const float RearBiasScale = FMath::Clamp(((1.0f - BiasFront) / 0.38f) * 0.78f, 0.35f, 1.45f);
 
     for (int32 i = 0; i < kNumWheels; ++i)
     {
         FOpenGridBrakeThermalState& State = BrakeThermalStates[i];
         const bool bRearWheel = (i >= 2);
-        const float EffectiveBrake = bRearWheel ? FMath::Max(ServiceBrake * 0.78f, Handbrake) : ServiceBrake;
+        const bool bHasWheel = Telemetry.Wheels.IsValidIndex(i);
+        const bool bDetached = bHasWheel && Telemetry.Wheels[i].bWheelDetached;
+        const bool bBrakeLineCut = bHasWheel && Telemetry.Wheels[i].bBrakeLineRuptured;
+
+        const float HydraulicBrake = (bBrakeLineCut || bDetached) ? 0.0f : ServiceBrake;
+        const float EffectiveBrake = bRearWheel
+            ? FMath::Max(HydraulicBrake * RearBiasScale, bDetached ? 0.0f : Handbrake)
+            : (HydraulicBrake * FrontBiasScale);
 
         float WheelLoadN = 0.0f;
-        if (Telemetry.Wheels.IsValidIndex(i) && Telemetry.Wheels[i].bInContact)
+        if (bHasWheel && Telemetry.Wheels[i].bInContact)
         {
             WheelLoadN = FMath::Max(0.0f, Telemetry.Wheels[i].NormalLoadN);
         }
@@ -403,11 +413,13 @@ void UOpenGridVfxComponent::UpdateWheelEmitters(const FOpenGridVfxTelemetry& Tel
         const float Slip = FMath::Max(0.0f, Wheel.SlipIntensity);
         const float LoadFactor = FMath::Clamp(Wheel.NormalLoadN / 3500.0f, 0.25f, 1.4f);
 
+        const bool bWheelActive = Wheel.bInContact && !Wheel.bWheelDetached;
+
         // 1. Dry drift / burnout tyre smoke (attenuated by standing water on soaked asphalt)
         if (TyreSmokeComponents.IsValidIndex(i) && TyreSmokeComponents[i])
         {
             UNiagaraComponent* Smoke = TyreSmokeComponents[i];
-            if (Wheel.bInContact && !Wheel.ContactPointWorldCm.IsNearlyZero())
+            if (bWheelActive && !Wheel.ContactPointWorldCm.IsNearlyZero())
             {
                 Smoke->SetWorldLocation(Wheel.ContactPointWorldCm);
             }
@@ -415,7 +427,7 @@ void UOpenGridVfxComponent::UpdateWheelEmitters(const FOpenGridVfxTelemetry& Tel
             const float DryMask = 1.0f - FMath::Clamp(Wetness * 0.85f, 0.0f, 0.85f);
             const float TempBoost = FMath::Clamp((Wheel.TyreTempC - 65.0f) / 60.0f, 0.35f, 1.35f);
             const float SlipOverThresh = FMath::Max(0.0f, Slip - 0.16f);
-            const float SmokeRate = (Wheel.bInContact && SlipOverThresh > 0.0f)
+            const float SmokeRate = (bWheelActive && SlipOverThresh > 0.0f)
                 ? FMath::Clamp(SlipOverThresh * 1.45f * TempBoost * LoadFactor * DryMask, 0.0f, 2.5f)
                 : 0.0f;
 
@@ -431,14 +443,14 @@ void UOpenGridVfxComponent::UpdateWheelEmitters(const FOpenGridVfxTelemetry& Tel
         if (RainSprayComponents.IsValidIndex(i) && RainSprayComponents[i])
         {
             UNiagaraComponent* Spray = RainSprayComponents[i];
-            if (Wheel.bInContact && !Wheel.ContactPointWorldCm.IsNearlyZero())
+            if (bWheelActive && !Wheel.ContactPointWorldCm.IsNearlyZero())
             {
                 Spray->SetWorldLocation(Wheel.ContactPointWorldCm);
             }
 
             const float SpeedSpray = FMath::Clamp((SpeedMps - 4.0f) / 42.0f, 0.0f, 1.5f);
             const float SlipSpray = FMath::Clamp(Slip * 0.55f, 0.0f, 0.85f);
-            const float SprayRate = (Wheel.bInContact && Wetness > 0.05f && (SpeedMps > 4.0f || Slip > 0.25f))
+            const float SprayRate = (bWheelActive && Wetness > 0.05f && (SpeedMps > 4.0f || Slip > 0.25f))
                 ? FMath::Clamp(Wetness * (SpeedSpray + SlipSpray) * LoadFactor, 0.0f, 2.5f)
                 : 0.0f;
 
@@ -453,12 +465,12 @@ void UOpenGridVfxComponent::UpdateWheelEmitters(const FOpenGridVfxTelemetry& Tel
         if (RoadDebrisComponents.IsValidIndex(i) && RoadDebrisComponents[i])
         {
             UNiagaraComponent* Debris = RoadDebrisComponents[i];
-            if (Wheel.bInContact && !Wheel.ContactPointWorldCm.IsNearlyZero())
+            if (bWheelActive && !Wheel.ContactPointWorldCm.IsNearlyZero())
             {
                 Debris->SetWorldLocation(Wheel.ContactPointWorldCm);
             }
 
-            const float DebrisRate = (Wheel.bInContact && Wheel.DebrisIntensity > 0.05f && SpeedMps > 2.0f)
+            const float DebrisRate = (bWheelActive && Wheel.DebrisIntensity > 0.05f && SpeedMps > 2.0f)
                 ? FMath::Clamp(Wheel.DebrisIntensity * (0.45f + FMath::Clamp(SpeedMps / 35.0f, 0.0f, 1.2f) + Slip * 0.6f), 0.0f, 2.5f)
                 : 0.0f;
 

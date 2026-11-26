@@ -174,7 +174,14 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
     // ---- target speed: route profile (looking further ahead in wet weather for longer braking distances)
     const double brake_look_s = (weather_speed_scale < 0.95) ? (0.5 + 0.9 * (1.0 - weather_speed_scale)) : 0.5;
     double target = std::min(speed_profile(pr.s), speed_profile(pr.s + std::max(v, 0.0) * brake_look_s));
-    if (p_.racing_line) target *= grip_scale;
+    if (p_.racing_line) {
+        // Real drivers feel worn, cold, or overheated tyres and modulate cornering pace accordingly
+        // (equals 1.00 when tyres are fresh and inside their compound thermal window).
+        double tyre_gf = 0.0;
+        for (int w = 0; w < 4; ++w) tyre_gf += last.wheels[w].condition.grip_factor(&cfg_.tire(w));
+        const double tyre_pace = clamp(std::sqrt(clamp(0.25 * tyre_gf, 0.50, 1.0)), 0.72, 1.0);
+        target *= grip_scale * tyre_pace;
+    }
     target *= weather_speed_scale;
     braking_for_traffic = false;
     // Deceleration of the car ahead, estimated from how its PERCEIVED speed changes (low-passed).

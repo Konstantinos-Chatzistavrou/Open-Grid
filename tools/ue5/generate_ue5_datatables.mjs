@@ -177,6 +177,12 @@ function generateCarCatalogCsv() {
     'MassKg',
     'PeakPowerKw',
     'Drivetrain',
+    'Transmission',
+    'BrakeDiscType',
+    'BrakeMigrationFront',
+    'HeaveSpringFrontNPerM',
+    'HeaveSpringRearNPerM',
+    'HasAeroMap2D',
     'PhysicsJsonPath',
     'VisualJsonPath',
     'BodyMeshAsset',
@@ -213,6 +219,16 @@ function generateCarCatalogCsv() {
     const massKg = physics?.chassis?.mass_kg ?? 1400;
     const peakPowerKw = computePeakPowerKw(physics);
     const drivetrain = String(physics?.drivetrain?.layout || 'rwd').toUpperCase();
+    const transmission = String(physics?.drivetrain?.transmission || 'manual').toLowerCase();
+    const brakeDiscType = String(physics?.brakes?.disc_type || 'iron').toLowerCase();
+    const brakeMigrationFront = Number(physics?.brakes?.migration_front ?? 0);
+    const heaveSpringFront = Number(physics?.front_axle?.heave_spring_rate_n_per_m ?? 0);
+    const heaveSpringRear = Number(physics?.rear_axle?.heave_spring_rate_n_per_m ?? 0);
+    const hasAeroMap2D = Boolean(
+      physics?.aero?.map_2d &&
+      Array.isArray(physics.aero.map_2d.front_rh_m) &&
+      physics.aero.map_2d.front_rh_m.length >= 2
+    );
     const bodyMeshAsset = `/Game/OpenGrid/Cars/${id}/body.body`;
     const hasStockWing = detectHasStockWing(id, visual);
 
@@ -232,6 +248,12 @@ function generateCarCatalogCsv() {
       MassKg: massKg,
       PeakPowerKw: peakPowerKw,
       Drivetrain: drivetrain,
+      Transmission: transmission,
+      BrakeDiscType: brakeDiscType,
+      BrakeMigrationFront: brakeMigrationFront,
+      HeaveSpringFrontNPerM: heaveSpringFront,
+      HeaveSpringRearNPerM: heaveSpringRear,
+      HasAeroMap2D: hasAeroMap2D ? 'True' : 'False',
       PhysicsJsonPath: physicsRel,
       VisualJsonPath: visualRel,
       BodyMeshAsset: bodyMeshAsset,

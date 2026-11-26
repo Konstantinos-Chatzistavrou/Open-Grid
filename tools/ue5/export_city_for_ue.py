@@ -709,10 +709,25 @@ def export_city(city_id, out_dir=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Export an OpenGrid city to UE 5.8 Landscape & PCG files.")
-    parser.add_argument("city_id", help="City identifier (e.g. crete, nyc, london, tokyo)")
+    parser.add_argument("city_id", nargs="?", default=None, help="City identifier (e.g. crete, nyc, london, tokyo)")
+    parser.add_argument("--all", action="store_true", help="Export all built cities listed in tools/nyc/cities.json")
     parser.add_argument("--out", default=None, help="Output directory (default: ue5/Import/Cities/<city_id>)")
     args = parser.parse_args()
-    export_city(args.city_id, args.out)
+    if args.all:
+        with open(CITIES_JSON, "r", encoding="utf-8") as f:
+            cities = json.load(f)
+        exported = 0
+        for cid in sorted(cities.keys()):
+            try:
+                export_city(cid, None)
+                exported += 1
+            except FileNotFoundError as exc:
+                print(f"[export_city_for_ue] skip {cid}: {exc}")
+        print(f"[export_city_for_ue] Batch export complete: {exported}/{len(cities)} cities exported.")
+    elif args.city_id:
+        export_city(args.city_id, args.out)
+    else:
+        parser.error("Provide a city_id or pass --all")
 
 
 if __name__ == "__main__":

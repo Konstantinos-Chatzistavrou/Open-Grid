@@ -135,7 +135,9 @@ Suggested, change the numbers before you start, not after:
   5 cm apart along each wheel's path until the next frame (`bUseGroundStrip`). Kerbs resolve as finely as tracing
   every step (core test `ground_strip_drive`). Cost grows with speed: watch "ground traces/frame" on the HUD and the
   frame time in Unreal Insights, and raise `GroundStripSpacingCm` if it is too expensive.
-- Cars whose wheels are not separate parts (K-Concept, Tornado GT/GT3) export as one body: no spinning wheels yet.
+- All 24 catalog cars (including Tornado GT/GT3 and Strix GT7) now export separate spinning `wheel_FL..RR` meshes;
+  caliper separation on the Nov-22 Sketchfab restyled fleet is tracked in `docs/ue5_roadmap.md`. (`mistra_200t.json` is
+  a physics-only FWD benchmark car used by CTest and is not in the playable visual catalog.)
 - Fuel burns (about 1 L a minute flat out), its weight comes off the car (0.745 kg/L; the spec mass is with a full
   tank) and an empty tank cuts the throttle; R repairs and refuels. Inertia stays the spec's as fuel burns.
 - Packaging a standalone game needs `data/` copied into `ue5/Content/OpenGridData` first (`DefaultGame.ini` stages

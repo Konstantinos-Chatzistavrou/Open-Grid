@@ -1,6 +1,7 @@
 // Apache-2.0 — Vehicle audio telemetry bridge for UE 5.8 MetaSounds via UAudioComponent parameter interface.
 // Pushes real-time rs_core physical acoustics (RPM, exhaust primary Hz, gear whine Hz, turbo surge, kerb load,
-// surface excitation, wheel slip, speed, wetness) without hard-linking optional MetaSound editor/runtime plugins.
+// surface excitation, wheel slip, pre-squeal rubber scrub, dirty-air wake buffeting, hybrid MGU-K motor whine,
+// bare-rotor grinding scrape, speed, wetness) without hard-linking optional MetaSound editor/runtime plugins.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -55,6 +56,38 @@ struct OPENGRID_API FOpenGridAudioTelemetry
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Audio")
     float OverrunPopIntensity = 0.0f;
+
+    /** LMU-style pre-squeal rubber micro-slip scrub (0..1, kicks in ~100 ms before full tyre squeal). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Audio")
+    float PreSquealScrub01 = 0.0f;
+
+    /** Dirty-air unsteady vortex aerodynamic buffeting wind roar intensity (0..1). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Audio")
+    float WakeBuffet01 = 0.0f;
+
+    /** Off-center dirty-air wake lateral stereo gradient (-1..+1). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Audio")
+    float WakeAsymmetry = 0.0f;
+
+    /** Electric MGU-K hybrid deploy/regen motor whine gain (0..1). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Audio")
+    float HybridMotorGain = 0.0f;
+
+    /** Electric MGU-K hybrid inverter/rotor whine pitch frequency (Hz). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Audio")
+    float HybridMotorPitchHz = 0.0f;
+
+    /** Hybrid ERS HV battery state of charge (0..1). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Audio")
+    float HybridSoc = 0.80f;
+
+    /** Metallic bare-rotor-on-asphalt grinding scrape gain (0..1) when a detached wheel drags over asphalt. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Audio")
+    float RotorScrapeGain = 0.0f;
+
+    /** Blown/punctured tyre carcass flapping gain (0..1) when rolling on a punctured tyre. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Audio")
+    float TyreFlapGain = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Audio")
     int32 Gear = 2;
@@ -137,5 +170,7 @@ private:
     float PrevThrottle_ = 0.0f;
     float TurboSurgeDecay_ = 0.0f;
     float PrevWheelCompressionCm_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    bool bPrevWheelDetached_[4] = {false, false, false, false};
+    bool bPrevTyrePunctured_[4] = {false, false, false, false};
     bool bHasPrevWheelSample_ = false;
 };

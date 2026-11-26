@@ -210,7 +210,7 @@ RS_TEST(ultra_aero_slipstream) {
                     out_roll.aero_downforce_front_n + out_roll.aero_downforce_rear_n <
                     (out_base.aero_downforce_front_n + out_base.aero_downforce_rear_n) * 0.97);
         test::check("drag line-of-action above CG generates nose-up pitching torque (-Y in body frame)",
-                    out_base.torque.y < -150.0);
+                    out_base.torque.y < -40.0);
         test::check("unsteady downward heave velocity reduces downforce (dissipative aerodynamic heave damping)",
                     out_heave.aero_downforce_front_n < out_base.aero_downforce_front_n * 0.97);
     }

@@ -22,6 +22,14 @@ const FName kParamIsWet(TEXT("IsWet"));
 const FName kParamBoostBar(TEXT("BoostBar"));
 const FName kParamTurboWhistleHz(TEXT("TurboWhistleHz"));
 const FName kParamOverrunPopIntensity(TEXT("OverrunPopIntensity"));
+const FName kParamPreSquealScrub01(TEXT("PreSquealScrub01"));
+const FName kParamWakeBuffet01(TEXT("WakeBuffet01"));
+const FName kParamWakeAsymmetry(TEXT("WakeAsymmetry"));
+const FName kParamHybridMotorGain(TEXT("HybridMotorGain"));
+const FName kParamHybridMotorPitchHz(TEXT("HybridMotorPitchHz"));
+const FName kParamHybridSoc(TEXT("HybridSoc"));
+const FName kParamRotorScrapeGain(TEXT("RotorScrapeGain"));
+const FName kParamTyreFlapGain(TEXT("TyreFlapGain"));
 const FName kParamGear(TEXT("Gear"));
 
 // Named MetaSound trigger parameters
@@ -31,6 +39,8 @@ const FName kTriggerGearGrind(TEXT("OnGearGrind"));
 const FName kTriggerMissedShift(TEXT("OnMissedShift"));
 const FName kTriggerScrape(TEXT("OnScrape"));
 const FName kTriggerGearShift(TEXT("OnGearShift"));
+const FName kTriggerWheelDetached(TEXT("OnWheelDetached"));
+const FName kTriggerTyreBlowout(TEXT("OnTyreBlowout"));
 }  // namespace
 
 UOpenGridMetaSoundComponent::UOpenGridMetaSoundComponent()
@@ -199,6 +209,14 @@ void UOpenGridMetaSoundComponent::PushFloatParameters() const
     AudioComponent->SetFloatParameter(kParamBoostBar, Telemetry.BoostBar);
     AudioComponent->SetFloatParameter(kParamTurboWhistleHz, Telemetry.TurboWhistleHz);
     AudioComponent->SetFloatParameter(kParamOverrunPopIntensity, Telemetry.OverrunPopIntensity);
+    AudioComponent->SetFloatParameter(kParamPreSquealScrub01, Telemetry.PreSquealScrub01);
+    AudioComponent->SetFloatParameter(kParamWakeBuffet01, Telemetry.WakeBuffet01);
+    AudioComponent->SetFloatParameter(kParamWakeAsymmetry, Telemetry.WakeAsymmetry);
+    AudioComponent->SetFloatParameter(kParamHybridMotorGain, Telemetry.HybridMotorGain);
+    AudioComponent->SetFloatParameter(kParamHybridMotorPitchHz, Telemetry.HybridMotorPitchHz);
+    AudioComponent->SetFloatParameter(kParamHybridSoc, Telemetry.HybridSoc);
+    AudioComponent->SetFloatParameter(kParamRotorScrapeGain, Telemetry.RotorScrapeGain);
+    AudioComponent->SetFloatParameter(kParamTyreFlapGain, Telemetry.TyreFlapGain);
     AudioComponent->SetIntParameter(kParamGear, Telemetry.Gear);
 }
 
@@ -240,19 +258,54 @@ void UOpenGridMetaSoundComponent::TickComponent(float DeltaTime, ELevelTick Tick
     int32 GroundedCount = 0;
 
     const int32 NumWheels = FMath::Min(4, Vehicle->WheelStates.Num());
-    for (int32 i = 0; i < NumWheels; ++i)
+    int32 DetachedWheelCount = 0;
+    bool bAnyDetachedInContact = false;
+    int32 PuncturedWheelCount = 0;
+
+    for (int32 i = 0; i < 4; ++i)
     {
+        const bool bDetached = Vehicle->WheelDetached.IsValidIndex(i) && Vehicle->WheelDetached[i];
+        if (bDetached)
+        {
+            ++DetachedWheelCount;
+            if (!bPrevWheelDetached_[i])
+            {
+                FireAudioTrigger(kTriggerWheelDetached);
+            }
+        }
+        bPrevWheelDetached_[i] = bDetached;
+
+        const bool bPunctured = Vehicle->TyrePunctured.IsValidIndex(i) && Vehicle->TyrePunctured[i];
+        if (bPunctured && !bDetached)
+        {
+            ++PuncturedWheelCount;
+            if (!bPrevTyrePunctured_[i])
+            {
+                FireAudioTrigger(kTriggerTyreBlowout);
+            }
+        }
+        bPrevTyrePunctured_[i] = bPunctured;
+
+        if (i >= NumWheels) continue;
+
         const FOpenGridWheelState& W = Vehicle->WheelStates[i];
         if (W.bInContact)
         {
             ++GroundedCount;
-            const float LongSlip = FMath::Abs(W.SlipRatio);
-            const float LatSlip = FMath::Abs(W.SlipAngleDeg) / 14.0f;
-            const float CombinedSlip = FMath::Sqrt(LongSlip * LongSlip + LatSlip * LatSlip);
-            MaxWheelSlip = FMath::Max(MaxWheelSlip, CombinedSlip);
+            if (bDetached)
+            {
+                bAnyDetachedInContact = true;
+            }
+            else
+            {
+                const float LongSlip = FMath::Abs(W.SlipRatio);
+                const float LatSlip = FMath::Abs(W.SlipAngleDeg) / 14.0f;
+                const float CombinedSlip = FMath::Sqrt(LongSlip * LongSlip + LatSlip * LatSlip);
+                MaxWheelSlip = FMath::Max(MaxWheelSlip, CombinedSlip);
 
-            MaxCavityRing = FMath::Max(MaxCavityRing, FMath::Clamp(W.CavityRingGain, 0.0f, 1.0f));
-            MaxFlatSpot = FMath::Max(MaxFlatSpot, FMath::Clamp(W.FlatSpotDepthMm / 1.5f, 0.0f, 1.0f));
+                MaxCavityRing = FMath::Max(MaxCavityRing, FMath::Clamp(W.CavityRingGain, 0.0f, 1.0f));
+                MaxFlatSpot = FMath::Max(MaxFlatSpot, FMath::Clamp(W.FlatSpotDepthMm / 1.5f, 0.0f, 1.0f));
+            }
 
             if (bHasPrevWheelSample_)
             {
@@ -271,6 +324,43 @@ void UOpenGridMetaSoundComponent::TickComponent(float DeltaTime, ELevelTick Tick
     const float BaseRoadExcitation = (GroundedCount > 0) ? (SpeedNorm * 0.55f + MaxCavityRing * 0.35f + MaxFlatSpot * 0.25f) : 0.0f;
     const float SurfaceExcitation = FMath::Clamp(BaseRoadExcitation + (Vehicle->bScrapeActive ? 0.45f : 0.0f), 0.0f, 1.0f);
 
+    // LMU-style pre-squeal rubber micro-slip scrub (~100 ms before full tyre squeal).
+    const float PreSquealSpeedGate = FMath::Clamp((SpeedKmh - 12.0f) / 28.0f, 0.0f, 1.0f);
+    const bool bFrontGrounded = (NumWheels >= 2)
+        ? (Vehicle->WheelStates[0].bInContact || Vehicle->WheelStates[1].bInContact)
+        : (GroundedCount > 0);
+    const float PreSquealScrub01 = bFrontGrounded
+        ? FMath::Clamp((0.84f - Vehicle->FrontAdhesionRatio) / 0.34f, 0.0f, 1.0f) * PreSquealSpeedGate
+        : 0.0f;
+
+    // Dirty-air unsteady vortex aerodynamic buffeting wind roar & stereo asymmetry.
+    const float WakeBuffet01 = FMath::Clamp(Vehicle->WakeTurbulence, 0.0f, 1.0f);
+    const float WakeAsymmetry = FMath::Clamp(Vehicle->WakeAsymmetry, -1.0f, 1.0f);
+
+    // Hybrid ERS / MGU-K electric motor whine gain & inverter/rotor frequency.
+    const float DeployKw = FMath::Max(0.0f, Vehicle->HybridDeployKw);
+    const float RegenKw = FMath::Max(0.0f, Vehicle->HybridRegenKw);
+    const float HybridPowerKw = FMath::Max(DeployKw, RegenKw);
+    const float HybridMotorGain = FMath::Clamp(HybridPowerKw / 160.0f, 0.0f, 1.0f);
+    const float BaseHybridHz = 420.0f
+        + FMath::Clamp(SpeedKmh / 300.0f, 0.0f, 1.25f) * 2600.0f
+        + FMath::Clamp(Vehicle->EngineRpm / 9000.0f, 0.0f, 1.0f) * 380.0f;
+    const float HybridPitchScale = (RegenKw > DeployKw) ? 0.92f : 1.0f;
+    const float HybridMotorPitchHz = (HybridPowerKw > 0.5f || SpeedKmh > 1.0f)
+        ? (BaseHybridHz * HybridPitchScale)
+        : 0.0f;
+
+    // Bare-rotor-on-asphalt metallic grinding scrape when any detached wheel is moving over asphalt.
+    const bool bDetachedDragging = (DetachedWheelCount > 0) && (bAnyDetachedInContact || GroundedCount > 0) && (SpeedKmh > 2.0f);
+    const float RotorSpeedFactor = FMath::Clamp((SpeedKmh - 2.0f) / 65.0f, 0.0f, 1.0f);
+    const float DetachedCountScale = FMath::Clamp(0.65f + 0.35f * static_cast<float>(FMath::Max(0, DetachedWheelCount - 1)), 0.65f, 1.0f);
+    const float RotorScrapeGain = bDetachedDragging ? FMath::Clamp(RotorSpeedFactor * DetachedCountScale, 0.0f, 1.0f) : 0.0f;
+
+    // Punctured tyre carcass flapping gain when rolling on asphalt.
+    const float TyreFlapGain = (PuncturedWheelCount > 0 && GroundedCount > 0 && SpeedKmh > 5.0f)
+        ? FMath::Clamp(((SpeedKmh - 5.0f) / 90.0f) * (0.65f + 0.15f * static_cast<float>(PuncturedWheelCount - 1)), 0.0f, 1.0f)
+        : 0.0f;
+
     Telemetry.Rpm = Vehicle->EngineRpm;
     Telemetry.Throttle = Throttle;
     Telemetry.ExhaustPrimaryHz = (Vehicle->ExhaustPrimaryHz > 0.0f) ? Vehicle->ExhaustPrimaryHz : Vehicle->FundamentalFiringHz;
@@ -284,6 +374,14 @@ void UOpenGridMetaSoundComponent::TickComponent(float DeltaTime, ELevelTick Tick
     Telemetry.BoostBar = BoostBar;
     Telemetry.TurboWhistleHz = Vehicle->TurboWhistleHz;
     Telemetry.OverrunPopIntensity = Vehicle->OverrunPopIntensity;
+    Telemetry.PreSquealScrub01 = PreSquealScrub01;
+    Telemetry.WakeBuffet01 = WakeBuffet01;
+    Telemetry.WakeAsymmetry = WakeAsymmetry;
+    Telemetry.HybridMotorGain = HybridMotorGain;
+    Telemetry.HybridMotorPitchHz = HybridMotorPitchHz;
+    Telemetry.HybridSoc = FMath::Clamp(Vehicle->HybridSoc, 0.0f, 1.0f);
+    Telemetry.RotorScrapeGain = RotorScrapeGain;
+    Telemetry.TyreFlapGain = TyreFlapGain;
     Telemetry.Gear = Vehicle->CurrentGear;
 
     if (Vehicle->CurrentGear != LastGear_)

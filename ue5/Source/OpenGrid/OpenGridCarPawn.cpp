@@ -192,10 +192,11 @@ void AOpenGridCarPawn::BeginPlay()
         StockWingMesh->SetVisibility(true);
     }
 
+    TArray<UStaticMeshComponent*> WheelPtrs;
+    for (const TObjectPtr<UStaticMeshComponent>& W : Wheels) WheelPtrs.Add(W.Get());
+
     if (Customization)
     {
-        TArray<UStaticMeshComponent*> WheelPtrs;
-        for (const TObjectPtr<UStaticMeshComponent>& W : Wheels) WheelPtrs.Add(W.Get());
         TArray<UStaticMeshComponent*> CaliperPtrs;
         for (const TObjectPtr<UStaticMeshComponent>& C : Calipers) CaliperPtrs.Add(C.Get());
         Customization->BindPawnMeshes(DeformableBodyMesh.Get(), BodyMesh.Get(), StockWingMesh.Get(), WheelPtrs, CaliperPtrs);
@@ -204,6 +205,7 @@ void AOpenGridCarPawn::BeginPlay()
     if (Damage)
     {
         Damage->BindPawnComponents(Vehicle.Get(), DeformableBodyMesh.Get());
+        Damage->BindWheelMeshes(WheelPtrs);
         if (StockWingMesh)
         {
             Damage->RegisterDetachableComponent(TEXT("stock_wing"), StockWingMesh.Get(), EOpenGridDamageZone::Rear, 0.35f);
@@ -579,6 +581,7 @@ void AOpenGridCarPawn::UpdateEngineAudioAndVfx(float DeltaSeconds)
         VfxTel.GlobalWetness = Wetness;
         VfxTel.bNitrousActive = bNosActive;
         VfxTel.bScrapeActive = Vehicle->bScrapeActive;
+        VfxTel.EffectiveBrakeBiasFront = Vehicle->EffectiveBrakeBiasFront;
         VfxTel.VehicleVelocityCms = Chassis ? Chassis->GetPhysicsLinearVelocity() : FVector::ZeroVector;
 
         VfxTel.Wheels.SetNum(4);
@@ -587,6 +590,8 @@ void AOpenGridCarPawn::UpdateEngineAudioAndVfx(float DeltaSeconds)
         {
             FOpenGridWheelVfxTelemetry& Dst = VfxTel.Wheels[i];
             Dst.Wetness = Wetness;
+            Dst.bWheelDetached = Vehicle->WheelDetached.IsValidIndex(i) && Vehicle->WheelDetached[i];
+            Dst.bBrakeLineRuptured = Vehicle->BrakeLineRuptured.IsValidIndex(i) && Vehicle->BrakeLineRuptured[i];
 
             if (i < NumWheelStates)
             {
@@ -605,6 +610,15 @@ void AOpenGridCarPawn::UpdateEngineAudioAndVfx(float DeltaSeconds)
             else if (Vehicle->WheelCentresWorld.IsValidIndex(i))
             {
                 Dst.ContactPointWorldCm = Vehicle->WheelCentresWorld[i];
+            }
+
+            // Bare-rotor-on-asphalt spark shower when a detached corner drags along the road.
+            if (Dst.bWheelDetached && SpeedMps > 1.5f && SparkCooldown_ <= 0.0f &&
+                (Dst.bInContact || !Dst.ContactPointWorldCm.IsNearlyZero()))
+            {
+                const float RotorSparkIntensity = FMath::Clamp(SpeedMps / 24.0f, 0.50f, 1.60f);
+                VehicleVfx->TriggerSparkBurst(Dst.ContactPointWorldCm, Dst.ContactNormalWorld, RotorSparkIntensity);
+                SparkCooldown_ = 0.06f;
             }
         }
 
@@ -708,6 +722,17 @@ void AOpenGridCarPawn::PlaceWheels()
         const float SideSign = (i == 0 || i == 2) ? -1.0f : 1.0f;
         const FVector WheelCentre = Vehicle->WheelCentresWorld[i] + RightAxis * (SideSign * WidebodyTrackCm);
         Calipers[i]->SetWorldLocationAndRotation(WheelCentre, Steered);
+
+        const bool bWheelDetached = Vehicle->WheelDetached.IsValidIndex(i) && Vehicle->WheelDetached[i];
+        if (bWheelDetached)
+        {
+            if (Wheels[i]->IsVisible())
+            {
+                Wheels[i]->SetVisibility(false, true);
+            }
+            continue;
+        }
+
         FQuat Q = Steered * FQuat(FRotator(SpinDeg, 0.0f, 0.0f));
         const bool bRealWheel = i < WheelMeshes.Num() && WheelMeshes[i] != nullptr;
         if (!bRealWheel)
@@ -736,4 +761,47 @@ void AOpenGridCarPawn::DrawHud() const
                         Vehicle->SpeedKmh, *Gear, Vehicle->EngineRpm, Vehicle->FuelLiters,
                         Vehicle->bAsyncPhysicsActive ? TEXT("fixed-step physics") : TEXT("FRAME-TICK FALLBACK"),
                         Vehicle->GroundTracesLastFrame));
+
+    const float HybridNetKw = Vehicle->HybridDeployKw - Vehicle->HybridRegenKw;
+    const TCHAR* ClipTag = Vehicle->bFfbClipping ? TEXT(" [CLIP]") : TEXT("");
+    const TCHAR* BbwTag = Vehicle->bHybridBbwActive ? TEXT(" BBW") : TEXT("");
+    GEngine->AddOnScreenDebugMessage(4202, 0.0f, FColor::Cyan,
+        FString::Printf(TEXT("Adh %.2f | BB %.1f%%%s | ERS %.0f%% (%+.0fkW) | Draft x%.2f (SD %+.2f TP %+.2f Wk %.2f/%+.2f) | FFB %+.2f%s"),
+                        Vehicle->FrontAdhesionRatio,
+                        Vehicle->EffectiveBrakeBiasFront * 100.0f,
+                        BbwTag,
+                        Vehicle->HybridSoc * 100.0f,
+                        HybridNetKw,
+                        Vehicle->SlipstreamDragScale,
+                        Vehicle->SideDraftDragDelta,
+                        Vehicle->TandemPushDragDelta,
+                        Vehicle->WakeTurbulence,
+                        Vehicle->WakeAsymmetry,
+                        Vehicle->FfbNormalizedOutput,
+                        ClipTag));
+
+    if (Damage && (Damage->FluidLeakState.bAnyFluidLeaking ||
+                   Damage->IsWheelDetached(0) || Damage->IsWheelDetached(1) ||
+                   Damage->IsWheelDetached(2) || Damage->IsWheelDetached(3) ||
+                   Damage->IsTyrePunctured(0) || Damage->IsTyrePunctured(1) ||
+                   Damage->IsTyrePunctured(2) || Damage->IsTyrePunctured(3) ||
+                   Damage->IsBrakeLineRuptured(0) || Damage->IsBrakeLineRuptured(1) ||
+                   Damage->IsBrakeLineRuptured(2) || Damage->IsBrakeLineRuptured(3) ||
+                   Damage->IsHalfshaftBroken(0) || Damage->IsHalfshaftBroken(1) ||
+                   Damage->IsHalfshaftBroken(2) || Damage->IsHalfshaftBroken(3)))
+    {
+        GEngine->AddOnScreenDebugMessage(4203, 0.0f, FColor::Orange,
+            FString::Printf(TEXT("DMG: Cool %.2f L/s | Oil %.2f L/s | Fuel %.2f L/s | Det[%d%d%d%d] Punc[%d%d%d%d] BrkCut[%d%d%d%d] Axle[%d%d%d%d]"),
+                            Damage->FluidLeakState.CoolantDripLps,
+                            Damage->FluidLeakState.OilDripLps,
+                            Damage->FluidLeakState.FuelDripLps,
+                            Damage->IsWheelDetached(0) ? 1 : 0, Damage->IsWheelDetached(1) ? 1 : 0,
+                            Damage->IsWheelDetached(2) ? 1 : 0, Damage->IsWheelDetached(3) ? 1 : 0,
+                            Damage->IsTyrePunctured(0) ? 1 : 0, Damage->IsTyrePunctured(1) ? 1 : 0,
+                            Damage->IsTyrePunctured(2) ? 1 : 0, Damage->IsTyrePunctured(3) ? 1 : 0,
+                            Damage->IsBrakeLineRuptured(0) ? 1 : 0, Damage->IsBrakeLineRuptured(1) ? 1 : 0,
+                            Damage->IsBrakeLineRuptured(2) ? 1 : 0, Damage->IsBrakeLineRuptured(3) ? 1 : 0,
+                            Damage->IsHalfshaftBroken(0) ? 1 : 0, Damage->IsHalfshaftBroken(1) ? 1 : 0,
+                            Damage->IsHalfshaftBroken(2) ? 1 : 0, Damage->IsHalfshaftBroken(3) ? 1 : 0));
+    }
 }

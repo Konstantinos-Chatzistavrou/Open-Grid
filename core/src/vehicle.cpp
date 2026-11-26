@@ -1763,7 +1763,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     // ------------------------------------------------------------------ 6-DOF aerodynamics & multi-car wake field
     // Relative air velocity includes 3D Dynamic Weather wind + gusts (v_air = v_chassis - v_wind when enabled).
     // Includes 2D ride-height aero map, roll ground-effect seal loss, unsteady heave/pitch AoA damping,
-    // +0.24 m drag line-of-action pitch torque, 3D yaw polar + high-yaw (>45 deg) spin roof lift,
+    // +0.07 m GT drag line-of-action pitch torque, 3D yaw polar + high-yaw (>45 deg) spin roof lift,
     // vortex-induced drag coupling, multi-car slipstream/tandem-push/side-draft/dirty-air & unsteady wake buffeting.
     const AeroParams& a = cfg_.aero;
     const Vec3 v_air = atmosphere_.enabled ? (s.velocity - atmosphere_.wind_world_mps) : s.velocity;
@@ -1879,9 +1879,9 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     const double induced_cd_delta = aero_wake_.yaw_aero_enabled ? (0.055 * cl_excess) : 0.0;
     const Vec3 f_drag = v_air * (-0.5 * rho_air * (cd_area + induced_cd_delta) * damage_.aero_drag * eff_drag_scale * v);
     force += f_drag;
-    // Aerodynamic drag centre of pressure sits ~0.24 m above CG -> authentic nose-up pitch moment at 250-350 km/h
+    // Aerodynamic drag centre of pressure sits ~0.07 m above CG on low-slung GT/sports cars -> authentic high-speed nose-up pitch moment
     if (aero_wake_.yaw_aero_enabled && v > 1.0) {
-        torque += cross(s.orientation.rotate({0.0, 0.0, 0.24}), f_drag);
+        torque += cross(s.orientation.rotate({0.0, 0.0, 0.07}), f_drag);
     }
 
     // Full 3D yaw lateral aero side-force & weathercocking (active in both still-air yaw & crosswinds) + Bernoulli suction

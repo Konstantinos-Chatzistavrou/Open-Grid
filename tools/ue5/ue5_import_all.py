@@ -1243,11 +1243,53 @@ def step_import_cities(
 
 
 # ---------------------------------------------------------------------------
-# Step 7: Save all newly imported packages cleanly
+# Step 7: Import pre-generated WAV audio stems (ue5/Import/Audio -> /Game/OpenGrid/Audio)
+# ---------------------------------------------------------------------------
+
+def step_import_audio(repo_root: str, force_reimport: bool) -> Dict[str, int]:
+    audio_root = os.path.join(repo_root, "ue5", "Import", "Audio")
+    audio_content_root = f"{CONTENT_ROOT}/Audio"
+    stats = {"imported": 0, "skipped": 0}
+    if not os.path.isdir(audio_root):
+        _log("Step 7/8: No ue5/Import/Audio directory found; skipping WAV audio import.")
+        return stats
+
+    _log(f"Step 7/8: Importing WAV audio stems from {audio_root} -> {audio_content_root}...")
+    tasks = []
+    for dirpath, _dirnames, filenames in os.walk(audio_root):
+        for fname in sorted(filenames):
+            if not fname.lower().endswith(".wav"):
+                continue
+            src_path = os.path.join(dirpath, fname)
+            rel_dir = os.path.relpath(dirpath, audio_root).replace("\\", "/")
+            dest_path = audio_content_root if rel_dir == "." else f"{audio_content_root}/{rel_dir}"
+            asset_name = os.path.splitext(fname)[0]
+            target_asset = f"{dest_path}/{asset_name}.{asset_name}"
+            if not force_reimport and _asset_exists(target_asset):
+                stats["skipped"] += 1
+                continue
+            task = unreal.AssetImportTask()
+            task.filename = src_path
+            task.destination_path = dest_path
+            task.destination_name = asset_name
+            task.replace_existing = True
+            task.automated = True
+            task.save = False
+            tasks.append(task)
+
+    if tasks:
+        unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks(tasks)
+        stats["imported"] = len(tasks)
+    _log(f"Step 7/8 done: Audio WAVs imported={stats['imported']}, skipped={stats['skipped']}.")
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# Step 8: Save all newly imported packages cleanly
 # ---------------------------------------------------------------------------
 
 def step_save_all(save_level: bool) -> None:
-    _log(f"Step 7/7: Saving dirty packages under {CONTENT_ROOT}...")
+    _log(f"Step 8/8: Saving dirty packages under {CONTENT_ROOT}...")
     try:
         unreal.EditorAssetLibrary.save_directory(
             CONTENT_ROOT,
@@ -1302,6 +1344,7 @@ def main() -> None:
     dt_stats = step_import_datatables(repo_root, force_reimport)
     ppv_ok = step_configure_postprocess(repo_root, lut_asset_path)
     city_stats = step_import_cities(repo_root, only_cities, force_reimport)
+    audio_stats = step_import_audio(repo_root, force_reimport)
     step_save_all(save_level=ppv_ok)
 
     elapsed = time.time() - t0
@@ -1313,7 +1356,8 @@ def main() -> None:
         f"LUT={'OK' if lut_asset_path else 'MISSING'} | "
         f"DataTables={sum(1 for v in dt_stats.values() if v)}/2 | "
         f"PPV_TokyoNight={'OK' if ppv_ok else 'DEFERRED'} | "
-        f"Cities={city_stats['cities']}"
+        f"Cities={city_stats['cities']} | "
+        f"Audio={audio_stats['imported']} new ({audio_stats['skipped']} existing)"
     )
     _log("=" * 76)
 

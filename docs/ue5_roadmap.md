@@ -42,11 +42,11 @@ Node.js, and plugs straight into UE 5.8 with zero rework.
      `diffuser_*.glb`, `skirt_*.glb`, `rim_*.glb`) with standardized named sockets (`SOCKET_Wheel_FL..RR`,
      `SOCKET_Caliper_FL..RR`, `SOCKET_Wing`, `SOCKET_Exhaust_L/R`, `SOCKET_Plate_Rear`) so `AOpenGridCarPawn` attaches
      Nanite static meshes directly.
-2. **Split Wheels & Calipers on the Remaining Monolith Cars (`k_concept`, `tornado_gt`, `tornado_gt3`)**:
-   - **Current gap** (`docs/ue5_first_session.md`): Cars whose wheels are merged into the body export as a single
-     static mesh in UE 5.8 (wheels cannot spin, steer, or travel with suspension).
-   - **Fix**: Run a Blender bmesh separation pass so every car in `data/cars/catalog.json` has independent
-     `wheel_fl..rr` and `caliper_fl..rr` nodes.
+2. **Split Wheels & Calipers Across All Catalog Cars (`export_cars_for_ue.mjs`)**:
+   - **Status**: `tornado_gt` and `tornado_gt3` are already split into independent `wheel_FL..RR` and `caliper_FL..RR`
+     nodes (and duplicate `k_concept` was removed in favour of `strix_gt7`, which is also split).
+   - **Remaining gap**: Most Nov-22 Sketchfab restyled `v5/*_hero.glb` cars have split `wheel_FL..RR` but still need
+     `caliper_FL..RR` grouping in `tools/pipeline/sketchfab_gta6_blender.py`.
 3. **Bake 6-Zone Crash Morph Targets & Detachable Panels into Car glTFs**:
    - **Current gap**: Vertex denting (`web/src/scene/dents.ts`) currently runs in JavaScript on the CPU.
    - **Fix**: Author/generate 6 directional crush **Morph Targets** (`crush_front`, `crush_rear`, `crush_left`,

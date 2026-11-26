@@ -89,6 +89,14 @@ struct OPENGRID_API FOpenGridWheelVfxTelemetry
     /** Gravel / off-road roost / kerb dust excitation factor (0..1). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|VFX")
     float DebrisIntensity = 0.0f;
+
+    /** True when this wheel has sheared off onto the bare brake rotor (suppresses tyre smoke & spray). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|VFX")
+    bool bWheelDetached = false;
+
+    /** True when this corner's hydraulic brake line is ruptured (eliminates service-brake rotor heating). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|VFX")
+    bool bBrakeLineRuptured = false;
 };
 
 /** Per-frame vehicle VFX telemetry snapshot consumed by UOpenGridVfxComponent::UpdateVehicleVfx. */
@@ -129,6 +137,10 @@ struct OPENGRID_API FOpenGridVfxTelemetry
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|VFX")
     bool bScrapeActive = false;
+
+    /** Live front brake bias (0.25..0.85) from cockpit adjustment + dynamic Brake Migration (BMIG). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|VFX")
+    float EffectiveBrakeBiasFront = 0.62f;
 
     /** Vehicle chassis linear velocity in world space (cm/s). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|VFX")

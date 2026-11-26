@@ -515,7 +515,7 @@
   "aero": {
     "drag_area_m2": 0.635,
     "downforce_area_m2": 0.18,
-    "front_balance": 0.5,
+    "front_balance": 0.62,
     "ground_effect_per_m": 2,
     "pitch_balance_per_m": 1.2
   },

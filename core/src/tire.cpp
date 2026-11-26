@@ -453,7 +453,8 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
                                  ? (p->dry_overheat_wear_mult - 1.0) * clamp((0.20 - road_water_mm) / 0.20, 0.0, 1.0)
                                  : 0.0;
     const double q_dry_squirm = dry_squirm_mult * 0.018 * std::max(0.0, load_n) * v;
-    const double ha = std::max(5.0, ha_total - g_road * 0.45);
+    // Preserve total surface conductance ha + g_road == ha_total so warmer track asphalt raises equilibrium tyre temp
+    const double ha = std::max(5.0, ha_total - g_road);
     // Sidewall: carcass -> sidewall rubber -> air film, toward ambient air (pure energy balance, no set-point pull).
     const double G_film_sw = kSidewallAreaRatio * ha_total;
     const double G_sw = kSidewallConductionWK * G_film_sw / (kSidewallConductionWK + G_film_sw);
@@ -621,7 +622,7 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
                                  ? (p->dry_overheat_wear_mult - 1.0) * clamp((0.20 - road_water_mm) / 0.20, 0.0, 1.0)
                                  : 0.0;
     const double q_dry_squirm = dry_squirm_mult * 0.018 * std::max(0.0, load_n) * v;
-    const double ha = std::max(5.0, ha_total - g_road * 0.45);
+    const double ha = std::max(5.0, ha_total - g_road);
     const double q_asym = std::max(0.0, slip_power_w) + q_dry_squirm + 0.018 * std::max(0.0, load_n) * v;
     const double q_in = slip_power_w + q_dry_squirm + (w_in - 1.0) * q_asym;
     const double q_mid = slip_power_w + q_dry_squirm + (w_mid - 1.0) * q_asym;
