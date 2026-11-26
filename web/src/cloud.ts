@@ -131,7 +131,7 @@ export class Cloud {
   replay(raceId: string, data: string) { return this.call<{ ok: true }>('POST', `/v1/replay/${encodeURIComponent(raceId)}`, { data }); }
 
   // ---- Competitive OpenGrid Online Network ----
-  subscription() { return this.call<{ tier: SubTier; active: boolean; expiresAt: number; daysLeft: number; adFree: boolean; benefits: string[] }>('GET', '/v1/subscription'); }
+  subscription() { return this.call<{ tier: SubTier; active: boolean; expiresAt: number; daysLeft: number; adFree: boolean; checkoutUrl?: string | null; benefits: string[] }>('GET', '/v1/subscription'); }
   schedule() { return this.call<ScheduleResponse>('GET', '/v1/schedule', undefined, true); }
   registerSeries(seriesId: string, car: string) {
     return this.call<{ ok: true; eventKey: string; seriesId: string; startsAt: number; registrants: number }>('POST', '/v1/schedule/register', { seriesId, car });
@@ -159,6 +159,15 @@ export class Cloud {
   }
   teams() { return this.call<{ teams: { id: string; name: string; tag: string; role: string }[] }>('GET', '/v1/teams'); }
   createTeam(name: string, tag: string) { return this.call<{ ok: true; id: string; name: string; tag: string }>('POST', '/v1/teams', { name, tag }); }
+  leagues() {
+    return this.call<{ leagues: { id: string; name: string; code: string; description: string; series_rules: string; bop_enabled: number; max_drivers: number; is_private: number; member_count: number; created: number }[] }>('GET', '/v1/leagues', undefined, true);
+  }
+  createLeague(spec: { name: string; description?: string; seriesRules?: string; bopEnabled?: boolean; maxDrivers?: number; password?: string }) {
+    return this.call<{ ok: true; id: string; name: string; code: string; isPrivate: boolean }>('POST', '/v1/leagues', spec);
+  }
+  joinLeague(code: string, password?: string) {
+    return this.call<{ ok: true; leagueId: string; name: string; code: string }>('POST', '/v1/leagues/join', { code, password });
+  }
 
   room(party: string): WebSocket {
     if (!this.acct) throw new Error('no account');

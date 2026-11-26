@@ -10,6 +10,8 @@ export interface Env {
   VERIFIER_KEY?: string;
   /** HMAC-SHA256 webhook secret for Stripe/Paddle subscription updates (wrangler secret put BILLING_SECRET) */
   BILLING_SECRET?: string;
+  /** Optional hosted Stripe/Paddle Payment Link URL for OpenGrid Pro subscriptions (zero backend SDK cost!) */
+  STRIPE_PAYMENT_LINK?: string;
   ALLOWED_ORIGINS?: string;
   /** local tests only (.dev.vars): honour the x-test-ip header to simulate players on different networks */
   ALLOW_TEST_IP?: string;

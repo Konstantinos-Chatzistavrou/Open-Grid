@@ -1,0 +1,26 @@
+name: OpenGrid Replay Anti-Cheat Verifier ($0/mo)
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  verify-replays:
+    name: C++20 Deterministic Replay & Anti-Bot Verification
+    runs-on: ubuntu-latest
+    if: ${{ secrets.VERIFIER_KEY != '' && vars.OPENGRID_CLOUD_URL != '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Build Headless C++20 Replay Verifier
+        run: |
+          cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Release -DRS_BUILD_TESTS=OFF
+          cmake --build core/build -j --target opengrid_replay_verifier
+      - name: Poll & Verify Pending Ranked Replays
+        env:
+          OPENGRID_CLOUD_URL: ${{ vars.OPENGRID_CLOUD_URL }}
+          VERIFIER_KEY: ${{ secrets.VERIFIER_KEY }}
+        run: node tools/verify_replays.mjs

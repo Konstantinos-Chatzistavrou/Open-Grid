@@ -307,17 +307,80 @@ async function route(req: Request, env: Env): Promise<Response> {
     const exp = acct.sub_expires_at ?? 0;
     const active = isSubscriptionActive(tier, exp);
     const daysLeft = exp > Date.now() ? Math.ceil((exp - Date.now()) / 86_400_000) : 0;
+    const checkoutUrl = env.STRIPE_PAYMENT_LINK
+      ? `${env.STRIPE_PAYMENT_LINK}${env.STRIPE_PAYMENT_LINK.includes('?') ? '&' : '?'}client_reference_id=${encodeURIComponent(acct.id)}`
+      : null;
     return json({
-      tier, active, expiresAt: exp, daysLeft, adFree: true,
+      tier, active, expiresAt: exp, daysLeft, adFree: true, checkoutUrl,
       benefits: [
         '100% Ad-Free Managed Official Servers',
         'Scheduled 20m / 45m / 60m SOF Splits & License Ladder (R -> PRO)',
         'Official Multi-Week Championships & Endurance Events',
         'Fault-Aware Safety Rating (0x Victim Shield) & Restorative Protests (DR/SR Refunds)',
         'Season Disconnect Jokers & Verified Global Hotlap Ghosts / Telemetry',
+        'Hosted Private Leagues & Endurance Teams',
         'Zero Hostage Content: All Cars, Tracks, SP & Private P2P Stay Free Forever',
       ],
     });
+  }
+
+  // ---- Hosted Private Leagues (Custom Rules, BoP, Passwords & Community Stewards) ----
+  if (path === '/v1/leagues' && req.method === 'GET') {
+    const rows = await env.DB.prepare(
+      `SELECT l.id, l.name, l.join_code, l.owner, l.config_json, l.max_drivers, m.role,
+              (SELECT COUNT(*) FROM league_members x WHERE x.league_id = l.id) AS members
+       FROM leagues l JOIN league_members m ON m.league_id = l.id WHERE m.account = ? ORDER BY l.created DESC`,
+    ).bind(acct.id).all();
+    return json({ leagues: rows.results });
+  }
+
+  if (path === '/v1/leagues' && req.method === 'POST') {
+    const subErr = requireActiveSub(acct);
+    if (subErr) return subErr;
+    const b = await req.json<{ name?: string; password?: string; laps?: number; realism?: boolean; bop?: boolean; route?: string; maxDrivers?: number }>();
+    const name = String(b.name ?? '').trim().slice(0, 40);
+    if (name.length < 3) return json({ error: 'League name must be at least 3 characters.' }, 400);
+    const pw = b.password ? String(b.password) : '';
+    const hashed = pw ? await hashPassword(pw) : null;
+    const lid = randomId(12);
+    const joinCode = `LG${randomId(6).toUpperCase()}`;
+    const cfg = JSON.stringify({
+      laps: Math.max(1, Math.min(20, Math.round(Number(b.laps) || 5))),
+      realism: b.realism !== false,
+      bop: b.bop !== false,
+      route: b.route === 'city' ? 'city' : 'nyc',
+    });
+    const maxDrivers = Math.max(4, Math.min(64, Math.round(Number(b.maxDrivers) || 32)));
+    const now = Date.now();
+    try {
+      await env.DB.batch([
+        env.DB.prepare('INSERT INTO leagues (id, name, join_code, owner, password_hash, password_salt, config_json, max_drivers, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(lid, name, joinCode, acct.id, hashed?.hash ?? null, hashed?.salt ?? null, cfg, maxDrivers, now),
+        env.DB.prepare("INSERT INTO league_members (league_id, account, role, joined_at) VALUES (?, ?, 'owner', ?)").bind(lid, acct.id, now),
+      ]);
+    } catch {
+      return json({ error: 'That league name is already taken.' }, 409);
+    }
+    return json({ ok: true, id: lid, name, joinCode, config: JSON.parse(cfg) });
+  }
+
+  if (path === '/v1/leagues/join' && req.method === 'POST') {
+    const subErr = requireActiveSub(acct);
+    if (subErr) return subErr;
+    const b = await req.json<{ joinCode?: string; password?: string }>();
+    const code = String(b.joinCode ?? '').trim().toUpperCase().slice(0, 16);
+    const lg = await env.DB.prepare('SELECT * FROM leagues WHERE join_code = ?').bind(code).first<{
+      id: string; name: string; join_code: string; password_hash: string | null; password_salt: string | null; max_drivers: number;
+    }>();
+    if (!lg) return json({ error: 'No league with that join code.' }, 404);
+    if (lg.password_hash && lg.password_salt) {
+      const ok = await verifyPassword(String(b.password ?? ''), lg.password_hash, lg.password_salt);
+      if (!ok) return json({ error: 'Incorrect league password.' }, 403);
+    }
+    const cnt = await env.DB.prepare('SELECT COUNT(*) AS n FROM league_members WHERE league_id = ?').bind(lg.id).first<{ n: number }>();
+    if ((cnt?.n ?? 0) >= lg.max_drivers) return json({ error: 'This league is full.' }, 409);
+    await env.DB.prepare("INSERT OR IGNORE INTO league_members (league_id, account, role, joined_at) VALUES (?, ?, 'driver', ?)").bind(lg.id, acct.id, Date.now()).run();
+    return json({ ok: true, id: lg.id, name: lg.name, joinCode: lg.join_code });
   }
 
   // ---- Scheduled Official Series Registration & Balanced SOF Split Seeding ----

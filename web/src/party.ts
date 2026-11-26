@@ -8,7 +8,7 @@
 // everyone loads, the leader waits until all are on the grid, then sends GO (race: 3-2-1 together).
 // ?peer=host:port[/path] uses your own PeerJS server instead of the public one (see server/).
 import { USERNAME_MAX } from './username';
-import Peer, { type DataConnection, type PeerOptions } from 'peerjs';
+import Peer, { type DataConnection, type MediaConnection, type PeerOptions } from 'peerjs';
 import { cleanCustom, type Custom } from './scene/custom';
 import { skinOf } from './scene/driver';
 
@@ -99,6 +99,10 @@ export interface PartyHooks {
   wager?(fromId: string, w: WagerNetMsg): void;
   /** speed trap / drift zone score posted by another player in Free Roam */
   zoneScore?(fromId: string, z: ZoneScoreNetMsg): void;
+  /** incoming WebRTC peer voice stream (0-cost P2P walkie-talkie / Car Meet proximity voice) */
+  remoteVoice?(peerId: string, stream: MediaStream): void;
+  /** remote peer closed their voice stream */
+  remoteVoiceGone?(peerId: string): void;
   /** the party is over for us (leader left, kicked, network gone) */
   closed(reason: string): void;
 }
@@ -150,6 +154,8 @@ export class Party {
   phase: Phase = 'lobby';
   hooks: PartyHooks = noop;
   private conns = new Map<string, DataConnection>();   // leader: every member's connection; member: the leader's
+  private voiceCalls = new Map<string, MediaConnection>();
+  private localVoice: MediaStream | null = null;
   private loaded = new Set<string>();
   private loadTimer = 0;
   private closed = false;
@@ -164,6 +170,52 @@ export class Party {
       if (type === 'network' || type === 'server-error') return;     // broker trouble: existing connections keep working
       if (!this.isHost && (type === 'peer-unavailable')) this.end('The party is gone (the leader left).');
     });
+    peer.on('call', (call) => {
+      if (this.closed) { call.close(); return; }
+      try { call.answer(this.localVoice ?? undefined); } catch { /* stream optional */ }
+      this.trackVoiceCall(call);
+    });
+  }
+
+  /** Attach or remove our local microphone MediaStream for $0/mo P2P WebRTC voice chat. */
+  setVoiceStream(stream: MediaStream | null) {
+    this.localVoice = stream;
+    if (!stream) {
+      for (const [id, call] of this.voiceCalls) {
+        try { call.close(); } catch { /* gone */ }
+        this.hooks.remoteVoiceGone?.(id);
+      }
+      this.voiceCalls.clear();
+      return;
+    }
+    this.syncVoiceCalls();
+  }
+
+  private syncVoiceCalls() {
+    if (!this.localVoice || this.closed) return;
+    for (const m of this.members) {
+      if (m.id === this.selfId || this.voiceCalls.has(m.id)) continue;
+      try {
+        const call = this.peer.call(m.id, this.localVoice);
+        if (call) this.trackVoiceCall(call);
+      } catch { /* peer busy or offline */ }
+    }
+  }
+
+  private trackVoiceCall(call: MediaConnection) {
+    const id = call.peer;
+    const prev = this.voiceCalls.get(id);
+    if (prev && prev !== call) { try { prev.close(); } catch { /* gone */ } }
+    this.voiceCalls.set(id, call);
+    call.on('stream', (stream) => { if (!this.closed) this.hooks.remoteVoice?.(id, stream); });
+    const cleanup = () => {
+      if (this.voiceCalls.get(id) === call) {
+        this.voiceCalls.delete(id);
+        this.hooks.remoteVoiceGone?.(id);
+      }
+    };
+    call.on('close', cleanup);
+    call.on('error', cleanup);
   }
 
   get selfId() { return this.peer.id; }
@@ -247,6 +299,8 @@ export class Party {
 
   private drop(id: string) {
     if (!this.conns.delete(id)) return;
+    const vc = this.voiceCalls.get(id);
+    if (vc) { try { vc.close(); } catch { /* gone */ } this.voiceCalls.delete(id); this.hooks.remoteVoiceGone?.(id); }
     this.members = this.members.filter((m) => m.id !== id);
     this.loaded.delete(id);
     this.hooks.left(id);
@@ -299,6 +353,7 @@ export class Party {
 
   private pushLobby() {
     this.broadcast({ t: 'lobby', members: this.members, mode: this.mode, laps: this.laps, realism: this.realism, copMode: this.copMode, phase: this.phase });
+    this.syncVoiceCalls();
     this.hooks.changed();
   }
 
@@ -471,6 +526,7 @@ export class Party {
         this.realism = m.realism !== false;
         this.copMode = m.mode === 'free' ? false : m.copMode !== false;
         this.phase = m.phase;
+        this.syncVoiceCalls();
         this.hooks.changed();
         break;
       case 'start': this.mode = m.mode === 'free' ? 'free' : 'race'; this.laps = Number(m.laps) || 3; this.realism = m.realism !== false; this.copMode = m.mode === 'free' ? false : m.copMode !== false; this.phase = 'loading'; this.hooks.start(this.mode, this.laps); break;
@@ -492,6 +548,8 @@ export class Party {
     if (this.closed) return;
     this.closed = true;
     clearTimeout(this.loadTimer);
+    for (const c of this.voiceCalls.values()) { try { c.close(); } catch { /* gone */ } }
+    this.voiceCalls.clear();
     const h = this.hooks;
     this.hooks = noop;
     try { this.peer.destroy(); } catch { /* gone */ }
@@ -504,6 +562,8 @@ export class Party {
     if (this.isHost) this.broadcast({ t: 'bye', reason: 'The party leader closed the party.' });
     this.closed = true;
     clearTimeout(this.loadTimer);
+    for (const c of this.voiceCalls.values()) { try { c.close(); } catch { /* gone */ } }
+    this.voiceCalls.clear();
     this.hooks = noop;
     // give the goodbye a moment to go out before the connections drop
     setTimeout(() => { try { this.peer.destroy(); } catch { /* gone */ } }, 200);

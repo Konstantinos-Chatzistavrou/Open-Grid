@@ -4,9 +4,16 @@
 import type { Cloud, Profile } from './cloud';
 
 export interface RankedResult {
-  raceId: string; ranked: boolean; counted: number;
+  raceId: string; ranked: boolean; counted: number; sof?: number;
   table: { id: string; name: string; pos: number; finished: boolean; dnf: boolean; timeMs: number; why: string; flagged: boolean }[];
-  you?: { pos: number; finished: boolean; xp: number; cr: number; parts: { label: string; xp: number }[]; notes: string[]; replay: boolean };
+  you?: {
+    pos: number; finished: boolean; xp: number; cr: number;
+    parts: { label: string; xp: number }[]; notes: string[]; replay: boolean;
+    drBefore?: number; drAfter?: number; drDelta?: number;
+    srBefore?: number; srAfter?: number; srDelta?: number;
+    license?: string; promoted?: boolean; demoted?: boolean; badSport?: boolean;
+    incidentPoints?: number; champPts?: number;
+  };
   profile: Profile | null;
 }
 
@@ -49,5 +56,6 @@ export class RankedLink {
   }
   reset() { this.send({ t: 'reset' }); this.lastSent = 0; }
   dnf(why: string) { this.send({ t: 'dnf', why }); }
+  incident(kind: 'offtrack' | 'contact_fault' | 'contact_victim' | 'spin' | 'wall') { this.send({ t: 'incident', kind }); }
   close() { try { this.ws?.close(); } catch { /* closed */ } this.ws = null; }
 }

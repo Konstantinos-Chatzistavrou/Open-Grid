@@ -95,8 +95,18 @@ export class VoiceChat {
       el.autoplay = true;
       this.remoteAudios.set(peerId, el);
     }
+    el.muted = this.mutedPeers.has(peerId) || this.blockedPeers.has(peerId);
     el.srcObject = stream;
     void el.play().catch(() => {});
+  }
+
+  /** Remove a disconnected peer's audio element. */
+  detachRemoteStream(peerId: string) {
+    const el = this.remoteAudios.get(peerId);
+    if (!el) return;
+    el.pause();
+    el.srcObject = null;
+    this.remoteAudios.delete(peerId);
   }
 
   /** Proximity voice attenuation for 5-floor Car Meets (full volume <= 8 m, fades smoothly to 0 at 45 m). */

@@ -77,6 +77,7 @@ import { WorldClock } from './worldClock';
 import { AUCTION_LOTS, ENGINE_SWAPS, applyNightRunnersToPhysics, engineOf, loadNightRunners, saveNightRunners, stanceOf, tickEngineAndNos } from './nightRunners';
 import { PARTY_BONUS_MUL, advanceChallenge, loadRetention, saveRetention, triggerPrestigeReset } from './retention';
 import { VoiceChat } from './voice';
+import { RaceSpotter, type SpotterCar } from './spotter';
 import { ACADEMY_LESSONS, PenaltyTracker, markLessonDone } from './careerEvents';
 import { assetUrl, loadGLTF } from './scene/loaders';
 import { Identity } from './identity';
@@ -411,6 +412,7 @@ async function main() {
   const worldClock = new WorldClock();
   { const w = params.get('weather'); if (w === 'dry' || w === 'rain') worldClock.setWeather(w); }   // screenshots: a fixed sky
   const voice = new VoiceChat();
+  const spotter = new RaceSpotter();
   // credits, owned cars and upgrades. Dev server tests (?car=..., ?unlockall=1) own everything.
   // careers: single player (XP levels, this device) and online (the server's profile). Dev tests (?car=, ?unlockall=1)
   // unlock the whole single-player career.
@@ -1634,10 +1636,87 @@ async function main() {
       menu.render();
     },
     voiceToggle: () => {
-      if (voice.enabled) { voice.disable(); menu.voiceOn = false; menu.voiceStatus = voice.status; menu.render(); return; }
-      void voice.enable().then((ok) => { menu.voiceOn = ok; menu.voiceStatus = voice.status; menu.render(); });
+      if (voice.enabled) { voice.disable(); party?.setVoiceStream(null); menu.voiceOn = false; menu.voiceStatus = voice.status; menu.render(); return; }
+      void voice.enable().then((ok) => {
+        if (ok && voice.localStream) party?.setVoiceStream(voice.localStream);
+        menu.voiceOn = ok; menu.voiceStatus = voice.status; menu.render();
+      });
     },
     voiceMode: (m) => { voice.setMode(m); menu.voiceMode = m; menu.voiceStatus = voice.status; menu.render(); },
+    spotterToggle: (on) => {
+      spotter.setEnabled(on);
+      hud.toast('📻 RACE SPOTTER', on ? 'Spotter & FIA Flag Radio ON' : 'Spotter OFF');
+    },
+    refreshHubTab: (tab, seriesId) => {
+      if (!cloud.available) return;
+      if (tab === 'champs') {
+        void cloud.championships(seriesId || menu.champSeries).then((c) => {
+          menu.officialSeason = c.season;
+          menu.champStandings = c.standings;
+          if (menu.screen === 'lobby') menu.render();
+        }).catch((e: Error) => { menu.officialNote = e.message; if (menu.screen === 'lobby') menu.render(); });
+      } else if (tab === 'hotlaps') {
+        void cloud.leaderboards(cityInfo.id).then((lb) => {
+          menu.hotlapEntries = lb.entries;
+          if (menu.screen === 'lobby') menu.render();
+        }).catch((e: Error) => { menu.officialNote = e.message; if (menu.screen === 'lobby') menu.render(); });
+      } else if (tab === 'leagues') {
+        void Promise.all([
+          cloud.teams().catch(() => ({ teams: [] })),
+          cloud.leagues().catch(() => ({ leagues: [] })),
+        ]).then(([tm, lg]) => {
+          menu.myTeams = tm.teams;
+          menu.publicLeagues = lg.leagues;
+          if (menu.screen === 'lobby') menu.render();
+        });
+      }
+    },
+    createTeam: (name, tag) => {
+      if (!cloud.available) return;
+      void cloud.createTeam(name, tag).then(async (res) => {
+        menu.officialNote = `✓ Created Endurance Team [${res.tag}] ${res.name}!`;
+        const tm = await cloud.teams();
+        menu.myTeams = tm.teams;
+        menu.render();
+      }).catch((e: Error) => { menu.officialNote = e.message; menu.render(); });
+    },
+    createLeague: (spec) => {
+      if (!cloud.available) return;
+      void cloud.createLeague(spec).then(async (res) => {
+        menu.officialNote = `✓ Hosted League "${res.name}" · Join Code: ${res.code}`;
+        const lg = await cloud.leagues();
+        menu.publicLeagues = lg.leagues;
+        menu.render();
+      }).catch((e: Error) => { menu.officialNote = e.message; menu.render(); });
+    },
+    joinLeague: (code, password) => {
+      if (!cloud.available) return;
+      void cloud.joinLeague(code, password).then(async (res) => {
+        menu.officialNote = `✓ Joined League "${res.name}" (${res.code})!`;
+        const lg = await cloud.leagues();
+        menu.publicLeagues = lg.leagues;
+        menu.render();
+      }).catch((e: Error) => { menu.officialNote = e.message; menu.render(); });
+    },
+    fileProtest: (raceId, accused, incidentType) => {
+      if (!cloud.available) { menu.protestNote = 'Protests require an active OpenGrid Online connection.'; menu.render(); return; }
+      menu.protestNote = 'Submitting restorative protest to Stewards…';
+      menu.render();
+      void cloud.fileProtest({ raceId, accused, incidentType, notes: `Reported via Results screen (${incidentType})` }).then((res) => {
+        menu.protestNote = `✓ Protest #${res.protestId.slice(0, 8)} filed against ${accused} — if upheld, 100% of lost DR & SR is refunded automatically.`;
+        hud.toast('⚖ PROTEST FILED', `Stewards reviewing ${accused}`);
+        menu.render();
+      }).catch((e: Error) => { menu.protestNote = e.message; menu.render(); });
+    },
+    useJoker: (raceId) => {
+      if (!cloud.available) return;
+      void cloud.useJoker(raceId).then((res) => {
+        mp.profile = res.profile;
+        menu.protestNote = `✓ Disconnect Joker applied! Restored +${Math.round(res.drRestored)} DR & +${res.srRestored.toFixed(2)} SR.`;
+        hud.toast('🛡 JOKER APPLIED', `Restored +${Math.round(res.drRestored)} DR & +${res.srRestored.toFixed(2)} SR`);
+        menu.render();
+      }).catch((e: Error) => { menu.protestNote = e.message; menu.render(); });
+    },
     refreshSchedule: () => {
       if (!cloud.available) return;
       void cloud.schedule().then((s) => {
@@ -1974,6 +2053,8 @@ async function main() {
   (g.__game as Record<string, unknown>).nr = nr;
   (g.__game as Record<string, unknown>).ret = ret;
   (g.__game as Record<string, unknown>).voice = voice;
+  (g.__game as Record<string, unknown>).spotter = spotter;
+  menu.spotterOn = spotter.enabled;
   (g.__game as Record<string, unknown>).penalties = penalties;
   {
     const inv = cleanCode(params.get('party') ?? '');
@@ -2017,8 +2098,11 @@ async function main() {
         wagers.onNetWager(id, name, w, p.selfId);
       },
       zoneScore: (_id, z) => { zones.receiveNetScore(z); },
+      remoteVoice: (id, stream) => { voice.attachRemoteStream(id, stream); },
+      remoteVoiceGone: (id) => { voice.detachRemoteStream(id); },
       closed: (reason) => detachParty(reason),
     };
+    if (voice.enabled && voice.localStream) p.setVoiceStream(voice.localStream);
     menu.show('lobby');
     setExtra();
   }
@@ -2149,7 +2233,7 @@ async function main() {
   const specYawVec = new THREE.Vector3();
 
   /** HUD running order: gap to the car in front, in seconds at the current speed (distance-based) or metres. */
-  let boardAt = 0, progAt = 0;
+  let boardAt = 0, progAt = 0, spotterAt = 0;
   function updateBoard(now: number) {
     if (now - boardAt < 250) return;
     boardAt = now;
@@ -2632,6 +2716,7 @@ async function main() {
     loader.hold = loader.shown;      // a session load: the loading screen stays until the race view renders steadily
     menu.show('none');
     hud.resetFps();
+    spotter.reset();
     input.poll();                    // drop key edges pressed in the menus
     audio.muted = false;
     remote?.kick();
@@ -3685,7 +3770,55 @@ async function main() {
       // our progress only while we race (a wreck being pushed around must not gain places)
       if (state === 'race' && !myDnf) {
         lap = race.update(raceCar, car.body.translation(), tRace);
-        if (lap.laps > lapTimes.length) lapTimes.push(lap.last);
+        if (lap.laps > lapTimes.length) {
+          lapTimes.push(lap.last);
+          if (raceLaps() > 1 && lap.laps === raceLaps() - 1) {
+            const c = spotter.announce('final_lap', 'WHITE FLAG — FINAL LAP!', 'White flag, final lap!', now, 60_000);
+            if (c) hud.toast(c.headline, c.detail);
+          }
+          // Auto-upload verified clean lap to the Global Hotlap Leaderboard ($0/mo Cloudflare D1)
+          if (cloud.available && lap.last > 10 && lap.last < 600) {
+            void cloud.submitHotlap({
+              track: cityInfo.id,
+              car: sel.car,
+              weather: worldClock.weather === 'rain' ? 'rain' : 'dry',
+              lapMs: Math.round(lap.last * 1000),
+              trackLengthM: route.length_m,
+            }).then((res) => {
+              if (res.personalBest) hud.toast('⏱ NEW GLOBAL HOTLAP PB', `${formatLap(lap!.last)} · Verified on Leaderboard`);
+            }).catch(() => {});
+          }
+        }
+        // Real-time iRacing-style Race Spotter + Free Roam Car Meet proximity voice attenuation
+        if (now - spotterAt > 100) {
+          spotterAt = now;
+          const p = car.body.translation();
+          const q = car.body.rotation();
+          // Local forward vector (+Z or -Z depending on body axes; Rapier car forward is +Z -> rotated (0,0,1))
+          const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+          const fwdX = 2 * (qx * qz + qw * qy);
+          const fwdZ = 1 - 2 * (qx * qx + qy * qy);
+          const flen = Math.hypot(fwdX, fwdZ) || 1;
+          const rivals: SpotterCar[] = [];
+          if (sel.mode === 'race') {
+            for (const ac of ai.cars) rivals.push({ x: ac.pos.x, z: ac.pos.z });
+          }
+          if (remote) {
+            for (const id of remote.ids()) {
+              const rc = remote.get(id);
+              if (!rc) continue;
+              const rp = rc.root.position;
+              rivals.push({ x: rp.x, z: rp.z });
+              if (voice.enabled) voice.setPeerDistance(id, Math.hypot(rp.x - p.x, rp.z - p.z));
+            }
+          }
+          const call = spotter.update(now, p.x, p.z, fwdX / flen, fwdZ / flen, Math.abs(car.out[OUT.speed]), rivals);
+          if (call) hud.toast(call.headline, call.detail);
+          if (damage.last && (damage.last.severity > 0.72 || damage.last.totaled)) {
+            const mc = spotter.announce('meatball', 'MEATBALL FLAG — SEVERE DAMAGE', 'Meatball flag, heavy damage.', now, 30_000);
+            if (mc) hud.toast(mc.headline, mc.detail);
+          }
+        }
       }
       for (const [i, r] of aiRace.entries()) {
         r.lap = race.update(r.idx, ai.cars[i].pos, tRace);

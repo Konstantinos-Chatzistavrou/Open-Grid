@@ -146,9 +146,16 @@ export interface MenuHooks {
   publicMatchmake?(): void;
   musicToggle?(on: boolean): void;
   audioEngineMode?(mode: 'real_samples' | 'engine_sim'): void;
+  spotterToggle?(on: boolean): void;
   registerOfficialSeries?(seriesId: string): void;
   joinOfficialSplit?(eventKey: string): void;
   refreshSchedule?(): void;
+  refreshHubTab?(tab: 'splits' | 'champs' | 'hotlaps' | 'leagues', seriesId?: string): void;
+  createTeam?(name: string, tag: string): void;
+  createLeague?(spec: { name: string; description?: string; seriesRules?: string; password?: string }): void;
+  joinLeague?(code: string, password?: string): void;
+  fileProtest?(raceId: string, accused: string, incidentType: 'intentional_wreck' | 'unsafe_rejoin' | 'blocking' | 'ramming' | 'chat_abuse'): void;
+  useJoker?(raceId: string): void;
   launchAcademy?(lesson: AcademyLesson): void;
   launchCalendar?(ev: CalendarEvent): void;
   specClassToggle?(on: boolean): void;
@@ -213,6 +220,21 @@ export class Menu {
   officialEvents: OfficialSeriesEvent[] = [];
   officialSeason = '';
   officialNote = '';
+  lobbyTab: 'splits' | 'champs' | 'hotlaps' | 'leagues' = 'splits';
+  champSeries = 'gt3_championship';
+  champStandings: { account: string; name: string; license: string; dr: number; locked_car: string; points: number; starts: number; wins: number; podiums: number }[] = [];
+  hotlapEntries: { id: string; username: string; car: string; lap_ms: number; created: number }[] = [];
+  myTeams: { id: string; name: string; tag: string; role: string }[] = [];
+  publicLeagues: { id: string; name: string; code: string; description: string; series_rules: string; bop_enabled: number; max_drivers: number; is_private: number; member_count: number; created: number }[] = [];
+  private teamNameDraft = '';
+  private teamTagDraft = '';
+  private leagueNameDraft = '';
+  private leagueDescDraft = '';
+  private leaguePassDraft = '';
+  private leagueJoinCode = '';
+  private leagueJoinPass = '';
+  protestNote = '';
+  spotterOn = true;
   private profileFrom: Screen = 'title';
   private friendsTimer = 0;
   /** the career the garage and shop show (single player / online) */
@@ -491,6 +513,7 @@ export class Menu {
       <h3>🔊 Audio &amp; Engine Sound (A/B Test)</h3>
       ${row('ENGINE AUDIO ENGINE', chip('audio-engine', 'real_samples', '🎙 Real Recorded Cars (CC-BY)', this.audioEngineMode === 'real_samples') + chip('audio-engine', 'engine_sim', '⚙ Engine-Sim + Muffler IR (WASM)', this.audioEngineMode === 'engine_sim'), 'Switch live while driving or in Garage: compare Real Recorded Supercars (Z06, Mustang, Ferrari 458/F12/812, GT3, Huracán, GT-R, Supra, RX-7) vs Thermodynamic Engine-Sim + 192-tap Exhaust Muffler IR.')}
       ${row('DYNAMIC ADAPTIVE MUSIC', chip('music', '1', '🎵 Adaptive ON', this.musicOn) + chip('music', '0', 'OFF', !this.musicOn), 'Reacts to speed, shifts into chase tempo during police pursuits, and swells at the finish line.')}
+      ${row('RACE SPOTTER / CREW CHIEF', chip('spotter', '1', '📻 Spotter ON', this.spotterOn) + chip('spotter', '0', 'OFF', !this.spotterOn), 'iRacing-style live proximity radio ("Car left", "Car right", "Three wide", "Clear") + FIA flag callouts (100% client-side).')}
       <h3>Driving assists</h3>${assists}
       <h3>🌍 ${t('settings.language')}</h3>
       <div class="chips">${LANGS.map((l) => chip('lang', l.code, l.native, getLang() === l.code)).join('')}</div>
@@ -1213,21 +1236,68 @@ export class Menu {
           <span class="pill">🛡 Jokers: ${jokers}</span>
           <span class="pill ${mp?.subActive ? 'gold' : ''}">${esc(subLabel)}</span>
           ${mp?.badSport ? '<span class="pill" style="border-color:#ff4757;color:#ff4757">⚠ BAD-SPORT QUARANTINE</span>' : ''}
-          ${this.cloud.available ? '<button class="small" data-act="official-refresh">↻ Refresh Splits</button>' : ''}
+          ${this.cloud.available ? '<button class="small" data-act="official-refresh">↻ Refresh</button>' : ''}
         </div>
-        <h3>🏁 Official Scheduled Splits ${this.officialSeason ? `<small class="dim">Season ${esc(this.officialSeason)} · Fault-Aware 0x Victim Shield · Restorative Protests</small>` : ''}</h3>
-        <div class="shop-cars">${seriesCards}</div>
-        ${this.officialNote ? `<div class="pnote ${this.officialNote.startsWith('✓') ? '' : 'bad'}">${esc(this.officialNote)}</div>` : ''}
-        <h3 style="margin-top:16px">Private Parties &amp; P2P (Free Forever)</h3>
-        <div class="lobby-cols">
-          <div class="lcol"><h3>Host</h3><p class="dim">Start a private party and invite friends with a link or 5-letter code (+${Math.round((PARTY_BONUS_MUL - 1) * 100)}% Party XP/CR Bonus).</p>
-            <button class="primary huge" data-act="pcreate" ${this.partyBusy ? 'disabled' : ''}>＋ Create Party</button></div>
-          <div class="lcol"><h3>Quick Ranked Match</h3><p class="dim">Auto-join the active OpenGrid Rookie Sprint split (or open public room).</p>
-            <button class="primary huge" data-act="pmatch" ${this.partyBusy ? 'disabled' : ''}>🌐 Quick Match</button></div>
-          <div class="lcol"><h3>Join by Code</h3><p class="dim">Got a code from a friend? Type it here.</p>
-            <div class="joinrow"><input id="joincode" type="text" maxlength="10" value="${esc(this.joinCode)}" placeholder="CODE" spellcheck="false" autocomplete="off" />
-            <button class="primary" data-act="pjoin" ${this.partyBusy ? 'disabled' : ''}>Join</button></div></div>
+        <div class="chips" style="margin-bottom:12px">
+          <button class="chip ${this.lobbyTab === 'splits' ? 'on' : ''}" data-act="lobby-tab" data-v="splits">🏁 Official Splits</button>
+          <button class="chip ${this.lobbyTab === 'champs' ? 'on' : ''}" data-act="lobby-tab" data-v="champs">🏆 Championships</button>
+          <button class="chip ${this.lobbyTab === 'hotlaps' ? 'on' : ''}" data-act="lobby-tab" data-v="hotlaps">⏱ Global Hotlaps</button>
+          <button class="chip ${this.lobbyTab === 'leagues' ? 'on' : ''}" data-act="lobby-tab" data-v="leagues">🤝 Teams &amp; Leagues</button>
         </div>
+        ${this.lobbyTab === 'splits' ? `
+          <h3>🏁 Official Scheduled Splits ${this.officialSeason ? `<small class="dim">Season ${esc(this.officialSeason)} · Fault-Aware 0x Victim Shield · Restorative Protests</small>` : ''}</h3>
+          <div class="shop-cars">${seriesCards}</div>
+          ${this.officialNote ? `<div class="pnote ${this.officialNote.startsWith('✓') ? '' : 'bad'}">${esc(this.officialNote)}</div>` : ''}
+          <h3 style="margin-top:16px">Private Parties &amp; P2P (Free Forever)</h3>
+          <div class="lobby-cols">
+            <div class="lcol"><h3>Host</h3><p class="dim">Start a private party and invite friends with a link or 5-letter code (+${Math.round((PARTY_BONUS_MUL - 1) * 100)}% Party XP/CR Bonus).</p>
+              <button class="primary huge" data-act="pcreate" ${this.partyBusy ? 'disabled' : ''}>＋ Create Party</button></div>
+            <div class="lcol"><h3>Quick Ranked Match</h3><p class="dim">Auto-join the active OpenGrid Rookie Sprint split (or open public room).</p>
+              <button class="primary huge" data-act="pmatch" ${this.partyBusy ? 'disabled' : ''}>🌐 Quick Match</button></div>
+            <div class="lcol"><h3>Join by Code</h3><p class="dim">Got a code from a friend? Type it here.</p>
+              <div class="joinrow"><input id="joincode" type="text" maxlength="10" value="${esc(this.joinCode)}" placeholder="CODE" spellcheck="false" autocomplete="off" />
+              <button class="primary" data-act="pjoin" ${this.partyBusy ? 'disabled' : ''}>Join</button></div></div>
+          </div>`
+        : this.lobbyTab === 'champs' ? `
+          <h3>🏆 Official Season Championships <small class="dim">SOF-weighted points · Best 8 of 12 rounds</small></h3>
+          <div class="chips" style="margin-bottom:10px">
+            ${([['rookie_sprint', 'Rookie GT Sprint'], ['gt3_championship', 'GT3 World Champ'], ['hypercar_pro', 'Hypercar Pro'], ['endurance_special', 'Endurance']] as const).map(([id, lbl]) =>
+              `<button class="chip ${this.champSeries === id ? 'on' : ''}" data-act="champ-series" data-v="${id}">${lbl}</button>`).join('')}
+          </div>
+          ${this.champStandings.length
+            ? `<div class="standings">${this.champStandings.map((s, i) => `<div class="srow"><span class="spos">${i + 1}</span><b>${esc(s.name)}</b><span class="pill">${esc(s.license)} · DR ${Math.round(s.dr)}</span><span class="dim">${esc(s.locked_car || '—')} · ${s.wins}W/${s.podiums}P</span><span class="sgap"><b>${s.points} pts</b></span></div>`).join('')}</div>`
+            : `<div class="dim note">${this.cloud.available ? 'No championship rounds scored yet this season — register in Official Splits and finish a ranked race to take P1!' : 'Connect to the OpenGrid cloud backend to view live global Championship Standings.'}</div>`}`
+        : this.lobbyTab === 'hotlaps' ? `
+          <h3>⏱ Verified Global Hotlap Leaderboard <small class="dim">Clean laps auto-upload · C++20 replay verified</small></h3>
+          ${this.hotlapEntries.length
+            ? `<div class="standings">${this.hotlapEntries.map((e, i) => `<div class="srow"><span class="spos">${i + 1}</span><b>${esc(e.username)}</b><span class="dim">${esc(this.cars.find((c) => c.id === e.car)?.name ?? e.car)}</span><span class="sgap"><b class="best-inline">${formatLap(e.lap_ms / 1000)}</b></span></div>`).join('')}</div>`
+            : `<div class="dim note">${this.cloud.available ? 'No verified hotlaps posted on this circuit yet — complete a clean lap to set the World Record!' : 'Connect to the OpenGrid cloud backend to submit and view Global Hotlaps.'}</div>`}`
+        : `
+          <h3>🤝 Endurance Teams <small class="dim">Team Driver Swaps &amp; Multiclass Endurance</small></h3>
+          <div class="joinrow" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">
+            <input id="team-name" type="text" maxlength="32" value="${esc(this.teamNameDraft)}" placeholder="Team Name (e.g. Apex Racing)" />
+            <input id="team-tag" type="text" maxlength="5" style="max-width:110px" value="${esc(this.teamTagDraft)}" placeholder="TAG" />
+            <button class="primary" data-act="team-create" ${this.cloud.available ? '' : 'disabled'}>＋ Create Team</button>
+          </div>
+          <div class="members" style="margin-bottom:14px">${this.myTeams.length
+            ? this.myTeams.map((tm) => `<div class="member"><div class="mtext"><div class="mname"><span class="pill gold">[${esc(tm.tag)}]</span> <b>${esc(tm.name)}</b></div><span class="dim">Role: ${esc(tm.role)}</span></div></div>`).join('')
+            : '<div class="dim note">You are not in an endurance team yet. Create one above to run Team Endurance races!</div>'}</div>
+          <h3>🏛 Hosted Private Leagues <small class="dim">Custom rules, BoP &amp; password-protected leagues</small></h3>
+          <div class="joinrow" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">
+            <input id="lg-name" type="text" maxlength="40" value="${esc(this.leagueNameDraft)}" placeholder="New League Name" />
+            <input id="lg-desc" type="text" maxlength="80" value="${esc(this.leagueDescDraft)}" placeholder="Rules / BoP notes" />
+            <input id="lg-pass" type="password" maxlength="40" style="max-width:160px" value="${esc(this.leaguePassDraft)}" placeholder="Password (optional)" />
+            <button class="primary" data-act="league-create" ${this.cloud.available ? '' : 'disabled'}>＋ Create League</button>
+          </div>
+          <div class="joinrow" style="flex-wrap:wrap;gap:6px;margin-bottom:10px">
+            <input id="lg-jcode" type="text" maxlength="10" style="max-width:140px" value="${esc(this.leagueJoinCode)}" placeholder="LEAGUE CODE" />
+            <input id="lg-jpass" type="password" maxlength="40" style="max-width:180px" value="${esc(this.leagueJoinPass)}" placeholder="Password (if private)" />
+            <button class="small primary" data-act="league-join" ${this.cloud.available ? '' : 'disabled'}>Join League</button>
+          </div>
+          ${this.officialNote ? `<div class="pnote ${this.officialNote.startsWith('✓') ? '' : 'bad'}">${esc(this.officialNote)}</div>` : ''}
+          <div class="members">${this.publicLeagues.length
+            ? this.publicLeagues.map((lg) => `<div class="member"><div class="mtext"><div class="mname"><b>${esc(lg.name)}</b> <span class="pill">${esc(lg.code)}</span>${lg.is_private ? '<span class="pill gold">🔒 PRIVATE</span>' : ''}</div><span class="dim">${esc(lg.description || 'Custom OpenGrid League')} · ${lg.member_count}/${lg.max_drivers} drivers</span></div><button class="small primary" data-act="league-quickjoin" data-v="${esc(lg.code)}">Join</button></div>`).join('')
+            : '<div class="dim note">No public leagues hosted yet — create the first one above!</div>'}</div>`}
         ${(() => { const ss = checkSplitScreen(); return `<div class="opts" style="margin-top:12px"><span class="dim">SPLIT-SCREEN</span><span class="pill ${ss.eligible ? 'gold' : ''}">${ss.eligible ? '✓ READY' : 'LOCKED'}</span><span class="dim small-note">${esc(ss.reason)}</span></div>`; })()}
         ${this.partyBusy ? '<div class="pnote"><span class="spin inline"></span> Connecting…</div>' : note}
       </div></div>`;
@@ -1319,11 +1389,15 @@ export class Menu {
     const ord = (n: number) => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
     const table = ranked.length > 1 ? `<div class="standings">${ranked.map((s, i) => `<div class="srow ${s.you ? 'you' : ''}">
         <span class="spos">${i + 1}</span><b>${esc(s.name)}</b><span class="dim">${s.best > 0 ? formatLap(s.best) : ''}</span><span class="sgap">${gap(s)}</span>${!s.you && !s.ai ? `<button class="small" data-act="report-open" data-v="${esc(s.name)}" title="Report hate speech livery/plate, griefing, or cheating">🚩</button>` : ''}</div>`).join('')}</div>` : '';
-    const reportBar = this.reportTarget ? `<div class="pnote"><b>🚩 Report ${esc(this.reportTarget)}:</b>
+    const reportBar = this.reportTarget ? `<div class="pnote"><b>⚖ Steward Protest / Report ${esc(this.reportTarget)}:</b>
+      ${this.rankedRes?.raceId ? `
+        <button class="small primary" data-act="protest-send" data-k="intentional_wreck" data-v="${esc(this.reportTarget)}">⚖ Intentional Wreck (Refunds DR/SR)</button>
+        <button class="small primary" data-act="protest-send" data-k="unsafe_rejoin" data-v="${esc(this.reportTarget)}">⚖ Unsafe Rejoin</button>
+        <button class="small primary" data-act="protest-send" data-k="ramming" data-v="${esc(this.reportTarget)}">⚖ Ramming</button>
+        <button class="small primary" data-act="protest-send" data-k="blocking" data-v="${esc(this.reportTarget)}">⚖ Blocking</button>` : ''}
       <button class="small" data-act="report-send" data-k="hate_livery_plate" data-v="${esc(this.reportTarget)}">Hate Speech Livery/Plate</button>
-      <button class="small" data-act="report-send" data-k="griefing_ramming" data-v="${esc(this.reportTarget)}">Ramming / Griefing</button>
       <button class="small" data-act="report-send" data-k="cheating" data-v="${esc(this.reportTarget)}">Cheating</button>
-      <button class="small" data-act="report-cancel">Cancel</button></div>` : '';
+      <button class="small" data-act="report-cancel">Cancel</button></div>` : (this.protestNote ? `<div class="pnote ${this.protestNote.startsWith('✓') ? '' : 'bad'}">${esc(this.protestNote)}</div>` : '');
     const maintLines: string[] = [];
     if (r.penaltySec && r.penaltySec > 0) maintLines.push(`⚠ Steward Time Penalties: +${r.penaltySec.toFixed(1)}s added to finish time`);
     if (r.towFeeXp) maintLines.push(`🚛 Tow Truck Fee (Totaled): -${r.towFeeXp} XP${r.insured ? ' (50% Insured)' : ''}`);
@@ -1357,8 +1431,22 @@ export class Menu {
       const x = this.rankedRes;
       if (!x) return `<div class="reward dim">${this.mp.ready ? 'The online race room is timing the race… (results when every car is in)' : 'Unranked: not connected to the online service.'}</div>`;
       const y = x.you;
-      return `<div class="reward"><div class="kicker">${x.ranked ? 'RANKED RACE' : 'UNRANKED'}</div>
-        ${y && (y.xp || y.cr) ? `<div class="earned center">+${fmtXp(y.xp)} · +${fmt(y.cr)}</div>` : ''}
+      const drStr = y && typeof y.drDelta === 'number'
+        ? `DR ${Math.round(y.drBefore ?? 1500)} → <b>${Math.round(y.drAfter ?? 1500)}</b> (${y.drDelta >= 0 ? '+' : ''}${Math.round(y.drDelta)})`
+        : '';
+      const srStr = y && typeof y.srDelta === 'number'
+        ? `SR ${(y.srBefore ?? 2.5).toFixed(2)} → <b>${(y.srAfter ?? 2.5).toFixed(2)}</b> (${y.srDelta >= 0 ? '+' : ''}${y.srDelta.toFixed(2)})`
+        : '';
+      const canJoker = !!x.raceId && (dnf || (y?.drDelta ?? 0) < 0) && (x.profile?.jokersLeft ?? this.mp.profile?.jokersLeft ?? 0) > 0;
+      return `<div class="reward"><div class="kicker">${x.ranked ? `OFFICIAL RANKED RACE${x.sof ? ` · SOF ${Math.round(x.sof)}` : ''}` : 'UNRANKED'}</div>
+        ${y && (y.xp || y.cr) ? `<div class="earned center">+${fmtXp(y.xp)} · +${fmt(y.cr)}${y.champPts ? ` · +${y.champPts} Champ Pts` : ''}</div>` : ''}
+        ${(drStr || srStr) ? `<div class="opts" style="justify-content:center;gap:8px;flex-wrap:wrap;margin:6px 0">
+          ${y?.license ? `<span class="pill gold">CLASS ${esc(y.license)}${y.promoted ? ' ▲ PROMOTED!' : y.demoted ? ' ▼ DEMOTED' : ''}</span>` : ''}
+          ${drStr ? `<span class="pill">${drStr}</span>` : ''}
+          ${srStr ? `<span class="pill">${srStr}</span>` : ''}
+          ${typeof y?.incidentPoints === 'number' ? `<span class="pill">${y.incidentPoints}x Incidents</span>` : ''}
+        </div>` : ''}
+        ${canJoker ? `<div style="margin:6px 0"><button class="small primary" data-act="use-joker" data-v="${esc(x.raceId)}">🛡 Use Season Disconnect Joker (${x.profile?.jokersLeft ?? this.mp.profile?.jokersLeft ?? 0} left) — Restore Lost DR/SR</button></div>` : ''}
         ${(y?.parts ?? []).filter((p) => p.xp).map((p) => `<div class="rpart"><span>${esc(p.label)}</span><b>+${p.xp.toLocaleString('en-US')}</b></div>`).join('')}
         ${(y?.notes ?? []).map((n) => `<div class="dim small-note">${esc(n)}</div>`).join('')}</div>`;
     }
@@ -1659,7 +1747,58 @@ export class Menu {
       case 'pmatch': this.hooks.publicMatchmake?.(); break;
       case 'official-reg': this.hooks.registerOfficialSeries?.(v); break;
       case 'official-join': this.hooks.joinOfficialSplit?.(v); break;
-      case 'official-refresh': this.hooks.refreshSchedule?.(); break;
+      case 'official-refresh': this.hooks.refreshHubTab?.(this.lobbyTab, this.champSeries); this.hooks.refreshSchedule?.(); break;
+      case 'lobby-tab':
+        this.lobbyTab = (v as typeof this.lobbyTab) || 'splits';
+        this.officialNote = '';
+        this.hooks.refreshHubTab?.(this.lobbyTab, this.champSeries);
+        this.render();
+        break;
+      case 'champ-series':
+        this.champSeries = v || 'gt3_championship';
+        this.hooks.refreshHubTab?.('champs', this.champSeries);
+        this.render();
+        break;
+      case 'team-create':
+        if (this.teamNameDraft.trim() && this.teamTagDraft.trim()) {
+          this.hooks.createTeam?.(this.teamNameDraft.trim(), this.teamTagDraft.trim());
+          this.teamNameDraft = '';
+          this.teamTagDraft = '';
+        }
+        break;
+      case 'league-create':
+        if (this.leagueNameDraft.trim()) {
+          this.hooks.createLeague?.({ name: this.leagueNameDraft.trim(), description: this.leagueDescDraft.trim(), password: this.leaguePassDraft || undefined });
+          this.leagueNameDraft = '';
+          this.leagueDescDraft = '';
+          this.leaguePassDraft = '';
+        }
+        break;
+      case 'league-join':
+        if (this.leagueJoinCode.trim()) {
+          this.hooks.joinLeague?.(this.leagueJoinCode.trim().toUpperCase(), this.leagueJoinPass || undefined);
+          this.leagueJoinPass = '';
+        }
+        break;
+      case 'league-quickjoin':
+        this.hooks.joinLeague?.(v, this.leagueJoinPass || undefined);
+        break;
+      case 'protest-send': {
+        const itype = b.dataset.k as 'intentional_wreck' | 'unsafe_rejoin' | 'blocking' | 'ramming' | 'chat_abuse';
+        const raceId = this.rankedRes?.raceId ?? '';
+        this.reportTarget = '';
+        if (raceId) this.hooks.fileProtest?.(raceId, v, itype);
+        this.render();
+        break;
+      }
+      case 'use-joker':
+        this.hooks.useJoker?.(v);
+        break;
+      case 'spotter':
+        this.spotterOn = v === '1';
+        this.hooks.spotterToggle?.(this.spotterOn);
+        this.render();
+        break;
       case 'auth-register': void this.submitAuth('register'); break;
       case 'auth-login': void this.submitAuth('login'); break;
       case 'auth-logout': void this.submitLogout(); break;
@@ -1976,6 +2115,13 @@ export class Menu {
     if (t.id === 'fadd') this.friendDraft = t.value;
     if (t.id === 'auth-email') this.authEmail = t.value;
     if (t.id === 'auth-pass') this.authPass = t.value;
+    if (t.id === 'team-name') this.teamNameDraft = t.value;
+    if (t.id === 'team-tag') this.teamTagDraft = t.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+    if (t.id === 'lg-name') this.leagueNameDraft = t.value;
+    if (t.id === 'lg-desc') this.leagueDescDraft = t.value;
+    if (t.id === 'lg-pass') this.leaguePassDraft = t.value;
+    if (t.id === 'lg-jcode') this.leagueJoinCode = cleanCode(t.value);
+    if (t.id === 'lg-jpass') this.leagueJoinPass = t.value;
     if (t.type === 'range') this.ctl?.slide(t);
   }
   private change(e: Event) {
