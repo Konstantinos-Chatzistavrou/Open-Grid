@@ -454,47 +454,122 @@ export class Menu {
   private title() {
     const curCar = this.car();
     const dis = this.tuning ? 'disabled' : '';
-    const invite = this.invite && !this.party ? `<div class="invite"><span>${this.inviteKind === 'garage' ? '🔧' : '🏁'} You're invited to ${this.inviteKind === 'garage' ? "a friend's Live Garage" : 'party'} <b>${esc(this.invite)}</b></span>
+    const invite = this.invite && !this.party ? `<div class="invite og-invite"><span>${this.inviteKind === 'garage' ? '🔧' : '🏁'} You're invited to ${this.inviteKind === 'garage' ? "a friend's Live Garage" : 'party'} <b>${esc(this.invite)}</b></span>
         <button class="primary" data-act="invite" ${dis}>${this.inviteKind === 'garage' ? 'Join Live Garage' : 'Join Party'}</button><button class="small" data-act="noinvite" aria-label="Dismiss">✕</button></div>` : '';
     const last = this.sp.last ?? this.mp.last;
     const earned = last && (last.xp || last.cr) ? `<div class="earned">+${fmtXp(last.xp)}${last.cr ? ` · +${fmt(last.cr)}` : ''} <span class="dim">${esc(last.reason)}</span>${last.levelUp ? ` <b class="lvup">LEVEL ${last.levelUp}</b>` : ''}</div>` : '';
     if (this.identity.needsPick && !this.tuning) return this.pickName();
-    const me = `<button class="me-chip" data-act="profile-open" ${dis}><span class="avatar">${helmetSvg(skinOf(this.sel.skin), 26)}</span><b>${esc(this.identity.name)}</b>
-      <span class="dim">${this.identity.friends.incoming.length ? `· ${this.identity.friends.incoming.length} friend request${this.identity.friends.incoming.length > 1 ? 's' : ''}` : '· Profile &amp; friends'}</span></button>`;
+
     const st = statsOf(applyMods(this.physics[this.sel.car], modsOf(this.sel)));
     const cls = st.power > 420 ? 'S' : st.power > 330 ? 'A' : st.power > 250 ? 'B' : 'C';
-    const nav = (act: string, n: string, label: string, sub: string, primary = false, extra = '') =>
-      `<button class="tnav huge ${primary ? 'primary' : ''}" data-act="${act}" ${dis} ${extra}><i>${n}</i><b>${label}</b><span>${sub}</span><u aria-hidden="true"></u></button>`;
+    const br = brandOfCar(curCar.id);
+    const engCur = engineOf(this.nr, curCar.id);
+    const engLbl = engCur.swap === 'stock' ? stockEngineOfCar(curCar.id).label : ENGINE_SWAPS[engCur.swap].label;
+    const cs = this.hooks.cities?.();
+    const curCity = cs?.list.find((c) => c.id === cs.current);
+    const mp = this.mp.profile;
+    const lic = mp?.license ?? 'R';
+    const dr = Math.round(mp?.dr ?? 1500);
+    const sr = (mp?.sr ?? 2.5).toFixed(2);
+    const subBadge = !this.cloud.available ? 'Offline'
+      : mp?.subTier === 'pro' || mp?.subTier === 'team_pro' ? '🧡 Patreon Pro'
+      : mp?.subActive ? `✓ ${this.patreonInfo?.daysLeft ?? 7}d Trial` : '🧡 Get Pass';
+    const todayEv = todayCalendarEvent();
+    const aidsOff = assistsOffCount(this.assists);
+
+    const card = (act: string, n: string, title: string, sub: string, tag: string, clsExtra = '') =>
+      `<button class="og-tile ${clsExtra}" data-act="${act}" ${dis}>
+        <div class="og-tile-top"><i>${n}</i><span>${tag}</span></div>
+        <b>${title}</b>
+        <p>${sub}</p>
+      </button>`;
+
+    const statBar = (label: string, val: string, f: number) =>
+      `<div class="og-sbar"><span>${label}</span><div><i style="width:${Math.round(Math.max(0.05, Math.min(1, f)) * 100)}%"></i></div><b>${val}</b></div>`;
+
     return `${this.tuning ? '<div class="cover"><div class="card center"><div class="spin"></div><p>Tuning graphics for this device…</p><span class="dim">Measuring the street once to pick resolution and effects.</span></div></div>' : ''}
-      <div class="title">
-        <div class="t-brand">
-          <div class="logo">OPEN<span>GRID</span></div>
-          <div class="t-slogan">The ultimate driving and racing experience</div>
-        </div>
-        <nav class="title-btns">
-          ${nav('play', '01', t('menu.play'), t('menu.play.sub'), true)}
-          ${nav('garage-open', '02', t('menu.garage'), t('menu.garage.sub'))}
-          ${nav('shop-open', '03', t('menu.shop'), t('menu.shop.sub'))}
-          ${nav('settings-open', '04', t('menu.settings'), t('menu.settings.sub'))}
-          ${this.heat > 0 && this.layLowCost >= 0 ? nav('laylow', '05', 'Lay low', `Clear your heat · ${this.layLowCost} XP`, false, this.sp.xp < this.layLowCost ? 'disabled title="Not enough reputation"' : '').replace('tnav huge', 'tnav huge lay') : ''}
-        </nav>
+      <div class="og-home">
+        <header class="og-topbar">
+          <div class="og-brand-wrap">
+            <div class="og-logo">OPEN<span>GRID</span></div>
+            <span class="og-badge">100% AD-FREE · NON-PROFIT</span>
+            ${curCity ? `<button class="chip og-city-pill" data-act="play" ${dis} title="Change city or event">📍 ${esc(curCity.name)} · ${esc(curCity.district)}</button>` : ''}
+          </div>
+          <div class="og-status-bar">
+            <button class="chip ${this.audioEngineMode === 'real_samples' ? 'on' : ''}" data-act="audio-engine-toggle" ${dis} title="Switch live between Real Recorded Supercars (CC-BY) and Engine-Sim + Muffler IR (WASM)">🔊 ${this.audioEngineMode === 'real_samples' ? 'Real Cars' : 'Sim + IR'}</button>
+            <button class="chip ${this.spotterOn ? 'on' : ''}" data-act="spotter" data-v="${this.spotterOn ? '0' : '1'}" ${dis} title="Toggle iRacing-style Race Spotter">📻 Spotter ${this.spotterOn ? 'ON' : 'OFF'}</button>
+            <button class="chip og-rank-pill" data-act="lobby" ${dis} title="Open Official Ranked Network">🏆 ${esc(lic)} · DR ${dr} · SR ${sr} · ${esc(subBadge)}</button>
+            <button class="me-chip og-me" data-act="profile-open" ${dis}>
+              <span class="avatar">${helmetSvg(skinOf(this.sel.skin), 26)}</span>
+              <b>${esc(this.identity.name)}</b>
+              <span class="dim">${this.identity.friends.incoming.length ? `· ${this.identity.friends.incoming.length} req` : mp?.email ? '· ✓ Cloud' : '· Log In'}</span>
+            </button>
+            <div class="og-heat ${this.heat >= 5 ? 'maxed' : this.heat >= 4 ? 'hot' : ''}" title="Street Heat Level">
+              <span>HEAT</span>${Array.from({ length: 5 }, (_, i) => `<i class="${i < this.heat ? 'on' : ''}"></i>`).join('')}<b>${this.heat}/5</b>
+              ${this.heat > 0 && this.layLowCost >= 0 ? `<button class="small" data-act="laylow" ${this.sp.xp < this.layLowCost ? 'disabled' : ''}>Clear (${this.layLowCost} XP)</button>` : ''}
+            </div>
+          </div>
+        </header>
+
         ${invite}
-        <div class="t-driver">
-          ${me}
-          <div class="careers">${this.careerCard('sp')}${this.careerCard('mp')}</div>
-          ${earned}
-          ${this.ret.challenges.length ? `<div class="daily-box">
-            <h4>⚡ Daily Challenges · Rep ${this.ret.reputation.toLocaleString()}${this.ret.prestige ? ` · ★${this.ret.prestige}` : ''}</h4>
-            ${this.ret.challenges.map((c) => `<div class="drow ${c.claimed ? 'done' : ''}"><span>${esc(c.title)}</span><b>${c.claimed ? '✓ DONE' : `${c.progress}/${c.target} (+${c.xpReward} XP)`}</b></div>`).join('')}
-          </div>` : ''}
-        </div>
-        <div class="t-foot">
-          <div class="dim note">${esc(this.gfxNote || 'WebGPU · 240 Hz physics')} · Assists: ${this.assists.preset[0].toUpperCase() + this.assists.preset.slice(1)}</div>
-          <a class="source-link dim" href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid" target="_blank" rel="noopener">Source code · code Apache-2.0 · assets CC BY-NC 4.0</a>
-        </div>
-      </div>
-      <div class="t-heat heat-chip ${this.heat >= 5 ? 'maxed' : this.heat === 4 ? 'hot' : ''}"><span>HEAT</span>${Array.from({ length: 5 }, (_, i) => `<i class="${i < this.heat ? 'on' : ''}"></i>`).join('')}<b>${this.heat}/5</b></div>
-      ${(() => { const br = brandOfCar(curCar.id); return `<div class="t-car"><div class="t-car-brand">${brandBadgeSvg(curCar.id, 30)}<span>${esc(br.fullName)} · ${esc(br.country)}</span></div><b>${esc(curCar.name)}</b><em><i>CLASS ${cls}</i>${Math.round(st.power)} kW · ${Math.round(st.mass)} kg</em></div>`; })()}`;
+        ${earned}
+
+        <main class="og-grid">
+          <section class="og-nav-col">
+            <div class="og-tiles">
+              ${card('play', '01', 'PLAY & EVENTS', 'Sanctioned Day Circuits · Underground Night Street Races · Free Roam · 2P Split-Screen · Driving Academy', 'SINGLE & 2P', 'hero')}
+              ${card('lobby', '02', 'ONLINE & RANKED', 'Official Scheduled SOF Splits · Glicko-2 DR & 0x Victim Shield SR · Championships · Global Hotlaps · Teams · Leagues · P2P Voice', this.party ? `IN PARTY ${esc(this.party.code)}` : 'LIVE CLOUD', 'online')}
+              ${card('garage-open', '03', 'GARAGE & CO-OP', '25 Cars · Bodykits · Engine Swaps · Live Dyno · Walkable Showroom · 👥 Invite Friends to Watch You Mod Live', '3D SHOWROOM')}
+              ${card('shop-open', '04', 'AUCTION & MODS', 'CS2-Style Live Supply/Demand Market · Salvage & Pre-Swapped Flips · Float Wear Grades · Community Mod Hub', fmt(this.career.credits))}
+              ${card('settings-open', '05', 'SETTINGS & ASSISTS', 'Controller Steering Filter · Braking Assist Ladder · Audio A/B · Race Spotter · Graphics · SimHub / MoTeC · Wheels & FFB', `${this.assists.preset.toUpperCase()} · ${aidsOff}/7 OFF`)}
+              ${card('profile-open', '06', 'PROFILE & PATREON', 'Email + Password Cloud Account · Non-Profit Patreon Server Pass · Friends List & Instant Party Join', mp?.email ? '✓ SYNCED' : 'SAVE ACCOUNT')}
+            </div>
+
+            <div class="og-quick-strip">
+              <span class="dim og-qlabel">QUICK LAUNCH</span>
+              <button class="primary small" data-act="pmatch" ${dis}>🌐 Quick Ranked Split</button>
+              <button class="small" data-act="quick-day-race" ${dis}>☀ Day Circuit</button>
+              <button class="small" data-act="quick-night-race" ${dis}>🌙 Night Street</button>
+              <button class="small" data-act="g-invite-open" ${dis}>👥 Host Live Garage</button>
+              <button class="small" data-act="lobby-tab-open" data-v="champs" ${dis}>🏆 Championships</button>
+              <button class="small" data-act="lobby-tab-open" data-v="hotlaps" ${dis}>⏱ Hotlaps</button>
+              <button class="small" data-act="lobby-tab-open" data-v="leagues" ${dis}>🏛 Leagues</button>
+              <button class="small" data-act="controls-open" ${dis}>🎮 Controls &amp; Wheel</button>
+            </div>
+          </section>
+
+          <aside class="og-side-col">
+            <div class="og-panel og-car-panel">
+              <div class="og-panel-head">
+                <span class="brand-inline">${brandBadgeSvg(curCar.id, 24)}<div><small class="dim">${esc(br.fullName)} · ${esc(br.country)}</small><h3>${esc(curCar.name)}</h3></div></span>
+                <span class="og-class-badge">CLASS ${cls}</span>
+              </div>
+              <div class="dim small-note" style="margin-bottom:8px">⚙ ${esc(engLbl)} · Assists: <b>${this.assists.preset[0].toUpperCase() + this.assists.preset.slice(1)}</b> (${aidsOff}/7 Off)</div>
+              ${statBar('POWER', `${Math.round(st.power)} kW`, st.power / 520)}
+              ${statBar('GRIP', `${st.grip.toFixed(2)} µ`, (st.grip - 0.9) / 0.8)}
+              ${statBar('LIGHT', `${Math.round(st.mass)} kg`, (1750 - st.mass) / 600)}
+              <div class="chips" style="margin-top:10px">
+                <button class="small primary" data-act="garage-open" ${dis}>🔧 Customize in 3D</button>
+                <button class="small" data-act="cal-go" data-v="${todayEv.dayIdx}" ${dis}>📅 Today: ${esc(todayEv.title)}</button>
+              </div>
+            </div>
+
+            <div class="og-panel">
+              <div class="careers">${this.careerCard('sp')}${this.careerCard('mp')}</div>
+            </div>
+
+            ${this.ret.challenges.length ? `<div class="og-panel og-daily">
+              <div class="og-panel-head"><h4>⚡ DAILY CHALLENGES</h4><span class="dim small-note">Rep ${this.ret.reputation.toLocaleString()}${this.ret.prestige ? ` · ★${this.ret.prestige}` : ''}</span></div>
+              ${this.ret.challenges.map((c) => `<div class="drow ${c.claimed ? 'done' : ''}"><span>${esc(c.title)}</span><b>${c.claimed ? '✓ DONE' : `${c.progress}/${c.target} (+${c.xpReward} XP)`}</b></div>`).join('')}
+            </div>` : ''}
+          </aside>
+        </main>
+
+        <footer class="og-foot">
+          <div class="dim small-note">⚡ Ultra-Fast Static City Menu (0% 3D GPU overhead) · ${esc(this.gfxNote || 'WebGPU · 240 Hz C++20 Physics')} · ${this.cars.length} Cars · ${cs?.list.length ?? 18} Real-Scale Cities</div>
+          <a class="source-link dim" href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid" target="_blank" rel="noopener">Open Source · Code Apache-2.0 · Assets CC BY-NC 4.0</a>
+        </footer>
+      </div>`;
   }
 
   private settings() {
@@ -566,10 +641,10 @@ export class Menu {
     const c = k === 'sp' ? this.sp : this.mp, L = levelOf(c.xp);
     const pct = L.need ? Math.round((L.into / L.need) * 100) : 100;
     const extra = k === 'mp'
-      ? (this.mp.ready ? ` · <span class="credits">${fmt(c.credits)}</span>` : ` · <span class="dim">${esc(this.mp.note || 'Offline')}</span>`)
-      : (this.sp.testingMode ? ` · <span class="pill gold">🧪 TESTING FREE</span>` : ` · <span class="credits">${fmt(c.credits)}</span>`);
-    return `<div class="ccard"><span class="dim">${k === 'sp' ? 'SINGLE PLAYER' : 'ONLINE'}</span><b>Level ${L.level}</b>${extra}
-      <div class="xpbar"><i style="width:${pct}%"></i></div><small class="dim">${this.sp.testingMode && k === 'sp' ? 'All cars & upgrades unlocked' : L.need ? `${fmtXp(L.into)} / ${fmtXp(L.need)}` : 'Max level'}</small></div>`;
+      ? (this.mp.ready ? `<span class="credits">${fmt(c.credits)}</span>` : `<span class="dim">${esc(this.mp.note || 'Offline')}</span>`)
+      : (this.sp.testingMode ? `<span class="pill gold">🧪 FREE</span>` : `<span class="credits">${fmt(c.credits)}</span>`);
+    return `<div class="ccard"><span class="dim">${k === 'sp' ? 'SINGLE PLAYER' : 'ONLINE'}</span><div class="ccard-top"><b>Lv ${L.level}</b>${extra}</div>
+      <div class="xpbar"><i style="width:${pct}%"></i></div><small class="dim">${this.sp.testingMode && k === 'sp' ? 'All unlocked' : L.need ? `${fmtXp(L.into)} / ${fmtXp(L.need)}` : 'Max level'}</small></div>`;
   }
   /** The single player / online switch on the garage and auction house. */
   private careerBar() {
@@ -1298,7 +1373,7 @@ export class Menu {
         </div>`;
       }).join('');
       return `<div class="lobby-screen"><div class="card lobby-card">
-        <div class="lobby-head"><button data-act="modes" class="back-btn">← Game Modes</button><div><div class="kicker">OPENGRID OFFICIAL NETWORK · 100% AD-FREE</div><h2>Multiplayer</h2></div></div>
+        <div class="lobby-head"><div class="chips"><button data-act="home" class="back-btn">← Main Menu</button><button data-act="modes" class="back-btn">Modes</button></div><div><div class="kicker">OPENGRID OFFICIAL NETWORK · 100% AD-FREE</div><h2>Multiplayer</h2></div></div>
         ${nameRow}
         <div class="opts" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
           <span class="pill gold">LICENSE CLASS ${esc(lic)}</span>
@@ -1769,6 +1844,36 @@ export class Menu {
       case 'g-rev': this.hooks.garageRev?.(); break;
       case 'g-walk': this.garageWalkActive = !this.garageWalkActive; this.hooks.garageWalk?.(this.garageWalkActive); this.render(); break;
       case 'g-invite': this.hooks.garageInvite?.(); break;
+      case 'g-invite-open':
+        this.garageHideUi = false;
+        this.show('garage');
+        this.hooks.preview();
+        this.hooks.garageInvite?.();
+        break;
+      case 'quick-day-race':
+        this.sanctionedMode = true;
+        this.hooks.sanctionedToggle?.(true);
+        sel.mode = 'race';
+        this.setCareer('sp');
+        this.save();
+        this.hooks.play('race');
+        break;
+      case 'quick-night-race':
+        this.sanctionedMode = false;
+        this.hooks.sanctionedToggle?.(false);
+        sel.mode = 'race';
+        this.setCareer('sp');
+        this.save();
+        this.hooks.play('race');
+        break;
+      case 'lobby-tab-open':
+        this.partyNote = '';
+        this.lobbyTab = (v as typeof this.lobbyTab) || 'splits';
+        this.setCareer('mp');
+        this.show('lobby');
+        this.hooks.refreshSchedule?.();
+        this.hooks.refreshHubTab?.(this.lobbyTab, this.champSeries);
+        break;
       case 'g-visit-join': this.hooks.garageVisitJoin?.(); break;
       case 'g-visit-leave': this.hooks.garageVisitLeave?.(); break;
       case 'g-emote': this.hooks.garageEmote?.(v); break;

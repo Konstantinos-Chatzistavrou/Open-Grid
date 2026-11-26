@@ -2158,6 +2158,12 @@ async function main() {
   (g.__game as Record<string, unknown>).spotter = spotter;
   menu.spotterOn = spotter.enabled;
   (g.__game as Record<string, unknown>).penalties = penalties;
+  if (cloud.available) {
+    void cloud.subscription().then((sub) => {
+      menu.patreonInfo = sub;
+      if (menu.screen === 'title' || menu.screen === 'lobby' || menu.screen === 'profile') menu.render();
+    }).catch(() => {});
+  }
   let pendingGarageInvite = false;
   {
     const gInv = cleanCode(params.get('garage') ?? '');
@@ -3893,12 +3899,19 @@ async function main() {
       remote.update(now, camera);
       if (party && driving()) { const out = remote.outgoing(now, pos, quat, car.body.linvel()); if (out) party.sendPose(out, paintInt()); }
     }
-    // The garage is on screen for every showroom state, except behind the tuner's cover
-    setGarage(inShowroom && !tuning);
+    // The 3D garage ONLY runs when actually inside the Garage screen (zero GPU waste on Main Menu / Modes / Lobby / Shop / Settings / Profile!)
+    const wants3dGarage = menu.screen === 'garage';
+    const menuStaticBg = !tuning && !driving() && state !== 'busy' && !wants3dGarage;
+    setGarage(wants3dGarage && !tuning);
     if (inGarage) {
       visual.custom.sync(garage!.holder.position, IDENT_Q);   // livery mask: the model sits on the turntable, not at the body
       if (garage!.dirtyEnv) { garage!.captureEnv(); probe?.fromCube(garage!.cube.texture); }
       garageVisitors.update(frame, now);
+    }
+    if (menuStaticBg) {
+      // Static photorealistic night-city backdrop: skip 3D camera, city streaming & WebGPU render passes for locked 60+ FPS menus!
+      hud.rendered(now);
+      return;
     }
     if (!driving() || state === 'busy') {
       if (inGarage && garageWalk.active) {
