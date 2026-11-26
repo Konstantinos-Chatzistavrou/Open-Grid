@@ -553,6 +553,7 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     Cmd.raw.shift_up = bShiftUpRequested_;
     Cmd.raw.shift_down = bShiftDownRequested_;
     Cmd.raw.device = static_cast<rs::InputDevice>(static_cast<int32>(InputDevice));
+    Cmd.raw.recommended_speed_ms = (RecommendedCornerSpeedKmh > 0.5f) ? (RecommendedCornerSpeedKmh / 3.6) : -1.0;
     Cmd.direct.steer = SteerInput;
     Cmd.direct.throttle = ThrottleInput;
     Cmd.direct.brake = BrakeInput;
@@ -573,6 +574,8 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     Cmd.settings.tc = bTractionControl;
     Cmd.settings.esc = bStabilityControl;
     Cmd.settings.auto_gearbox = bAutoGearbox;
+    Cmd.settings.steering_assist = static_cast<rs::SteeringAssistMode>(static_cast<int32>(SteeringAssistMode));
+    Cmd.settings.braking_assist = static_cast<rs::BrakingAssistMode>(static_cast<int32>(BrakingAssistMode));
     Cmd.settings.street_surface_enabled = bEnableDynamicStreetSurface;
     Cmd.settings.street_micro_roughness_enabled = bEnableUrbanMicroRoughness;
     Cmd.settings.street_road_class = FMath::Clamp(UrbanRoadClass, 0, 3);
@@ -719,6 +722,8 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     if (bSawMissedShiftEdge) LastRecord_.out.missed_shift_event = true;
     if (bSawGearGrindEdge) LastRecord_.out.gear_grind = true;
     if (bSawBovEdge) LastRecord_.out.bov_venting = true;
+    bSteeringFilterActive = LastRecord_.control_assists.steering_filter_active;
+    BrakeAssistAmount = static_cast<float>(LastRecord_.control_assists.braking_assist_amount);
 
     const rs::ChassisState RenderChassis = ChassisFromUe(
         Body->GetComponentLocation(), Body->GetComponentQuat(),

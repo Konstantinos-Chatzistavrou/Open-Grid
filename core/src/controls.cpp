@@ -71,16 +71,46 @@ DriverInput Controls::update(const RawInput& raw, const VehicleOutput& last, dou
     }
     double steer = steer_;
     if (raw.device != InputDevice::Wheel) steer *= max_steer_fraction(v);
+    assist_state_ = {};
 
     // ---- countersteer assist: when the rear actually steps out (dynamic rear-axle sideslip opposing
     // yaw rate, NOT geometric low-speed Ackermann CG sideslip), add countersteer toward the slide.
+    const double lock = std::max(cfg_.front.max_steer_deg * kPi / 180.0, 1e-3);
     if (s.countersteer_assist && v > 5.0) {
         const double vy_cg = std::tan(last.sideslip) * v;
         const double beta_rear = std::atan2(vy_cg - last.yaw_rate * cfg_.dist_cg_rear, v);
         if (std::abs(beta_rear) > 0.04 && beta_rear * last.yaw_rate < 0.0) {
-            double lock = cfg_.front.max_steer_deg * kPi / 180.0;
             steer += s.countersteer_gain * beta_rear / lock;
+            assist_state_.countersteer_active = true;
         }
+    }
+
+    // ---- physics-up Controller Steering Filter (gamepad/keyboard ONLY; wheels stay 100% 1:1):
+    // Caps requested road-wheel steer angle near the front tyres' optimal peak slip angle around the front axle's
+    // instantaneous velocity vector delta_free = atan2(v_y + r * a, v_x), preventing thumbstick/keyboard washout
+    // understeer and pendulum snap-oversteer while running on the exact same Pacejka tyres and chassis.
+    if (s.steering_assist != SteeringAssistMode::Off && raw.device != InputDevice::Wheel && v > 5.0) {
+        const double vy_cg = std::tan(last.sideslip) * v;
+        const double delta_free = std::atan2(vy_cg + last.yaw_rate * cfg_.dist_cg_front, v);
+        const double max_slip = (s.steering_assist == SteeringAssistMode::Assisted)
+            ? s.steer_filter_max_slip_assisted_rad
+            : s.steer_filter_max_slip_sim_rad;
+        double delta_cmd = steer * lock;
+        if (s.steering_assist == SteeringAssistMode::Assisted) {
+            // Subtle yaw-rate stabilization when the car rotates faster than steady-state Ackermann predicts
+            const double r_ref = (v * delta_cmd) / std::max(cfg_.wheelbase, 1.5);
+            const double yaw_err = last.yaw_rate - r_ref;
+            if (std::abs(yaw_err) > 0.12) {
+                delta_cmd -= clamp(yaw_err * s.steer_filter_yaw_damp, -0.10, 0.10);
+            }
+        }
+        const double lo = delta_free - max_slip;
+        const double hi = delta_free + max_slip;
+        const double clamped_delta = clamp(delta_cmd, lo, hi);
+        if (std::abs(clamped_delta - steer * lock) > 0.008) {
+            assist_state_.steering_filter_active = true;
+        }
+        steer = clamped_delta / lock;
     }
     in.steer = clamp(steer, -1.0, 1.0);
 
@@ -94,6 +124,25 @@ DriverInput Controls::update(const RawInput& raw, const VehicleOutput& last, dou
     }
     in.throttle = throttle_;
     in.brake = brake_;
+
+    // ---- physics-up Corner Braking Assist (optional beginner on-ramp from Driving Line target speed):
+    if (s.braking_assist != BrakingAssistMode::Off && raw.recommended_speed_ms >= 0.0 && v > 4.0 && !pedal_reverse_) {
+        const double overspeed = v - raw.recommended_speed_ms;
+        const bool high = (s.braking_assist == BrakingAssistMode::High);
+        const double trigger = high ? 1.5 : 4.5;
+        if (overspeed > trigger) {
+            const double max_brake = high ? 0.85 : 0.48;
+            const double span = high ? 9.0 : 14.0;
+            const double assist_brake = clamp((overspeed - trigger) / span, 0.0, 1.0) * max_brake;
+            if (assist_brake > in.brake) {
+                assist_state_.braking_assist_active = true;
+                assist_state_.braking_assist_amount = assist_brake - in.brake;
+                in.brake = assist_brake;
+            }
+            const double lift = clamp((overspeed - trigger) / (high ? 4.0 : 8.0), 0.0, 1.0);
+            in.throttle *= (1.0 - lift);
+        }
+    }
     in.clutch = raw.clutch;
     in.handbrake = raw.handbrake;
     in.line_lock = raw.line_lock;

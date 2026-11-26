@@ -102,11 +102,17 @@ export interface RawInput {
   shiftUp: boolean; shiftDown: boolean; device: 0 | 1 | 2;
   /** H-pattern shifter: gear index the lever is in (0 R, 1 N, 2 1st ...); undefined / -99 = no shifter */
   directGear?: number;
+  /** Optional physics corner target speed (m/s) from DrivingLine lookahead (<= 0 = disabled) */
+  recommendedSpeedMs?: number;
 }
 export interface AssistToggles {
   abs: boolean; tc: boolean; esc: boolean; autoGearbox: boolean;
   /** strengths (assists.ts levels): ABS / TC wheel-slip targets, countersteer gain; 0 / absent = core default / off */
   absSlip?: number; tcSlip?: number; countersteer?: number;
+  /** physics-up controller steering filter (0=Off, 1=Sim, 2=Assisted; wheels stay 1:1) */
+  steeringAssist?: 0 | 1 | 2;
+  /** physics-up corner braking assist (0=Off, 1=Low, 2=High) */
+  brakingAssist?: 0 | 1 | 2;
   /** auto-clutch assist (default 'perfect'): 'off' = you work a real clutch pedal */
   autoClutch?: 'off' | 'perfect';
 }
@@ -270,6 +276,9 @@ export class CoreCar {
     b[92] = raw.directGear ?? -99;
     b[41] = raw.lineLock ?? 0;
     b[40] = assists.autoClutch === 'off' ? -1 : 0;
+    b[42] = assists.steeringAssist ?? 0;
+    b[43] = assists.brakingAssist ?? 0;
+    b[44] = raw.recommendedSpeedMs ?? -1;
     mod!._rs_step(this.id, dt);
     return b;
   }
@@ -315,6 +324,9 @@ export class CoreCar {
     b[92] = raw.directGear ?? -99;
     b[41] = raw.lineLock ?? 0;
     b[40] = assists.autoClutch === 'off' ? -1 : 0;
+    b[42] = assists.steeringAssist ?? 0;
+    b[43] = assists.brakingAssist ?? 0;
+    b[44] = raw.recommendedSpeedMs ?? -1;
   }
 
   /** Multi-point curb patch step: contacts12 = 12 x [hit, px, py, pz, nx, ny, nz, surface] (96 doubles). */
@@ -328,6 +340,9 @@ export class CoreCar {
     b[92] = raw.directGear ?? -99;
     b[41] = raw.lineLock ?? 0;
     b[40] = assists.autoClutch === 'off' ? -1 : 0;
+    b[42] = assists.steeringAssist ?? 0;
+    b[43] = assists.brakingAssist ?? 0;
+    b[44] = raw.recommendedSpeedMs ?? -1;
     mod!._rs_step_patch(this.id, dt);
     return b;
   }
@@ -444,6 +459,10 @@ export const OUT = {
   hybridDeployKw: 483,                  // live MGU-K electric deployment power, kW
   hybridRegenKw: 484,                   // live MGU-K regenerative braking harvest power, kW
   wakeAsymmetry: 485,                   // -1..+1 off-center dirty-air wake gradient on overtake peek
+  // Physics-up assist intervention telemetry [486..488]
+  steeringFilter: 486,                  // 1 when Controller Steering Filter actively clamps peak slip
+  countersteerActive: 487,              // 1 when Countersteer Assist actively catches a slide
+  brakingAssist: 488,                   // 0..1 brake pressure added by Braking Assist
 } as const;
 
 export interface LapInfo { laps: number; current: number; last: number; best: number; distance: number; position: number; finished: boolean; routeLength: number }

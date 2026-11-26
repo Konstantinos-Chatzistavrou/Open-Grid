@@ -261,6 +261,15 @@ async function route(req: Request, env: Env): Promise<Response> {
     return json({ error: 'not found' }, 404);
   }
 
+  // Steward queue listing for Restorative Protests (VERIFIER_KEY -> used by tools/steward.mjs)
+  if (path === '/v1/protests' && req.method === 'GET' && env.VERIFIER_KEY && req.headers.get('authorization') === `Bearer ${env.VERIFIER_KEY}`) {
+    const st = url.searchParams.get('status') || 'open';
+    const rows = await env.DB.prepare(
+      'SELECT id, race_id, reporter, accused, incident_type, lap, corner, notes, status, verdict_note, dr_refunded, sr_refunded, created, resolved_at FROM protests WHERE status = ? ORDER BY created ASC LIMIT 50',
+    ).bind(st).all();
+    return json({ protests: rows.results });
+  }
+
   // Steward resolution endpoint for Restorative Protests (VERIFIER_KEY)
   const protestResolve = /^\/v1\/protests\/([^/]+)\/resolve$/.exec(path);
   if (protestResolve && req.method === 'POST') {

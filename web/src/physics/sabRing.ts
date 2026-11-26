@@ -145,7 +145,8 @@ export const CMD_KIND = {
 //   [24..38] reset pose: pos(3), quat xyzw(4), vel(3), angvel(3), speed, gear
 //   [39]     hasGround (1 = ground planes valid)
 //   [40..135] 12 ground planes x 8: [hit, px, py, pz, nx, ny, nz, surface] (three.js Y-up world)
-export const CMD_SLOT_DOUBLES = 144;
+//   [136..138] extra physics-up assists: steeringAssist (0..2), brakingAssist (0..2), recommendedSpeedMs
+export const CMD_SLOT_DOUBLES = 148;
 export const CMD_OFF = {
   kind: 0,
   live: 1,
@@ -157,9 +158,10 @@ export const CMD_OFF = {
   resetPose: 24,
   hasGround: 39,
   ground: 40,
+  extraAssists: 136,
 } as const;
 
-// Snapshot slot layout (408 doubles = 3264 bytes):
+// Snapshot slot layout (520 doubles):
 //   [0]      tick (monotonic physics tick counter)
 //   [1]      simTime (seconds)
 //   [2]      stepUs (smoothed worker rs_core + integrate cost per step, microseconds)
@@ -169,9 +171,9 @@ export const CMD_OFF = {
 //   [11..13] linvel xyz
 //   [14..16] angvel xyz
 //   [17..23] reserved
-//   [24..471] full rs_core output buffer (OUT_DOUBLES = 448 doubles, mirrors CoreCar.buf)
+//   [24..519] full rs_core output buffer (OUT_DOUBLES = 496 doubles, mirrors CoreCar.buf)
 /** Length of the rs_core shared buffer (bridge.cpp Car::buf): physics outputs, dashboard needles, dyno. */
-export const OUT_DOUBLES = 448;
+export const OUT_DOUBLES = 496;
 export const SNAP_SLOT_DOUBLES = 24 + OUT_DOUBLES;
 export const SNAP_OFF = {
   tick: 0,

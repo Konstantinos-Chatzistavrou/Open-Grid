@@ -74,6 +74,7 @@ const raw = new Float64Array(9);
 const assists = new Float64Array(7);
 let shiftUpPending = false;
 let shiftDownPending = false;
+let extraAssists = [0, 0, -1];
 let nosThrustN = 0;
 let lastTurbo = -1;
 let lastAirC = Number.NaN;
@@ -151,6 +152,9 @@ function drainCommands(): void {
       if (raw[5] > 0.5) shiftUpPending = true;
       if (raw[6] > 0.5) shiftDownPending = true;
       for (let i = 0; i < 7; i++) assists[i] = cmdSlot[CMD_OFF.assists + i];
+      extraAssists[0] = cmdSlot[CMD_OFF.extraAssists] || 0;
+      extraAssists[1] = cmdSlot[CMD_OFF.extraAssists + 1] || 0;
+      extraAssists[2] = cmdSlot[CMD_OFF.extraAssists + 2] ?? -1;
       nosThrustN = cmdSlot[CMD_OFF.nosThrustN];
       const turbo = Math.round(cmdSlot[CMD_OFF.turboStage]);
       if (wasm && carId >= 0 && turbo !== lastTurbo) {
@@ -249,6 +253,7 @@ function stepOnce(dt: number): void {
   b[88] = assists[0]; b[89] = assists[1]; b[90] = assists[2]; b[91] = assists[3];
   b[92] = raw[8];
   b[93] = assists[4]; b[94] = assists[5]; b[95] = assists[6];
+  b[42] = extraAssists[0]; b[43] = extraAssists[1]; b[44] = extraAssists[2];
   shiftUpPending = false;
   shiftDownPending = false;
 

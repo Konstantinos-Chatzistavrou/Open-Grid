@@ -269,10 +269,14 @@ export class Hud {
     const g = out[OUT.gear];
     this.text('gear', g === 0 ? 'R' : g === 1 ? 'N' : String(g - 1));
     const on = (n: string, v: boolean, act = false) => (v ? `<b>${act ? '● ' : ''}${n}</b>` : n);
-    const assistHtml = [
+    const assistParts = [
       on('ABS', assists.abs, out[OUT.abs] > 0), on('TC', assists.tc, out[OUT.tc] > 0.01),
-      on('ESC', assists.esc, out[OUT.esc] !== 0), on('AUTO', assists.autoGearbox),
-    ].join(' · ');
+      on('ESC', assists.esc, out[OUT.esc] !== 0),
+    ];
+    if ((assists.steeringAssist ?? 0) > 0) assistParts.push(on('STR', true, (out[OUT.steeringFilter] || 0) > 0.5));
+    if ((assists.brakingAssist ?? 0) > 0) assistParts.push(on('BRK', true, (out[OUT.brakingAssist] || 0) > 0.02));
+    assistParts.push(on('AUTO', assists.autoGearbox));
+    const assistHtml = assistParts.join(' · ');
     if (assistHtml !== this.assistHtml) $('assists').innerHTML = this.assistHtml = assistHtml;
     this.updateWarnings(dmg, out);
     this.updateSimTelemetry(out);

@@ -42,7 +42,7 @@ import { TouchControls, wantsTouch } from './touch';
 import { ForceFeedback } from './ffb';
 import { ControlsUi } from './controls-menu';
 import { MenuNav } from './menu-nav';
-import { fromToggles, loadAssists, saveAssists, toToggles } from './assists';
+import { assistGraduationTip, assistsOffCount, fromToggles, loadAssists, saveAssists, toToggles } from './assists';
 import { MpCareer, SpCareer } from './career';
 import { Cloud } from './cloud';
 import { RankedLink } from './ranked';
@@ -438,6 +438,10 @@ async function main() {
     .then(async (cfg) => ({ cfg, vis: await CarVisual.load(cfg) }));
   /** Spec Class (equal stock car, esports): no upgrades, engine swaps or stance - pure skill. */
   let specClass = false;
+  let sanctionedMode = false;
+  let brakeAssistSecs = 0, steerFilterSecs = 0;
+  let lastIncidentAt = 0, lastRemoteTouchAt = 0;
+  const rankedReplayTicks: { tick: number; throttle: number; brake: number; steer: number; gear: number; x: number; y: number; z: number; vx: number; vy: number; vz: number }[] = [];
   /** the Driving Academy lesson being driven ('' none) and the race's steward time penalties */
   let activeAcademyId = '';
   const penalties = new PenaltyTracker();
@@ -721,6 +725,7 @@ async function main() {
   /** Tactical Police AI runs ONLY in Race Events (never Free Roam); patrolled downtown cities (NYC, London) always enable cops. */
   const copsActiveInRace = () => {
     if (raceLaps() === 0) return false;
+    if (sanctionedMode) return false;
     if (params.get('cops') === '0') return false;
     return cityInfo.mandatoryCops || (sel.mode === 'online' ? (party?.copMode ?? true) : sel.copMode);
   };
@@ -853,6 +858,11 @@ async function main() {
       forzaVfx.emitSparks(sx, sy, sz, visual.velocity.x, visual.velocity.y, visual.velocity.z, 8 + kj * 0.85, sparkInt, pos.y - visual.cg.y);
     }
     if (state === 'race' && kj > 3) raceImpacts++;
+    if (state === 'race' && ranked && kj > 4.5 && performance.now() - lastIncidentAt > 2500) {
+      lastIncidentAt = performance.now();
+      const carContact = (lastIncidentAt - lastRemoteTouchAt) < 900;
+      ranked.incident(carContact ? 'contact_fault' : 'wall');
+    }
     // stewards: a heavy hit in a race (ramming / cutting through the wall line) costs +5.0 s
     if (state === 'race' && raceLaps() > 0 && kj > 22 && penalties.addPenalty('Collision / Track Cut', 5.0)) hud.toast('⚠ +5.0s PENALTY', 'Clean racing enforced (GT7 / iRacing rules)');
   }; };
@@ -964,7 +974,7 @@ async function main() {
     raceCar = race.addCar(car.body.translation());
     aiRace = ai.mode === 'race' ? ai.cars.map((c) => ({ idx: race.addCar(c.pos), lap: null, fin: -1 })) : [];
     raceT0 = ticks * DT;
-    lapTimes = []; raceFinishedAt = -1; lap = null; racePaid = false; raceImpacts = 0; penalties.reset();
+    lapTimes = []; raceFinishedAt = -1; lap = null; racePaid = false; raceImpacts = 0; brakeAssistSecs = 0; steerFilterSecs = 0; rankedReplayTicks.length = 0; penalties.reset();
     copSpawned = false; escapedCopsThisRace = false; cops.breakOff(); wagers.cancel();
     myDnf = ''; rolledT = stuckT = 0; hud.outWarn = '';
     hud.resetLaps();
@@ -1805,6 +1815,10 @@ async function main() {
     specClassToggle: (on) => {
       specClass = on;
       if (carKey() !== builtKey) { rebuildPlayer(); spawn(); syncPose(); }
+    },
+    sanctionedToggle: (on) => {
+      sanctionedMode = on;
+      hud.toast(on ? '☀ SANCTIONED DAY CIRCUIT' : '🌙 UNDERGROUND NIGHT STREET', on ? 'Closed circuit · Zero cops · FIA track rules' : 'Night street racing · Tactical Cops & Heat');
     },
     launchAcademy: (l) => {
       activeAcademyId = l.id;
@@ -2669,10 +2683,13 @@ async function main() {
       if (mp.ready) {
         const a = assistSet;
         ranked = new RankedLink(cloud, party.code, { car: sel.car, mods: { ...modsOf(sel) }, host: party.isHost, manual: a.gearbox === 'manual',
-          assistsOff: +(a.abs === 'off') + +(a.tc === 0) + +!a.stability + +(a.countersteer === 'off') + +(a.line === 'off') });
+          assistsOff: assistsOffCount(a) });
         menu.ranked(null);
         ranked.onResult = (r) => {
           if (r.profile && r.you) mp.paid({ xp: r.you.xp, cr: r.you.cr, reason: r.ranked ? `ranked race · P${r.you.pos}` : 'unranked race', parts: r.you.parts }, r.profile);
+          if (r.you?.replay && r.raceId && rankedReplayTicks.length > 0) {
+            void cloud.replay(r.raceId, JSON.stringify({ car: sel.car, dt: 1 / 20, ticks: rankedReplayTicks })).catch(() => {});
+          }
           menu.ranked(r);
         };
       }
@@ -2857,7 +2874,7 @@ async function main() {
       const order = rank(st), pos = order.findIndex((x) => x.you) + 1;
       const a = assistSet;
       const reward = raceReward({ pos, laps: raceLaps(), dnf: !!myDnf, gained: ai.cars.length ? Math.max(0, 4 - pos) : 0, clean: raceImpacts === 0,
-        assistsOff: +(a.abs === 'off') + +(a.tc === 0) + +!a.stability + +(a.countersteer === 'off') + +(a.line === 'off'),
+        assistsOff: assistsOffCount(a),
         manual: a.gearbox === 'manual', realism: sel.realism,
         copsEnabled: copsOn, heatLevel: heat.level, escapedCops: escapedCopsThisRace }, 'sp');
       const partyMul = party && party.members.length > 1 ? PARTY_BONUS_MUL : 1;
@@ -2878,8 +2895,9 @@ async function main() {
       }
     }
     activeAcademyId = '';
+    const graduationTip = !myDnf && raceImpacts === 0 && raceLaps() > 0 ? assistGraduationTip(assistSet, brakeAssistSecs, steerFilterSecs) : '';
     menu.showResults({ total, best: lapTimes.length ? Math.min(...lapTimes) : 0, laps: lapTimes, laps_target: raceLaps(), standings: st,
-      routeLength: lap?.routeLength ?? route.length_m, online: sel.mode === 'online', earned, towFeeXp, repairBillXp, insured, damagePct, penaltySec });
+      routeLength: lap?.routeLength ?? route.length_m, online: sel.mode === 'online', earned, towFeeXp, repairBillXp, insured, damagePct, penaltySec, graduationTip });
     if (party) party.sendProgress({ d: lap?.distance ?? 0, lap: lap?.laps ?? 0, fin: lap?.finished ? total : -1, best: lap?.best ?? 0, dnf: myDnf ? 1 : 0 });
   }
 
@@ -3105,6 +3123,7 @@ async function main() {
       if (hit) { touching = true; remote!.touched(c, tTick); }
     }
     if (!touching) return;
+    lastRemoteTouchAt = performance.now();
     const lv = car.body.linvel(), av = car.body.angvel();
     car.body.setLinvel({ x: (preV.x + lv.x) / 2, y: (preV.y + lv.y) / 2, z: (preV.z + lv.z) / 2 }, true);
     car.body.setAngvel({ x: (preW.x + av.x) / 2, y: (preW.y + av.y) / 2, z: (preW.z + av.z) / 2 }, true);
@@ -3187,6 +3206,7 @@ async function main() {
         tin = launchIn;
       }
       const groundPlanes = car.sampleGroundPlanes();
+      tin.recommendedSpeedMs = (assistSet.brakingAssist !== 'off' && state === 'race') ? drivingLine.recommendedSpeed(pos, car.out[OUT.speed]) : -1;
       physWorker.sendFrame(workerLive, tin, input.assists, car.nosThrustN, groundPlanes, turboStageOf(), workerAirC, workerTrackC, 15, workerHumidity);
       const drained = physWorker.drain(car.out);
       if (drained > 0) {
@@ -3234,7 +3254,25 @@ async function main() {
         launchIn.throttle = Math.min(tin.throttle, 0.55 + 0.45 * ph);   // ramp instead of instant full power
         tin = launchIn;
       }
+      const recCornerSpeed = (assistSet.brakingAssist !== 'off' && state === 'race') ? drivingLine.recommendedSpeed(pos, car.out[OUT.speed]) : -1;
+      tin.recommendedSpeedMs = recCornerSpeed;
       if (!dyno.active) car.tick(tin, input.assists);   // on the dyno the core car runs on its virtual road (dyno.ts)
+      if (state === 'race' && !myDnf) {
+        if ((car.out[OUT.brakingAssist] || 0) > 0.02) brakeAssistSecs += DT;
+        if ((car.out[OUT.steeringFilter] || 0) > 0.5) steerFilterSecs += DT;
+        if (ranked && ticks % 12 === 0 && rankedReplayTicks.length < 3600) {
+          const tp = car.body.translation(), tv = car.body.linvel();
+          rankedReplayTicks.push({
+            tick: ticks,
+            throttle: Math.round(tin.throttle * 1000) / 1000,
+            brake: Math.round(tin.brake * 1000) / 1000,
+            steer: Math.round(tin.steer * 1000) / 1000,
+            gear: Math.round(car.out[OUT.gear] || 2),
+            x: Math.round(tp.x * 100) / 100, y: Math.round(tp.y * 100) / 100, z: Math.round(tp.z * 100) / 100,
+            vx: Math.round(tv.x * 100) / 100, vy: Math.round(tv.y * 100) / 100, vz: Math.round(tv.z * 100) / 100,
+          });
+        }
+      }
       if (polled) { polled.shiftUp = false; polled.shiftDown = false; }   // edges act on the first tick only
       if (splitActive && p2Car && p2Core) {
         const firstP2 = !p2p;

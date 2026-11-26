@@ -180,6 +180,9 @@ export class PhysicsWorkerClient {
     b[CMD_OFF.atmosphere + 3] = humidity;
     b[CMD_OFF.hasGround] = 1;
     b.set(groundPlanes, CMD_OFF.ground);
+    b[CMD_OFF.extraAssists] = assists.steeringAssist ?? 0;
+    b[CMD_OFF.extraAssists + 1] = assists.brakingAssist ?? 0;
+    b[CMD_OFF.extraAssists + 2] = raw.recommendedSpeedMs ?? -1;
     this.cmdRing.tryPush(b, true);
   }
 

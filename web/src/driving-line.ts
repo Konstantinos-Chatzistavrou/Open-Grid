@@ -89,6 +89,27 @@ export class DrivingLine {
     return bd;
   }
 
+  /** Physics-safe target speed (m/s) for the approaching corner window (for optional Braking Assist), or -1 if off-route. */
+  recommendedSpeed(car: THREE.Vector3, speed: number): number {
+    if (!this.prof.length) return -1;
+    const off = this.track(car);
+    if (off > 25 * 25) return -1;
+    const lane = this.ai.lane, n = lane.n;
+    const i0 = Math.floor(lane.wrap(this.s) / STEP);
+    const v = Math.max(0, speed);
+    const lookPts = Math.min(n, Math.max(12, Math.ceil((v * v) / Math.max(1, 2 * this.aBrake * STEP)) + 8));
+    let minTarget = 120;
+    for (let k = 1; k < lookPts; k++) {
+      const i = (i0 + k) % n;
+      const d = k * STEP;
+      const vt = this.prof[i];
+      // Maximum speed right now from which we can still comfortably decelerate to vt in distance d
+      const vSafeNow = Math.sqrt(vt * vt + 2 * 0.85 * this.aBrake * d);
+      if (vSafeNow < minTarget) minTarget = vSafeNow;
+    }
+    return minTarget;
+  }
+
   /** Every frame. mode off / not driving: hidden. */
   update(mode: LineMode, driving: boolean, car: THREE.Vector3, speed: number) {
     if (mode === 'off' || !driving || !this.prof.length) { this.mesh.visible = false; this.s = -1; return; }

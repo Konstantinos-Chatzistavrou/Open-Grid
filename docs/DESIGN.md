@@ -51,6 +51,13 @@ Built to deliver fair, structured competitive racing without paywalls or ads (`c
 
 ## 3. World, Map & Environment Design
 
+- **Physics-Up Assist Spectrum & Graduation Ladder (`core/src/controls.cpp`, `web/src/assists.ts`)**:
+  - Single coherent `rs_core` physics model for every player (zero dumbed-down alternate physics).
+  - **Controller Steering Filter (`Off / Sim / Assisted`)**: Caps requested steer angle near the front tyres' peak slip angle around instantaneous front-axle travel (`delta_free`) on gamepads/keyboards (always `Off` / 1:1 on steering wheels) so pad players feel planted and responsive instead of washing out into dead understeer.
+  - **Corner Braking Assist (`Off / Low / High`)**: Optional beginner on-ramp driven by the Driving Line corner-speed profile (`RawInput::recommended_speed_ms`), paired with live HUD intervention lamps (`ABS · TC · ESC · STR · BRK`), Assist-Off Skill Bonuses (`0/7..7/7`), and post-race **Assist Graduation Tips** guiding players from `Beginner → Intermediate → Expert`.
+- **Dual-World Discipline (Sanctioned Day Circuits + Underground Night Streets)**:
+  - **☀ Sanctioned Day Circuit Mode**: Closed circuit racing with zero cops, zero civilian traffic, FIA track rules, Glicko-2 DR, Fault-Aware SR, and Multi-Week Championships.
+  - **🌙 Underground Night Street Mode**: 1:1 real-scale OpenStreetMap cities, Heat 0–5, Tactical Police AI, AI traffic, 5-floor Car Meets, and spontaneous `[F]` 1v1 Cash/Pink Slip drags.
 - **Map Philosophy**: **100% real-scale road widths** derived from OpenStreetMap + Copernicus DEM GLO-30 across **5 cities** (NYC Midtown, London, Paris, Tokyo, Los Angeles). Narrow streets stay genuinely narrow.
 - **Free Roam (Social Sandbox — 16 Players Max + AI Traffic, Zero Police)**:
   - Cruising, 5-floor Car Meets, Speed Traps & Drift Zones with leaderboards, and spontaneous headlight-flash (`[F]`) 1v1 Cash or Pink Slip street drags.

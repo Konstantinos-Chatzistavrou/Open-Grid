@@ -259,6 +259,22 @@ enum class EOpenGridInputDevice : uint8
 };
 
 UENUM(BlueprintType)
+enum class EOpenGridSteeringAssistMode : uint8
+{
+    Off = 0,
+    Sim = 1,
+    Assisted = 2,
+};
+
+UENUM(BlueprintType)
+enum class EOpenGridBrakingAssistMode : uint8
+{
+    Off = 0,
+    Low = 1,
+    High = 2,
+};
+
+UENUM(BlueprintType)
 enum class EOpenGridChassisMaterial : uint8
 {
     MildSteel = 0,
@@ -469,6 +485,25 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Assists")
     bool bAutoGearbox = true;
+
+    /** Physics-up Controller Steering Filter (Off / Sim / Assisted; wheels always stay 100% 1:1). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Assists")
+    EOpenGridSteeringAssistMode SteeringAssistMode = EOpenGridSteeringAssistMode::Sim;
+
+    /** Physics-up Corner Braking Assist driven by RecommendedCornerSpeedKmh (Off / Low / High). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Assists")
+    EOpenGridBrakingAssistMode BrakingAssistMode = EOpenGridBrakingAssistMode::Off;
+
+    /** Optional corner target speed (km/h) from racing-line spline lookahead (< 0 = disabled). */
+    UPROPERTY(BlueprintReadWrite, Category="OpenGrid|Assists")
+    float RecommendedCornerSpeedKmh = -1.0f;
+
+    /** Live assist intervention flags for HUD & Driving Academy graduation feedback. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Assists")
+    bool bSteeringFilterActive = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Assists")
+    float BrakeAssistAmount = 0.0f;
 
     // ---- Telemetry --------------------------------------------------------------------------------------------------
 

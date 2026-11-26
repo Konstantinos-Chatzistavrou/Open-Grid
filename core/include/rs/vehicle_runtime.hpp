@@ -42,6 +42,8 @@ struct VehicleSettings {
     double humidity = 0.45;
     bool abs = true, tc = true, esc = true;
     bool auto_gearbox = true;
+    SteeringAssistMode steering_assist = SteeringAssistMode::Off;
+    BrakingAssistMode braking_assist = BrakingAssistMode::Off;
     bool street_surface_enabled = false;
     bool street_micro_roughness_enabled = false;
     int street_road_class = 1;       // 0=ClassA_Highway, 1=ClassB_CityAvenue, 2=ClassC_WornStreet, 3=ClassD_BrokenCobble
@@ -92,6 +94,7 @@ struct StepRecord {
     ChassisState chassis;            // the chassis state the step started from (what the rays were cast from)
     DriverInput input;               // after Controls
     VehicleOutput out;               // forces, wheels, telemetry
+    ControlAssistState control_assists{};
     std::array<double, 4> spin{};    // accumulated wheel rotation angle mod 2 pi, rad (for wheel visuals)
 };
 
@@ -255,6 +258,7 @@ public:
             r->chassis = chassis;
             r->input = in;
             r->out = out_;
+            r->control_assists = controls_->assist_state();
             r->spin = spin_;
             records_.commit();
         } else {
@@ -303,6 +307,8 @@ private:
         a.tc = s.tc;
         a.esc = s.esc;
         controls_->settings.auto_gearbox = s.auto_gearbox;
+        controls_->settings.steering_assist = s.steering_assist;
+        controls_->settings.braking_assist = s.braking_assist;
         // Settings are levels: the road water follows the latest one every time, including back to 0. (Applying it only
         // while the street surface was on, or the water above 0, ignored the command that ended the rain and left the
         // road wet for good.)

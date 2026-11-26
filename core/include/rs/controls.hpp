@@ -9,6 +9,25 @@ namespace rs {
 
 enum class InputDevice { Keyboard = 0, Gamepad = 1, Wheel = 2 };
 
+// Physics-up steering assist (gamepad/keyboard only; real wheels are ALWAYS 1:1):
+//   Off      = no front-axle slip ceiling (pure speed-sensitive Ackermann only)
+//   Sim      = smooth front-axle peak slip-angle ceiling (~9.5 deg) so thumbsticks never wash out into dead understeer
+//   Assisted = tighter peak slip ceiling (~7.7 deg) + progressive yaw-rate stabilization (Forza/iRacing Arcade on-ramp)
+enum class SteeringAssistMode : int { Off = 0, Sim = 1, Assisted = 2 };
+
+// Physics-up corner braking assist (driven by optional RawInput::recommended_speed_ms from Driving Line / spline):
+//   Off  = no automated braking
+//   Low  = gentle trail-brake safety net when significantly overspeeding a corner (up to 48% brake)
+//   High = full progressive braking & throttle lift into tight corners (up to 85% ABS-safe brake)
+enum class BrakingAssistMode : int { Off = 0, Low = 1, High = 2 };
+
+struct ControlAssistState {
+    bool steering_filter_active = false;
+    bool countersteer_active = false;
+    bool braking_assist_active = false;
+    double braking_assist_amount = 0.0;   // 0..1 brake pressure added by Braking Assist
+};
+
 struct RawInput {
     double steer = 0;        // -1 (right) .. +1 (left); keyboard sends -1/0/+1
     double throttle = 0;     // 0..1 (keyboard: 0 or 1)
@@ -22,10 +41,17 @@ struct RawInput {
     // While a shifter is in use it sets the gear directly; the paddles / auto gearbox act on top of nothing.
     int direct_gear = -99;
     InputDevice device = InputDevice::Keyboard;
+    // Optional physics-computed target corner speed (m/s) from Driving Line / spline lookahead (< 0 = disabled).
+    double recommended_speed_ms = -1.0;
 };
 
 struct ControlSettings {
     bool speed_sensitive_steering = true;
+    SteeringAssistMode steering_assist = SteeringAssistMode::Off;
+    BrakingAssistMode braking_assist = BrakingAssistMode::Off;
+    double steer_filter_max_slip_sim_rad = 0.165;       // ~9.5 deg front slip ceiling (Sim pad/keyboard)
+    double steer_filter_max_slip_assisted_rad = 0.135;  // ~7.7 deg front slip ceiling (Beginner pad/keyboard)
+    double steer_filter_yaw_damp = 0.22;                // rad steer per rad/s excess yaw rate in Assisted mode
     bool keyboard_line_lock = true;      // keyboard: throttle + brake at a standstill = line lock (burnout)
     bool countersteer_assist = false;
     // Hands-off self-alignment (keyboard / gamepad, physical, on by default): with no steering input the front wheels
@@ -71,6 +97,7 @@ public:
     bool pedal_reversing() const { return pedal_reverse_; }   // reverse engaged by the brake pedal
     void set_gear(int g);
     double max_steer_fraction(double speed) const;   // exposed for tests / overlay
+    const ControlAssistState& assist_state() const { return assist_state_; }
     ControlSettings settings;
 
 private:
@@ -80,6 +107,7 @@ private:
     double shift_cooldown_ = 0;
     bool pedal_reverse_ = false;         // in reverse via the brake pedal (pedals swapped)
     double reverse_timer_ = 0;
+    ControlAssistState assist_state_{};
 };
 
 }  // namespace rs

@@ -11,7 +11,7 @@ import { FINISHES, LOOK_PRESETS, MODS, MOD_KEYS, SWATCHES, applyLookPreset, appl
 import { formatLap } from './hud';
 import { FREE_ROAM_MAX_PLAYERS, RACE_MAX_PLAYERS, cleanCode, type Party, type PartyMode } from './party';
 import type { ControlsUi } from './controls-menu';
-import { PRESET_INFO, applyPreset, matchPreset, type AssistSettings, type Preset } from './assists';
+import { PRESET_INFO, applyPreset, assistsOffCount, matchPreset, type AssistSettings, type BrakingAssistLevel, type Preset, type SteeringAssistLevel } from './assists';
 import { fmt, fmtXp, type Career, type MpCareer, type SpCareer } from './career';
 import type { Cloud, Friend, OfficialSeriesEvent } from './cloud';
 import type { RankedResult } from './ranked';
@@ -75,6 +75,8 @@ export interface ResultData {
   /** credits/XP paid for this race */ earned?: number;
   /** Tow Truck Fee deducted when totaled, saved structural damage %, Insurance discount, and race time penalties */
   towFeeXp?: number; repairBillXp?: number; insured?: boolean; damagePct?: number; penaltySec?: number;
+  /** Assist Graduation ladder tip when player drove cleanly with low assist intervention */
+  graduationTip?: string;
 }
 
 export interface MenuHooks {
@@ -161,6 +163,7 @@ export interface MenuHooks {
   launchAcademy?(lesson: AcademyLesson): void;
   launchCalendar?(ev: CalendarEvent): void;
   specClassToggle?(on: boolean): void;
+  sanctionedToggle?(on: boolean): void;
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -263,6 +266,7 @@ export class Menu {
   musicOn = true;
   audioEngineMode: 'real_samples' | 'engine_sim' = 'real_samples';
   specClass = false;
+  sanctionedMode = false;
   modHub: ModHubStore = loadModHub();
   completedLessons: string[] = loadCompletedLessons();
   private carFilter: 'all' | 'fav' | 'S' | 'A' | 'B' = 'all';
@@ -492,7 +496,9 @@ export class Menu {
     const row = (label: string, chips: string, note: string) => `<div class="srow2"><span class="dim">${label}</span><div class="chips">${chips}</div><small class="dim">${note}</small></div>`;
     const presets = (['beginner', 'intermediate', 'expert', 'custom'] as Preset[]).map((p) => chip('as-preset', p, p[0].toUpperCase() + p.slice(1), a.preset === p)).join('');
     const assists = `
-      <div class="chips">${presets}</div><div class="dim note">${PRESET_INFO[a.preset]}</div>
+      <div class="chips">${presets}<span class="pill gold">Skill Bonus: ${assistsOffCount(a)}/7 Aids Off</span></div><div class="dim note">${PRESET_INFO[a.preset]}</div>
+      ${row('STEERING FILTER', chip('as-sa', 'off', 'Off (Raw)', a.steeringAssist === 'off') + chip('as-sa', 'sim', 'Sim (Peak Grip)', a.steeringAssist === 'sim') + chip('as-sa', 'assisted', 'Assisted (Forza Feel)', a.steeringAssist === 'assisted'), 'Physics-up front-axle slip ceiling for controllers & keyboards (never affects real steering wheels). Keeps tyres biting instead of washing out.')}
+      ${row('BRAKING ASSIST', chip('as-ba', 'off', 'Off', a.brakingAssist === 'off') + chip('as-ba', 'low', 'Low (Safety Net)', a.brakingAssist === 'low') + chip('as-ba', 'high', 'High (Guided)', a.brakingAssist === 'high'), 'Optional beginner on-ramp driven by the Driving Line corner-speed physics. Peel this off first as you learn braking points.')}
       ${row('ABS', chip('as-abs', 'off', 'Off', a.abs === 'off') + chip('as-abs', 'weak', 'Weak', a.abs === 'weak') + chip('as-abs', 'default', 'Default', a.abs === 'default'), 'Stops the wheels locking under braking. Weak lets them slip further first.')}
       ${row('TRACTION', [0, 1, 2, 3, 4, 5].map((n) => chip('as-tc', String(n), n ? String(n) : 'Off', a.tc === n)).join(''), 'Cuts power when the rear wheels spin. 5 steps in earliest.')}
       ${row('STABILITY', chip('as-esc', '0', 'Off', !a.stability) + chip('as-esc', '1', 'On', a.stability), 'Brakes single wheels to stop a spin or a slide wide.')}
@@ -1116,11 +1122,12 @@ export class Menu {
       ${cityRow}
       <div class="mode-cards">
         <div class="mcard">
-          <div class="mcard-top"><span class="micon">01</span><b>Race Event</b><span class="dim">Instanced · Tactical Cops · Sim Physics</span></div>
-          <p class="dim">High-stakes controlled street races where hardcore physics and tactical police AI (PIT maneuvers &amp; roadblocks) matter. Heat &amp; massive payouts live here.</p>
-          <div class="opts"><span class="dim">COPS</span>${cur?.mandatoryCops
+          <div class="mcard-top"><span class="micon">01</span><b>Race Event</b><span class="dim">${this.sanctionedMode ? '☀ Sanctioned Day Circuit · FIA Rules' : '🌙 Midnight Street Underground · Tactical Cops'}</span></div>
+          <p class="dim">${this.sanctionedMode ? 'Daytime sanctioned championship racing: closed road, zero cops, zero civilian traffic, pure motorsport pace & FIA track rules.' : 'High-stakes midnight street races where hardcore physics and tactical police AI (PIT maneuvers & roadblocks) matter. Heat & outlaw payouts live here.'}</p>
+          <div class="opts"><span class="dim">DISCIPLINE</span><button class="chip ${!this.sanctionedMode ? 'on' : ''}" data-act="sanctioned" data-v="0">🌙 Underground Night Street</button><button class="chip ${this.sanctionedMode ? 'on' : ''}" data-act="sanctioned" data-v="1">☀ Sanctioned Day Circuit</button></div>
+          ${this.sanctionedMode ? '<div class="opts"><span class="pill gold">🏁 SANCTIONED · NO COPS · NO TRAFFIC</span><span class="dim small-note">Closed circuit discipline for pure sim &amp; hotlap mastery</span></div>' : `<div class="opts"><span class="dim">COPS</span>${cur?.mandatoryCops
             ? `<span class="pill gold">🚨 PATROLLED DISTRICT · ALWAYS ON</span><span class="dim small-note">${esc(cur.patrolNote)}</span>`
-            : `<button class="chip ${sel.copMode ? 'on' : ''}" data-act="copmode" data-v="1">Cop Mode ON</button><button class="chip ${!sel.copMode ? 'on' : ''}" data-act="copmode" data-v="0">OFF</button><span class="dim small-note">${sel.copMode ? '+50%+ Rep/Cr · Bust = heavy fine / pink slip risk' : 'Clean track battle · standard payout'}</span>`}</div>
+            : `<button class="chip ${sel.copMode ? 'on' : ''}" data-act="copmode" data-v="1">Cop Mode ON</button><button class="chip ${!sel.copMode ? 'on' : ''}" data-act="copmode" data-v="0">OFF</button><span class="dim small-note">${sel.copMode ? '+50%+ Rep/Cr · Bust = heavy fine / pink slip risk' : 'Clean track battle · standard payout'}</span>`}</div>`}
           <div class="opts"><span class="dim">INSURANCE</span><button class="chip ${this.maint.insured ? 'on' : ''}" data-act="insure" data-v="1">🛡 Insured ON</button><button class="chip ${!this.maint.insured ? 'on' : ''}" data-act="insure" data-v="0">OFF</button><span class="dim small-note">${this.maint.insured ? `${INSURANCE_PREMIUM_XP} XP / $${INSURANCE_PREMIUM_CR} premium · -50% off repairs &amp; tow if wrecked` : 'Full repair &amp; Tow Truck Fee if totaled'}</span></div>
           ${(() => { const r = repairCostOf(conditionOf(this.maint, sel.car), this.maint.insured); return r.pct > 0 ? `<div class="opts"><span class="pill gold">🔧 ${r.pct}% SAVED DAMAGE</span><button class="chip" data-act="repair-car">Repair (${r.xp} XP)</button></div>` : ''; })()}
           <div class="opts"><span class="dim">RULES</span><span class="pill ${sel.realism ? 'gold' : ''}">${sel.realism ? 'FULL REALISM' : 'RESPAWNS'}</span><span class="dim small-note">change on main menu</span></div>
@@ -1427,6 +1434,7 @@ export class Menu {
       <div class="big ${pos === 1 && !me?.dnf ? 'win' : ''}">${me?.dnf ? 'DNF' : ranked.length > 1 ? `P${pos}<small> / ${ranked.length}</small>` : formatLap(r.total)}</div>
       <div class="dim">${me?.dnf ? `${r.laps.length} of ${r.laps_target} laps` : `${formatLap(r.total)} · ${r.laps_target} lap${r.laps_target > 1 ? 's' : ''}`} · Best lap <b class="best-inline">${formatLap(r.best)}</b></div>
       ${this.rewardHtml(r, !!me?.dnf)}
+      ${r.graduationTip ? `<div class="pnote">${esc(r.graduationTip)}</div>` : ''}
       ${maintHtml}
       ${reportBar}
       ${table}
@@ -1830,6 +1838,7 @@ export class Menu {
         break;
       }
       case 'spec-class': this.specClass = v === '1'; this.hooks.specClassToggle?.(this.specClass); this.render(); break;
+      case 'sanctioned': this.sanctionedMode = v === '1'; this.hooks.sanctionedToggle?.(this.sanctionedMode); this.render(); break;
       case 'mod-sub': {
         const on = toggleModSub(this.modHub, v);
         this.shopNote = on ? '✓ Mod subscribed & verified.' : 'Mod unsubscribed.';
@@ -1947,6 +1956,8 @@ export class Menu {
     const a = this.assists;
     if (act === 'as-preset') applyPreset(a, v as Preset);
     else {
+      if (act === 'as-sa') a.steeringAssist = v as SteeringAssistLevel;
+      if (act === 'as-ba') a.brakingAssist = v as BrakingAssistLevel;
       if (act === 'as-abs') a.abs = v as typeof a.abs;
       if (act === 'as-tc') a.tc = Number(v);
       if (act === 'as-esc') a.stability = v === '1';

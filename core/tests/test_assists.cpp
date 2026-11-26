@@ -384,3 +384,73 @@ RS_TEST(h_shifter) {
     test::check("no shifter: paddle shifts", in.gear == 2);
 }
 
+// Physics-up Controller Steering Filter (Forza / iRacing Arcade on-ramp):
+// Clamps front slip angle near peak grip on Gamepad/Keyboard while leaving real steering wheels 100% 1:1.
+RS_TEST(steering_filter_assist) {
+    CarConfig cfg = test::car();
+    VehicleOutput last;
+    last.speed = 35.0;        // 126 km/h
+    last.sideslip = -0.18;    // sliding right while player slams full left steer
+    last.yaw_rate = 0.55;
+
+    // 1. Assisted mode on Gamepad clamps excessive front-axle slip angle and reports active intervention
+    Controls c_pad(cfg);
+    c_pad.settings.steering_assist = SteeringAssistMode::Assisted;
+    RawInput raw;
+    raw.device = InputDevice::Gamepad;
+    raw.steer = 1.0;
+    DriverInput in_pad{};
+    for (int i = 0; i < 60; ++i) in_pad = c_pad.update(raw, last, 1.0 / 60.0);
+    const double lock = cfg.front.max_steer_deg * kPi / 180.0;
+    const double vy = std::tan(last.sideslip) * last.speed;
+    const double delta_free = std::atan2(vy + last.yaw_rate * cfg.dist_cg_front, last.speed);
+    const double front_slip = std::abs(in_pad.steer * lock - delta_free);
+    std::printf("         Assisted pad at 126 km/h: steer=%.3f front_slip=%.3f rad active=%d\n",
+                in_pad.steer, front_slip, c_pad.assist_state().steering_filter_active ? 1 : 0);
+    test::check("Assisted pad clamps front slip angle near peak grip", front_slip <= c_pad.settings.steer_filter_max_slip_assisted_rad + 0.005);
+    test::check("Assisted pad reports steering_filter_active", c_pad.assist_state().steering_filter_active);
+
+    // 2. Real steering wheel MUST stay 100% 1:1 untouched even if steering_assist is set to Assisted
+    Controls c_wheel(cfg);
+    c_wheel.settings.steering_assist = SteeringAssistMode::Assisted;
+    raw.device = InputDevice::Wheel;
+    raw.steer = 1.0;
+    const DriverInput in_wheel = c_wheel.update(raw, last, 1.0 / 60.0);
+    test::check("Wheel stays 100% 1:1 untouched by steering filter", std::abs(in_wheel.steer - 1.0) < 1e-6);
+    test::check("Wheel never activates steering_filter_active", !c_wheel.assist_state().steering_filter_active);
+}
+
+// Physics-up Corner Braking Assist: smoothly brakes and eases throttle when overspeeding a corner target speed.
+RS_TEST(braking_assist) {
+    CarConfig cfg = test::car();
+    VehicleOutput last;
+    last.speed = 45.0;  // 162 km/h approaching a 72 km/h (20 m/s) hairpin
+
+    // High braking assist engages cleanly and lifts throttle
+    Controls c_hi(cfg);
+    c_hi.settings.braking_assist = BrakingAssistMode::High;
+    RawInput raw;
+    raw.device = InputDevice::Gamepad;
+    raw.throttle = 1.0;
+    raw.brake = 0.0;
+    raw.recommended_speed_ms = 20.0;
+    const DriverInput in_hi = c_hi.update(raw, last, 1.0 / 60.0);
+    std::printf("         Braking Assist High (45 -> 20 m/s): brake=%.2f throttle=%.2f\n", in_hi.brake, in_hi.throttle);
+    test::check("High braking assist applies strong ABS-safe brake", in_hi.brake >= 0.70 && in_hi.brake <= 0.86);
+    test::check("High braking assist lifts full throttle", in_hi.throttle < 0.15);
+    test::check("High braking assist flags active state", c_hi.assist_state().braking_assist_active);
+
+    // Low braking assist is gentler than High
+    Controls c_lo(cfg);
+    c_lo.settings.braking_assist = BrakingAssistMode::Low;
+    const DriverInput in_lo = c_lo.update(raw, last, 1.0 / 60.0);
+    test::check("Low braking assist applies gentler braking than High", in_lo.brake > 0.20 && in_lo.brake < in_hi.brake);
+
+    // Off or unknown target speed (< 0) does nothing
+    Controls c_off(cfg);
+    c_off.settings.braking_assist = BrakingAssistMode::Off;
+    const DriverInput in_off = c_off.update(raw, last, 1.0 / 60.0);
+    test::check("Braking assist Off leaves pedals untouched", in_off.brake == 0.0 && in_off.throttle == 1.0);
+}
+
+

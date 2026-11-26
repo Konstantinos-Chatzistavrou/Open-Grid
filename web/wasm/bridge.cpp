@@ -397,6 +397,11 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
         c.controls->settings.auto_clutch = true;
         c.controls->settings.auto_clutch_quality = rs::AutoClutchQuality(ac_mode);
     }
+    // buf[42]: SteeringAssistMode (0=Off, 1=Sim, 2=Assisted); buf[43]: BrakingAssistMode (0=Off, 1=Low, 2=High);
+    // buf[44]: recommended corner speed m/s (<= 0 = disabled/unknown).
+    c.controls->settings.steering_assist = rs::SteeringAssistMode(std::max(0, std::min(2, int(std::lround(b[42])))));
+    c.controls->settings.braking_assist = rs::BrakingAssistMode(std::max(0, std::min(2, int(std::lround(b[43])))));
+    raw.recommended_speed_ms = (b[44] > 0.1) ? b[44] : -1.0;
 
     const rs::DriverInput di = c.controls->update(raw, c.out, dt);
     c.vehicle->set_input(di);
@@ -647,6 +652,11 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     b[483] = c.out.hybrid_deploy_kw;
     b[484] = c.out.hybrid_regen_kw;
     b[485] = c.out.wake_asymmetry;
+    // Physics-up assist intervention readout [486..488] (HUD intervention lamps & Assist Graduation loop)
+    const rs::ControlAssistState& cas = c.controls->assist_state();
+    b[486] = cas.steering_filter_active ? 1.0 : 0.0;
+    b[487] = cas.countersteer_active ? 1.0 : 0.0;
+    b[488] = cas.braking_assist_amount;
 }
 }  // namespace
 
