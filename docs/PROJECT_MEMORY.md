@@ -1,7 +1,23 @@
 # Project memory: Open Grid (handoff for a new session)
 
-Facts below were read from the repo on 2026-11-10. Update this file when behaviour changes; it is the committed
-memory a fresh session should read first. Deeper detail lives in the linked docs.
+Updated **2026-11-26**. This is the committed memory a fresh session should read first; deeper detail lives in the linked docs.
+
+## 0. Current state snapshot (2026-11-26)
+
+- **Stack**: C++20 `rs_core` (128 CTests, GCC + MSVC + Unreal `RsCoreUnity.cpp`), Three.js r187 (WebGPU + automatic WebGL 2 fallback), Rapier 3D, TypeScript 7, Vite 8.3.8, Emscripten 7.0.1, Node 24, Cloudflare Workers + D1 + Durable Objects.
+- **Fleet & Cities**: 25 de-branded cars (`data/cars/*.json`, explicit 3D hardpoints, per-car transmissions `manual`/`dct`/`auto_tc`, tracked licence ledgers), 5 real-scale 1:1 cities (NYC Midtown, London, Paris, Tokyo, LA).
+- **Audio Engine (Live A/B)**: Switchable live in Settings & Garage between **43 ear-verified real recorded CC BY 3.0 supercar stems** (`web/public/assets/audio/real/`) and **Thermodynamic Engine-Sim + 192-tap Exhaust Muffler IR** WASM (`core/src/engine_audio.cpp`).
+- **Live Online Network (`cloud/`)**: Deployed to **`https://opengrid.opengrid-racing.workers.dev`** (D1 migrations `0001..0006` applied, EEUR region, $0/month free plan). Includes real Email+Password PBKDF2-SHA256 auth, Non-Profit Patreon Online Pass (HMAC-MD5 webhooks + OAuth2 Connect, 7-day free trial, zero ads), Glicko-2 DR, Fault-Aware SR (`0x Victim Shield`), License Ladder (`R→PRO`), Scheduled SOF Splits, Seasonal Championships, Restorative Protests, Season Disconnect Jokers, Global Hotlaps, Endurance Teams, Hosted Private Leagues, P2P WebRTC Voice Chat (`web/src/party.ts` + `voice.ts`), client-side Race Spotter (`web/src/spotter.ts`), and free GitHub Actions C++20 `opengrid_replay_verifier`.
+- **CI Suite (4 workflows)**:
+  - `.github/workflows/ci.yml` (every push): GCC Release, GCC `-O1` ASan+UBSan, Windows MSVC + `RsCoreUnity.cpp`, data/licence/physics reference checks, `open-grid-physics`, `web` build, `cloud` `tsc` + `test:pace` (17) + `test:competitive` (11).
+  - `.github/workflows/nightly_asan_o0.yml` (nightly `03:00 UTC`): unoptimized `-O0 -g` ASan+UBSan across all 128 CTests (catches bugs hidden or reshaped by `-O1`).
+  - `.github/workflows/weekly_full_fleet.yml` (weekly Sun `04:00 UTC`): full 25-car fleet across all 5 real circuits (`125 laps`) under `RS_ALL_CARS=1` and `RS_ALL_CARS=1 RS_GAME_MODELS=1`.
+  - `.github/workflows/replay_verifier.yml` (every 30 min when `VERIFIER_KEY` secret is set): builds `opengrid_replay_verifier` and audits pending ranked replays (`OPENGRID_CLOUD_URL` repo variable already set).
+- **Saved follow-ups for later**:
+  1. Wire live collision/offtrack events in `web/src/main.ts` into `ranked.incident(...)` (`RaceRoom` already scores them).
+  2. Wire top-3 replay input upload in `web/src/main.ts` when `rankedRes.you.replay === true`.
+  3. Add `tools/steward.mjs` CLI to review/resolve open Restorative Protests + downloadable Hotlap Ghost Car playback.
+  4. Connect live Patreon page (`PATREON_URL`, `PATREON_WEBHOOK_SECRET`, optional OAuth) & add `VERIFIER_KEY` GitHub secret.
 
 ## 1. How to run and test
 

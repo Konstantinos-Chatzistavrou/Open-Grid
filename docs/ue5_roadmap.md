@@ -1,8 +1,8 @@
 # UE 5.8 Roadmap: What to Stop in WebGPU vs. What to Build Now
 
 OpenGrid's target release engine is **Unreal Engine 5.8** (`ue5/OpenGrid.uproject`, `ue5_plugin/OpenGridPhysics/`).
-The browser build (`web/`, Three.js WebGPU + Rapier + WASM `rs_core`) exists so we can develop, test, and verify the
-C++17 physics core, car models, and asset pipelines on a lightweight laptop (i3-1315U, 7.4 GiB RAM) before moving to a
+The browser build (`web/`, Three.js r187 WebGPU + Rapier + WASM `rs_core`) exists so we can develop, test, and verify the
+C++20 physics core, car models, online backend, and asset pipelines on a lightweight laptop (i3-1315U, 7.4 GiB RAM) before moving to a
 dedicated UE 5.8 machine.
 
 This document defines the strict boundary between **throwaway WebGPU work (STOP)** and **100% UE 5.8-transferable work
@@ -112,5 +112,7 @@ Node.js, and plugs straight into UE 5.8 with zero rework.
 - **UE 5.8 C++ Gameplay & Systems (`ue5/Source/OpenGrid/`)**: `UOpenGridCustomizationComponent` (modular socket parts, widebody morphs & track offset, paint/wear MIDs, JSON sync), `UOpenGridDamageComponent` (6 `crush_*` morph targets + Chaos detachable panels), `UOpenGridMetaSoundComponent` (MetaSounds parameter/trigger bridge), `UOpenGridRaceSubsystem` (6-car grids, lap timing, Heat 0–5 tactical pursuits), and `UOpenGridOnlineSubsystem` (`FHttpModule`/`FWebSocketsModule` client for the Cloudflare Worker backend), all wired onto `AOpenGridCarPawn`.
 - **One-Click UE 5.8 Editor Auto-Importer & DataTables (`tools/ue5/generate_ue5_datatables.mjs`, `tools/ue5/ue5_import_all.py`)**: Generates UE 5.8 `UDataTable` CSVs for all 24 cars (`data/ue5/car_catalog_dt.csv`) and 135 modular parts (`data/ue5/parts_catalog_dt.csv`) plus `data/ue5/tokyo_night_postprocess.json`, and imports all cars, 16 4K kit materials/HDRIs, LUT, `PPV_TokyoNight` PostProcessVolume, DataTables, and city landscapes/PCG manifests in one Unreal Editor Python command (`docs/ue5_first_session.md`).
 - **Tokyo Night 3D LUTs & 48 kHz / 24-bit MetaSound Audio Stems (`tools/ue5/generate_tokyo_night_lut.py`, `tools/ue5/generate_audio_stems.py`, `docs/ue5_audio_metasounds.md`)**: Exact 33³ `.cube` (`data/ue5/TokyoNight_33.cube`) and native UE 5.8 `256x16` strip PNG (`data/ue5/TokyoNight_UE5_256x16.png`) LUTs, plus 11 verified seamless 48 kHz / 24-bit procedural WAV MetaSound stems (`ue5/Import/Audio/`, tracked ledger `assets_source/audio/manifest.json`).
+- **C++20 FIA Race Control, Anti-Cheat Verifier & Live Competitive Cloud (`core/src/race_control.cpp`, `core/tools/opengrid_replay_verifier.cpp`, `cloud/`)**: Full FIA flag state machine, fault-aware `0x Victim Shield` collision evaluation, pit-lane limiter/service timers, and `EnduranceStintTracker` (driver swaps) are compiled into `RsCoreUnity.cpp` (verified on Windows MSVC every push). The live Cloudflare Workers + D1 online service (`https://opengrid.opengrid-racing.workers.dev`) already exposes real Email+Password PBKDF2 auth, Patreon webhooks/OAuth2, DR/SR licenses, SOF splits, championships, restorative protests, hotlaps, teams, and leagues for `UOpenGridOnlineSubsystem` to consume directly in UE 5.8.
+- **Expanded CI Verification (2026-11-26)**: Push CI runs GCC Release (128 CTests), GCC `-O1` ASan+UBSan, and Windows MSVC + `RsCoreUnity.cpp`; nightly `.github/workflows/nightly_asan_o0.yml` runs unoptimized `-O0` ASan+UBSan; weekly `.github/workflows/weekly_full_fleet.yml` tests all 25 cars across all 5 real circuits (`RS_ALL_CARS=1` + `RS_GAME_MODELS=1`).
 
 

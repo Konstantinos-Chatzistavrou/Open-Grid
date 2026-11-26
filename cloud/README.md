@@ -1,66 +1,109 @@
-# Open Grid online service
+# Open Grid Online Service (`cloud/`)
 
-The server of the **online career**: accounts, XP, credits, purchases, and the race rooms that time ranked party races.
-It runs on Cloudflare's free plan (Workers + D1 + SQLite-backed Durable Objects). No servers to maintain; going over a
-free daily limit makes requests fail until 00:00 UTC (results wait in the players' browsers), never a bill.
+The server-authoritative backend for **Open Grid's competitive online network**, running on **Cloudflare Workers + D1 + SQLite-backed Durable Objects (Free Plan, $0/month fixed cost)**.
 
-Licence: Apache-2.0, like the rest of the game.
+- **Live instance:** `https://opengrid.opengrid-racing.workers.dev` (region `EEUR`)
+- **Frontend integration:** Vercel project `opengrid` builds `web/` with `VITE_CLOUD_URL` set to the live Worker URL on every push to `main`.
+- **Licence:** `Apache-2.0` (100% open source; self-hostable by leagues and communities).
+- **Monetization Philosophy:** **100% Non-Profit & Ad-Free.** All cars, tracks, single player, garage, friends, and private P2P lobbies are free forever. Official managed ranked servers are funded via a **Patreon Supporter Pass** (7-day free trial included automatically on every new account).
 
-## What it does
+---
 
-- **Accounts**: anonymous (random id + secret token, hashed on the server). No e-mail, no password; the recovery code
-  (Settings → Online account) moves an account to another device. At most 5 new accounts per network per day.
-- **Usernames**: every player picks one at first start (`web/src/username.ts` has the rules: 3-16 letters, digits, `_ . -`;
-  `#` is reserved for the single-player bots `#Bot1..#Bot5`). Unique regardless of capitals (a unique index); the first pick
-  is free, a change once per 30 days. It is the name in race rooms, on the leaderboard, over the car and on the number plate.
-- **Friends**: add by username (a request; adding back, or Accept, makes you friends), remove / decline / cancel. Friends
-  see each other online (a heartbeat every 60 s while the game is open) and the party they are in, with a Join button.
-- **Online career**: XP, level, credits and owned items live in the database; the game only shows them. Purchases are
-  checked here (online level + credits; a conditional update so credits can never be spent twice).
-- **Ranked races**: the party's race room (one Durable Object per party code) receives every car's position ~4 times a
-  second, times the laps itself (`src/tracker.ts`, same rules as the core's race tracker), decides the order, and pays.
-  - counts only if **6+ accounts genuinely raced**, at most **2 per network** (IPv4 address, or IPv6 /64 = one household)
-  - the car and upgrade stages a player races with must be owned by their account (otherwise: not counted, no reward)
-  - checks: average speed vs. the car's real top speed, teleports, resets (none in full realism; never gaining distance),
-    message floods, car-to-car contact (clean-race bonus). 3 violations = no reward + a strike; 3 strikes = no ranked races
-  - new accounts earn half (first 24 h and below level 3); racing the same opponents 5+ / 10+ times a day pays half / a
-    quarter; daily caps (80,000 XP, 150,000 Cr); level-ups pay credits
-  - the rules and numbers are in `web/src/progression.ts`, shared with the game
-- Raw IP addresses are never stored: only a salted hash of the network.
+## Architecture & Features
 
-## Develop and test (no Cloudflare account needed)
+### 1. Authentication & Accounts (`src/auth.ts`, `src/index.ts`)
+- **Real Email + Password Login & Registration:** WebCrypto `PBKDF2-HMAC-SHA256` (100,000 iterations, 16-byte random salt, constant-time verification). Registering upgrades an existing anonymous guest account **in-place** with zero lost progress.
+- **Brute-Force & Abuse Protection:** Login rate-limited to `10 attempts / 15 min` per salted network hash; signups capped at `5 / day` per network hash. Raw IPs are never stored.
+- **Guest Fallback & Recovery Codes:** Instant guest play (`POST /v1/account`) with device-transfer recovery codes; bearer tokens rotate on login/password change/logout.
+- **Unique Usernames & Friends:** Case-insensitive unique usernames (3–16 chars, 30-day change cooldown, `#` reserved for bots), bidirectional friend requests, and 60 s online/party presence heartbeats.
 
-```
+### 2. Non-Profit Patreon Online Pass (`src/patreon.ts`)
+- **Zero Business Entity / $0 Fixed Cost:** Patreon acts as Merchant of Record (VAT, tax, recurring billing, cancellations).
+- **Automated Webhooks (`POST /v1/patreon/webhook`):** Pure-TypeScript RFC 1321 MD5 + RFC 2104 HMAC-MD5 verifies Patreon's `X-Patreon-Signature` header natively on Cloudflare Workers. Handles `members:pledge:create`, `update`, and `delete`, matching accounts by linked Patreon ID **or matching email address** and granting a rolling 35-day window (`pro` ≥ `$5/mo`, `team_pro` ≥ `$10/mo`, configurable via `PATREON_PRO_CENTS` / `PATREON_TEAM_CENTS`).
+- **1-Click OAuth2 Connect (`GET /v1/patreon/connect` → `/v1/patreon/callback`):** CSRF-signed state token links Patreon accounts even when emails differ and activates the pass immediately in D1.
+
+### 3. Competitive Rating, Licenses & Scheduled Splits (`src/ratings.ts`, `src/room.ts`)
+- **Dual Rating:** Glicko-2 Driver Rating (`DR 800–3500`, Grade `E → S`, dynamic `RD` convergence) + Fault-Aware Safety Rating (`SR 0.00–4.99`, `0x Victim Shield` for blameless contact vs `4x` for at-fault collisions).
+- **License Ladder & Bad-Sport Quarantine:** `R → D → C → B → A → PRO` with MPR promotion/demotion, automatic Bad-Sport quarantine (`splitNo = -1`) for habitual rammers, and **2 Season Disconnect Jokers** (`POST /v1/joker`) to restore lost DR/SR after an unfair disconnect/crash.
+- **Official Series & Balanced SOF Splits:** Automated recurring schedules (`rookie_sprint` 20m, `gt3_championship` 45m, `hypercar_pro` 60m, `endurance_special` 120m), balanced Strength-of-Field split seeding, and deterministic party codes.
+- **Seasonal Championships:** SOF-weighted points, car-lock tracking, and best-8-of-12 drop-week standings (`GET /v1/championships`).
+- **Restorative Protests (`POST /v1/protests`, `POST /v1/protests/:id/resolve`):** Upheld steward protests automatically refund 100% of lost victim DR & SR from `race_rating_ledger` and quarantine intentional wreckers.
+- **Global Hotlaps, Endurance Teams & Hosted Private Leagues:** Verified per-track/car/weather hotlap leaderboards (`GET /v1/leaderboards`, `POST /v1/hotlap`), Endurance Teams (`GET/POST /v1/teams`), and PBKDF2 password-protected Private Leagues (`GET/POST /v1/leagues`, `POST /v1/leagues/join`).
+
+### 4. Server-Authoritative Economy, Escrow & Race Rooms
+- **Cloud Saves (`GET/POST /v1/save`):** Monotonic `save_version` check (`409 Conflict` on stale/rollback writes) prevents local save-scumming.
+- **Two-Party Wager Escrow (`POST /v1/wager/lock`, `/v1/wager/settle`):** Locks Cash or Pink Slip stakes server-side and requires mutual settlement agreement (or server-verified race outcome).
+- **Durable Object `RaceRoom` (`src/room.ts`):** Times ranked races from 4 Hz telemetry, enforces ownership of raced car/mods, pace/teleport/flood plausibility checks, 6+ active drivers (max 2 per household network), and requests replay uploads from top-3/flagged finishers.
+- **Automated C++20 Replay Anti-Cheat (`opengrid_replay_verifier`):** Free GitHub Actions cron (`.github/workflows/replay_verifier.yml`) polls `GET /v1/replays/pending`, replays inputs at 400 Hz through `rs::AuthorityServerSim` + `rs::AntiBotAnalyzer`, and posts verdicts to `POST /v1/replays/:race/:account`.
+
+---
+
+## API Route Summary
+
+| Method & Path | Auth | Purpose |
+|---|---|---|
+| `GET /v1` | Public | Health check, active season ID, `adFree: true` |
+| `POST /v1/account` | Public | Create anonymous guest account (includes 7-day trial) |
+| `POST /v1/auth/register` / `login` | Public / Optional | Real Email+Password signup (upgrades guest in-place) & login |
+| `POST /v1/auth/logout` / `password` | Bearer | Rotate bearer token / change password |
+| `GET /v1/me`, `GET/POST /v1/save` | Bearer | Profile, DR/SR/License, monotonic cross-progression save |
+| `GET /v1/subscription` | Bearer | Online pass status, Patreon URL, OAuth flag, benefits |
+| `GET /v1/patreon/connect`, `GET /v1/patreon/callback` | Bearer / OAuth | 1-click Patreon OAuth2 account linking |
+| `POST /v1/patreon/webhook` | `X-Patreon-Signature` | Automated Patreon pledge create/update/delete sync |
+| `POST /v1/billing/webhook` | `X-OpenGrid-Signature` | Admin HMAC-SHA256 manual grant webhook |
+| `GET /v1/schedule`, `POST /v1/schedule/{register,withdraw,seed}` | Public / Bearer | Official series calendar, registration & SOF split seeding |
+| `GET /v1/championships` | Public | Official seasonal championship standings |
+| `GET /v1/leaderboards`, `POST /v1/hotlap` | Public / Bearer | Verified Global Hotlap Leaderboard & PB upload |
+| `GET/POST /v1/protests`, `POST /v1/protests/:id/resolve` | Bearer / `VERIFIER_KEY` | File & resolve Restorative Protests (auto DR/SR refund) |
+| `POST /v1/joker` | Bearer | Redeem Season Disconnect Joker to restore lost DR/SR |
+| `GET/POST /v1/teams` | Bearer | List & create Endurance Teams |
+| `GET/POST /v1/leagues`, `POST /v1/leagues/join` | Public / Bearer | Browse, host & join password-protected Private Leagues |
+| `GET/POST /v1/friends`, `POST /v1/presence`, `POST /v1/username` | Bearer | Social graph, presence & unique usernames |
+| `POST /v1/buy`, `POST /v1/look`, `POST /v1/wager/{lock,settle}` | Bearer | Atomic shop purchases, livery sync, Pink Slip/Cash escrow |
+| `WS /v1/room/:party` | Bearer (`?auth=`) | Server-timed Durable Object `RaceRoom` |
+| `POST /v1/replay/:race`, `GET /v1/replays/pending`, `POST /v1/replays/:r/:a` | Bearer / `VERIFIER_KEY` | Replay upload & C++20 verifier queue |
+
+---
+
+## Local Development & Tests
+
+```bash
 cd cloud
 npm install
-npm run db:local          # create the local database
-npm run dev               # http://127.0.0.1:8787 (the game's dev server uses it automatically)
-npm test                  # 17 simulated players, two real-time races (~2 min)
-npm run test:social       # usernames and friends (a few seconds)
+npm run db:local             # apply all D1 migrations locally (0001..0006)
+npm run dev                  # http://127.0.0.1:8787
+npx tsc --noEmit
+npm run test:pace            # 17 pace plausibility checks
+npm run test:competitive     # 11 auth, Patreon MD5/HMAC, DR/SR, SOF, championship & protest checks
+npm test                     # 17 simulated players, full end-to-end RaceRoom sim (~2 min)
+npm run test:social          # usernames & friends tests
 ```
 
-`.dev.vars` (not committed) for local runs: `ALLOW_TEST_IP=1`, `IP_SALT=dev-salt`, `VERIFIER_KEY=dev-verifier`.
-**Never set `ALLOW_TEST_IP` in production** (it lets a client pick its network for tests).
+For local `.dev.vars` (never committed): `ALLOW_TEST_IP=1`, `IP_SALT=dev-salt`, `VERIFIER_KEY=dev-verifier`. **Never set `ALLOW_TEST_IP` in production.**
 
-## Go live (once)
+---
 
-1. A free Cloudflare account (dash.cloudflare.com), then in this folder: `npx wrangler login`
-2. `npx wrangler d1 create opengrid` and put the printed `database_id` into `wrangler.toml`
-3. `npx wrangler secret put IP_SALT` (any long random string) and `npx wrangler secret put VERIFIER_KEY`
-4. `npm run db:remote && npm run deploy` → prints the service URL (`https://opengrid.<your-subdomain>.workers.dev`;
-   pick a neutral subdomain)
-5. In Vercel: environment variable `VITE_CLOUD_URL` = that URL, redeploy the game
+## Production Deployment & Patreon Setup (`$0/month`)
 
-## Not done yet
+```bash
+cd cloud
+npx wrangler login
+npm run db:remote            # applies migrations 0001..0006 on remote D1
+npm run deploy               # deploys Worker + Durable Objects
+```
 
-**Replay checks** (re-running the top results from recorded inputs to catch modified physics). The server already asks
-the top 3 of every ranked race for a recording and has the endpoints for a checker; what is missing is a game simulation
-that is exactly reproducible from inputs (measured: the same scripted drive in two sessions ends 1.3 m apart after
-15 s; the city's collision tiles stream in on their own schedule). Until then nothing is voided by replays.
+Required Cloudflare secrets (`wrangler secret put <NAME>`):
+- `IP_SALT` — random salt for anonymous network hashing
+- `VERIFIER_KEY` — shared secret for GitHub Actions `opengrid_replay_verifier` & steward protest resolution
 
+Patreon activation (when your Patreon page is created):
+1. Set `PATREON_URL = "https://www.patreon.com/<your-page>"` in `wrangler.toml` `[vars]` (optional: `PATREON_PRO_CENTS = "500"`, `PATREON_TEAM_CENTS = "1000"`, `PATREON_CAMPAIGN_ID`).
+2. In Patreon Developer Portal → **Webhooks**, register `https://opengrid.opengrid-racing.workers.dev/v1/patreon/webhook` for `members:pledge:create`, `members:pledge:update`, `members:pledge:delete`, then run `npx wrangler secret put PATREON_WEBHOOK_SECRET`.
+3. *(Optional OAuth2)* Register a Patreon OAuth Client with redirect URI `https://opengrid.opengrid-racing.workers.dev/v1/patreon/callback`, set `PATREON_CLIENT_ID` in `wrangler.toml`, and run `npx wrangler secret put PATREON_CLIENT_SECRET`.
 
-## Live instance (2026-11-10)
+---
 
-- Service: **https://opengrid.opengrid-racing.workers.dev** (Workers + D1 + Durable Objects, free plan, region EEUR)
-- Account: the project owner's Cloudflare account; `wrangler login` credentials stay on the machine that deployed it
-- Game: Vercel project `opengrid` has `VITE_CLOUD_URL` set for Production and rebuilds on every push to `main`
+## Saved Follow-Up Wires (Planned Next Pass)
+1. Hook live collision/offtrack events in `web/src/main.ts` into `ranked.incident(...)` (the `RaceRoom` already scores them).
+2. Wire top-3 replay input-log upload in `web/src/main.ts` when `rankedRes.you.replay === true` (backend + C++20 verifier already live).
+3. Add a lightweight `tools/steward.mjs` CLI to review and resolve open Restorative Protests from the terminal, plus downloadable 3D Ghost Car playback from `hotlaps.ghost_data`.

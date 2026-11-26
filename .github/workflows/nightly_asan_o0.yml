@@ -1,0 +1,25 @@
+name: Open Grid Nightly ASan + UBSan (-O0)
+
+# Push CI runs ASan + UBSan at -O1 to keep feedback fast.
+# This nightly job runs the unoptimized -O0 build across the full C++20 physics suite
+# to catch issues that -O1 can hide or report differently.
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  cpp-core-asan-o0:
+    name: C++20 Physics Core (ASan + UBSan, -O0 -g) + Full CTest
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure & Build rs_core (ASan + UBSan, -O0 -g)
+        run: |
+          cmake -S core -B core/build-asan-o0 -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="-O0 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
+          cmake --build core/build-asan-o0 -j
+      - name: Run Full CTest Suite (Unoptimized -O0 ASan/UBSan)
+        run: ctest --test-dir core/build-asan-o0 --output-on-failure --parallel "$(nproc)"

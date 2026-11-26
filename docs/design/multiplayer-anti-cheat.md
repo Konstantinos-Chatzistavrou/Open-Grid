@@ -136,3 +136,25 @@ billing both make it wrong. Doable on a persistent process (Oracle Always Free A
   realistically 20-50 with netcode overhead.
 - This is also what finally makes **replay re-simulation** trivial: the server is already simulating every car;
   verification is rerunning the same inputs and comparing state, no client recording required.
+
+---
+
+## Update 2026-11-26 — Deployed $0/Month Competitive Moat & Anti-Cheat
+
+The following competitive and anti-cheat systems are now **deployed live** on `https://opengrid.opengrid-racing.workers.dev` (Cloudflare Workers + D1 migrations `0001..0006` + `RaceRoom` Durable Object, $0/month fixed cost):
+
+1. **Real Accounts & Security Hardening**:
+   - Email + Password auth (`PBKDF2-HMAC-SHA256`, 100k iterations, brute-force rate limits) upgrading guest accounts in-place.
+   - Monotonic `save_version` checks (`409 Conflict` on stale/rollback writes) and two-party / server-race verified Pink Slip & Cash wager escrow (`/v1/wager/lock`, `/v1/wager/settle`).
+2. **Competitive Rating, Splits & Restorative Stewarding**:
+   - Glicko-2 Driver Rating (`DR`), Fault-Aware Safety Rating (`SR` with `0x Victim Shield`), License Ladder (`R → PRO`), Bad-Sport Quarantine (`splitNo = -1`), Season Disconnect Jokers, Scheduled SOF Splits, Seasonal Championships (best 8 of 12 rounds), Restorative Protests (automatic DR/SR refunds for victims), Global Hotlap Leaderboards, Endurance Teams, and password-protected Hosted Private Leagues.
+   - C++20 FIA Race Control (`core/src/race_control.cpp`) compiled into both `rs_core` and UE 5.8 `RsCoreUnity.cpp`.
+3. **Zero-Cost C++20 Replay Anti-Cheat (`opengrid_replay_verifier`)**:
+   - Headless C++20 CLI (`core/tools/opengrid_replay_verifier.cpp`) runs `rs::AuthorityServerSim` (400 Hz physics) and `rs::AntiBotAnalyzer` (steering-lock, 240 Hz sawtooth macro, zero-latency reflex detection) via `.github/workflows/replay_verifier.yml` (`tools/verify_replays.mjs`) for `$0/month`.
+4. **Non-Profit Funding Model (Zero Ads, Zero Hostage Content)**:
+   - Base game, all 25 cars, cities, SP, Garage, and Private P2P parties (PeerJS poses + WebRTC voice chat) remain free forever.
+   - Official managed online servers are funded by a **Patreon Supporter Pass** (7-day free trial included, automated `POST /v1/patreon/webhook` HMAC-MD5 verification + 1-click OAuth2 Connect).
+5. **Saved Next Wires (Before Paid Dedicated UE 5.8 Servers)**:
+   - Wire `web/src/main.ts` collision/offtrack events into `ranked.incident(...)` and upload tick logs when `rankedRes.you.replay === true`.
+   - Add `tools/steward.mjs` admin CLI for resolving open protests via `VERIFIER_KEY`.
+   - Once Patreon revenue funds VPS/dedicated hosts for the UE 5.8 build, promote `rs_core` (`AuthorityServerSim`) to authoritative UDP/Iris dedicated servers for 400 Hz live reconciliation.

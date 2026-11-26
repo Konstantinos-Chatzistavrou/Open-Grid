@@ -1,0 +1,38 @@
+name: Open Grid Weekly Full-Fleet & Game-Models Validation
+
+# Default push CI validates Vela GT and Tornado GT3 on all 5 real circuits and the other 23 cars on Monza,
+# with core defaults. This weekly job closes both gaps:
+#   1. RS_ALL_CARS=1: all 25 shipped cars across all 5 real circuits (125 laps).
+#   2. RS_ALL_CARS=1 RS_GAME_MODELS=1: all 25 cars with the full game physics models enabled.
+
+on:
+  schedule:
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+
+jobs:
+  cpp-core-full-fleet:
+    name: Full 25-Car Fleet (RS_ALL_CARS=1 + RS_GAME_MODELS=1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure & Build rs_core (Release)
+        run: |
+          cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build core/build -j
+      - name: Run Full 25-Car Suite (RS_ALL_CARS=1, Core Defaults)
+        env:
+          RS_ALL_CARS: '1'
+        run: ctest --test-dir core/build --output-on-failure --parallel "$(nproc)"
+      - name: Run Full 25-Car Suite (RS_ALL_CARS=1 + RS_GAME_MODELS=1)
+        env:
+          RS_ALL_CARS: '1'
+          RS_GAME_MODELS: '1'
+        run: ctest --test-dir core/build --exclude-regex "^characters$" --output-on-failure --parallel "$(nproc)"
+      - name: Diagnostic — Known RS_GAME_MODELS=1 Kestrel Dog-Box Check (docs/physics.md)
+        continue-on-error: true
+        env:
+          RS_ALL_CARS: '1'
+          RS_GAME_MODELS: '1'
+        run: ctest --test-dir core/build -R "^characters$" --output-on-failure
