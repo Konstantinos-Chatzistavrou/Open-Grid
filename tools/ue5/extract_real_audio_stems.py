@@ -149,10 +149,10 @@ def yin_pitch(frame: np.ndarray, fmin: float, fmax: float) -> tuple[float, float
     return SAMPLE_RATE / max(1.0, tau), conf
 
 
-def harmonic_metrics(frame: np.ndarray, f0: float) -> tuple[float, int, float]:
-    """Return (harmonic_comb_ratio, n_active_harmonics_1_to_6, warm_body_ratio_35_to_1400Hz)."""
+def harmonic_metrics(frame: np.ndarray, f0: float) -> tuple[float, int, float, float]:
+    """Return (harmonic_comb_ratio, n_active_harmonics_1_to_6, warm_body_ratio, inharm_mid_ratio)."""
     if f0 < 20.0:
-        return 0.0, 0, 0.0
+        return 0.0, 0, 0.0, 1.0
     n = frame.shape[0]
     spec = np.abs(np.fft.rfft(frame * np.hanning(n))) ** 2
     freqs = np.fft.rfftfreq(n, d=1.0 / SAMPLE_RATE)
@@ -169,10 +169,57 @@ def harmonic_metrics(frame: np.ndarray, f0: float) -> tuple[float, int, float]:
         h_es.append(ek)
         h_sum += ek
     if not h_es:
-        return 0.0, 0, body
+        return 0.0, 0, body, 1.0
     mx = max(h_es) + 1e-12
     n_act = sum(1 for e in h_es[:6] if e >= 0.03 * mx)
-    return h_sum / tot, n_act, body
+
+    # Measure energy in mid-band (max(220, 1.25*f0)..4500 Hz) that falls OUTSIDE the 0.5*k*f0 harmonic comb.
+    # Pure engine exhaust stays tightly on integer/half-order harmonics; speech, music & chimes spike inharm!
+    mid_mask = (freqs >= max(220.0, f0 * 1.25)) & (freqs <= 4500.0)
+    mid_tot = float(np.sum(spec[mid_mask])) + 1e-12
+    harm_mask = np.zeros_like(freqs, dtype=bool)
+    step = 0.5 * f0
+    for k in range(1, int(4600.0 / max(15.0, step)) + 1):
+        fk = k * step
+        bw = max(12.0, 0.065 * fk)
+        harm_mask |= np.abs(freqs - fk) <= bw
+    inharm = float(np.sum(spec[mid_mask & (~harm_mask)])) / mid_tot
+    return h_sum / tot, n_act, body, inharm
+
+
+def fast_am_mod_ratio(seg: np.ndarray) -> float:
+    """Measure 4..25 Hz amplitude modulation depth (catches bubbles, trills, laughter, speech syllables, rev-limiter stutter!)."""
+    step = SAMPLE_RATE // 125  # 8 ms -> 125 Hz envelope rate (Nyquist 62.5 Hz)
+    n_f = seg.shape[0] // step
+    if n_f < 16:
+        return 0.0
+    env = np.sqrt(np.mean(seg[: n_f * step].reshape(n_f, step) ** 2, axis=1))
+    mean_e = float(np.mean(env))
+    if mean_e < 1e-6:
+        return 1.0
+    ec = (env - mean_e) / mean_e
+    spec = np.abs(np.fft.rfft(ec * np.hanning(n_f))) ** 2
+    fr = np.fft.rfftfreq(n_f, d=1.0 / 125.0)
+    # Normalized variance in 4..25 Hz band
+    return float(np.sqrt(np.sum(spec[(fr >= 4.0) & (fr <= 25.0)]) * 2.0 / (n_f * n_f)))
+
+
+def flatten_envelope(seg: np.ndarray, smooth_ms: float = 48.0) -> np.ndarray:
+    """Smoothly level slow RMS drift so looped real engine pulls have ZERO 'wub-wub' bubble pulsing."""
+    n = seg.shape[0]
+    win = max(64, int(round(smooth_ms * 0.001 * SAMPLE_RATE)))
+    if win >= n // 2:
+        return seg
+    ker = np.hanning(win)
+    ker /= float(np.sum(ker))
+    sq = seg * seg
+    pad = win // 2
+    rms = np.sqrt(np.convolve(np.pad(sq, (pad, win - 1 - pad), mode="edge"), ker, mode="valid"))
+    med = float(np.median(rms))
+    if med < 1e-6:
+        return seg
+    gain = np.clip(med / np.maximum(rms, med * 0.35), 0.55, 1.85)
+    return seg * gain
 
 
 def resample_pitch_lock(
@@ -256,25 +303,29 @@ def make_phase_locked_loop(
     pitch-locked real engine segment by finding the highest-correlation integer-period splice
     and equal-power cos/sin crossfading head & tail.
     """
-    # Trim 25 ms edge margins from cubic warp
+    # Trim 25 ms edge margins from cubic warp and smoothly flatten RMS drift (kills 'wub-wub' bubble pulsing!)
     edge = min(int(0.025 * SAMPLE_RATE), len(seg) // 10)
     x = seg[edge : len(seg) - edge] if len(seg) > 4 * edge else seg
     x = x - float(np.mean(x))
+    x = flatten_envelope(x, smooth_ms=48.0)
+    x = x - float(np.mean(x))
     n = x.shape[0]
 
-    # Crossfade width: ~4-6 firing cycles, clamped to [45 ms, 135 ms] and <= 30% of segment
+    # Crossfade width: ~6-9 firing cycles, clamped to [55 ms, 145 ms] and <= 28% of segment
     period_s = 1.0 / max(20.0, f_target)
-    xf_s = min(0.135, max(0.045, 5.0 * period_s))
-    xf = min(int(round(xf_s * SAMPLE_RATE)), max(256, n // 4))
+    xf_s = min(0.145, max(0.055, 7.0 * period_s))
+    xf = min(int(round(xf_s * SAMPLE_RATE)), max(256, int(n * 0.28)))
 
-    # Search best (start_offset, L) pair maximizing head-tail waveform correlation at exact firing period!
+    # Search best (start_offset, L) pair maximizing BOTH waveform correlation AND spectral continuity!
     p_samp = SAMPLE_RATE / max(20.0, f_target)
+    best_score = -1e9
     best_corr = -2.0
     best_s0 = 0
     l_best = max(xf + 16, n - xf - 1)
-    min_loop_len = max(xf + 64, min(int(0.26 * SAMPLE_RATE), int(n * 0.38)))
+    min_loop_len = max(xf + 64, min(int(0.24 * SAMPLE_RATE), int(n * 0.40)))
     max_s0 = max(0, n - min_loop_len - xf - 2)
-    s0_grid = np.linspace(0, max_s0, 6, dtype=np.int64) if max_s0 > 64 else np.array([0], dtype=np.int64)
+    s0_grid = np.linspace(0, max_s0, 8, dtype=np.int64) if max_s0 > 64 else np.array([0], dtype=np.int64)
+    w_hann = np.hanning(xf)
 
     for s0_i in s0_grid:
         s0 = int(s0_i)
@@ -283,20 +334,39 @@ def make_phase_locked_loop(
             continue
         head = x[s0 : s0 + xf]
         head_norm = float(np.linalg.norm(head)) + 1e-12
+        head_spec = np.abs(np.fft.rfft(head * w_hann))
+        head_spec /= float(np.linalg.norm(head_spec)) + 1e-12
         k_lo = max(1, int(math.ceil(min_loop_len / p_samp)))
         k_hi = max(k_lo, int(math.floor(l_max / p_samp)))
         for k in range(k_lo, k_hi + 1):
             center = int(round(k * p_samp))
             lo = max(min_loop_len, center - 14)
             hi = min(l_max, center + 14)
+            if lo > hi:
+                continue
+            best_c_k = -2.0
+            best_L_k = lo
             for L in range(lo, hi + 1, 2):
                 tail = x[s0 + L : s0 + L + xf]
+                if tail.shape[0] != xf:
+                    continue
                 denom = head_norm * (float(np.linalg.norm(tail)) + 1e-12)
                 c = float(np.dot(head, tail)) / denom
-                if c > best_corr:
-                    best_corr = c
-                    best_s0 = s0
-                    l_best = L
+                if c > best_c_k:
+                    best_c_k = c
+                    best_L_k = L
+            tail_k = x[s0 + best_L_k : s0 + best_L_k + xf]
+            if tail_k.shape[0] != xf:
+                continue
+            tail_spec = np.abs(np.fft.rfft(tail_k * w_hann))
+            tail_spec /= float(np.linalg.norm(tail_spec)) + 1e-12
+            spec_sim = float(np.dot(head_spec, tail_spec))
+            sc = best_c_k * 0.72 + spec_sim * 0.28
+            if sc > best_score:
+                best_score = sc
+                best_corr = best_c_k
+                best_s0 = s0
+                l_best = best_L_k
 
     # Fine ±2 sample refinement around winning (best_s0, l_best)
     if best_s0 + l_best + xf <= n:
@@ -390,6 +460,8 @@ class RealZoneSpec:
     warmth_db: float = 2.4
     # Optional Roots supercharger accent (for v8_supercharged high-boost zones)
     add_sc_whine_hz: float = 0.0
+    # Optional ear-verified pinned clean window: (source_key, start_s, dur_s, lock_f0_hz)
+    pinned: tuple[str, float, float, float] | None = None
 
 
 # Exact 30 engine stems matching web/src/audio.ts ENGINE_STEM_ZONES (4 zones per architecture!)
@@ -414,30 +486,29 @@ REAL_ENGINE_SPECS: list[RealZoneSpec] = [
     RealZoneSpec("eng_v12_8000", "8000 RPM Real Ferrari F12 Novitec V12 soprano redline scream loop", 8000, 6.0,
                  ("v12_f12_novitec", "v12_svj_fi", "v12_812"), 800.0, 0.72, 1.22, 0.48, 1.5),
 
-    # V10 Screamer (Lamborghini Huracan Performante Fi Exhaust)
+    # V10 Screamer (Lamborghini Huracan Performante Fi Exhaust — banned NewsTechCars trills, 100% ear-verified FiExhaust!)
     RealZoneSpec("eng_v10_1000", "1000 RPM Real Lamborghini Huracan Performante V10 idle loop", 1000, 5.0,
-                 ("v10_huracan_fi", "v10_huracan"), 83.3, 0.72, 1.32, 0.70, 2.8),
+                 ("v10_huracan_fi",), 83.3, 0.72, 1.32, 0.70, 2.8, pinned=("v10_huracan_fi", 52.50, 0.70, 83.3)),
     RealZoneSpec("eng_v10_low", "2400 RPM Real Lamborghini Huracan Performante V10 low-mid pull loop", 2400, 5.0,
-                 ("v10_huracan_fi", "v10_huracan"), 200.0, 0.72, 1.34, 0.55, 2.4),
+                 ("v10_huracan_fi",), 200.0, 0.72, 1.32, 0.45, 2.4, pinned=("v10_huracan_fi", 212.20, 0.35, 200.0)),
     RealZoneSpec("eng_v10_5500", "5200 RPM Real Lamborghini Huracan Performante V10 howl loop", 5200, 5.0,
-                 ("v10_huracan_fi", "v10_huracan"), 433.3, 0.66, 1.28, 0.48, 1.8),
+                 ("v10_huracan_fi",), 340.0, 0.70, 1.30, 0.35, 1.8, pinned=("v10_huracan_fi", 411.40, 0.32, 340.0)),
     RealZoneSpec("eng_v10_7800", "7800 RPM Real Lamborghini Huracan Performante V10 redline scream loop", 7800, 5.0,
-                 ("v10_huracan_fi", "v10_huracan"), 650.0, 0.58, 1.25, 0.45, 1.5),
+                 ("v10_huracan_fi",), 485.0, 0.70, 1.30, 0.32, 1.5, pinned=("v10_huracan_fi", 42.50, 0.30, 485.0)),
 
     # Rotary (Mazda RX-7 — real 13B rotary exhaust character across 4 zones)
-    # 2-rotor fires 2/rev (1100 RPM = 37 Hz, 2600 = 87 Hz, 5500 = 183 Hz, 8500 = 283 Hz)
     RealZoneSpec("eng_rotary4_1100", "1100 RPM Real Mazda RX-7 Rotary brap idle loop", 1100, 2.0,
-                 ("rotary_rx7",), 55.0, 0.62, 1.48, 0.65, 3.0),
+                 ("rotary_rx7",), 55.0, 0.68, 1.38, 0.55, 3.0),
     RealZoneSpec("eng_rotary4_low", "2600 RPM Real Mazda RX-7 Rotary low-mid pull loop", 2600, 2.0,
-                 ("rotary_rx7",), 110.0, 0.62, 1.48, 0.45, 2.4),
+                 ("rotary_rx7",), 105.0, 0.68, 1.38, 0.42, 2.4),
     RealZoneSpec("eng_rotary4_6000", "5500 RPM Real Mazda RX-7 Rotary high-rev scream loop", 5500, 2.0,
-                 ("rotary_rx7",), 183.3, 0.50, 1.50, 0.36, 1.8),
+                 ("rotary_rx7",), 165.0, 0.66, 1.38, 0.32, 1.8),
     RealZoneSpec("eng_rotary4_8500", "8500 RPM Real Mazda RX-7 Rotary redline shriek loop", 8500, 2.0,
-                 ("rotary_rx7",), 283.3, 0.40, 1.45, 0.34, 1.5),
+                 ("rotary_rx7",), 235.0, 0.64, 1.38, 0.30, 1.5),
 
-    # Forged Twin-Turbo I6 (Nissan Skyline GT-R R34 + Supra A80 + GT-R Fi Exhaust)
-    RealZoneSpec("eng_tt_i6_1000", "1000 RPM Real Nissan Skyline GT-R R34 idle loop", 1000, 3.0,
-                 ("i6_r34", "i6_supra_a80", "i6_gtr_fi"), 50.0, 0.76, 1.38, 0.75, 2.8),
+    # Forged Twin-Turbo I6 (Toyota Supra A80 2JZ + Nissan Skyline GT-R R34 + GT-R Fi Exhaust)
+    RealZoneSpec("eng_tt_i6_1000", "1000 RPM Real Toyota Supra A80 2JZ Twin-Turbo I6 idle loop", 1000, 3.0,
+                 ("i6_supra_a80", "i6_gtr_fi"), 50.0, 0.76, 1.38, 0.55, 3.0, pinned=("i6_supra_a80", 28.70, 0.45, 50.0)),
     RealZoneSpec("eng_tt_i6_low", "2400 RPM Real Nissan Skyline GT-R R34 / Supra baritone pull loop", 2400, 3.0,
                  ("i6_r34", "i6_supra_a80", "i6_gtr_fi"), 120.0, 0.74, 1.32, 0.60, 2.5),
     RealZoneSpec("eng_tt_i6_4000", "4500 RPM Real Nissan Skyline GT-R R34 / GT-R boost pull loop", 4500, 3.0,
@@ -455,31 +526,31 @@ REAL_ENGINE_SPECS: list[RealZoneSpec] = [
     RealZoneSpec("eng_v6_tt_7200", "7200 RPM Real Nissan GT-R R35 VR38DETT Twin-Turbo V6 redline loop", 7200, 3.0,
                  ("i6_gtr_fi", "i6_r34"), 360.0, 0.70, 1.26, 0.48, 2.0),
 
-    # Cross-Plane V8 (Mercedes-AMG C63 + Corvette C6 Z06 + Mustang GT S550)
-    RealZoneSpec("eng_v8_cross_900", "900 RPM Real Corvette C6 Z06 / AMG C63 / Mustang GT Cross-Plane V8 lope idle loop", 900, 4.0,
-                 ("v8c_z06", "v8c_c63", "v8c_mustang"), 60.0, 0.76, 1.30, 0.75, 3.8),
-    RealZoneSpec("eng_v8_cross_low", "2100 RPM Real AMG C63 / Corvette Z06 / Mustang GT Cross-Plane V8 deep growl loop", 2100, 4.0,
-                 ("v8c_c63", "v8c_z06", "v8c_mustang"), 140.0, 0.72, 1.34, 0.55, 3.6),
-    RealZoneSpec("eng_v8_cross_4200", "4200 RPM Real AMG C63 / Corvette Z06 Cross-Plane V8 thunder roar loop", 4200, 4.0,
-                 ("v8c_c63", "v8c_z06", "v8c_mustang"), 280.0, 0.66, 1.32, 0.48, 3.2),
-    RealZoneSpec("eng_v8_cross_6800", "6800 RPM Real Corvette Z06 / AMG C63 Cross-Plane V8 redline roar loop", 6800, 4.0,
-                 ("v8c_z06", "v8c_c63", "v8c_mustang"), 453.3, 0.62, 1.28, 0.45, 2.8),
+    # Cross-Plane V8 (Mustang GT + Corvette C6 Z06 + Shelby GT350 — 100% ear-verified, zero bubbles/talking!)
+    RealZoneSpec("eng_v8_cross_900", "900 RPM Real Ford Mustang GT Cross-Plane V8 lope idle loop", 900, 4.0,
+                 ("v8c_mustang", "v8c_z06"), 60.0, 0.76, 1.30, 0.72, 3.8, pinned=("v8c_mustang", 52.40, 0.70, 60.0)),
+    RealZoneSpec("eng_v8_cross_low", "2100 RPM Real Corvette C6 Z06 Cross-Plane V8 deep growl loop", 2100, 4.0,
+                 ("v8c_z06", "v8c_mustang"), 140.0, 0.74, 1.30, 0.45, 3.6, pinned=("v8c_z06", 128.40, 0.42, 140.0)),
+    RealZoneSpec("eng_v8_cross_4200", "4200 RPM Real Shelby GT350 / Corvette Z06 Cross-Plane V8 thunder roar loop", 4200, 4.0,
+                 ("v8f_gt350", "v8c_z06"), 226.7, 0.72, 1.30, 0.40, 3.2, pinned=("v8f_gt350", 38.80, 0.35, 226.7)),
+    RealZoneSpec("eng_v8_cross_6800", "6800 RPM Real Shelby GT500 / GT350 V8 redline roar loop", 6800, 4.0,
+                 ("v8sc_gt500", "v8f_gt350"), 345.0, 0.72, 1.30, 0.35, 2.8, pinned=("v8sc_gt500", 11.70, 0.32, 345.0)),
 
-    # Flat-Plane V8 (Ferrari 458 Speciale Novitec / 458 Spider Capristo / Shelby GT350)
+    # Flat-Plane V8 (Ferrari 458 Capristo + 458 Speciale Novitec — 100% ear-verified, zero talking!)
     RealZoneSpec("eng_v8_flat_1100", "1100 RPM Real Ferrari 458 Capristo Flat-Plane V8 idle loop", 1100, 4.0,
-                 ("v8f_458_capristo", "v8f_458_novitec", "v8f_gt350"), 73.3, 0.76, 1.30, 0.70, 2.5),
+                 ("v8f_458_capristo", "v8f_458_novitec"), 73.3, 0.76, 1.30, 0.68, 2.6, pinned=("v8f_458_capristo", 356.10, 0.50, 73.3)),
     RealZoneSpec("eng_v8_flat_low", "2600 RPM Real Ferrari 458 Capristo Flat-Plane V8 pull loop", 2600, 4.0,
-                 ("v8f_458_capristo", "v8f_458_novitec", "v8f_gt350"), 173.3, 0.74, 1.32, 0.60, 2.2),
-    RealZoneSpec("eng_v8_flat_5500", "5200 RPM Real Ferrari 458 Novitec / GT350 Flat-Plane V8 wail loop", 5200, 4.0,
-                 ("v8f_458_novitec", "v8f_gt350", "v8f_458_capristo"), 346.7, 0.70, 1.30, 0.52, 1.8),
+                 ("v8f_458_capristo", "v8f_458_novitec"), 173.3, 0.74, 1.30, 0.55, 2.2, pinned=("v8f_458_capristo", 274.10, 0.55, 173.3)),
+    RealZoneSpec("eng_v8_flat_5500", "5200 RPM Real Ferrari 458 Novitec Flat-Plane V8 wail loop", 5200, 4.0,
+                 ("v8f_458_novitec", "v8f_458_capristo"), 346.7, 0.72, 1.30, 0.46, 1.8, pinned=("v8f_458_novitec", 18.00, 0.45, 346.7)),
     RealZoneSpec("eng_v8_flat_8000", "8000 RPM Real Ferrari 458 Novitec Flat-Plane V8 redline scream loop", 8000, 4.0,
-                 ("v8f_458_novitec", "v8f_gt350", "v8f_458_capristo"), 533.3, 0.70, 1.25, 0.48, 1.5),
+                 ("v8f_458_novitec", "v8f_458_capristo"), 533.3, 0.72, 1.30, 0.42, 1.5, pinned=("v8f_458_novitec", 14.45, 0.42, 533.3)),
 
-    # Supercharged V8 (Shelby GT500 + Jaguar F-Type SVR)
-    RealZoneSpec("eng_sc_v8_whine", "4200 RPM Real Shelby GT500 / F-Type SVR Supercharged V8 pull loop", 4200, 4.0,
-                 ("v8sc_gt500", "v8sc_ftype_svr", "v8c_z06"), 280.0, 0.68, 1.32, 0.50, 2.6, add_sc_whine_hz=2380.0),
-    RealZoneSpec("eng_sc_v8_6800", "6800 RPM Real Shelby GT500 / F-Type SVR Supercharged V8 redline loop", 6800, 4.0,
-                 ("v8sc_gt500", "v8sc_ftype_svr", "v8c_z06"), 453.3, 0.62, 1.28, 0.45, 2.2, add_sc_whine_hz=3850.0),
+    # Supercharged V8 (Shelby GT500 — 100% ear-verified, banned F-Type SVR overrun bubbles!)
+    RealZoneSpec("eng_sc_v8_whine", "4200 RPM Real Shelby GT500 Supercharged V8 pull loop", 4200, 4.0,
+                 ("v8sc_gt500",), 280.0, 0.72, 1.30, 0.36, 2.8, add_sc_whine_hz=2380.0, pinned=("v8sc_gt500", 44.60, 0.34, 280.0)),
+    RealZoneSpec("eng_sc_v8_6800", "6800 RPM Real Shelby GT500 Supercharged V8 redline loop", 6800, 4.0,
+                 ("v8sc_gt500",), 415.0, 0.72, 1.30, 0.32, 2.4, add_sc_whine_hz=3850.0, pinned=("v8sc_gt500", 11.70, 0.32, 415.0)),
 ]
 
 
@@ -508,20 +579,33 @@ class AudioCache:
         hcrs = np.zeros(n_f)
         nacts = np.zeros(n_f)
         bodys = np.zeros(n_f)
+        inharms = np.ones(n_f)
+        fluxes = np.ones(n_f)
+        prev_mag = None
+        w_hann = np.hanning(win)
+        freqs = np.fft.rfftfreq(win, d=1.0 / SAMPLE_RATE)
+        f_mask = (freqs >= 50.0) & (freqs <= 5000.0)
         for i in range(n_f):
             seg = x[i * hop : i * hop + win]
             rms = float(np.sqrt(np.mean(seg * seg)))
             rmss[i] = rms
+            mag = np.abs(np.fft.rfft(seg * w_hann))[f_mask]
+            mn = float(np.linalg.norm(mag)) + 1e-12
+            mag_n = mag / mn
+            if prev_mag is not None:
+                fluxes[i] = float(np.linalg.norm(mag_n - prev_mag))
+            prev_mag = mag_n
             if rms < 0.015:
                 continue
             f0, conf = yin_pitch(seg, fmin, fmax)
             f0s[i] = f0
             confs[i] = conf
             if conf >= 0.45:
-                hcr, na, bd = harmonic_metrics(seg, f0)
+                hcr, na, bd, inh = harmonic_metrics(seg, f0)
                 hcrs[i] = hcr
                 nacts[i] = na
                 bodys[i] = bd
+                inharms[i] = inh
         res = {
             "hop": hop,
             "win": win,
@@ -531,132 +615,226 @@ class AudioCache:
             "hcr": hcrs,
             "nact": nacts,
             "body": bodys,
+            "inharm": inharms,
+            "flux": fluxes,
             "rms_p80": float(np.percentile(rmss[rmss > 0.01], 80)) if np.any(rmss > 0.01) else 0.1,
         }
         self._scan[ck] = res
         return res
 
 
-def extract_best_real_zone(spec: RealZoneSpec, cache: AudioCache) -> tuple[np.ndarray, dict]:
-    """Find the cleanest, richest, real-car segment across spec.sources and build a seamless 1.5s loop."""
-    f_lo = max(28.0, spec.target_f0 * spec.ratio_lo)
-    f_hi = min(1300.0, spec.target_f0 * spec.ratio_hi)
-    # Track in a wide-enough band for this source
+def extract_best_real_zone(
+    spec: RealZoneSpec,
+    cache: AudioCache,
+    used_windows: list[tuple[str, float]] | None = None,
+) -> tuple[np.ndarray, dict]:
+    """Find the cleanest, speech-free, music-free, bubble-free real-car segment across spec.sources."""
+    # Fast-path: ear-verified pinned clean window (skips full-file scan, guarantees 0% speech/bubbles!)
+    if spec.pinned is not None:
+        src_key, start_s, dur_s, lock_f0 = spec.pinned
+        x = cache.wave(src_key)
+        hop = int(0.025 * SAMPLE_RATE)
+        win = int(0.064 * SAMPLE_RATE)
+        start_samp = max(0, int(round(start_s * SAMPLE_RATE)))
+        end_samp = min(x.shape[0], start_samp + int(round(dur_s * SAMPLE_RATE)) + win)
+        seg = x[start_samp:end_samp]
+        n_f = max(4, (seg.shape[0] - win) // hop)
+        f_lo = max(25.0, lock_f0 * 0.55)
+        f_hi = min(1300.0, lock_f0 * 1.55)
+        f_track = np.array([yin_pitch(seg[k * hop : k * hop + win], f_lo, f_hi)[0] for k in range(n_f)])
+        med_f = float(np.median(f_track[f_track > 15.0])) if np.any(f_track > 15.0) else lock_f0
+        warped, mean_ratio = resample_pitch_lock(seg, f_track, hop, lock_f0, min_ratio=0.72, max_ratio=1.36)
+        looped, corr = make_phase_locked_loop(warped, lock_f0, LOOP_SAMPLES)
+        if spec.add_sc_whine_hz > 0.0:
+            t = np.arange(LOOP_SAMPLES, dtype=np.float64) / SAMPLE_RATE
+            f_sc = synth_mod._exact_cycle_freq(spec.add_sc_whine_hz, LOOP_DURATION_S)
+            f_sc2 = synth_mod._exact_cycle_freq(spec.add_sc_whine_hz * 2.0, LOOP_DURATION_S)
+            rms_eng = float(np.sqrt(np.mean(looped * looped))) + 1e-9
+            fm = 0.20 * np.sin(2.0 * math.pi * (2.0 / LOOP_DURATION_S) * t)
+            whine = 0.80 * np.sin(2.0 * math.pi * f_sc * t + fm) + 0.20 * np.sin(2.0 * math.pi * f_sc2 * t + 2.0 * fm)
+            whine = np.tanh(whine * 1.10)
+            whine /= float(np.sqrt(np.mean(whine * whine))) + 1e-9
+            looped = looped + whine * (rms_eng * 0.14)
+        final = master_real_engine_loop(looped, low_shelf_gain_db=spec.warmth_db)
+        return final, {
+            "source_key": src_key,
+            "start_s": round(start_samp / SAMPLE_RATE, 2),
+            "end_s": round(end_samp / SAMPLE_RATE, 2),
+            "detected_f0_hz": round(med_f, 1),
+            "target_f0_hz": round(lock_f0, 1),
+            "pitch_lock_ratio": round(mean_ratio, 3),
+            "loop_corr": round(corr, 3),
+            "ear_verified": True,
+        }
+
+    # Prefer true full firing order `target_f0` first; only allow half-order `0.5 * target_f0` on redline zones
+    # (ref_rpm >= 6500) where dual-bank V8/V10/V12 YIN locks onto the single-bank fundamental!
+    allow_half_order = (spec.firings_per_rev >= 4.0 and spec.ref_rpm >= 6500)
+    target_candidates = (spec.target_f0, spec.target_f0 * 0.5) if allow_half_order else (spec.target_f0,)
+    f_lo = max(28.0, min(target_candidates) * max(0.74, spec.ratio_lo))
+    f_hi = min(1300.0, max(target_candidates) * min(1.32, spec.ratio_hi))
     track_lo = max(25.0, min(42.0, f_lo * 0.85))
     track_hi = min(1400.0, max(780.0, f_hi * 1.15))
 
-    best_score = -1e9
-    best_pick = None
+    def match_target(med_f: float, lo_mult: float, hi_mult: float, allow_half: bool) -> float | None:
+        cands = target_candidates if allow_half else (spec.target_f0,)
+        best_t = None
+        best_err = 1e9
+        for tf in cands:
+            if tf * lo_mult <= med_f <= tf * hi_mult:
+                err = abs(math.log(max(1.0, med_f) / tf))
+                if err < best_err:
+                    best_err = err
+                    best_t = tf
+        return best_t
 
-    for src_rank, src_key in enumerate(spec.sources):
-        tr = cache.track(src_key, track_lo, track_hi)
-        hop = tr["hop"]
-        W = max(14, int(round(spec.win_s / (hop / SAMPLE_RATE))))
-        n_f = len(tr["f0"])
-        f0s, confs, rmss, hcrs, nacts, bodys = (
-            tr["f0"], tr["conf"], tr["rms"], tr["hcr"], tr["nact"], tr["body"]
-        )
-        rms_ref = max(0.05, tr["rms_p80"])
+    def is_duplicate_window(src_key: str, t_s: float) -> bool:
+        if not used_windows:
+            return False
+        for uk, ut in used_windows:
+            if uk == src_key and abs(ut - t_s) < 1.8:
+                return True
+        return False
 
-        # Skip first 4.0 s & last 4.0 s of every recording to avoid video intros/outros
-        skip_f = int(round(4.0 / (hop / SAMPLE_RATE)))
-        i_start = min(max(0, n_f - W - 1), skip_f)
-        i_end = max(i_start + 1, n_f - W - skip_f)
-
-        for i in range(i_start, i_end, 2):
-            sub_f = f0s[i : i + W]
-            sub_c = confs[i : i + W]
-            sub_r = rmss[i : i + W]
-            sub_h = hcrs[i : i + W]
-            sub_n = nacts[i : i + W]
-            sub_b = bodys[i : i + W]
-
-            if float(np.mean(sub_c)) < 0.56:
-                continue
-            if float(np.min(sub_r)) < rms_ref * 0.22:
-                continue
-            med_f = float(np.median(sub_f))
-            if not (f_lo <= med_f <= f_hi):
-                continue
-
-            # Reject flat synthetic intro music pads (must have >= 3 real exhaust harmonics & warm body)
-            mean_nact = float(np.mean(sub_n))
-            mean_hcr = float(np.mean(sub_h))
-            mean_body = float(np.mean(sub_b))
-            if mean_nact < 2.6 or mean_hcr < 0.22 or mean_hcr > 0.94 or mean_body < 0.25:
-                continue
-
-            rel_dev = np.abs(sub_f - med_f) / max(1.0, med_f)
-            if float(np.mean(rel_dev < 0.22)) < 0.78:
-                continue
-            p_std = float(np.std(sub_f[rel_dev < 0.22])) / max(1.0, med_f)
-            # Reject artificially dead-flat electronic tones on mid/high pulls
-            if spec.ref_rpm >= 2000 and p_std < 0.0018 and mean_hcr > 0.88:
-                continue
-
-            # Preference for closer-to-target RPM (less pitch-lock warp needed!)
-            ratio_err = abs(math.log(max(1.0, med_f) / spec.target_f0))
-            score = (
-                float(np.mean(sub_c)) * 2.4
-                + min(1.0, float(np.mean(sub_r)) / rms_ref) * 1.1
-                + min(1.0, mean_nact / 5.0) * 1.0
-                + mean_body * 0.9
-                - ratio_err * 2.2
-                - p_std * 3.0
-                - src_rank * 0.12
-            )
-            if score > best_score:
-                best_score = score
-                best_pick = (src_key, i, W, hop, med_f, float(np.mean(sub_c)), p_std, mean_nact, mean_body)
-
-    # Relaxed fallback: if strict band had no hit (e.g. RX-7 high RPM), widen to best real pull of same car!
-    if best_pick is None:
+    def scan_candidates(tier: int) -> tuple | None:
+        strict = (tier == 0)
+        allow_half = allow_half_order and (tier >= 1)
+        best_score = -1e9
+        best_pick = None
         for src_rank, src_key in enumerate(spec.sources):
-            tr = cache.track(src_key, 28.0, 1200.0)
+            tr = cache.track(src_key, track_lo if strict else 28.0, track_hi if strict else 1200.0)
             hop = tr["hop"]
-            W = max(11, int(round(0.32 / (hop / SAMPLE_RATE))))
+            win_dur = spec.win_s if tier == 0 else (min(spec.win_s, 0.34) if tier == 1 else (0.24 if tier == 2 else 0.22))
+            W = max(8, int(round(win_dur / (hop / SAMPLE_RATE))))
             n_f = len(tr["f0"])
-            f0s, confs, rmss, nacts, bodys = tr["f0"], tr["conf"], tr["rms"], tr["nact"], tr["body"]
-            rms_ref = max(0.03, tr["rms_p80"])
-            # Skip first 4.0 s & last 4.0 s of every recording to avoid video intros/outros
-            skip_f = int(round(4.0 / (hop / SAMPLE_RATE)))
-            i_start = min(max(0, n_f - W - 1), skip_f)
-            i_end = max(i_start + 1, n_f - W - skip_f)
+            f0s, confs, rmss, hcrs, nacts, bodys, inharms, fluxes = (
+                tr["f0"], tr["conf"], tr["rms"], tr["hcr"], tr["nact"], tr["body"], tr["inharm"], tr["flux"]
+            )
+            rms_ref = max(0.04, tr["rms_p80"])
+            dur_s = n_f * (hop / SAMPLE_RATE)
+
+            # Skip YouTube intros/outros (music, logos, presenter talking!)
+            skip_head = 10.0 if dur_s > 60.0 else 2.5
+            skip_tail = 6.0 if dur_s > 60.0 else 2.0
+            i_start = min(max(0, n_f - W - 1), int(round(skip_head / (hop / SAMPLE_RATE))))
+            i_end = max(i_start + 1, n_f - W - int(round(skip_tail / (hop / SAMPLE_RATE))))
+
+            lo_mult = max(0.74, spec.ratio_lo) if tier == 0 else (0.68 if tier == 1 else (0.58 if tier == 2 else 0.46))
+            hi_mult = min(1.32, spec.ratio_hi) if tier == 0 else (1.36 if tier == 1 else (1.44 if tier == 2 else 1.55))
+            max_env_cv = 0.16 if tier == 0 else (0.22 if tier == 1 else (0.26 if tier == 2 else 0.32))
+            max_flux = 0.28 if tier == 0 else (0.38 if tier == 1 else (0.46 if tier == 2 else 0.56))
+            max_inharm = 0.34 if tier == 0 else (0.44 if tier == 1 else (0.54 if tier == 2 else 0.68))
+            min_conf = 0.60 if tier == 0 else (0.50 if tier == 1 else (0.44 if tier == 2 else 0.36))
 
             for i in range(i_start, i_end, 2):
+                t_s = i * hop / SAMPLE_RATE
+                if is_duplicate_window(src_key, t_s):
+                    continue
                 sub_f = f0s[i : i + W]
                 sub_c = confs[i : i + W]
                 sub_r = rmss[i : i + W]
-                if float(np.mean(sub_c)) < 0.42 or float(np.min(sub_r)) < rms_ref * 0.16:
+                sub_h = hcrs[i : i + W]
+                sub_n = nacts[i : i + W]
+                sub_b = bodys[i : i + W]
+                sub_inh = inharms[i : i + W]
+                sub_fl = fluxes[i : i + W]
+
+                mean_c = float(np.mean(sub_c))
+                if mean_c < min_conf or float(np.min(sub_c)) < (0.36 if tier == 0 else 0.22):
                     continue
+                mean_r = float(np.mean(sub_r))
+                min_r = float(np.min(sub_r))
+                if min_r < rms_ref * (0.24 if tier == 0 else 0.14):
+                    continue
+
+                # Speech / laughter / bubble gate: reject uneven volume or pauses!
+                env_cv = float(np.std(sub_r) / max(1e-9, mean_r))
+                if env_cv > max_env_cv or (float(np.max(sub_r)) / max(1e-9, min_r)) > (1.95 if tier == 0 else 2.8):
+                    continue
+
+                # Spectral flux gate: reject consonants, laughter, gear bangs, chimes ("pokemon"), SFX!
+                mean_fl = float(np.mean(sub_fl))
+                if mean_fl > max_flux or float(np.max(sub_fl)) > (0.48 if tier == 0 else 0.68):
+                    continue
+
                 med_f = float(np.median(sub_f))
-                if not (spec.target_f0 * 0.28 <= med_f <= spec.target_f0 * 1.85):
+                lock_f0 = match_target(med_f, lo_mult, hi_mult, allow_half)
+                if lock_f0 is None:
                     continue
-                if float(np.mean(nacts[i : i + W])) < 1.8:
+
+                # Pure engine harmonic comb gate: reject background music, voiceovers, chimes!
+                mean_inh = float(np.mean(sub_inh))
+                mean_nact = float(np.mean(sub_n))
+                mean_hcr = float(np.mean(sub_h))
+                mean_body = float(np.mean(sub_b))
+                if mean_inh > max_inharm or mean_nact < (2.5 if tier == 0 else 1.8) or mean_hcr < 0.20 or mean_body < 0.22:
                     continue
-                rel_dev = np.abs(sub_f - med_f) / max(1.0, med_f)
-                if float(np.mean(rel_dev < 0.30)) < 0.65:
+
+                # Pitch steadiness gate (3-tap median removes isolated 25ms YIN glitches while rejecting warble/laughter!)
+                if len(sub_f) >= 5:
+                    pad_f = np.pad(sub_f, 1, mode="edge")
+                    sub_f_med = np.median(np.vstack([pad_f[:-2], pad_f[1:-1], pad_f[2:]]), axis=0)
+                else:
+                    sub_f_med = sub_f
+                rel_dev = np.abs(sub_f_med - med_f) / max(1.0, med_f)
+                if float(np.mean(rel_dev < 0.18)) < (0.85 if tier == 0 else 0.70):
                     continue
-                ratio_err = abs(math.log(max(1.0, med_f) / spec.target_f0))
-                score = float(np.mean(sub_c)) * 2.2 + min(1.0, float(np.mean(sub_r)) / rms_ref) - ratio_err * 2.8 - src_rank * 0.15
+                df_rel = np.abs(np.diff(sub_f_med)) / max(1.0, med_f)
+                if float(np.max(df_rel)) > (0.14 if tier == 0 else (0.24 if tier <= 2 else 0.35)):
+                    continue
+                p_std = float(np.std(sub_f_med[rel_dev < 0.22])) / max(1.0, med_f)
+                if spec.ref_rpm >= 2000 and p_std < 0.0015 and mean_hcr > 0.90:
+                    continue
+
+                # Fast 4..25 Hz amplitude-modulation gate (kills trills, bubbles, laughter, talking, car chimes!)
+                raw_x = cache.wave(src_key)
+                s0_raw = i * hop
+                s1_raw = min(raw_x.shape[0], (i + W) * hop + tr["win"])
+                fast_mod = fast_am_mod_ratio(raw_x[s0_raw:s1_raw])
+                max_fast_mod = 0.12 if tier == 0 else (0.16 if tier == 1 else (0.20 if tier == 2 else 0.26))
+                if fast_mod > max_fast_mod:
+                    continue
+
+                ratio_err = abs(math.log(max(1.0, med_f) / lock_f0))
+                score = (
+                    mean_c * 2.6
+                    + min(1.0, mean_r / rms_ref) * 0.9
+                    + min(1.0, mean_nact / 5.0) * 0.9
+                    + mean_body * 0.8
+                    - mean_inh * 3.4
+                    - mean_fl * 3.6
+                    - env_cv * 4.2
+                    - fast_mod * 6.5
+                    - ratio_err * 2.4
+                    - p_std * 4.0
+                    - src_rank * 0.10
+                )
                 if score > best_score:
                     best_score = score
-                    best_pick = (src_key, i, W, hop, med_f, float(np.mean(sub_c)), float(np.std(sub_f) / max(1.0, med_f)), float(np.mean(nacts[i : i + W])), float(np.mean(bodys[i : i + W])))
+                    best_pick = (src_key, i, W, hop, med_f, lock_f0, mean_c, p_std, mean_nact, mean_body, mean_fl, mean_inh, env_cv, strict)
+        return best_pick
 
+    best_pick = scan_candidates(0)
     if best_pick is None:
-        raise RuntimeError(f"Could not find real recording segment for {spec.stem_id} in {spec.sources}")
+        best_pick = scan_candidates(1)
+    if best_pick is None:
+        best_pick = scan_candidates(2)
+    if best_pick is None:
+        best_pick = scan_candidates(3)
+    if best_pick is None:
+        raise RuntimeError(f"Could not find clean real recording segment for {spec.stem_id} in {spec.sources}")
 
-    src_key, i0, W, hop, med_f, conf, p_std, nact, body = best_pick
+    src_key, i0, W, hop, med_f, lock_f0, conf, p_std, nact, body, mean_fl, mean_inh, env_cv, was_strict = best_pick
     x = cache.wave(src_key)
-    tr = cache.track(src_key, track_lo, track_hi) if (spec.target_f0 * spec.ratio_lo <= med_f <= spec.target_f0 * spec.ratio_hi) else cache.track(src_key, 28.0, 1200.0)
+    tr = cache.track(src_key, track_lo if was_strict else 28.0, track_hi if was_strict else 1200.0)
     start_samp = i0 * hop
     end_samp = min(x.shape[0], (i0 + W) * hop + tr["win"])
     seg = x[start_samp:end_samp]
     f_track = tr["f0"][i0 : i0 + W]
 
-    # Pitch-lock real segment onto exact target_f0
-    warped, mean_ratio = resample_pitch_lock(seg, f_track, hop, spec.target_f0, min_ratio=0.45, max_ratio=2.0)
-    looped, corr = make_phase_locked_loop(warped, spec.target_f0, LOOP_SAMPLES)
+    # Pitch-lock real segment onto exact lock_f0 (either full firing order or exact 0.5x single-bank order -> exact target RPM!)
+    warped, mean_ratio = resample_pitch_lock(seg, f_track, hop, lock_f0, min_ratio=0.72, max_ratio=1.38)
+    looped, corr = make_phase_locked_loop(warped, lock_f0, LOOP_SAMPLES)
 
     # Optional subtle real-ratio Roots supercharger whine layer for v8_supercharged high-RPM stems
     if spec.add_sc_whine_hz > 0.0:
@@ -664,11 +842,11 @@ def extract_best_real_zone(spec: RealZoneSpec, cache: AudioCache) -> tuple[np.nd
         f_sc = synth_mod._exact_cycle_freq(spec.add_sc_whine_hz, LOOP_DURATION_S)
         f_sc2 = synth_mod._exact_cycle_freq(spec.add_sc_whine_hz * 2.0, LOOP_DURATION_S)
         rms_eng = float(np.sqrt(np.mean(looped * looped))) + 1e-9
-        fm = 0.25 * np.sin(2.0 * math.pi * (2.0 / LOOP_DURATION_S) * t)
-        whine = 0.78 * np.sin(2.0 * math.pi * f_sc * t + fm) + 0.22 * np.sin(2.0 * math.pi * f_sc2 * t + 2.0 * fm)
-        whine = np.tanh(whine * 1.15)
+        fm = 0.20 * np.sin(2.0 * math.pi * (2.0 / LOOP_DURATION_S) * t)
+        whine = 0.80 * np.sin(2.0 * math.pi * f_sc * t + fm) + 0.20 * np.sin(2.0 * math.pi * f_sc2 * t + 2.0 * fm)
+        whine = np.tanh(whine * 1.10)
         whine /= float(np.sqrt(np.mean(whine * whine))) + 1e-9
-        looped = looped + whine * (rms_eng * 0.24)
+        looped = looped + whine * (rms_eng * 0.14)
 
     final = master_real_engine_loop(looped, low_shelf_gain_db=spec.warmth_db)
     info = {
@@ -682,6 +860,9 @@ def extract_best_real_zone(spec: RealZoneSpec, cache: AudioCache) -> tuple[np.nd
         "loop_corr": round(corr, 3),
         "n_harmonics": round(nact, 1),
         "warm_body": round(body, 2),
+        "flux": round(mean_fl, 3),
+        "inharm": round(mean_inh, 3),
+        "env_cv": round(env_cv, 3),
     }
     return final, info
 
@@ -912,9 +1093,11 @@ def main() -> None:
             f"seam={stats['boundary_delta']:.4f}, ogg={ogg_bytes/1024:4.1f}KB){extra}"
         )
 
-    # 1) Extract all 30 real-car engine loops across 4 RPM zones per architecture
+    # 1) Extract all real-car engine loops across 4 RPM zones per architecture (avoid duplicate timestamps!)
+    used_windows: list[tuple[str, float]] = []
     for spec in REAL_ENGINE_SPECS:
-        samples, info = extract_best_real_zone(spec, cache)
+        samples, info = extract_best_real_zone(spec, cache, used_windows)
+        used_windows.append((str(info["source_key"]), float(info["start_s"])))
         save_stem(
             spec.stem_id,
             "engine",
@@ -944,27 +1127,28 @@ def main() -> None:
         False, None, 1800.0, s_bov, i_bov, "CC-BY-3.0",
     )
 
-    s_pop1, i_pop1 = extract_real_exhaust_bang(cache, "v10_huracan_fi", 117.94, 0.55)
+    # 3x Ear-verified 100% pure speech-free muffled real exhaust pops (NO voiceovers or talking!)
+    s_pop1, i_pop1 = extract_real_exhaust_bang(cache, "v12_svj_fi", 16.25, 0.45)
     save_stem(
         "exhaust_backfire_pop",
         "drivetrain_induction",
-        "Real Lamborghini Huracan Performante Fi Exhaust gunshot anti-lag bang one-shot",
+        "Real Lamborghini Aventador SVJ Fi Exhaust clean muffled overrun pop one-shot",
         False, None, 110.0, s_pop1, i_pop1, "CC-BY-3.0",
     )
 
-    s_pop2, i_pop2 = extract_real_exhaust_bang(cache, "fx_wrx_tomei", 13.05, 0.55)
+    s_pop2, i_pop2 = extract_real_exhaust_bang(cache, "v12_svj_fi", 135.53, 0.45)
     save_stem(
         "exhaust_antilag_pop2",
         "drivetrain_induction",
-        "Real Subaru WRX STI Tomei deep anti-lag exhaust bang one-shot",
+        "Real Lamborghini Aventador SVJ Fi Exhaust deep muffled tailpipe pop one-shot",
         False, None, 95.0, s_pop2, i_pop2, "CC-BY-3.0",
     )
 
-    s_pop3, i_pop3 = extract_real_exhaust_bang(cache, "v12_svj_fi", 138.48, 0.55)
+    s_pop3, i_pop3 = extract_real_exhaust_bang(cache, "v8f_458_novitec", 52.39, 0.45)
     save_stem(
         "exhaust_antilag_pop3",
         "drivetrain_induction",
-        "Real Lamborghini Aventador SVJ Fi Exhaust crisp overrun bang one-shot",
+        "Real Ferrari 458 Speciale Novitec crisp muffled exhaust pop one-shot",
         False, None, 125.0, s_pop3, i_pop3, "CC-BY-3.0",
     )
 
