@@ -100,10 +100,16 @@ void DamageModel::sync_spec_to_report() {
 }
 
 void DamageModel::add_contact(std::uint64_t id, const Vec3& pt, double impulse, double time, double dt) {
-    if (impulse <= 0.0) return;
+    add_contact_ex(id, pt, impulse, 0.0, time, dt);
+}
+
+void DamageModel::add_contact_ex(std::uint64_t id, const Vec3& pt, double impulse,
+                                 double tangential_speed_mps, double time, double dt) {
+    if (impulse <= 0.0 && tangential_speed_mps <= 1.0) [[likely]] return;
     const double force_g = impulse / (std::max(dt, 1e-6) * mass_ * kGravity);
-    // Below scratch_force_g (1.05 g) it is gentle pushing / tyre contact: neither scratch nor dent.
-    if (force_g < p_.scratch_force_g) return;
+    const bool tangential_scrape = (tangential_speed_mps > 2.0 && force_g >= 0.35);
+    // Below scratch_force_g (1.05 g) without high-speed tangential rubbing: gentle push -> neither scratch nor dent.
+    if (force_g < p_.scratch_force_g && !tangential_scrape) [[likely]] return;
 
     const int node = perimeter_node_for_point(pt);
     const int zone = std::abs(pt.x) > 1.2 * std::abs(pt.y) ? (pt.x > 0 ? ZoneFront : ZoneRear)
@@ -111,7 +117,8 @@ void DamageModel::add_contact(std::uint64_t id, const Vec3& pt, double impulse, 
 
     // ---- Layer 0: Glancing paint scratches & clearcoat scuffs (visualized even when panels don't dent!)
     const double hardness = std::max(0.5, spec_.paint_hardness);
-    const double scratch_delta = clamp((impulse / (mass_ * 4.5)) / hardness, 0.015, 0.45);
+    const double tang_boost = tangential_scrape ? clamp(tangential_speed_mps * std::max(dt, 0.002) * 0.45, 0.02, 0.25) : 0.0;
+    const double scratch_delta = clamp((impulse / (mass_ * 4.5) + tang_boost) / hardness, 0.015, 0.45);
     r_.paint_scratch[node] = clamp(r_.paint_scratch[node] + scratch_delta, 0.0, 1.0);
     r_.last_scratch_point = pt;
     r_.last_scratch_node = node;
@@ -119,7 +126,7 @@ void DamageModel::add_contact(std::uint64_t id, const Vec3& pt, double impulse, 
     ++r_.scratch_events;
     ++impact_seq_;
 
-    // Average contact force over the tick F = J / dt; below min_force_g it only scratches paint, never crushes metal/carbon.
+    // Average normal contact force over the tick F = J / dt; below min_force_g it only scratches paint, never crushes metal/carbon.
     if (force_g < p_.min_force_g) return;
 
     const MaterialFactors mf = material_factors();
@@ -215,13 +222,29 @@ void DamageModel::add_contact(std::uint64_t id, const Vec3& pt, double impulse, 
     // crash puts through the suspension of the zone it lands in. Scaled by material & race_suspension strength!
     const double eff_wheel_energy = p_.wheel_energy * mf.wheel_strength;
     for (int w = 0; w < 4; ++w) {
+        const double prev_w = r_.wheel[w];
         Vec3 d = pt - wheels_[w];
         double dist = std::hypot(d.x, d.y);
         double e_w = dist < p_.wheel_radius_m ? (1.0 - dist / p_.wheel_radius_m) * wheel_band : 0.0;
         if (wheel_in_zone(w, zone)) e_w += p_.wheel_zone_share * heavy;
-        r_.wheel[w] = std::min(1.0, r_.wheel[w] + e_w / eff_wheel_energy);
+        r_.wheel[w] = std::min(1.0, prev_w + e_w / eff_wheel_energy);
+        const double dw = r_.wheel[w] - prev_w;
         r_.wheel_detached[w] = wheel_off(w);
+        // Violent rim-pinch / sharp kerb/wheel hit immediately punctures/deflates the tyre BEFORE the wheel shears off!
+        if (!r_.wheel_detached[w] && (dw >= 0.30 || r_.wheel[w] >= 0.55)) {
+            r_.tyre_punctured[w] = true;
+        }
+        // Severe corner structural collapse can sever the corner hydraulic brake line or snap the CV halfshaft!
+        if (r_.wheel[w] >= 0.78) r_.brake_line_ruptured[w] = true;
+        if (r_.wheel[w] >= 0.80) r_.halfshaft_broken[w] = true;
     }
+
+    // Asymmetric aerodynamic damage (crushed front splitter/nose kills front downforce; crushed rear kills rear downforce)
+    r_.front_aero_efficiency = clamp(1.0 - 0.55 * r_.zone[ZoneFront] - (r_.front_bumper_detached ? 0.12 : 0.0), 0.38, 1.0);
+    r_.rear_aero_efficiency = clamp(1.0 - 0.55 * r_.zone[ZoneRear] - (r_.rear_bumper_detached ? 0.10 : 0.0), 0.38, 1.0);
+    // Permanent chassis rail / monocoque torsional stiffness degradation above 120 kJ/t structural damage
+    const double frame_loss = clamp((total_heavy - 120.0) / (680.0 * mf.cabin), 0.0, 0.45);
+    r_.chassis_stiffness_factor = clamp(1.0 - frame_loss, 0.55, 1.0);
 
     // Totaled: engine wrecked, cabin crushed (protected by roll cage / carbon tub), three wheels gone, or shell wrecked.
     if (!r_.totaled) {
@@ -305,6 +328,15 @@ NetDamageSnapshot DamageModel::pack_net_snapshot() const {
     if (r_.rear_bumper_detached) dm |= (1u << 7);
     s.detach_mask = dm;
     s.impact_seq = impact_seq_;
+    std::uint16_t mf = 0;
+    for (int w = 0; w < 4; ++w) {
+        if (r_.tyre_punctured[w]) mf |= static_cast<std::uint16_t>(1u << w);
+        if (r_.brake_line_ruptured[w]) mf |= static_cast<std::uint16_t>(1u << (4 + w));
+        if (r_.halfshaft_broken[w]) mf |= static_cast<std::uint16_t>(1u << (8 + w));
+    }
+    s.mech_fault_mask = mf;
+    s.front_aero_eff = quantize_u8(r_.front_aero_efficiency);
+    s.rear_aero_eff = quantize_u8(r_.rear_aero_efficiency);
     return s;
 }
 
@@ -333,8 +365,13 @@ void DamageModel::apply_net_snapshot(const NetDamageSnapshot& s) {
     for (int i = 0; i < 4; ++i) {
         r_.wheel[i] = dequantize_u8(s.wheel_damage[i]);
         r_.wheel_detached[i] = ((s.detach_mask & (1u << i)) != 0) || wheel_off(i);
+        r_.tyre_punctured[i] = (s.mech_fault_mask & (1u << i)) != 0;
+        r_.brake_line_ruptured[i] = (s.mech_fault_mask & (1u << (4 + i))) != 0;
+        r_.halfshaft_broken[i] = (s.mech_fault_mask & (1u << (8 + i))) != 0;
         r_.shatter[i] = dequantize_u8(s.shatter[i]);
     }
+    r_.front_aero_efficiency = clamp(dequantize_u8(s.front_aero_eff), 0.38, 1.0);
+    r_.rear_aero_efficiency = clamp(dequantize_u8(s.rear_aero_eff), 0.38, 1.0);
     r_.coolant_leak = dequantize_u8(s.coolant_leak);
     r_.radiator_leak = r_.coolant_leak;
     r_.oil_leak = dequantize_u8(s.oil_leak);
@@ -355,10 +392,20 @@ void DamageModel::apply_net_snapshot(const NetDamageSnapshot& s) {
 double DamageModel::drag_factor() const {
     double avg = 0;
     for (double z : r_.zone) avg += z * 0.25;
-    return 1.0 + 0.3 * avg;
+    return 1.0 + 0.3 * avg + (r_.hood_unlatched ? 0.14 : 0.0) + (r_.front_bumper_detached ? 0.05 : 0.0);
 }
 
 double DamageModel::suspension_factor(int w) const { return 1.0 - 0.4 * r_.wheel[w]; }
+
+double DamageModel::damper_factor(int w) const {
+    if (w < 0 || w >= 4 || r_.wheel[w] <= 0.22) return 1.0;
+    return clamp(1.0 - 0.75 * ((r_.wheel[w] - 0.22) / 0.78), 0.25, 1.0);
+}
+
+double DamageModel::strut_sag_m(int w) const {
+    if (w < 0 || w >= 4 || r_.wheel[w] <= 0.25) return 0.0;
+    return 0.042 * clamp((r_.wheel[w] - 0.25) / 0.70, 0.0, 1.0);
+}
 
 // A bent tie rod toes the wheel OUT (left wheels point left, right wheels right): concave pow(w, 0.65)
 // so moderate 45-60 km/h hits bend alignment noticeably long before the hub shears off at 0.95!

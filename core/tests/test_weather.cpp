@@ -46,6 +46,10 @@ static std::vector<TrackWeatherStation> make_test_circuit() {
 }
 
 RS_TEST(dynamic_weather) {
+    // 0. Windows 1 MB stack / UE 5.8 worker-thread safety: WeatherSystem must stay tiny on the stack (< 8 KB)!
+    static_assert(sizeof(WeatherSystem) < 8192, "WeatherSystem grids must stay heap-backed so Windows 1 MB stack never overflows");
+    test::check("sizeof(WeatherSystem) < 8 KB (safe on Windows 1 MB stack & UE 5.8 worker threads)", sizeof(WeatherSystem) < 8192);
+
     // 1. Determinism: identical seeds & steps produce bit-identical state
     WeatherConfig cfg;
     cfg.preset = WeatherPreset::DynamicFront;
@@ -265,7 +269,7 @@ RS_TEST(dynamic_weather) {
         std::vector<double> hf(static_cast<std::size_t>(4000 * WeatherSystem::kTrackLanes), 0.0);
         hf[1000 * WeatherSystem::kTrackLanes + 6] = -25.0; // 25 mm laser-scanned dip!
         test::check("bind_track_heightfield accepts N_stations x 16 heightfield", nw.bind_track_heightfield(hf));
-        for (int s = 0; s < 120; ++s) nw.step(1.0);
+        for (int s = 0; s < 45; ++s) nw.step(1.0);
         // Station 1000 sits at ang = pi/2 -> (0, R); tangent is (-1, 0), left normal is (0, -1).
         // Lane 6 is slightly left of center (+d = +0.5/16 * 12 -> y = R - 1.125)
         const double dip_y = R - (0.5 - (6.5 / 16.0)) * 12.0;

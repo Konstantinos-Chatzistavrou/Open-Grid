@@ -215,7 +215,12 @@ struct VehicleOutput {
 struct DamageState {
     double engine_power = 1.0;
     std::array<double, 4> suspension_stiffness{1, 1, 1, 1};
+    std::array<double, 4> damper_scale{1, 1, 1, 1};        // 1.0 intact .. 0.25 blown shock seal
+    std::array<double, 4> strut_sag_m{0, 0, 0, 0};         // m, bent strut corner drop before wheel detaches
     double aero_drag = 1.0;
+    double front_downforce = 1.0;                          // 1.0 intact .. 0.45 crushed front splitter/nose
+    double rear_downforce = 1.0;                           // 1.0 intact .. 0.45 crushed rear diffuser/wing
+    double chassis_stiffness = 1.0;                        // 1.0 intact .. 0.55 permanently bent unibody
     std::array<double, 4> toe{};               // rad, added to each wheel's steer angle
     std::array<double, 4> camber{};            // rad, bent wishbone/strut camber offset
     std::array<double, 4> caster{};            // rad, bent front caster offset (asymmetric steering pull)
@@ -225,7 +230,10 @@ struct DamageState {
     double oil_starvation_wear_rate = 0.0;     // extra engine_health wear/s when engine oil drains below 35%
     double fuel_leak_lps = 0.0;                // L/s fuel tank puncture drain rate
     std::array<double, 4> grip{1, 1, 1, 1};    // tyre grip multiplier (0.0 when wheel is detached)
-    std::array<bool, 4> wheel_detached{false, false, false, false}; // true once corner has lost its wheel/tyre
+    std::array<bool, 4> wheel_detached{false, false, false, false};      // true once corner has lost its wheel/tyre
+    std::array<bool, 4> tyre_punctured{false, false, false, false};      // true once rim-pinch/crash deflated tyre
+    std::array<bool, 4> brake_line_ruptured{false, false, false, false}; // true once corner hydraulic brake line severed
+    std::array<bool, 4> halfshaft_broken{false, false, false, false};    // true once CV joint / halfshaft snapped
     double brakes = 1.0;                       // brake effectiveness (fade / failure), all brakes
 };
 
@@ -324,6 +332,7 @@ private:
     std::array<double, 4> fluid_temp_{45.0, 45.0, 45.0, 45.0}; // caliper DOT 4 brake fluid temperature, C
     std::array<double, 4> pad_wear_{};                         // 0..1 brake pad friction material wear
     std::array<double, 4> brake_water_film_{};                 // 0..1 wet rotor spray film (wet brake bite delay)
+    std::array<double, 4> puncture_deflate_{};                 // 0..1 impact-induced flat-tyre deflation progress
     ChassisDynamicsConfig chassis_dyn_{};
     AtmosphericEnvironment atmosphere_{};
     std::array<double, 2> prev_axle_fy_{};

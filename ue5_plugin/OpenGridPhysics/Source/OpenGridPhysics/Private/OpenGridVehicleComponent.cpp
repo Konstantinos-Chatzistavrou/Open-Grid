@@ -57,6 +57,9 @@ UOpenGridVehicleComponent::UOpenGridVehicleComponent()
     PaintScratchWeights.Init(0.0f, 8);
     ZoneShatterWeights.Init(0.0f, 4);
     WheelDetached.Init(false, 4);
+    TyrePunctured.Init(false, 4);
+    BrakeLineRuptured.Init(false, 4);
+    HalfshaftBroken.Init(false, 4);
     WheelStates.Init(FOpenGridWheelState{}, 4);
     WheelCentresWorld.Init(FVector::ZeroVector, 4);
     WheelSteerRad.Init(0.0f, 4);
@@ -854,11 +857,20 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
 
     if (ZoneShatterWeights.Num() != 4) ZoneShatterWeights.SetNumZeroed(4);
     if (WheelDetached.Num() != 4) WheelDetached.Init(false, 4);
+    if (TyrePunctured.Num() != 4) TyrePunctured.Init(false, 4);
+    if (BrakeLineRuptured.Num() != 4) BrakeLineRuptured.Init(false, 4);
+    if (HalfshaftBroken.Num() != 4) HalfshaftBroken.Init(false, 4);
     for (int32 i = 0; i < 4; ++i)
     {
         ZoneShatterWeights[i] = static_cast<float>(Out.damage.shatter[i]);
         WheelDetached[i] = Out.damage.wheel_detached[i];
+        TyrePunctured[i] = Out.damage.tyre_punctured[i];
+        BrakeLineRuptured[i] = Out.damage.brake_line_ruptured[i];
+        HalfshaftBroken[i] = Out.damage.halfshaft_broken[i];
     }
+    FrontAeroEfficiency = static_cast<float>(Out.damage.front_aero_efficiency);
+    RearAeroEfficiency = static_cast<float>(Out.damage.rear_aero_efficiency);
+    ChassisStiffnessFactor = static_cast<float>(Out.damage.chassis_stiffness_factor);
 
     CoolantLeak01 = static_cast<float>(Out.damage.coolant_leak);
     CoolantLevel01 = static_cast<float>(Out.damage.coolant_level);

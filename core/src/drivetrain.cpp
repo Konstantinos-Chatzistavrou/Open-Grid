@@ -973,7 +973,8 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
     const double bias = cfg_.brake_bias_front;
     for (int w = 0; w < 4; ++w) {
         const double I = cfg_.tire(w).inertia;
-        wheel_omega[w] += h * (drive[w] + tyre_torque[w]) / I;
+        const double eff_drive = in.wheel_drive_severed[w] ? 0.0 : drive[w];
+        wheel_omega[w] += h * (eff_drive + tyre_torque[w]) / I;
         double t_brake = in.brake * cfg_.brake_torque_total * (w < 2 ? bias : 1 - bias) * 0.5 * in.brake_scale[w];
         // Line lock: a solenoid holds the front calipers at a set pressure (not modulated by ABS); the rears stay free.
         if (w < 2 && in.line_lock > 0) t_brake = std::max(t_brake, in.line_lock * cfg_.brake_torque_total * bias * 0.5);

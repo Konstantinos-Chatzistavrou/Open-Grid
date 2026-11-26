@@ -678,6 +678,26 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
     TArray<bool> WheelDetached;
 
+    /** Per-wheel impact-induced tyre blowout/puncture, ruptured hydraulic brake line & snapped CV halfshaft flags. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    TArray<bool> TyrePunctured;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    TArray<bool> BrakeLineRuptured;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    TArray<bool> HalfshaftBroken;
+
+    /** Asymmetric aerodynamic downforce efficiency (1.0 intact .. 0.38 crushed splitter/diffuser) & bent-frame torsional factor. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    float FrontAeroEfficiency = 1.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    float RearAeroEfficiency = 1.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    float ChassisStiffnessFactor = 1.0f;
+
     /** Chassis structural material archetype & aftermarket reinforcement tuning (scales dent yield, cabin strength & wheel shear). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Damage")
     EOpenGridChassisMaterial ChassisMaterial = EOpenGridChassisMaterial::MildSteel;

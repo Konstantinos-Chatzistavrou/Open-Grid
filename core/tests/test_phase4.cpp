@@ -234,17 +234,54 @@ RS_TEST(destruction_realism_materials_fluids_scratches) {
         test::check("rear tank puncture drains fuel tank physically",
                     r.fuel_leak > 0.2 && fuel_after < fuel_before - 0.5);
 
-        // 6. Compact 36-byte NetDamageSnapshot round-trip for 60-70 player free-roam lobbies
+        // 6. Compact 40-byte NetDamageSnapshot round-trip for 60-70 player free-roam lobbies
         const NetDamageSnapshot snap = s->vehicle.damage_model().pack_net_snapshot();
-        test::check("NetDamageSnapshot stays compact (36 bytes)", sizeof(snap) == 36);
+        test::check("NetDamageSnapshot stays compact (40 bytes)", sizeof(snap) == 40);
         DamageModel remote(cfg.mass, wp);
         remote.apply_net_snapshot(snap);
-        test::check("NetDamageSnapshot reproduces crush, scratches, leaks & wheels within 1-byte quantization",
+        test::check("NetDamageSnapshot reproduces crush, scratches, leaks, aero & wheels within 1-byte quantization",
                     std::abs(remote.report().node_norm[NodeFrontCenter] - r.node_norm[NodeFrontCenter]) < 0.01 &&
                     std::abs(remote.report().coolant_leak - r.coolant_leak) < 0.01 &&
                     std::abs(remote.report().oil_leak - r.oil_leak) < 0.01 &&
                     std::abs(remote.report().fuel_leak - r.fuel_leak) < 0.01 &&
+                    std::abs(remote.report().front_aero_efficiency - r.front_aero_efficiency) < 0.01 &&
                     std::abs(remote.report().paint_scratch[NodeFrontCenter] - r.paint_scratch[NodeFrontCenter]) < 0.01);
+    }
+
+    // 7. Max-realism crash mechanics: oblique tangential paint rub, tyre blowout deflation, blown damper/strut sag,
+    //    ruptured brake line, snapped halfshaft, asymmetric aero downforce loss & bent-frame softening!
+    {
+        auto s = test::make_sim(cfg);
+        s->settle(0.4);
+        // 7a. High-speed oblique wall rub (0.5 g normal, 28 m/s tangential): scratches paint ONLY with zero body crush!
+        const double j_glancing = 0.55 * cfg.mass * kGravity * (1.0 / 240.0);
+        for (int i = 0; i < 5; ++i) {
+            s->vehicle.damage_model().add_contact_ex(77, {0.0, 0.92, 0.0}, j_glancing, 28.0, i / 240.0, 1.0 / 240.0);
+        }
+        test::check("oblique tangential wall rub strips left-flank paint without denting panels",
+                    s->vehicle.damage_model().report().paint_scratch[NodeLeftFlank] > 0.15 &&
+                    s->vehicle.damage_model().report().crush[ZoneLeft] == 0.0);
+
+        // 7b. Hard direct wheel smash (74 km/h): punctures tyre (deflates pressure), blows damper, sags strut,
+        //     and ruptures corner brake line + CV halfshaft while wheel stays attached!
+        const double p_before = s->last.wheels[RL].condition.pressure_kpa;
+        s->vehicle.add_contact(88, {cfg.wheels[RL].x, cfg.wheels[RL].y, 0.0}, cfg.mass * (74.0 / 3.6));
+        DriverInput idle; idle.gear = 1;
+        for (int i = 0; i < 2 * 240; ++i) s->step(idle);
+        const DamageReport& dr = s->vehicle.damage_model().report();
+        test::check("violent 74 km/h direct wheel smash punctures tyre & deflates pressure rapidly",
+                    !dr.wheel_detached[RL] && dr.tyre_punctured[RL] && s->last.wheels[RL].condition.pressure_kpa < p_before - 100.0);
+        test::check("damaged strut blows damper seal, sags corner ride height & severs corner brake line / halfshaft",
+                    s->vehicle.damage_model().damper_factor(RL) < 0.65 &&
+                    s->vehicle.damage_model().strut_sag_m(RL) > 0.015 &&
+                    dr.brake_line_ruptured[RL] && dr.halfshaft_broken[RL]);
+
+        // 7c. Nose impact on clean car cuts front downforce while leaving rear aero intact (authentic aero-damage understeer)
+        DamageModel aero_m(cfg.mass, wp);
+        aero_m.add_contact(89, {2.2, 0.0, 0.0}, cfg.mass * (95.0 / 3.6), 0.0, 1.0 / 240.0);
+        const DamageReport& ar = aero_m.report();
+        test::check("front nose crash degrades front downforce & softens frame stiffness while rear aero stays intact",
+                    ar.front_aero_efficiency < 0.72 && ar.rear_aero_efficiency > 0.95 && ar.chassis_stiffness_factor < 0.92);
     }
 }
 

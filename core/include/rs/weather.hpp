@@ -107,6 +107,8 @@ struct StormCell {
     double rain_radius_m = 1800.0;    // precipitation core minor semi-axis (m)
     double cloud_radius_m = 4200.0;   // cloud anvil / shadow minor semi-axis (m)
     double band_angle_rad = 0.0;      // frontal squall-band orientation angle (rad)
+    double cos_band = 1.0;            // cached cos(band_angle_rad) for fast hot-loop projection
+    double sin_band = 0.0;            // cached sin(band_angle_rad) for fast hot-loop projection
     double aspect_ratio = 1.0;        // 1.0 = circular convective cell, 2.2..4.2 = elongated frontal rain band
     double pressure_drop_kpa = 0.4;   // mesoscale low-pressure core anomaly (kPa)
     double vertical_shear_mps = 0.0;  // upper-level cloud steering wind shear speed (m/s)
@@ -399,19 +401,20 @@ private:
     std::array<StormCell, kMaxCells> cells_{};
     std::array<SprayPlume, kMaxSprayPlumes> spray_plumes_{};
 
-    // Layer 1: 32x32 Macro domain hydrology grid
-    std::array<double, kHydroRes * kHydroRes> hydro_water_mm_{};
-    std::array<double, kHydroRes * kHydroRes> hydro_basin_mm_{};
-    std::array<double, kHydroRes * kHydroRes> hydro_groove_{};
-    std::array<double, kHydroRes * kHydroRes> hydro_scratch_{};
+    // Layer 1: 32x32 Macro domain hydrology grid (heap-allocated once in configure(): keeps sizeof(WeatherSystem) < 3 KB
+    // so Windows 1 MB default threads & UE 5.8 worker threads NEVER stack-overflow!)
+    std::vector<double> hydro_water_mm_;
+    std::vector<double> hydro_basin_mm_;
+    std::vector<double> hydro_groove_;
+    std::vector<double> hydro_scratch_;
 
     // Layer 2: 48x48 x 1.0 m toroidal fine world patch (open-world sub-meter tyre tracks & puddles)
-    mutable std::array<FineCell, kFineRes * kFineRes> fine_cells_{};
+    mutable std::vector<FineCell> fine_cells_;
 
     // Layer 3: Sub-meter curvilinear track surface strip (allocated once on bind_track_geometry, zero allocs in step)
     bool track_closed_loop_ = true;
     std::vector<TrackStationPrecomp> track_stations_;
-    std::array<int32_t, kSpatialBuckets> spatial_heads_{}; // O(1) spatial hash bucket heads (-1 = empty)
+    std::vector<int32_t> spatial_heads_;                   // O(1) spatial hash bucket heads (-1 = empty)
     std::vector<int32_t> spatial_next_;                    // intrusive singly-linked next station per station
     std::vector<double> track_water_mm_;
     std::vector<double> track_water_scratch_;

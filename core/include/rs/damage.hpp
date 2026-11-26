@@ -67,7 +67,7 @@ struct StructuralSpec {
     double paint_hardness = 1.0;      // 1.0 standard clearcoat, 1.35+ ceramic/PPF coating (resists light scratches)
 };
 
-// Compact 36-byte fixed network snapshot for 60-70 player free-roam lobby replication (hybrid rigid-body authority).
+// Compact 40-byte fixed network snapshot for 60-70 player free-roam lobby replication (hybrid rigid-body authority).
 // Server simulates deterministic rigid-body + low-dimensional DamageModel; clients unpack this to drive local GPU/morph visuals.
 struct NetDamageSnapshot {
     std::array<std::uint8_t, 8> crush_nodes{};    // 8 perimeter crush weights quantized 0..255
@@ -84,8 +84,11 @@ struct NetDamageSnapshot {
     std::uint8_t flags = 0;                       // bits 0-1: material, 2: carbon_panels, 3: roll_cage, 4: race_susp, 5: totaled, 6: brakes_failed
     std::uint16_t detach_mask = 0;                // bits 0-3: wheels FL..RR, 4: hood, 5: trunk, 6: front_bumper, 7: rear_bumper
     std::uint16_t impact_seq = 0;                 // monotonically increments on impacts / scratch events
+    std::uint16_t mech_fault_mask = 0;            // bits 0-3: punctured tyres, 4-7: ruptured brake lines, 8-11: snapped halfshafts
+    std::uint8_t front_aero_eff = 255;            // 0..255 front downforce efficiency after nose/splitter damage
+    std::uint8_t rear_aero_eff = 255;             // 0..255 rear downforce efficiency after tail/diffuser/wing damage
 };
-static_assert(sizeof(NetDamageSnapshot) == 36, "NetDamageSnapshot must stay compact (36 bytes) for 70-player lobbies");
+static_assert(sizeof(NetDamageSnapshot) == 40, "NetDamageSnapshot must stay compact (40 bytes) for 70-player lobbies");
 
 // 8-Node Perimeter Structural Crush Grid for Unreal Engine 5 Skeletal Mesh Morph Targets.
 enum CrushNode : int {
@@ -143,6 +146,12 @@ struct DamageReport {
     std::array<double, 4> zone{};      // 0..1 = crush relative to "fully crushed" for that zone
     std::array<double, 4> wheel{};     // 0..1 per wheel (FL, FR, RL, RR)
     std::array<bool, 4> wheel_detached{}; // true once that wheel has sheared off the hub
+    std::array<bool, 4> tyre_punctured{}; // true once violent kerb/wheel impact pinches & deflates tyre
+    std::array<bool, 4> brake_line_ruptured{}; // true once corner hydraulic brake line is severed (> 0.78 wheel damage)
+    std::array<bool, 4> halfshaft_broken{};    // true once CV joint / axle halfshaft snaps (> 0.80 wheel damage)
+    double front_aero_efficiency = 1.0;        // 1.0 intact .. 0.45 crushed splitter/nose (high-speed understeer!)
+    double rear_aero_efficiency = 1.0;         // 1.0 intact .. 0.45 crushed diffuser/wing (high-speed aero instability!)
+    double chassis_stiffness_factor = 1.0;     // 1.0 intact .. 0.55 permanently bent unibody torsional softening
     double engine = 0;                 // 0..1
     double total_energy_kj = 0;        // every crash that dented panels (light paint-only scrapes excluded)
     double structural_kj_per_t = 0;    // the part that reached the structure (see TWO LAYERS)
@@ -198,6 +207,10 @@ public:
     // One contact for one physics tick. point in the BODY frame, impulse in N s, object_id
     // identifies the other object, time = simulation time, dt = tick length.
     void add_contact(std::uint64_t object_id, const Vec3& point_body, double impulse, double time, double dt);
+    // Directional oblique contact: separates normal crushing impulse from tangential scraping speed (m/s)
+    // so glancing wall rubs strip clearcoat/paint & throw sparks without falsely crushing chassis rails!
+    void add_contact_ex(std::uint64_t object_id, const Vec3& point_body, double normal_impulse,
+                        double tangential_speed_mps, double time, double dt);
 
     const DamageReport& report() const { return r_; }
     const DamageParams& params() const { return p_; }
@@ -227,9 +240,17 @@ public:
 
     // Physical consequences (fed into Vehicle each tick):
     double engine_power_factor() const;         // 1 .. 0.3 from engine damage, never below limp_power
-    double drag_factor() const;                 // 1 .. 1.3 (crumpled body, open panels)
+    double drag_factor() const;                 // 1 .. 1.48 (crumpled body, unlatched hood, missing bumpers)
+    double front_downforce_factor() const { return r_.front_aero_efficiency; } // 1 .. 0.45
+    double rear_downforce_factor() const { return r_.rear_aero_efficiency; }   // 1 .. 0.45
+    double chassis_stiffness_factor() const { return r_.chassis_stiffness_factor; } // 1 .. 0.55
     double suspension_factor(int wheel) const;  // 1 .. 0.6 spring stiffness
+    double damper_factor(int wheel) const;      // 1 .. 0.25 blown shock absorber seal -> uncontrolled bounce
+    double strut_sag_m(int wheel) const;        // 0 .. 0.042 m bent strut corner ride-height collapse before wheel detaches
     bool wheel_off(int wheel) const { return r_.wheel[wheel] >= p_.wheel_off; }
+    bool tyre_punctured(int wheel) const { return r_.tyre_punctured[wheel]; }
+    bool brake_line_ruptured(int wheel) const { return r_.brake_line_ruptured[wheel]; }
+    bool halfshaft_broken(int wheel) const { return r_.halfshaft_broken[wheel]; }
     double hub_scrape_mu() const { return p_.hub_scrape_mu; }
     double toe_offset(int wheel) const;         // rad, bent steering/suspension arm
     double camber_offset(int wheel) const;      // rad, bent wishbone/strut knocking wheel into positive camber

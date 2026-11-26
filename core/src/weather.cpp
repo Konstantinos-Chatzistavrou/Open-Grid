@@ -251,6 +251,8 @@ void WeatherSystem::configure_from_live_observation(const RealWeatherObservation
     cells_[0].rain_radius_m = 4800.0;
     cells_[0].cloud_radius_m = 8800.0;
     cells_[0].band_angle_rad = wind_angle + 0.5 * kPi;
+    cells_[0].cos_band = std::cos(cells_[0].band_angle_rad);
+    cells_[0].sin_band = std::sin(cells_[0].band_angle_rad);
     cells_[0].aspect_ratio = 2.4;
     cells_[0].age_s = 900.0;
     cells_[0].lifetime_s = 3600.0;
@@ -270,6 +272,8 @@ void WeatherSystem::configure_from_live_observation(const RealWeatherObservation
         cells_[1].rain_radius_m = 2800.0;
         cells_[1].cloud_radius_m = 5600.0;
         cells_[1].band_angle_rad = wind_angle + 0.5 * kPi;
+        cells_[1].cos_band = std::cos(cells_[1].band_angle_rad);
+        cells_[1].sin_band = std::sin(cells_[1].band_angle_rad);
         cells_[1].aspect_ratio = 3.0;
         cells_[1].age_s = 300.0;
         cells_[1].lifetime_s = 4200.0;
@@ -584,6 +588,8 @@ void WeatherSystem::spawn_cell(int slot, bool initial_scatter) {
             }
             break;
     }
+    c.cos_band = std::cos(c.band_angle_rad);
+    c.sin_band = std::sin(c.band_angle_rad);
 }
 
 void WeatherSystem::init_track_cells_from_preset(double init_water_mm) {
@@ -643,6 +649,18 @@ void WeatherSystem::init_track_cells_from_preset(double init_water_mm) {
 
 void WeatherSystem::configure(const WeatherConfig& cfg) {
     cfg_ = cfg;
+    if (hydro_water_mm_.size() != static_cast<std::size_t>(kHydroRes * kHydroRes)) {
+        hydro_water_mm_.assign(static_cast<std::size_t>(kHydroRes * kHydroRes), 0.0);
+        hydro_basin_mm_.assign(static_cast<std::size_t>(kHydroRes * kHydroRes), 0.0);
+        hydro_groove_.assign(static_cast<std::size_t>(kHydroRes * kHydroRes), 0.0);
+        hydro_scratch_.assign(static_cast<std::size_t>(kHydroRes * kHydroRes), 0.0);
+    }
+    if (fine_cells_.size() != static_cast<std::size_t>(kFineRes * kFineRes)) {
+        fine_cells_.assign(static_cast<std::size_t>(kFineRes * kFineRes), FineCell{});
+    }
+    if (spatial_heads_.size() != static_cast<std::size_t>(kSpatialBuckets)) {
+        spatial_heads_.assign(static_cast<std::size_t>(kSpatialBuckets), -1);
+    }
     sim_time_s_ = 0.0;
     local_hour_ = std::fmod(std::fmod(cfg.start_hour_local, 24.0) + 24.0, 24.0);
     rng_state_ = cfg.seed ? cfg.seed : 1337u;
@@ -754,7 +772,7 @@ bool WeatherSystem::bind_track_heightfield(const std::vector<double>& cell_elev_
 }
 
 void WeatherSystem::rebuild_spatial_index() {
-    spatial_heads_.fill(-1);
+    spatial_heads_.assign(static_cast<std::size_t>(kSpatialBuckets), -1);
     const int n = static_cast<int>(track_stations_.size());
     spatial_next_.assign(static_cast<std::size_t>(n), -1);
     for (int i = 0; i < n; ++i) {
@@ -768,7 +786,7 @@ void WeatherSystem::rebuild_spatial_index() {
 
 void WeatherSystem::clear_track_geometry() {
     track_stations_.clear();
-    spatial_heads_.fill(-1);
+    spatial_heads_.assign(static_cast<std::size_t>(kSpatialBuckets), -1);
     spatial_next_.clear();
     track_water_mm_.clear();
     track_water_scratch_.clear();
@@ -874,11 +892,11 @@ void WeatherSystem::evaluate_cells_at(double x_m, double y_m, double time_offset
         else if (u > 0.75) life = (1.0 - u) / 0.25;
         life = clamp(life * life * (3.0 - 2.0 * life), 0.0, 1.0);
 
-        // Anisotropic elliptical frontal rain band in rotated storm-band coordinates
+        // Anisotropic elliptical frontal rain band in rotated storm-band coordinates (cached cos/sin)
         const double dx = x_m - (c.x_m + adv_x);
         const double dy = y_m - (c.y_m + adv_y);
-        const double cb = std::cos(c.band_angle_rad);
-        const double sb = std::sin(c.band_angle_rad);
+        const double cb = c.cos_band;
+        const double sb = c.sin_band;
         const double along = dx * cb + dy * sb;    // along squall band (major axis)
         const double across = -dx * sb + dy * cb;  // across squall band (minor axis)
         const double inv_ar = 1.0 / std::max(c.aspect_ratio, 1.0);
@@ -1100,15 +1118,22 @@ void WeatherSystem::step(double dt) {
         const std::size_t n_st = track_stations_.size();
         const double track_drain_lat = clamp(0.18 * scaled_dt, 0.0, 0.30);
         const double track_drain_lon = clamp(0.04 * scaled_dt, 0.0, 0.18);
+        const double air_vapor_kpa = global_humidity_ * weather_sat_vapor_kpa(global_air_c_);
+        const double wind_evap_mult = 1.0 + 0.18 * v_wind;
+        // On 20 km tracks (4,000+ stations @ 5 m spacing), storm bands are 2-10 km wide: refresh storm rain/cloud every 4 stations (~20 m)
+        const std::size_t storm_stride = (n_st > 256) ? 4 : 1;
+        double r_st = 0.0, cl_st = 0.0;
 
         // 8a. Rain fill, per-cell persistent solar/shade thermal balance & local Penman evaporation
         for (std::size_t i = 0; i < n_st; ++i) {
             const TrackWeatherStation& st = track_stations_[i].st;
-            double r_st = 0.0, cl_st = 0.0;
-            evaluate_cells_at(st.x_m, st.y_m, 0.0, r_st, cl_st);
+            if (i % storm_stride == 0) {
+                evaluate_cells_at(st.x_m, st.y_m, 0.0, r_st, cl_st);
+            }
             const double shade = clamp(st.shade_0_to_1, 0.0, 1.0);
             const double solar_st = solar_clear_w * (1.0 - 0.78 * cl_st * cl_st) * (1.0 - 0.85 * shade);
             const double rain_add = r_st * (scaled_dt / 3600.0);
+            const bool can_evap_station = (r_st < 0.25);
 
             for (int j = 0; j < kTrackLanes; ++j) {
                 const std::size_t idx = i * static_cast<std::size_t>(kTrackLanes) + static_cast<std::size_t>(j);
@@ -1123,15 +1148,18 @@ void WeatherSystem::step(double dt) {
                 if (r_st > 3.5) {
                     track_rubber_[idx] = std::max(0.0, track_rubber_[idx] - 0.000035 * (r_st - 3.0) * scaled_dt);
                 }
-                if (r_st > 1.0 && track_mud_[idx] > 0.0) {
+                if (r_st > 1.0 && track_mud_[idx] > 0.0) [[unlikely]] {
                     track_mud_[idx] = std::max(0.0, track_mud_[idx] - 0.0018 * r_st * scaled_dt);
                 }
 
-                // Local Penman evaporation driven by THIS cell's skin temperature & shade (paused while frozen/dew)
-                const double cell_vpd = std::max(0.0, weather_sat_vapor_kpa(tc) - global_humidity_ * weather_sat_vapor_kpa(global_air_c_));
-                const double evap_rate = (0.00022 * cell_vpd * (1.0 + 0.18 * v_wind) + 2.8e-7 * solar_st)
-                                       * clamp((tc + 5.0) / 25.0, 0.15, 2.8);
-                const double evap_mm = (r_st < 0.25 && tc > dew_c && track_ice_[idx] < 0.5) ? evap_rate * scaled_dt : 0.0;
+                // Local Penman evaporation driven by THIS cell's skin temperature & shade (skip exp() while raining/frozen/dry!)
+                double evap_mm = 0.0;
+                if (can_evap_station && w_cur > 1e-4 && tc > dew_c && track_ice_[idx] < 0.5) {
+                    const double cell_vpd = std::max(0.0, weather_sat_vapor_kpa(tc) - air_vapor_kpa);
+                    const double evap_rate = (0.00022 * cell_vpd * wind_evap_mult + 2.8e-7 * solar_st)
+                                           * clamp((tc + 5.0) / 25.0, 0.15, 2.8);
+                    evap_mm = evap_rate * scaled_dt;
+                }
                 if (r_st > 0.8) {
                     track_groove_[idx] = std::max(0.0, track_groove_[idx] - 0.03 * r_st * (scaled_dt / 60.0));
                 }

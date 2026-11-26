@@ -9,7 +9,7 @@ on:
 
 jobs:
   cpp-core:
-    name: C++17 Physics Core (Release) + CTest
+    name: C++20 Physics Core (Release) + CTest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -21,14 +21,14 @@ jobs:
         run: ctest --test-dir core/build --output-on-failure --parallel "$(nproc)"
 
   cpp-core-asan:
-    name: C++17 Physics Core (Debug ASan + UBSan) + CTest
+    name: C++20 Physics Core (ASan + UBSan) + CTest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Memory Leak & Undefined Behavior Check (ASan + UBSan, -O0 Debug)
+      - name: Memory Leak & Undefined Behavior Check (ASan + UBSan, -O1 -g)
         run: |
-          cmake -S core -B core/build-asan -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          cmake -S core -B core/build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_FLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
           cmake --build core/build-asan -j
           ctest --test-dir core/build-asan --output-on-failure --parallel "$(nproc)"
 
