@@ -354,6 +354,9 @@ void TireCondition::repair_structural(const TireParams* p) {
     rim_strike_force_n = 0.0;
     carcass_hysteresis_w = 0.0;
     marble_pickup = 0.0;
+    mud_pickup = 0.0;
+    heat_cycle_age = 0.0;
+    heat_cycle_peak_seen = false;
     pressure_kpa = ideal_gas_pressure_kpa(p);
 }
 
@@ -700,6 +703,17 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
     } else if (temperature_c >= t_lo && temperature_c <= t_hi) {
         graining = clamp(graining - 0.012 * dt, 0.0, 1.0);
     }
+    // Permanent rubber thermal heat-cycle curing / vulcanization hardening (LMU/iRacing multi-stint compound ageing):
+    // Heating past t_opt + 12 C and cooling back below t_opt - 15 C logs a heat cycle; sustained extreme overheat cures continuously.
+    if (temperature_c > t_opt + 12.0) {
+        heat_cycle_peak_seen = true;
+    } else if (heat_cycle_peak_seen && temperature_c < t_opt - 15.0) {
+        heat_cycle_peak_seen = false;
+        heat_cycle_age = clamp(heat_cycle_age + 0.14, 0.0, 1.0);
+    }
+    if (temperature_c > t_hi + 12.0) {
+        heat_cycle_age = clamp(heat_cycle_age + 0.0025 * dt, 0.0, 1.0);
+    }
     last_carcass_c_ = temperature_c;
     last_inner_air_c_ = inner_air_c;
 }
@@ -721,7 +735,8 @@ double TireCondition::zone_health_grip_factor() const {
     const double sw_dmg_loss = 0.14 * clamp(sidewall_damage, 0.0, 1.0);
     const double marble_loss = 0.08 * clamp(marble_pickup, 0.0, 1.0);
     const double mud_loss = 0.30 * clamp(mud_pickup, 0.0, 1.0);
-    return clamp(1.0 - blister_loss - grain_loss - spread_loss - flat_steady_loss - sw_dmg_loss - marble_loss - mud_loss, 0.42, 1.0);
+    const double heat_cycle_loss = 0.045 * clamp(heat_cycle_age, 0.0, 1.0);
+    return clamp(1.0 - blister_loss - grain_loss - spread_loss - flat_steady_loss - sw_dmg_loss - marble_loss - mud_loss - heat_cycle_loss, 0.42, 1.0);
 }
 
 double TireCondition::wlf_rib_grip_factor(double rib_surface_c, const TireParams* p) const {
@@ -1101,7 +1116,9 @@ double TireCondition::thermal_stiffness_factor(const TireParams* p) const {
     const double t_opt = p ? p->temp_optimal_c : 90.0;
     const double t_blend = 0.60 * temperature_c + 0.40 * surface_c;
     const double dt_c = clamp(t_blend - t_opt, -65.0, 85.0);
-    return clamp(1.0 - 0.0019 * dt_c, 0.84, 1.12);
+    // Repeated heat cycles vulcanize/harden the rubber (+6% shear modulus stiffness at age = 1.0)
+    const double cycle_harden = 1.0 + 0.06 * clamp(heat_cycle_age, 0.0, 1.0);
+    return clamp((1.0 - 0.0019 * dt_c) * cycle_harden, 0.84, 1.18);
 }
 
 TireAcousticSource TireCondition::compute_acoustics(double wheel_omega_rads, double radius_m,
@@ -1653,6 +1670,13 @@ TireForces evaluate_contact_patch_grid(const TireParams& p, double kappa, double
     out.mz = mz_mf + mz_lat_arm + delta_mz_lon;
 
     if (op.enable_mf62_hybrid) {
+        // LMU pre-peak brush pneumatic trail collapse when trailing patch cells begin micro-sliding (< 0.78 adhesion)
+        if (out.adhesion_ratio < 0.78 && std::abs(fy_nosvyk_total) > 50.0) {
+            const double pre_peak_scale = clamp(0.52 + 0.48 * (out.adhesion_ratio / 0.78), 0.52, 1.0);
+            const double trail_delta = out.pneumatic_trail * (pre_peak_scale - 1.0);
+            out.pneumatic_trail *= pre_peak_scale;
+            out.mz -= fy_nosvyk_total * trail_delta;
+        }
         // PAC2002 / MF-Swift-style gyroscopic steel-belt precession torque M_z,gyr = QTZ1 * MBELT * r * V_x * d(gamma)/dt
         const double mz_gyr = p.qtz1 * p.mbelt * p.radius * op.rolling_speed_mps * clamp(op.gamma_rate_rads, -8.0, 8.0);
         out.mz += mz_gyr;
@@ -1756,6 +1780,15 @@ TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, do
     out.mx = mf_overturning_moment(p, fz, fy, gamma, dpi);
     out.mz = mf_aligning_torque(p, kappa, alpha, fz, mu_scale, gamma, fx, fy_no_svyk, &out.pneumatic_trail, dpi);
     if (op.enable_mf62_hybrid) {
+        // LMU pre-peak brush pneumatic trail collapse: as the trailing contact patch begins micro-sliding
+        // (adhesion_ratio < 0.78) ~1-2 deg BEFORE peak lateral force, self-aligning torque lightens progressively
+        // so direct-drive wheel drivers feel the front edge of grip right before understeer!
+        if (out.adhesion_ratio < 0.78 && std::abs(fy_no_svyk) > 50.0) {
+            const double pre_peak_scale = clamp(0.52 + 0.48 * (out.adhesion_ratio / 0.78), 0.52, 1.0);
+            const double trail_delta = out.pneumatic_trail * (pre_peak_scale - 1.0);
+            out.pneumatic_trail *= pre_peak_scale;
+            out.mz -= fy_no_svyk * trail_delta;
+        }
         const double mz_conicity = -0.024 * fz * p.radius * std::sin(gamma) * std::cos(alpha);
         const double mz_3rib = rib_diff_torque_factor * 0.082 * fx;
         const double mz_gyr = p.qtz1 * p.mbelt * p.radius * op.rolling_speed_mps * clamp(op.gamma_rate_rads, -8.0, 8.0);

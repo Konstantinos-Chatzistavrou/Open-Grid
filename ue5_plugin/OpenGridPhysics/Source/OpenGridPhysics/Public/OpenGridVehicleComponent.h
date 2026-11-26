@@ -149,6 +149,14 @@ struct OPENGRIDPHYSICS_API FOpenGridWheelState
     /** Viscoelastic carcass flexing heat dissipation from the 24-node flexible ring (W, w.carcass_hysteresis_w). */
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
     float CarcassHysteresisW = 0.0f;
+
+    /** Contact-patch brush adhesion share (1 = stuck, drops < 0.78 before peak slip -> LMU pre-squeal scrub audio). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float AdhesionRatio = 1.0f;
+
+    /** Instantaneous contact-patch pneumatic trail (cm; collapses ~1-2 deg before peak Fy for DD wheel limit feel). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float PneumaticTrailCm = 0.0f;
 };
 
 /**
@@ -407,6 +415,18 @@ public:
     /** Turbocharger stage (0 = naturally aspirated, 1 = 0.7 bar, 2 = 1.15 bar, 3 = 1.65 bar). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Drivetrain")
     int32 TurboStage = 0;
+
+    /** Live cockpit brake bias offset (+ = more front, - = more rear; LMU/iRacing in-car MFD adjustment). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Brakes", meta=(ClampMin="-0.20", ClampMax="0.20"))
+    float BrakeBiasOffset = 0.0f;
+
+    /** Dynamic Brake Migration override (-1 = use car spec; >= 0 shifts brake bias rearward as driver trails off pedal). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Brakes", meta=(ClampMin="-1.0", ClampMax="0.15"))
+    float BrakeMigrationOverride = -1.0f;
+
+    /** Hybrid ERS / MGU-K deploy mode (0.0 = harvest only, 0.5 = balanced, 1.0 = attack/quali). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Hybrid", meta=(ClampMin="0.0", ClampMax="1.0"))
+    float HybridDeployMode = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Assists")
     bool bAbs = true;
@@ -681,6 +701,27 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float BrakeVaporLockSponge = 0.0f;
+
+    /** Live front brake bias after cockpit offset & dynamic Brake Migration (BMIG). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Brakes")
+    float EffectiveBrakeBiasFront = 0.62f;
+
+    /** Hybrid ERS HV battery state of charge (0..1), live MGU-K deploy/regen power (kW) & Brake-by-Wire state. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Hybrid")
+    float HybridSoc = 0.80f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Hybrid")
+    float HybridDeployKw = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Hybrid")
+    float HybridRegenKw = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Hybrid")
+    bool bHybridBbwActive = false;
+
+    /** Front axle minimum brush contact-patch adhesion ratio (1 = stuck .. 0 = full slide; MetaSounds pre-squeal rubber scrub). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
+    float FrontAdhesionRatio = 1.0f;
 
     /** Per-wheel kinematic, thermal, acoustic, and interpolated pose state (FL=0, FR=1, RL=2, RR=3). */
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")

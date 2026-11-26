@@ -121,9 +121,17 @@ struct TireParams {
     double aspect_ratio = 0.40;       // sidewall aspect ratio (ASPECT_RATIO, e.g. 0.40 for 245/40 R18)
 };
 
+/** Brake disc material archetype: determines friction-vs-temperature curve, specific heat & radiative emissivity. */
+enum class BrakeDiscType : int {
+    CastIron = 0,       // Street / GT iron rotor: strong cold bite (0.86), 300-650 C plateau, fades > 700 C
+    CarbonCeramic = 1,  // Supercar CCM rotor: 0.84 cold, flat plateau to 780 C, high thermal fade ceiling
+    CarbonCarbon = 2    // LMU Hypercar / LMP2 / F1 carbon-carbon: low cold bite (0.58), steep 350-650 C bite surge (1.04), high emissivity
+};
+
 /** Brakes: disc + pad thermal model (per axle). */
 struct BrakeThermal {
-    double disc_mass_front = 8.5, disc_mass_rear = 6.0;   // kg (cast iron, c = 460 J/kg K)
+    BrakeDiscType disc_type = BrakeDiscType::CastIron;
+    double disc_mass_front = 8.5, disc_mass_rear = 6.0;   // kg (cast iron, c = 460 J/kg K; carbon c = 710 J/kg K)
     double disc_area_front = 0.13, disc_area_rear = 0.10; // m^2 of radiating / cooled surface
     // Convective cooling h A = base + per_mps v (W/K). A ducted, vented disc sheds ~80 W/K at 30 m/s and ~180 W/K at
     // 70 m/s (h ~200-450 W/m^2K over ~0.4 m^2 of faces and vanes): a 600 C disc drops 15-25 C/s on a fast straight,
@@ -171,6 +179,12 @@ struct AxleParams {
     // ---- dampers: digressive valving (firm at low shaft speed for body control, softer past the knee for bumps)
     double damper_knee_mps = 0.13;
     double damper_high_speed_ratio = 0.45;  // coefficient above the knee / below it
+    double damper_hysteresis_n = 0.0;       // N, gas-pressurized monotube shock seal / bleed hysteresis
+    // ---- third / heave spring & heave damper (GT3 / Hypercar aero-platform control decoupled from single-wheel roll/kerbs)
+    double heave_spring_rate = 0.0;         // N/m, symmetric axle heave spring (0 = none; engages past heave_gap_m)
+    double heave_gap_m = 0.0;               // m, free heave travel / packer gap from static ride height
+    double heave_damper_bump = 0.0;         // N s/m, symmetric axle heave bump damping
+    double heave_damper_rebound = 0.0;      // N s/m, symmetric axle heave rebound damping
     // ---- elastokinematic suspension bushing compliance (rubber street bushings vs spherical race bearings)
     // Defaults to 0.0 so legacy configs keep exact rigid-hardpoint numbers; game/UE5 or JSON can enable compliance.
     double toe_compliance_rad_per_kn_fx = 0.0;        // rad/kN: + = toe-in under braking (-Fx)
@@ -284,6 +298,18 @@ struct SteeringParams {
     double column_inertia_kgm2 = 0.045;      // kg m^2 steering wheel + column rotational inertia
 };
 
+// Hybrid ERS / MGU-K electric motor, regenerative Brake-by-Wire (BBW) & front-axle e-AWD (LMU Hypercar / modern supercars).
+struct HybridParams {
+    bool enabled = false;
+    double max_deploy_kw = 200.0;            // kW, peak electric deployment power (200 kW = WEC LMH/Hypercar)
+    double max_regen_kw = 200.0;             // kW, peak regenerative braking harvest power
+    double max_torque_nm = 2200.0;           // N m, electric motor wheel-side axle torque ceiling (motor torque x reduction gear)
+    double battery_capacity_mj = 4.0;        // MJ, usable HV battery capacity (4 MJ = endurance race stint pack)
+    double front_deploy_min_speed_mps = 0.0; // m/s, minimum speed before front e-AWD activates (52.8 m/s = 190 km/h LMH rule, 0 = street)
+    bool front_axle_motor = true;            // true = front-axle e-AWD motor (499P / SF90 / 918), false = rear-axle MGU-K (LMDh / F1)
+    bool brake_by_wire = true;               // true = subtract MGU-K regen torque from hydraulic calipers on regen axle to hold steady pedal feel
+};
+
 struct DrivetrainParams {
     std::vector<double> gear_ratios;          // index 0 = reverse (negative), 1 = neutral (0), 2.. forward
     std::vector<std::array<int, 2>> gear_teeth; // optional [driven, drive] tooth pairs per gear (0=R, 1=N=[0,0], 2.. fwd)
@@ -301,6 +327,7 @@ struct DrivetrainParams {
     TorqueConverterParams torque_converter;
     DogBoxParams dog_box;
     AmtParams amt;
+    HybridParams hybrid;
 };
 
 // Active aerodynamics. A car has it only if its spec says so ("aero": {"drs": true, "airbrake": true}); the vehicle also needs
@@ -340,6 +367,9 @@ struct AeroParams {
     double static_ride_height_front_m = 0.11; // m, static front splitter/undertray clearance
     double static_ride_height_rear_m = 0.125; // m, static rear diffuser clearance
     double diffuser_stall_rake_m = 0.065;     // m, excessive rear-high rake (h_r - h_f) where diffuser stalls
+    double steer_downforce_loss = 0.18;       // front wheel-wake floor/bargeboard downforce loss scale vs steer^2
+    double steer_balance_shift = -0.06;       // front aero balance shift vs |steer| (negative = rearward shift mid-corner)
+    double steer_drag_gain = 0.12;            // exposed front-tyre steering drag gain vs steer^2
     AeroMap2D map_2d;                         // optional explicit 2D ride-height aero table
 };
 
@@ -351,7 +381,8 @@ struct CarConfig {
     double wheelbase = 2.65;
     double inertia_xx = 550, inertia_yy = 2100, inertia_zz = 2400;   // kg m^2 about the CG
     double torsional_stiffness_nm_per_deg = 0.0; // N m/deg (<= 0 falls back to ChassisDynamicsConfig default)
-    double brake_bias_front = 0.62;           // fraction of total brake torque on the front axle
+    double brake_bias_front = 0.62;           // fraction of total brake torque on the front axle at peak pressure
+    double brake_migration_front = 0.0;       // BMIG: dynamic front bias reduction as driver trails off brake pedal (e.g. 0.04 = -4% at 0 pedal)
     double brake_torque_total = 7000;         // N m, all four wheels together at full pedal (pads in their range)
     BrakeThermal brake_thermal;
     AxleParams front, rear;

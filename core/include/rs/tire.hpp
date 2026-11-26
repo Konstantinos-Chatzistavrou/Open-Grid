@@ -148,6 +148,8 @@ struct TireCondition {
     double brake_disc_temp_c = 30.0;      // C, adjacent brake rotor temperature for rim -> cavity air radiant heat soak
     double marble_pickup = 0.0;           // 0..1 off-line rubber marbles / street grit stuck to hot tread (scrubs off on clean asphalt)
     double mud_pickup = 0.0;              // 0..1 wet mud / grass dirt stuck to tread from off-track excursions (drags onto asphalt!)
+    double heat_cycle_age = 0.0;          // 0..1 permanent compound thermal curing/hardening from repeated overheat/cool cycles
+    bool heat_cycle_peak_seen = false;    // tracks entering a high-temp cycle before cooling back down
 
     // Internal change trackers (allows legacy tests that teleport temperature_c directly to stay consistent
     // while keeping continuous 3-node ODE integration pure during simulation).

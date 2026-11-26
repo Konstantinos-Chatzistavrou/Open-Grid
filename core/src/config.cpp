@@ -117,6 +117,11 @@ AxleParams parse_axle(const json& j, const std::string& ctx) {
     a.bump_stop_exponent = num_or(j, "bump_stop_exponent", 1.0);
     a.damper_bump = num(j, "damper_bump_ns_per_m", ctx);
     a.damper_rebound = num(j, "damper_rebound_ns_per_m", ctx);
+    a.damper_hysteresis_n = num_or(j, "damper_hysteresis_n", 0.0);
+    a.heave_spring_rate = num_or(j, "heave_spring_rate_n_per_m", 0.0);
+    a.heave_gap_m = num_or(j, "heave_gap_m", 0.0);
+    a.heave_damper_bump = num_or(j, "heave_damper_bump_ns_per_m", 0.0);
+    a.heave_damper_rebound = num_or(j, "heave_damper_rebound_ns_per_m", 0.0);
     a.anti_roll_rate = num(j, "anti_roll_rate_n_per_m", ctx);
     a.roll_centre_height = num(j, "roll_centre_height_m", ctx);
     a.max_steer_deg = num_or(j, "max_steer_deg", 0);
@@ -305,6 +310,7 @@ CarConfig parse_car_config(const std::string& text) {
     c.tire_front = parse_tire(j.at("tire_front"), "tire_front");
     c.tire_rear = j.contains("tire_rear") ? parse_tire(j.at("tire_rear"), "tire_rear") : c.tire_front;
     c.brake_bias_front = num(j.at("brakes"), "bias_front", "brakes");
+    c.brake_migration_front = num_or(j.at("brakes"), "migration_front", 0.0);
     c.brake_torque_total = num(j.at("brakes"), "max_total_torque_nm", "brakes");
     {
         const json& b = j.at("brakes");
@@ -312,6 +318,10 @@ CarConfig parse_car_config(const std::string& text) {
         bt.disc_mass_front = num_or(b, "disc_mass_front_kg", bt.disc_mass_front);
         bt.disc_mass_rear = num_or(b, "disc_mass_rear_kg", bt.disc_mass_rear);
         bt.cooling_per_mps = num_or(b, "cooling_w_per_k_per_mps", bt.cooling_per_mps);
+        const std::string dt_str = b.value("disc_type", std::string("iron"));
+        if (dt_str == "carbon_carbon" || dt_str == "carbon") bt.disc_type = BrakeDiscType::CarbonCarbon;
+        else if (dt_str == "carbon_ceramic" || dt_str == "ccm") bt.disc_type = BrakeDiscType::CarbonCeramic;
+        else bt.disc_type = BrakeDiscType::CastIron;
     }
 
     const json& e = j.at("engine");
@@ -470,6 +480,18 @@ CarConfig parse_car_config(const std::string& text) {
     if (d.contains("front_diff")) c.drivetrain.front_diff = parse_diff(d.at("front_diff"));
     if (d.contains("rear_diff")) c.drivetrain.rear_diff = parse_diff(d.at("rear_diff"));
     if (d.contains("centre_diff")) c.drivetrain.centre_diff = parse_diff(d.at("centre_diff"));
+    if (d.contains("hybrid")) {
+        const json& hy = d.at("hybrid");
+        HybridParams& hp = c.drivetrain.hybrid;
+        hp.enabled = hy.value("enabled", true);
+        hp.max_deploy_kw = num_or(hy, "max_deploy_kw", hp.max_deploy_kw);
+        hp.max_regen_kw = num_or(hy, "max_regen_kw", hp.max_regen_kw);
+        hp.max_torque_nm = num_or(hy, "max_torque_nm", hp.max_torque_nm);
+        hp.battery_capacity_mj = num_or(hy, "battery_capacity_mj", hp.battery_capacity_mj);
+        hp.front_deploy_min_speed_mps = num_or(hy, "front_deploy_min_speed_mps", hp.front_deploy_min_speed_mps);
+        hp.front_axle_motor = hy.value("front_axle_motor", hp.front_axle_motor);
+        hp.brake_by_wire = hy.value("brake_by_wire", hp.brake_by_wire);
+    }
     const std::string& lay = c.drivetrain.layout;
     if (lay != "rwd" && lay != "fwd" && lay != "awd") throw std::runtime_error("car config: layout must be rwd|fwd|awd");
     c.front.driven = (lay == "fwd" || lay == "awd");
@@ -487,6 +509,9 @@ CarConfig parse_car_config(const std::string& text) {
     c.aero.static_ride_height_front_m = num_or(a, "static_ride_height_front_m", c.aero.static_ride_height_front_m);
     c.aero.static_ride_height_rear_m = num_or(a, "static_ride_height_rear_m", c.aero.static_ride_height_rear_m);
     c.aero.diffuser_stall_rake_m = num_or(a, "diffuser_stall_rake_m", c.aero.diffuser_stall_rake_m);
+    c.aero.steer_downforce_loss = num_or(a, "steer_downforce_loss", c.aero.steer_downforce_loss);
+    c.aero.steer_balance_shift = num_or(a, "steer_balance_shift", c.aero.steer_balance_shift);
+    c.aero.steer_drag_gain = num_or(a, "steer_drag_gain", c.aero.steer_drag_gain);
     if (a.contains("map_2d")) {
         const json& m2 = a.at("map_2d");
         c.aero.map_2d.front_rh_m = m2.at("front_rh_m").get<std::vector<double>>();

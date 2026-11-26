@@ -182,6 +182,7 @@ void UOpenGridVehicleComponent::ApplyFeatureFlags()
     Vehicle_->chassis_dynamics().brake_fluid_boil_enabled = true;
     Vehicle_->chassis_dynamics().bushing_compliance_enabled = true;
     Vehicle_->chassis_dynamics().progressive_bump_stops_enabled = true;
+    Vehicle_->chassis_dynamics().kingpin_3d_ffb_enabled = true;
     Vehicle_->engine_systems().torsional_compliance_enabled = true;
     Vehicle_->engine_systems().dog_box_flat_shift_cut = true;
     // A car whose file does not name its gearbox gets the manual synchromesh box, exactly as in the browser build (web/wasm/bridge.cpp
@@ -580,6 +581,9 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     Cmd.settings.carbon_body_panels = bCarbonBodyPanels;
     Cmd.settings.roll_cage = bRollCage;
     Cmd.settings.race_suspension = bRaceSuspension;
+    Cmd.settings.brake_bias_offset = FMath::Clamp(BrakeBiasOffset, -0.20f, 0.20f);
+    Cmd.settings.brake_migration_override = (BrakeMigrationOverride >= -0.5f) ? static_cast<double>(BrakeMigrationOverride) : -999.0;
+    Cmd.settings.hybrid_deploy_mode = FMath::Clamp(HybridDeployMode, 0.0f, 1.0f);
     UOpenGridWeatherSubsystem* WeatherSub = (bAutoSyncWorldWeather && GetWorld())
         ? GetWorld()->GetSubsystem<UOpenGridWeatherSubsystem>() : nullptr;
     if (WeatherSub)
@@ -817,6 +821,12 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
     bTorqueConverterLocked = Out.tc_lockup_engaged;
     AirDensityKgPerM3 = static_cast<float>(Out.air_density_kg_m3);
     BrakeVaporLockSponge = static_cast<float>(Out.brake_vapor_lock_sponge);
+    EffectiveBrakeBiasFront = static_cast<float>(Out.effective_brake_bias_front);
+    HybridSoc = static_cast<float>(Out.hybrid_soc);
+    HybridDeployKw = static_cast<float>(Out.hybrid_deploy_kw);
+    HybridRegenKw = static_cast<float>(Out.hybrid_regen_kw);
+    bHybridBbwActive = Out.hybrid_bbw_active;
+    FrontAdhesionRatio = static_cast<float>(Out.front_adhesion_ratio);
 
     // Interpolate wheel poses in body-local space between PrevRecord_ and LastRecord_ and transform by the live
     // game-thread RenderChassis so wheels in UE 5.8 never lag the interpolated chassis by one step.
@@ -875,6 +885,8 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
         Dst.SidewallDamage = WS.sidewall_damage;
         Dst.RimStrikeForceN = WS.rim_strike_force_n;
         Dst.CarcassHysteresisW = WS.carcass_hysteresis_w;
+        Dst.AdhesionRatio = WS.adhesion_ratio;
+        Dst.PneumaticTrailCm = WS.pneumatic_trail_cm;
 
         WheelCentresWorld[w] = Dst.WorldCenterCm;
         WheelSteerRad[w] = Dst.SteerAngleRad;

@@ -9,7 +9,23 @@ namespace rs {
  * Cold pads bite ~15 % less; 300-650 C is the plateau; past ~700 C the resin gasses out and the pads fade, slowly at
  * first (0.95 at 750 C, 0.85 at 850 C, 0.6 at 1050 C). Brake torque at full pedal = brake_torque_total * this.
  */
-double brake_pad_mu(double t) {
+double brake_pad_mu(double t, BrakeDiscType type) {
+    if (type == BrakeDiscType::CarbonCarbon) {
+        // LMU Hypercar / LMP2 / F1 carbon-carbon brakes: glazed low cold bite (0.58), steep non-linear mid-stop bite
+        // surge between 300-600 C (peaks at 1.04!), stays strong to 950 C before oxidation fade.
+        static const double TC[] = {0, 100, 200, 350, 500, 720, 900, 1050, 1150};
+        static const double MC[] = {0.56, 0.62, 0.72, 0.94, 1.04, 1.04, 0.96, 0.80, 0.65};
+        if (t <= TC[0]) return MC[0];
+        for (int i = 1; i < 9; ++i) if (t <= TC[i]) return MC[i - 1] + (MC[i] - MC[i - 1]) * (t - TC[i - 1]) / (TC[i] - TC[i - 1]);
+        return MC[8];
+    }
+    if (type == BrakeDiscType::CarbonCeramic) {
+        static const double TM[] = {0, 100, 200, 300, 780, 900, 1050, 1150};
+        static const double MM[] = {0.82, 0.92, 0.99, 1.00, 1.00, 0.94, 0.80, 0.68};
+        if (t <= TM[0]) return MM[0];
+        for (int i = 1; i < 8; ++i) if (t <= TM[i]) return MM[i - 1] + (MM[i] - MM[i - 1]) * (t - TM[i - 1]) / (TM[i] - TM[i - 1]);
+        return MM[7];
+    }
     static const double T[] = {0, 100, 200, 300, 650, 750, 850, 950, 1050, 1100};
     static const double M[] = {0.86, 0.95, 0.99, 1.0, 1.0, 0.95, 0.85, 0.72, 0.60, 0.55};
     if (t <= T[0]) return M[0];
@@ -824,9 +840,29 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             }
             const double v = std::abs(comp_rate[w]), knee = ax.damper_knee_mps;
             f += sign(comp_rate[w]) * c * (v <= knee ? v : knee + ax.damper_high_speed_ratio * (v - knee));
+            if (ax.damper_hysteresis_n > 0.0) {
+                f += ax.damper_hysteresis_n * std::tanh(comp_rate[w] / 0.015);
+            }
         }
         int other = w ^ 1;                              // FL<->FR, RL<->RR
         double other_comp = touching[other] ? comp[other] : 0.0;
+        // ---- Third / Heave Spring + Heave Damper (GT3 / Hypercar aero platform control decoupled from roll/kerbs!)
+        // Acts strictly on symmetric axle heave: dz_heave = 0.5 * (dz_L + dz_R). In pure roll (dz_L = -dz_R),
+        // dz_heave == 0 so corner roll and single-wheel kerb compliance remain supple while high-speed downforce stays flat!
+        if (ax.heave_spring_rate > 0.0 || ax.heave_damper_bump > 0.0 || ax.heave_damper_rebound > 0.0) {
+            const double dz_self = comp[w] - cfg_.wheels[w].static_compression;
+            const double dz_other = touching[other] ? (comp[other] - cfg_.wheels[other].static_compression) : 0.0;
+            const double dz_heave = 0.5 * (dz_self + dz_other);
+            const double v_heave = 0.5 * (comp_rate[w] + (touching[other] ? comp_rate[other] : 0.0));
+            double f_heave = 0.0;
+            if (ax.heave_spring_rate > 0.0 && dz_heave > ax.heave_gap_m) {
+                f_heave += ax.heave_spring_rate * (dz_heave - ax.heave_gap_m);
+            }
+            const double c_heave = (v_heave >= 0.0 ? ax.heave_damper_bump : ax.heave_damper_rebound)
+                                 * 0.5 * (damage_.damper_scale[w] + damage_.damper_scale[other]);
+            f_heave += c_heave * v_heave;
+            f += 0.5 * f_heave;
+        }
         double arb_eff = 1.0;
         if (chassis_dyn_.chassis_flex_enabled) {
             // Finite chassis torsional stiffness (N m/deg) softened by permanent crash frame twist
@@ -1117,7 +1153,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     // for any step size).
     const int n_sub = std::max(1, (int)std::ceil(dt / max_substep - 1e-9));
     const double h = dt / n_sub;
-    std::array<double, 4> fx_sum{}, fy_sum{}, mx_sum{}, mz_sum{}, kerb_ratio_sum{};
+    std::array<double, 4> fx_sum{}, fy_sum{}, mx_sum{}, mz_sum{}, kerb_ratio_sum{}, adhesion_sum{}, trail_sum{};
     DrivetrainInput din{input_.throttle, input_.clutch, input_.brake, input_.handbrake, input_.gear,
                         damage_.engine_power};
     din.brake_power_scale = damage_.brakes;
@@ -1137,6 +1173,9 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     din.humidity_0_to_1 = atmosphere_.humidity_0_to_1;
     din.wake_cooling_scale = clamp(aero_wake_.cooling_airflow_scale, 0.55, 1.0);
     din.wake_hot_air_c = std::max(0.0, aero_wake_.hot_air_delta_c);
+    din.brake_bias_offset = chassis_dyn_.brake_bias_offset;
+    din.brake_migration_override = chassis_dyn_.brake_migration_override;
+    din.hybrid_deploy_mode = chassis_dyn_.hybrid_deploy_mode;
     // ---- Transmission-specific clutch, shift-interrupt & auto-blip orchestration
     // Every gearbox type behaves like its real-world mechanical counterpart:
     //   * AutomaticTorqueConverter: fluid coupling + TCC lock-up (no clutch pedal management)
@@ -1354,7 +1393,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     last_gear_ = input_.gear;
     const double throttle_after_shift = din.throttle;
     if (!disc_init_) { disc_temp_.fill(cfg_.brake_thermal.start_temp_c); disc_init_ = true; }
-    for (int w = 0; w < 4; ++w) din.pad_mu[w] = brake_pad_mu(disc_temp_[w]);
+    for (int w = 0; w < 4; ++w) din.pad_mu[w] = brake_pad_mu(disc_temp_[w], cfg_.brake_thermal.disc_type);
     bool missed_this_tick = false;
     double max_clunk_this_tick = 0.0;
     for (int step = 0; step < n_sub; ++step) {
@@ -1407,6 +1446,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             mx_sum[w] += f.mx;
             mz_sum[w] += f.mz;
             kerb_ratio_sum[w] += f.kerb_load_ratio;
+            adhesion_sum[w] += f.adhesion_ratio;
+            trail_sum[w] += f.pneumatic_trail;
             double slip_power = std::abs(f.fx * v_sx) + std::abs(f.fy * k.vy);
             wheel_angle_[w] += drivetrain_.wheel_omega[w] * h;
             if (tire_zones_enabled) {
@@ -1497,9 +1538,13 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const double v_car = length(s.velocity);
         const double wake_brake_cool = clamp(aero_wake_.cooling_airflow_scale, 0.55, 1.0);
         const double wake_brake_hot_c = std::max(0.0, aero_wake_.hot_air_delta_c);
+        const double disc_cp = (bt.disc_type == BrakeDiscType::CarbonCarbon) ? 710.0
+                             : (bt.disc_type == BrakeDiscType::CarbonCeramic ? 620.0 : 460.0);
+        const double disc_emissivity = (bt.disc_type == BrakeDiscType::CarbonCarbon) ? 0.82
+                                     : (bt.disc_type == BrakeDiscType::CarbonCeramic ? 0.72 : 0.55);
         for (int w = 0; w < 4; ++w) {
             const bool front = w < 2;
-            const double cap = (front ? bt.disc_mass_front : bt.disc_mass_rear) * 460.0;
+            const double cap = (front ? bt.disc_mass_front : bt.disc_mass_rear) * disc_cp;
             const double area = front ? bt.disc_area_front : bt.disc_area_rear;
             const double amb_brake_c = (atmosphere_.enabled ? atmosphere_.ambient_air_c : 25.0) + wake_brake_hot_c;
             const double tk = disc_temp_[w] + 273.15, ta = amb_brake_c + 273.15;
@@ -1527,10 +1572,10 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
                                         : 0.0;
             const double cool = (bt.cooling_base + bt.cooling_per_mps * v_car * wake_brake_cool) * (disc_temp_[w] - amb_brake_c)
                               + q_spray_quench
-                              + 0.55 * 5.670e-8 * area * (tk * tk * tk * tk - ta * ta * ta * ta);
+                              + disc_emissivity * 5.670e-8 * area * (tk * tk * tk * tk - ta * ta * ta * ta);
             disc_temp_[w] = clamp(disc_temp_[w] + h * (heat - cool) / cap, -20.0, 1100.0);
             const double wet_bite_scale = 1.0 - 0.34 * brake_water_film_[w];
-            din.pad_mu[w] = brake_pad_mu(disc_temp_[w]) * wet_bite_scale;
+            din.pad_mu[w] = brake_pad_mu(disc_temp_[w], bt.disc_type) * wet_bite_scale;
             // Caliper DOT 4 brake fluid heat soak from hot rotor through pad + convective airflow cooling
             const double fluid_amb_c = (atmosphere_.enabled ? (atmosphere_.ambient_air_c + 15.0) : 40.0) + wake_brake_hot_c;
             const double d_fluid = 0.025 * std::max(0.0, disc_temp_[w] - fluid_temp_[w])
@@ -1564,23 +1609,16 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         wo.slip_angle = std::atan(tan_alpha_[w]);
         wo.condition = tire_condition_[w];
         wo.brake_temp_c = disc_temp_[w];
-        wo.brake_mu = brake_pad_mu(disc_temp_[w]) * (1.0 - 0.34 * brake_water_film_[w]);
+        wo.brake_mu = brake_pad_mu(disc_temp_[w], cfg_.brake_thermal.disc_type) * (1.0 - 0.34 * brake_water_film_[w]);
         wo.brake_fluid_temp_c = fluid_temp_[w];
         wo.brake_pad_wear = pad_wear_[w];
         wo.brake_water_film = brake_water_film_[w];
+        wo.adhesion_ratio = touching[w] ? clamp(adhesion_sum[w] / n_sub, 0.0, 1.0) : 1.0;
+        wo.pneumatic_trail_m = touching[w] ? (trail_sum[w] / n_sub) : 0.0;
         if (!touching[w]) continue;
         const Kin& k = kin[w];
         double fx = fx_sum[w] / n_sub, fy = fy_sum[w] / n_sub, mx = mx_sum[w] / n_sub, mz = mz_sum[w] / n_sub;
         prev_fx_[w] = fx;
-        if (w < 2 && cfg_.axle(w).max_steer_deg > 0) {
-            // Rack torque about the steering axis: the tyre's aligning moment plus the lateral force acting on the
-            // kinematic caster trail + speed-synchronous flat-spot FFB thump when a front tyre is flat-spotted.
-            const double trail = wheel_kin[w].caster_trail_m + tp.radius * std::tan(damage_.caster[w]);
-            const double flat_thump = tire_zones_enabled
-                                    ? tire_condition_[w].flat_spot_ffb_torque_nm(wheel_angle_[w], k.load, std::hypot(k.vx, k.vy))
-                                    : 0.0;
-            out.steer_torque += (mz - fy * trail) * k.ffb_hydro_scale + flat_thump;
-        }
         // Low-speed damping (below ~2 m/s): the relaxation-length model acts like an undamped
         // spring at standstill; real tyres have internal damping. Blends out with speed.
         // Detached wheels have NO tyre contact patch, so never let spinning axle stubs push the car at low speed!
@@ -1651,15 +1689,41 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         // longitudinal drag force F_splash = 0.5 * rho_water * Cd * width * h_excess * v^2.
         // Hitting a puddle with only right-side wheels creates an authentic asymmetric yaw tug + steering jerk!
         const double w_depth_mm = std::max(contacts[w].water_depth_mm, road_water_mm);
+        double puddle_drag_fx = 0.0;
         if (w_depth_mm > 1.2 && std::abs(k.vx) > 2.0) {
             const double h_m = (w_depth_mm - 1.2) * 0.001;
             const double f_puddle = 0.5 * 1000.0 * 0.55 * tp.section_width_m * h_m * k.vx * k.vx;
-            const double drag_fx = -sign(k.vx) * std::min(f_puddle, 0.65 * std::max(susp_force[w], 1500.0));
-            fx += drag_fx;
-            if (w < 2 && cfg_.axle(w).max_steer_deg > 0) {
-                const double scrub = std::abs(wheel_kin[w].scrub_radius_m) > 1e-4 ? wheel_kin[w].scrub_radius_m : 0.018;
-                const double side_sign = (w == FL) ? 1.0 : -1.0;
-                out.steer_torque += side_sign * drag_fx * scrub;
+            puddle_drag_fx = -sign(k.vx) * std::min(f_puddle, 0.65 * std::max(susp_force[w], 1500.0));
+            fx += puddle_drag_fx;
+        }
+        // ---- LMU-Grade Full 3D Kingpin Steering-Axis FFB Wrench (computed after puddle drag so ALL Fx terms unify!)
+        if (w < 2 && cfg_.axle(w).max_steer_deg > 0) {
+            const double trail = wheel_kin[w].caster_trail_m + tp.radius * std::tan(damage_.caster[w]);
+            const double flat_thump = tire_zones_enabled
+                                    ? tire_condition_[w].flat_spot_ffb_torque_nm(wheel_angle_[w], k.load, std::hypot(k.vx, k.vy))
+                                    : 0.0;
+            const double side_sign = (w == FL) ? 1.0 : -1.0; // +1 left wheel, -1 right wheel
+            const double scrub = std::abs(wheel_kin[w].scrub_radius_m) > 1e-4 ? wheel_kin[w].scrub_radius_m : 0.018;
+            if (chassis_dyn_.kingpin_3d_ffb_enabled) {
+                // Full 3D kingpin projection tau_kp = ((r_cp x F_tyre) + M_tyre) . a_kp + KPI/caster Fz jacking:
+                //   - Mz * cos(caster)*cos(kpi) - Fy * trail * cos(kpi): pneumatic + mechanical caster trail
+                //   - -side_sign * Fx * scrub * cos(caster): braking lockup pull, kerb rip, FWD/AWD torque steer & puddle tug!
+                //   - -Mx * sin(caster): overturning moment camber kick over kerbs & loaded outer tyre
+                //   - -Fz * |scrub| * sin(kpi) * sin(steer): KPI jacking self-centering (feels alive over crests & low speed!)
+                const double caster = wheel_kin[w].caster_rad + damage_.caster[w];
+                const double kpi = wheel_kin[w].kpi_rad;
+                const double cos_c = std::cos(caster), sin_c = std::sin(caster);
+                const double cos_k = std::cos(kpi), sin_k = std::sin(kpi);
+                const double tau_align = (mz * cos_c * cos_k - fy * trail * cos_k) * k.ffb_hydro_scale;
+                const double tau_scrub_fx = -side_sign * fx * scrub * cos_c;
+                const double tau_mx = -mx * sin_c * 0.65;
+                // Milliken RCVD Ch. 17 KPI jacking torque: steering lifts the spindle by r_offset_wc * sin(kpi) * (1 - cos(steer))
+                const double r_kp_wc = std::abs(scrub) + tp.radius * std::abs(sin_k);
+                const double tau_kpi_jack = -k.load * r_kp_wc * sin_k * std::sin(wo.steer_angle) * 0.85;
+                out.steer_torque += tau_align + tau_scrub_fx + tau_mx + tau_kpi_jack + flat_thump;
+            } else {
+                out.steer_torque += (mz - fy * trail) * k.ffb_hydro_scale + flat_thump
+                                  - side_sign * puddle_drag_fx * scrub;
             }
         }
         Vec3 f_susp = up * (susp_force[w] + 0.5 * axle_jack_heave[a]);
@@ -1705,11 +1769,22 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     const double active_rear_down_mult = out.drs_active ? kDrsRearDownMult : (out.airbrake_active ? kAirbrakeRearDownMult : 1.0);
 
     const double sin_beta = std::sin(clamp(aero_beta, -1.2, 1.2));
-    const double yaw_drag_mult = aero_wake_.yaw_aero_enabled ? (1.0 + 0.35 * sin_beta * sin_beta) : 1.0;
+    const double steer_avg_aero = 0.5 * (out.wheels[FL].steer_angle + out.wheels[FR].steer_angle);
+    const double steer_sq = steer_avg_aero * steer_avg_aero;
+    const double yaw_drag_mult = aero_wake_.yaw_aero_enabled ? (1.0 + 0.35 * sin_beta * sin_beta + a.steer_drag_gain * steer_sq) : 1.0;
     const double yaw_rear_down_mult = aero_wake_.yaw_aero_enabled ? (1.0 - 0.30 * sin_beta * sin_beta) : 1.0;
+    const double steer_df_scale = aero_wake_.yaw_aero_enabled ? clamp(1.0 - a.steer_downforce_loss * steer_sq, 0.85, 1.0) : 1.0;
     const double eff_drag_scale = clamp(aero_wake_.drag_scale, 0.55, 1.25) * yaw_drag_mult * active_drag_mult;
     double eff_front_down_scale = clamp(aero_wake_.dirty_air_front_downforce_scale, 0.50, 1.10);
-    const double eff_rear_down_scale = clamp(aero_wake_.dirty_air_rear_downforce_scale, 0.65, 1.10);
+    // Travelling dirty-air wave advection lag: front wing encounters wake changes at t=0, rear wing L/v (~40-60 ms) later!
+    const double raw_rear_dirty = clamp(aero_wake_.dirty_air_rear_downforce_scale, 0.65, 1.10);
+    if (aero_wake_.yaw_aero_enabled && v > 10.0 && dt > 0.0) {
+        const double tau_rear = clamp(cfg_.wheelbase / std::max(v, 15.0), 0.02, 0.18);
+        delayed_rear_dirty_air_ += (raw_rear_dirty - delayed_rear_dirty_air_) * clamp(dt / tau_rear, 0.0, 1.0);
+    } else {
+        delayed_rear_dirty_air_ = raw_rear_dirty;
+    }
+    const double eff_rear_down_scale = delayed_rear_dirty_air_;
 
     // Thermal wake slightly reduces local intake/flow air density via ideal-gas T_amb / (T_amb + dT_wake)
     const double wake_hot_c = std::max(0.0, aero_wake_.hot_air_delta_c);
@@ -1811,8 +1886,14 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     }
 
     const double q_dyn = 0.5 * rho_air * vx_body * vx_body;
-    const double f_down_front = q_dyn * cl_front_area * eff_front_down_scale * roll_seal * heave_f_scale * spin_df_mult - 0.5 * roof_lift_n;
-    const double f_down_rear = q_dyn * cl_rear_area * eff_rear_down_scale * yaw_rear_down_mult * active_rear_down_mult * diffuser_scale * roll_seal * heave_r_scale * spin_df_mult - 0.5 * roof_lift_n;
+    // Front wheel-wake steering shift: turning the front tyres shifts aero balance slightly rearward mid-corner
+    const double steer_bal_shift = aero_wake_.yaw_aero_enabled
+                                 ? clamp(a.steer_balance_shift * std::abs(steer_avg_aero), -0.04, 0.04) : 0.0;
+    const double cl_tot_raw = cl_front_area + cl_rear_area;
+    const double cl_f_steered = std::max(0.0, cl_front_area + cl_tot_raw * steer_bal_shift) * steer_df_scale;
+    const double cl_r_steered = std::max(0.0, cl_rear_area - cl_tot_raw * steer_bal_shift) * steer_df_scale;
+    const double f_down_front = q_dyn * cl_f_steered * eff_front_down_scale * roll_seal * heave_f_scale * spin_df_mult - 0.5 * roof_lift_n;
+    const double f_down_rear = q_dyn * cl_r_steered * eff_rear_down_scale * yaw_rear_down_mult * active_rear_down_mult * diffuser_scale * roll_seal * heave_r_scale * spin_df_mult - 0.5 * roof_lift_n;
     const double f_down_tot = f_down_front + f_down_rear;
     out.aero_balance_front = (f_down_tot > 1e-6) ? clamp(f_down_front / f_down_tot, 0.0, 1.0) : a.front_balance;
     Vec3 p_front = s.position + s.orientation.rotate({cfg_.dist_cg_front, 0, 0});
@@ -1930,6 +2011,12 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     out.aero_downforce_rear_n = f_down_rear;
     out.aero_side_force_n = total_aero_side_n;
     out.aero_yaw_moment_nm = total_aero_yaw_nm;
+    out.effective_brake_bias_front = drivetrain_.systems.effective_brake_bias_front;
+    out.hybrid_soc = drivetrain_.systems.hybrid_soc;
+    out.hybrid_deploy_kw = drivetrain_.systems.hybrid_deploy_kw;
+    out.hybrid_regen_kw = drivetrain_.systems.hybrid_regen_kw;
+    out.hybrid_bbw_active = drivetrain_.systems.hybrid_bbw_active;
+    out.front_adhesion_ratio = std::min(out.wheels[FL].adhesion_ratio, out.wheels[FR].adhesion_ratio);
     return out;
 }
 

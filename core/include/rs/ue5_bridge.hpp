@@ -499,6 +499,8 @@ struct UeWheelState {
     float sidewall_damage = 0.0f;
     float rim_strike_force_n = 0.0f;
     float carcass_hysteresis_w = 0.0f;
+    float adhesion_ratio = 1.0f;
+    float pneumatic_trail_cm = 0.0f;
 };
 
 struct UeCrushMorphWeights {
@@ -584,6 +586,8 @@ inline UeWheelState make_ue_wheel_state(const WheelOutput& w, double tire_radius
     st.sidewall_damage = static_cast<float>(w.sidewall_damage);
     st.rim_strike_force_n = static_cast<float>(w.rim_strike_force_n);
     st.carcass_hysteresis_w = static_cast<float>(w.carcass_hysteresis_w);
+    st.adhesion_ratio = static_cast<float>(w.adhesion_ratio);
+    st.pneumatic_trail_cm = static_cast<float>(w.pneumatic_trail_m * kMetersToCm);
     return st;
 }
 

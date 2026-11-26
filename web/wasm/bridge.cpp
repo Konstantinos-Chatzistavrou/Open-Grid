@@ -73,7 +73,6 @@ struct Car {
     std::unique_ptr<rs::DynoRoad> dyno_road;     // garage dyno (rs/dyno.hpp): set between rs_dyno_begin / rs_dyno_end
     std::unique_ptr<rs::DynoMeter> dyno_meter;
     rs::InstrumentCluster cluster;               // dashboard needles (rs/cluster.hpp)
-    rs::StreetSurfaceEvolution street_evo{4000.0, 200, 6.75, 0.02};
     rs::StreetMicroGround street_micro{};
     bool street_evo_enabled = true;
     bool street_micro_enabled = false;           // enabled on city streets via rs_set_street_surface (keeps flat dyno/FFB tests clean)
@@ -88,6 +87,8 @@ std::vector<std::unique_ptr<Car>> g_cars;
 std::string g_error;
 rs::WeatherSystem g_weather;
 bool g_weather_enabled = false;
+// Global shared RealRoad track evolution grid (LMU RealRoad style: every car lays down rubber & marbles on the same track!)
+rs::StreetSurfaceEvolution g_street_evo{4000.0, 200, 6.75, 0.02};
 
 }  // namespace
 
@@ -108,6 +109,7 @@ EMSCRIPTEN_KEEPALIVE int rs_create(const char* json) {
         c->vehicle->chassis_dynamics().brake_fluid_boil_enabled = true;
         c->vehicle->chassis_dynamics().bushing_compliance_enabled = true;
         c->vehicle->chassis_dynamics().progressive_bump_stops_enabled = true;
+        c->vehicle->chassis_dynamics().kingpin_3d_ffb_enabled = true;
         c->vehicle->engine_systems().torsional_compliance_enabled = true;
         c->vehicle->engine_systems().dog_box_flat_shift_cut = true;
         // Street/GT cars without an explicit dog_box/dct spec run the physical H-pattern synchromesh cone clutch.
@@ -412,7 +414,7 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     if (!c.dyno_road && c.street_evo_enabled) {
         c.weather_dt_accum += dt;
         if (++c.weather_tick_counter >= 20) {
-            c.street_evo.step_weather(c.rain_mm_per_hr, c.vehicle->atmosphere().ambient_air_c, c.weather_dt_accum);
+            g_street_evo.step_weather(c.rain_mm_per_hr, c.vehicle->atmosphere().ambient_air_c, c.weather_dt_accum);
             c.weather_dt_accum = 0.0;
             c.weather_tick_counter = 0;
         }
@@ -423,7 +425,7 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
         }
         for (int w = 0; w < 4; ++w) {
             if (!live_contacts[w].hit || live_contacts[w].surface != asphalt_idx) continue;
-            const rs::StreetSurfaceSample ss = c.street_evo.sample_world(live_contacts[w].point.x, live_contacts[w].point.y);
+            const rs::StreetSurfaceSample ss = g_street_evo.sample_world(live_contacts[w].point.x, live_contacts[w].point.y);
             live_contacts[w].surface_mu_mult = ss.effective_mu_mult;
             live_contacts[w].marble_density = ss.marbles_0_to_1;
             live_contacts[w].water_depth_mm = std::max(live_contacts[w].water_depth_mm, ss.water_mm);
@@ -450,7 +452,7 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
             const double slip_p = std::abs(c.out.wheels[w].fx * c.out.wheels[w].slip_ratio * std::max(v_car, 1.0))
                                 + std::abs(c.out.wheels[w].fy * std::sin(c.out.wheels[w].slip_angle) * std::max(v_car, 1.0));
             if (c.street_evo_enabled && live_contacts[w].surface == asphalt_idx) {
-                c.street_evo.deposit_wheel_world(live_contacts[w].point.x, live_contacts[w].point.y,
+                g_street_evo.deposit_wheel_world(live_contacts[w].point.x, live_contacts[w].point.y,
                                                  slip_p, v_car, c.out.wheels[w].load, dt);
             }
             if (g_weather_enabled) {

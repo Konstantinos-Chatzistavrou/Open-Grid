@@ -121,10 +121,13 @@ struct WheelOutput {
     double sidewall_damage = 0.0;    // 0..1 structural sidewall/bead damage from kerb rim strikes
     double rim_strike_force_n = 0.0; // N, rim-flange bottoming force during sharp kerb/pothole impacts
     double carcass_hysteresis_w = 0.0; // W, viscoelastic flexing power dissipated in the 24-node flexible carcass ring
+    double adhesion_ratio = 1.0;     // 0..1 brush contact-patch adhesion share (1 = stuck, drops < 0.7 before peak slip -> LMU scrub cue)
+    double pneumatic_trail_m = 0.0;  // m, instantaneous contact-patch pneumatic trail (collapses pre-peak before F_y saturation)
 };
 
 // Chassis torsional stiffness (frame twist between front & rear strut towers), Active Torque-Vectoring E-Diff (AYC),
-// Active Aerodynamics (DRS low-drag straight mode + 35-deg braking Airbrake), and DOT 4 Brake Fluid Vapor-Lock config.
+// Active Aerodynamics (DRS low-drag straight mode + 35-deg braking Airbrake), DOT 4 Brake Fluid Vapor-Lock,
+// LMU-grade 3D Kingpin Axis FFB Wrench, Cockpit Brake Bias/Migration & Hybrid ERS mode config.
 struct ChassisDynamicsConfig {
     bool chassis_flex_enabled = false;
     double torsional_stiffness_nm_per_deg = 22000.0; // stock street unibody ~22k N m/deg; Strut Bar + Roll Cage ~48k N m/deg
@@ -134,6 +137,10 @@ struct ChassisDynamicsConfig {
     bool brake_fluid_boil_enabled = false;           // DOT 4 caliper fluid boiling (> 260 C) causes vapor-lock spongy brake pressure loss
     bool bushing_compliance_enabled = false;         // Elastokinematic bushing compliance (toe/camber/recession under Fx/Fy)
     bool progressive_bump_stops_enabled = false;     // Smooth exponential polyurethane jounce packers (when axle uses linear default)
+    bool kingpin_3d_ffb_enabled = false;             // Full 3D kingpin wrench (Fx*scrub lockup/kerb/torque-steer + KPI Fz jacking + Mx)
+    double brake_bias_offset = 0.0;                  // Live cockpit brake bias trim (+front / -rear)
+    double brake_migration_override = -999.0;        // Live cockpit BMIG override (>= -0.5 overrides CarConfig::brake_migration_front)
+    double hybrid_deploy_mode = 1.0;                 // 0.0 = harvest only, 0.5 = balanced, 1.0 = attack/quali
 };
 
 // Nearby traffic / rival car snapshot for 3D multi-car slipstream, side-drafting, tandem push-draft & wake buffeting.
@@ -240,6 +247,13 @@ struct VehicleOutput {
     double tc_slip_ratio = 1.0;              // turbine / pump speed ratio SR (0 at stall .. 1.0 locked)
     double tc_torque_ratio = 1.0;            // hydraulic torque multiplication TR(SR)
     bool tc_lockup_engaged = false;          // true when TCC mechanical lock-up clutch is locked
+    // LMU-grade brake migration, hybrid ERS / MGU-K / BBW & front tyre scrub telemetry
+    double effective_brake_bias_front = 0.62;// live front brake bias after cockpit offset + dynamic BMIG
+    double hybrid_soc = 0.80;                // 0..1 HV battery state of charge
+    double hybrid_deploy_kw = 0.0;           // live MGU-K electric deployment power (kW)
+    double hybrid_regen_kw = 0.0;            // live MGU-K regenerative braking harvest (kW)
+    bool hybrid_bbw_active = false;          // true when Brake-by-Wire is actively blending regen & hydraulic brakes
+    double front_adhesion_ratio = 1.0;       // min(FL, FR) brush adhesion ratio (1 = stuck .. 0 = full slide; pre-squeal scrub audio)
 };
 
 // Physical effect multipliers (filled from DamageModel each tick when damage is enabled).
@@ -269,7 +283,7 @@ struct DamageState {
 };
 
 /** Brake pad friction factor vs disc temperature (C), 1 = the working plateau (curve in vehicle.cpp). */
-double brake_pad_mu(double disc_c);
+double brake_pad_mu(double disc_c, BrakeDiscType type = BrakeDiscType::CastIron);
 
 class Vehicle {
 public:
@@ -386,6 +400,7 @@ private:
     std::array<double, 4> unsprung_z_{};    // 2-DOF unsprung wheel vertical offset relative to static equilibrium, m
     std::array<double, 4> unsprung_vz_{};   // 2-DOF unsprung wheel vertical velocity (wheel hop), m/s
     AeroWakeState aero_wake_{};
+    double delayed_rear_dirty_air_ = 1.0;   // travelling dirty-air wave advection lag (front wing sees wake L/v before rear wing)
     int last_gear_ = 1;                     // auto-clutch: detects gear changes
     double shift_timer_ = 0;                // auto-clutch / AMT: active declutch hold timer (s)
     double shift_release_timer_ = 0;        // auto-clutch / AMT: post-sync clutch release ramp (s)

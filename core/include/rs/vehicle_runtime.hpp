@@ -57,6 +57,10 @@ struct VehicleSettings {
     // Live multi-car 3D slipstream / side-draft / tandem push-draft / dirty-air wake (updated from game thread / UE5 world)
     bool has_aero_wake = false;
     AeroWakeState aero_wake{};
+    // Live cockpit brake bias / BMIG & hybrid ERS deploy mode
+    double brake_bias_offset = 0.0;
+    double brake_migration_override = -999.0;
+    double hybrid_deploy_mode = 1.0;
 };
 
 /** Game / render thread -> physics thread. Levels (axes, settings) replace the previous command's; edges add up. */
@@ -311,6 +315,9 @@ private:
             vehicle_->aero_wake() = s.aero_wake;
             vehicle_->aero_wake().yaw_aero_enabled = keep_yaw || s.aero_wake.yaw_aero_enabled;
         }
+        vehicle_->chassis_dynamics().brake_bias_offset = s.brake_bias_offset;
+        vehicle_->chassis_dynamics().brake_migration_override = s.brake_migration_override;
+        vehicle_->chassis_dynamics().hybrid_deploy_mode = s.hybrid_deploy_mode;
     }
 
     Vehicle* vehicle_;

@@ -973,19 +973,85 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         }
     }
 
+    // ---- Hybrid ERS / MGU-K electric deployment, Brake-by-Wire (BBW) regen & Dynamic Brake Migration (BMIG)
+    const double bmig = (in.brake_migration_override >= -0.5) ? in.brake_migration_override : cfg_.brake_migration_front;
+    const double bias = clamp(cfg_.brake_bias_front + in.brake_bias_offset - bmig * (1.0 - clamp(in.brake, 0.0, 1.0)), 0.35, 0.85);
+    systems.effective_brake_bias_front = bias;
+
+    std::array<double, 4> hybrid_drive_nm{};
+    std::array<double, 4> hybrid_regen_nm{};
+    systems.hybrid_deploy_kw = 0.0;
+    systems.hybrid_regen_kw = 0.0;
+    systems.hybrid_bbw_active = false;
+
+    const HybridParams& hy = cfg_.drivetrain.hybrid;
+    if (hy.enabled) {
+        const int w0 = hy.front_axle_motor ? FL : RL;
+        const int w1 = hy.front_axle_motor ? FR : RR;
+        const double w_ax = 0.5 * (wheel_omega[w0] + wheel_omega[w1]);
+        const double abs_w_ax = std::max(std::abs(w_ax), 1.0);
+        const double cap_j = std::max(hy.battery_capacity_mj * 1.0e6, 2.0e5);
+        // Thermal derating above 58 C (protects HV lithium cells during repeated hot laps)
+        const double batt_derate = systems.hybrid_battery_temp_c > 58.0
+                                 ? clamp(1.0 - (systems.hybrid_battery_temp_c - 58.0) / 28.0, 0.35, 1.0) : 1.0;
+
+        // 1. Electric motor deployment (e-AWD front motor or rear MGU-K)
+        const bool speed_ok = (!hy.front_axle_motor) || (in.airspeed_mps >= hy.front_deploy_min_speed_mps);
+        const double deploy_cmd = clamp(in.hybrid_deploy_mode, 0.0, 1.0) * clamp(in.throttle, 0.0, 1.0);
+        if (speed_ok && deploy_cmd > 0.05 && in.brake < 0.05 && systems.hybrid_soc > 0.02 && in.gear >= 2) {
+            const double p_max_w = hy.max_deploy_kw * 1000.0 * batt_derate * deploy_cmd;
+            const double t_ax = std::min(hy.max_torque_nm * deploy_cmd * batt_derate, p_max_w / abs_w_ax);
+            hybrid_drive_nm[w0] = 0.5 * t_ax;
+            hybrid_drive_nm[w1] = 0.5 * t_ax;
+            const double p_act_w = t_ax * std::max(0.0, w_ax);
+            systems.hybrid_deploy_kw = p_act_w * 0.001;
+            systems.hybrid_soc = clamp(systems.hybrid_soc - (p_act_w / 0.92) * h / cap_j, 0.0, 1.0);
+        }
+
+        // 2. MGU-K regenerative braking harvest & Brake-by-Wire hydraulic torque blending
+        if (in.brake > 0.03 && systems.hybrid_soc < 0.995 && w_ax > 2.5) {
+            const double p_reg_max_w = hy.max_regen_kw * 1000.0 * batt_derate * clamp(in.brake, 0.0, 1.0);
+            const double ax_share = hy.front_axle_motor ? bias : (1.0 - bias);
+            const double req_ax_brake_nm = in.brake * cfg_.brake_torque_total * ax_share * in.brake_power_scale;
+            // Respect per-wheel ABS pressure reduction so regen never locks the axle over bumps!
+            const double abs_min = std::min(in.brake_scale[w0], in.brake_scale[w1]);
+            const double t_reg_ax = std::min({hy.max_torque_nm * batt_derate, p_reg_max_w / abs_w_ax, req_ax_brake_nm * abs_min});
+            if (t_reg_ax > 1.0) {
+                hybrid_regen_nm[w0] = 0.5 * t_reg_ax;
+                hybrid_regen_nm[w1] = 0.5 * t_reg_ax;
+                const double p_harv_w = t_reg_ax * w_ax;
+                systems.hybrid_regen_kw = p_harv_w * 0.001;
+                systems.hybrid_soc = clamp(systems.hybrid_soc + (p_harv_w * 0.88) * h / cap_j, 0.0, 1.0);
+                systems.hybrid_bbw_active = hy.brake_by_wire;
+            }
+        }
+
+        // 3. HV battery pack thermal balance (I^2*R ohmic heating vs coolant loop)
+        const double batt_amb = in.atmosphere_enabled ? in.ambient_air_c : 25.0;
+        const double p_loss_kw = (systems.hybrid_deploy_kw + systems.hybrid_regen_kw) * 0.09;
+        const double d_tb = (p_loss_kw * 0.85 - (0.04 + 0.0012 * std::abs(in.airspeed_mps)) * (systems.hybrid_battery_temp_c - batt_amb)) * h;
+        systems.hybrid_battery_temp_c = clamp(systems.hybrid_battery_temp_c + d_tb, batt_amb, 90.0);
+    }
+
     // ---- wheels: I dw/dt = T_drive + T_tyre, then brakes/rolling resistance + damaged bearing drag
-    const double bias = cfg_.brake_bias_front;
     for (int w = 0; w < 4; ++w) {
         const double I = cfg_.tire(w).inertia;
-        const double eff_drive = in.wheel_drive_severed[w] ? 0.0 : drive[w];
+        const double eff_drive = in.wheel_drive_severed[w] ? 0.0 : (drive[w] + hybrid_drive_nm[w]);
         wheel_omega[w] += h * (eff_drive + tyre_torque[w]) / I;
         double t_brake = in.brake * cfg_.brake_torque_total * (w < 2 ? bias : 1 - bias) * 0.5 * in.brake_scale[w];
         // Line lock: a solenoid holds the front calipers at a set pressure (not modulated by ABS); the rears stay free.
         if (w < 2 && in.line_lock > 0) t_brake = std::max(t_brake, in.line_lock * cfg_.brake_torque_total * bias * 0.5);
         t_brake += in.handbrake * cfg_.axle(w).handbrake_torque + in.extra_brake[w];
         t_brake *= in.brake_power_scale * in.pad_mu[w];  // cooked brakes (damage) and pad temperature
-        brake_torque[w] = t_brake;
-        double dw = h * (t_brake + rolling_torque[w] + in.bearing_drag_nm[w]) / I;
+        // Brake-by-Wire (BBW): subtract MGU-K regen torque from hydraulic disc torque so total stopping torque stays constant
+        // (and hydraulic discs run noticeably cooler under regen!)
+        const double t_hyd = systems.hybrid_bbw_active ? std::max(0.0, t_brake - hybrid_regen_nm[w]) : t_brake;
+        // Wheel-lock rotational pad stiction hysteresis: once a wheel locks under firm braking without ABS, static pad
+        // friction is ~8% higher than kinetic friction so the driver must bleed pressure slightly to unlock the wheel.
+        const bool locked_stiction = (in.brake > 0.15 && in.brake_scale[w] > 0.98 && in.airspeed_mps > 5.0 && std::abs(wheel_omega[w]) < 2.2);
+        const double t_hyd_eff = locked_stiction ? (t_hyd * 1.08) : t_hyd;
+        brake_torque[w] = t_hyd_eff; // hydraulic caliper friction heats the rotor (MGU-K regen does not heat brake discs!)
+        double dw = h * (t_hyd_eff + hybrid_regen_nm[w] + rolling_torque[w] + in.bearing_drag_nm[w]) / I;
         wheel_omega[w] = std::abs(wheel_omega[w]) <= dw ? 0.0 : wheel_omega[w] - sign(wheel_omega[w]) * dw;
     }
 }

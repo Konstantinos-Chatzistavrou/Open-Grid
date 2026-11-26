@@ -32,6 +32,9 @@ struct DrivetrainInput {
     double altitude_m = 0.0;                         // elevation above sea level (m)
     double humidity_0_to_1 = 0.35;                   // relative humidity (0..1)
     bool atmosphere_enabled = false;                 // true: scale NA vs Turbo power, IAT & cooling by altitude/Celsius
+    double brake_bias_offset = 0.0;                  // live cockpit brake-bias adjustment (+ = more front, - = more rear)
+    double brake_migration_override = -999.0;        // >= -0.5 overrides CarConfig::brake_migration_front (BMIG)
+    double hybrid_deploy_mode = 1.0;                 // 0.0 = harvest only, 0.5 = balanced, 1.0 = attack/quali
 };
 
 // International Standard Atmosphere (ISA) barometric altitude, ambient air Celsius, asphalt track Celsius & humidity model.
@@ -144,6 +147,14 @@ struct EngineSystemState {
     double backlash_rad = 0.032;                   // +-1.8 deg gear/diff dog backlash deadzone
     double driveline_clunk_nm = 0.0;               // impulse torque spike when crossing backlash deadzone (UE5 MetaSounds)
     int last_backlash_side = 0;                    // -1 = coast face, 0 = in lash gap, +1 = drive face
+
+    // Hybrid ERS / MGU-K, Brake-by-Wire (BBW) & Dynamic Brake Migration (BMIG) live telemetry
+    double hybrid_soc = 0.80;                      // 0..1 HV battery state of charge
+    double hybrid_battery_temp_c = 32.0;           // C, HV battery thermal derating > 58 C
+    double hybrid_deploy_kw = 0.0;                 // live MGU-K electric motor deployment power (kW)
+    double hybrid_regen_kw = 0.0;                  // live MGU-K regenerative braking harvest power (kW)
+    bool hybrid_bbw_active = false;                // true when Brake-by-Wire is blending regen & hydraulic torque
+    double effective_brake_bias_front = 0.62;      // live front brake bias after cockpit offset + dynamic BMIG
 };
 
 class Drivetrain {
