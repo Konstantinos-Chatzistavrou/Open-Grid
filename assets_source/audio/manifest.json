@@ -8,7 +8,7 @@
   "channels": 1,
   "output_dir": "ue5/Import/Audio",
   "web_ogg_dir": "web/public/assets/audio",
-  "web_ogg_total_bytes": 788043,
+  "web_ogg_total_bytes": 688542,
   "stem_count": 51,
   "sources_used": [
     {
@@ -34,7 +34,7 @@
       "filename": "eng_flat6_1000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_flat6_1000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_flat6_1000.ogg",
-      "ogg_bytes": 23195,
+      "ogg_bytes": 12792,
       "category": "engine",
       "description": "1000 RPM OpenGrid engine-sim Porsche GT3 Flat-6 idle loop",
       "loop": true,
@@ -45,16 +45,16 @@
       "num_frames": 72000,
       "reference_rpm": 1000,
       "fundamental_hz": 50.0,
-      "rms_dbfs": -12.202,
-      "peak_linear": 0.91893,
-      "boundary_delta": 6.3e-05,
+      "rms_dbfs": -12.2,
+      "peak_linear": 0.83968,
+      "boundary_delta": 4.9e-05,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "flat6_na",
         "throttle": 0.08,
         "load": 0.1,
         "stage": "sport",
-        "loop_corr": 0.258
+        "loop_corr": 0.963
       }
     },
     {
@@ -62,7 +62,7 @@
       "filename": "eng_flat6_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_flat6_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_flat6_low.ogg",
-      "ogg_bytes": 19277,
+      "ogg_bytes": 12497,
       "category": "engine",
       "description": "2400 RPM OpenGrid engine-sim Porsche GT3 Flat-6 low-mid pull loop",
       "loop": true,
@@ -74,15 +74,15 @@
       "reference_rpm": 2400,
       "fundamental_hz": 120.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.69801,
-      "boundary_delta": 6e-05,
+      "peak_linear": 0.58655,
+      "boundary_delta": 0.001552,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "flat6_na",
         "throttle": 0.6,
         "load": 0.65,
         "stage": "race",
-        "loop_corr": 0.882
+        "loop_corr": 1.0
       }
     },
     {
@@ -90,7 +90,7 @@
       "filename": "eng_flat6_4000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_flat6_4000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_flat6_4000.ogg",
-      "ogg_bytes": 13930,
+      "ogg_bytes": 12486,
       "category": "engine",
       "description": "4800 RPM OpenGrid engine-sim Porsche GT3 Flat-6 titanium howl loop",
       "loop": true,
@@ -102,15 +102,15 @@
       "reference_rpm": 4800,
       "fundamental_hz": 240.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.5964,
-      "boundary_delta": 0.002142,
+      "peak_linear": 0.57977,
+      "boundary_delta": 0.0045,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "flat6_na",
         "throttle": 0.9,
         "load": 0.92,
         "stage": "race",
-        "loop_corr": 0.977
+        "loop_corr": 1.0
       }
     },
     {
@@ -118,7 +118,7 @@
       "filename": "eng_flat6_7800.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_flat6_7800.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_flat6_7800.ogg",
-      "ogg_bytes": 12855,
+      "ogg_bytes": 12453,
       "category": "engine",
       "description": "7800 RPM OpenGrid engine-sim Porsche GT3 Flat-6 redline scream loop",
       "loop": true,
@@ -130,8 +130,8 @@
       "reference_rpm": 7800,
       "fundamental_hz": 390.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.68446,
-      "boundary_delta": 8.3e-05,
+      "peak_linear": 0.57137,
+      "boundary_delta": 0.009896,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "flat6_na",
@@ -146,7 +146,7 @@
       "filename": "eng_flat6_decel.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_flat6_decel.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_flat6_decel.ogg",
-      "ogg_bytes": 12360,
+      "ogg_bytes": 11732,
       "category": "engine",
       "description": "4800 RPM OpenGrid engine-sim Porsche GT3 Flat-6 off-throttle decel loop",
       "loop": true,
@@ -158,15 +158,15 @@
       "reference_rpm": 4800,
       "fundamental_hz": 240.0,
       "rms_dbfs": -14.0,
-      "peak_linear": 0.53881,
-      "boundary_delta": 0.000883,
+      "peak_linear": 0.48398,
+      "boundary_delta": 0.005697,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "flat6_na",
         "throttle": 0.04,
         "load": 0.0,
         "stage": "race",
-        "loop_corr": 0.966
+        "loop_corr": 1.0
       }
     },
     {
@@ -174,7 +174,7 @@
       "filename": "eng_v12_1000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v12_1000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v12_1000.ogg",
-      "ogg_bytes": 12457,
+      "ogg_bytes": 11100,
       "category": "engine",
       "description": "1000 RPM OpenGrid engine-sim Ferrari V12 idle loop",
       "loop": true,
@@ -186,7 +186,7 @@
       "reference_rpm": 1000,
       "fundamental_hz": 100.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.74994,
+      "peak_linear": 0.73702,
       "boundary_delta": 3e-06,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
@@ -194,7 +194,7 @@
         "throttle": 0.08,
         "load": 0.1,
         "stage": "sport",
-        "loop_corr": 0.997
+        "loop_corr": 1.0
       }
     },
     {
@@ -202,7 +202,7 @@
       "filename": "eng_v12_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v12_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v12_low.ogg",
-      "ogg_bytes": 11995,
+      "ogg_bytes": 10762,
       "category": "engine",
       "description": "2500 RPM OpenGrid engine-sim Ferrari V12 low-mid pull loop",
       "loop": true,
@@ -214,8 +214,8 @@
       "reference_rpm": 2500,
       "fundamental_hz": 250.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.57614,
-      "boundary_delta": 0.000759,
+      "peak_linear": 0.68813,
+      "boundary_delta": 0.00181,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v12_na",
@@ -230,7 +230,7 @@
       "filename": "eng_v12_5000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v12_5000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v12_5000.ogg",
-      "ogg_bytes": 21946,
+      "ogg_bytes": 13604,
       "category": "engine",
       "description": "5000 RPM OpenGrid engine-sim Ferrari V12 F1 soprano howl loop",
       "loop": true,
@@ -242,15 +242,15 @@
       "reference_rpm": 5000,
       "fundamental_hz": 500.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.79006,
-      "boundary_delta": 0.000245,
+      "peak_linear": 0.78875,
+      "boundary_delta": 0.000108,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v12_na",
         "throttle": 0.9,
         "load": 0.92,
         "stage": "race",
-        "loop_corr": 0.997
+        "loop_corr": 1.0
       }
     },
     {
@@ -258,7 +258,7 @@
       "filename": "eng_v12_8000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v12_8000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v12_8000.ogg",
-      "ogg_bytes": 16782,
+      "ogg_bytes": 13556,
       "category": "engine",
       "description": "8000 RPM OpenGrid engine-sim Ferrari V12 redline scream loop",
       "loop": true,
@@ -270,8 +270,8 @@
       "reference_rpm": 8000,
       "fundamental_hz": 800.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.50098,
-      "boundary_delta": 0.000501,
+      "peak_linear": 0.50243,
+      "boundary_delta": 0.011135,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v12_na",
@@ -286,7 +286,7 @@
       "filename": "eng_v12_decel.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v12_decel.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v12_decel.ogg",
-      "ogg_bytes": 15106,
+      "ogg_bytes": 13002,
       "category": "engine",
       "description": "5200 RPM OpenGrid engine-sim Ferrari V12 off-throttle decel loop",
       "loop": true,
@@ -298,15 +298,15 @@
       "reference_rpm": 5200,
       "fundamental_hz": 520.0,
       "rms_dbfs": -14.0,
-      "peak_linear": 0.6811,
-      "boundary_delta": 0.000211,
+      "peak_linear": 0.59562,
+      "boundary_delta": 0.000141,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v12_na",
         "throttle": 0.04,
         "load": 0.0,
         "stage": "race",
-        "loop_corr": 0.987
+        "loop_corr": 0.998
       }
     },
     {
@@ -314,7 +314,7 @@
       "filename": "eng_v10_1000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v10_1000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v10_1000.ogg",
-      "ogg_bytes": 11639,
+      "ogg_bytes": 10778,
       "category": "engine",
       "description": "1000 RPM OpenGrid engine-sim V10 idle loop",
       "loop": true,
@@ -326,15 +326,15 @@
       "reference_rpm": 1000,
       "fundamental_hz": 83.3,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.80744,
-      "boundary_delta": 0.000959,
+      "peak_linear": 0.74597,
+      "boundary_delta": 0.001093,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v10_screamer",
         "throttle": 0.08,
         "load": 0.1,
         "stage": "sport",
-        "loop_corr": 0.957
+        "loop_corr": 1.0
       }
     },
     {
@@ -342,7 +342,7 @@
       "filename": "eng_v10_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v10_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v10_low.ogg",
-      "ogg_bytes": 12286,
+      "ogg_bytes": 10937,
       "category": "engine",
       "description": "2400 RPM OpenGrid engine-sim V10 low-mid pull loop",
       "loop": true,
@@ -354,15 +354,15 @@
       "reference_rpm": 2400,
       "fundamental_hz": 200.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.56182,
-      "boundary_delta": 0.002935,
+      "peak_linear": 0.52733,
+      "boundary_delta": 0.005499,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v10_screamer",
         "throttle": 0.6,
         "load": 0.65,
         "stage": "race",
-        "loop_corr": 0.992
+        "loop_corr": 1.0
       }
     },
     {
@@ -370,7 +370,7 @@
       "filename": "eng_v10_5500.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v10_5500.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v10_5500.ogg",
-      "ogg_bytes": 13096,
+      "ogg_bytes": 12370,
       "category": "engine",
       "description": "5200 RPM OpenGrid engine-sim V10 angel howl loop",
       "loop": true,
@@ -382,15 +382,15 @@
       "reference_rpm": 5200,
       "fundamental_hz": 433.3,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.63814,
-      "boundary_delta": 6.9e-05,
+      "peak_linear": 0.63119,
+      "boundary_delta": 1.4e-05,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v10_screamer",
         "throttle": 0.9,
         "load": 0.92,
         "stage": "race",
-        "loop_corr": 0.979
+        "loop_corr": 0.996
       }
     },
     {
@@ -398,7 +398,7 @@
       "filename": "eng_v10_7800.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v10_7800.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v10_7800.ogg",
-      "ogg_bytes": 14011,
+      "ogg_bytes": 12895,
       "category": "engine",
       "description": "7800 RPM OpenGrid engine-sim V10 redline scream loop",
       "loop": true,
@@ -410,15 +410,15 @@
       "reference_rpm": 7800,
       "fundamental_hz": 650.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.84284,
-      "boundary_delta": 0.000124,
+      "peak_linear": 0.7474,
+      "boundary_delta": 0.000508,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v10_screamer",
         "throttle": 1.0,
         "load": 1.0,
         "stage": "race",
-        "loop_corr": 0.995
+        "loop_corr": 0.999
       }
     },
     {
@@ -426,7 +426,7 @@
       "filename": "eng_v10_decel.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v10_decel.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v10_decel.ogg",
-      "ogg_bytes": 15171,
+      "ogg_bytes": 12757,
       "category": "engine",
       "description": "5200 RPM OpenGrid engine-sim V10 off-throttle decel loop",
       "loop": true,
@@ -438,15 +438,15 @@
       "reference_rpm": 5200,
       "fundamental_hz": 433.3,
       "rms_dbfs": -14.0,
-      "peak_linear": 0.62484,
-      "boundary_delta": 0.000167,
+      "peak_linear": 0.49013,
+      "boundary_delta": 0.000105,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v10_screamer",
         "throttle": 0.04,
         "load": 0.0,
         "stage": "race",
-        "loop_corr": 0.93
+        "loop_corr": 0.958
       }
     },
     {
@@ -454,7 +454,7 @@
       "filename": "eng_tt_i6_1000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_tt_i6_1000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_tt_i6_1000.ogg",
-      "ogg_bytes": 15652,
+      "ogg_bytes": 11561,
       "category": "engine",
       "description": "1000 RPM OpenGrid engine-sim Forged I6 idle loop",
       "loop": true,
@@ -466,15 +466,15 @@
       "reference_rpm": 1000,
       "fundamental_hz": 50.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.80378,
-      "boundary_delta": 0.000134,
+      "peak_linear": 0.67402,
+      "boundary_delta": 0.000586,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "i6_forged",
         "throttle": 0.08,
         "load": 0.1,
         "stage": "sport",
-        "loop_corr": 0.937
+        "loop_corr": 0.998
       }
     },
     {
@@ -482,7 +482,7 @@
       "filename": "eng_tt_i6_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_tt_i6_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_tt_i6_low.ogg",
-      "ogg_bytes": 16924,
+      "ogg_bytes": 14673,
       "category": "engine",
       "description": "2400 RPM OpenGrid engine-sim Forged I6 baritone pull loop",
       "loop": true,
@@ -494,15 +494,15 @@
       "reference_rpm": 2400,
       "fundamental_hz": 120.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.57139,
-      "boundary_delta": 8e-06,
+      "peak_linear": 0.60167,
+      "boundary_delta": 0.000327,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "i6_forged",
         "throttle": 0.62,
         "load": 0.68,
         "stage": "race",
-        "loop_corr": 0.946
+        "loop_corr": 1.0
       }
     },
     {
@@ -510,7 +510,7 @@
       "filename": "eng_tt_i6_4000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_tt_i6_4000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_tt_i6_4000.ogg",
-      "ogg_bytes": 17869,
+      "ogg_bytes": 16876,
       "category": "engine",
       "description": "4500 RPM OpenGrid engine-sim Forged I6 boost roar loop",
       "loop": true,
@@ -522,15 +522,15 @@
       "reference_rpm": 4500,
       "fundamental_hz": 225.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.54971,
-      "boundary_delta": 9e-06,
+      "peak_linear": 0.71903,
+      "boundary_delta": 6.4e-05,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "i6_forged",
         "throttle": 0.9,
         "load": 0.92,
         "stage": "race",
-        "loop_corr": 0.98
+        "loop_corr": 0.999
       }
     },
     {
@@ -538,7 +538,7 @@
       "filename": "eng_tt_i6_7000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_tt_i6_7000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_tt_i6_7000.ogg",
-      "ogg_bytes": 18282,
+      "ogg_bytes": 17149,
       "category": "engine",
       "description": "7000 RPM OpenGrid engine-sim Forged I6 redline wail loop",
       "loop": true,
@@ -550,15 +550,15 @@
       "reference_rpm": 7000,
       "fundamental_hz": 350.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.5568,
-      "boundary_delta": 8e-06,
+      "peak_linear": 0.68153,
+      "boundary_delta": 0.000328,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "i6_forged",
         "throttle": 1.0,
         "load": 1.0,
         "stage": "race",
-        "loop_corr": 0.992
+        "loop_corr": 0.998
       }
     },
     {
@@ -566,7 +566,7 @@
       "filename": "eng_tt_i6_decel.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_tt_i6_decel.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_tt_i6_decel.ogg",
-      "ogg_bytes": 11851,
+      "ogg_bytes": 11139,
       "category": "engine",
       "description": "4600 RPM OpenGrid engine-sim Forged I6 off-throttle decel loop",
       "loop": true,
@@ -578,15 +578,15 @@
       "reference_rpm": 4600,
       "fundamental_hz": 230.0,
       "rms_dbfs": -14.0,
-      "peak_linear": 0.38027,
-      "boundary_delta": 0.000709,
+      "peak_linear": 0.48218,
+      "boundary_delta": 0.002638,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "i6_forged",
         "throttle": 0.04,
         "load": 0.0,
         "stage": "race",
-        "loop_corr": 0.992
+        "loop_corr": 1.0
       }
     },
     {
@@ -594,7 +594,7 @@
       "filename": "eng_v6_tt_1000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v6_tt_1000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v6_tt_1000.ogg",
-      "ogg_bytes": 14561,
+      "ogg_bytes": 11983,
       "category": "engine",
       "description": "1000 RPM OpenGrid engine-sim 60deg TT V6 idle loop",
       "loop": true,
@@ -606,15 +606,15 @@
       "reference_rpm": 1000,
       "fundamental_hz": 50.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.69741,
-      "boundary_delta": 2e-06,
+      "peak_linear": 0.87188,
+      "boundary_delta": 4.1e-05,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v6_tt",
         "throttle": 0.08,
         "load": 0.1,
         "stage": "sport",
-        "loop_corr": 0.239
+        "loop_corr": 0.997
       }
     },
     {
@@ -622,7 +622,7 @@
       "filename": "eng_v6_tt_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v6_tt_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v6_tt_low.ogg",
-      "ogg_bytes": 17748,
+      "ogg_bytes": 16071,
       "category": "engine",
       "description": "2400 RPM OpenGrid engine-sim 60deg TT V6 pull loop",
       "loop": true,
@@ -634,15 +634,15 @@
       "reference_rpm": 2400,
       "fundamental_hz": 120.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.57799,
-      "boundary_delta": 7.2e-05,
+      "peak_linear": 0.59355,
+      "boundary_delta": 4e-05,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v6_tt",
         "throttle": 0.62,
         "load": 0.68,
         "stage": "race",
-        "loop_corr": 0.953
+        "loop_corr": 1.0
       }
     },
     {
@@ -650,7 +650,7 @@
       "filename": "eng_v6_tt_4500.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v6_tt_4500.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v6_tt_4500.ogg",
-      "ogg_bytes": 17381,
+      "ogg_bytes": 16098,
       "category": "engine",
       "description": "4500 RPM OpenGrid engine-sim 60deg TT V6 roar loop",
       "loop": true,
@@ -662,15 +662,15 @@
       "reference_rpm": 4500,
       "fundamental_hz": 225.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.41085,
-      "boundary_delta": 0.000193,
+      "peak_linear": 0.42605,
+      "boundary_delta": 0.000538,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v6_tt",
         "throttle": 0.9,
         "load": 0.92,
         "stage": "race",
-        "loop_corr": 0.994
+        "loop_corr": 1.0
       }
     },
     {
@@ -678,7 +678,7 @@
       "filename": "eng_v6_tt_7200.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v6_tt_7200.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v6_tt_7200.ogg",
-      "ogg_bytes": 17968,
+      "ogg_bytes": 16808,
       "category": "engine",
       "description": "7200 RPM OpenGrid engine-sim 60deg TT V6 redline scream loop",
       "loop": true,
@@ -690,15 +690,15 @@
       "reference_rpm": 7200,
       "fundamental_hz": 360.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.4865,
-      "boundary_delta": 9.9e-05,
+      "peak_linear": 0.43512,
+      "boundary_delta": 7.7e-05,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v6_tt",
         "throttle": 1.0,
         "load": 1.0,
         "stage": "race",
-        "loop_corr": 0.998
+        "loop_corr": 0.999
       }
     },
     {
@@ -706,7 +706,7 @@
       "filename": "eng_v6_tt_decel.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v6_tt_decel.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v6_tt_decel.ogg",
-      "ogg_bytes": 11685,
+      "ogg_bytes": 10790,
       "category": "engine",
       "description": "4600 RPM OpenGrid engine-sim 60deg TT V6 off-throttle decel loop",
       "loop": true,
@@ -718,15 +718,15 @@
       "reference_rpm": 4600,
       "fundamental_hz": 230.0,
       "rms_dbfs": -14.0,
-      "peak_linear": 0.40223,
-      "boundary_delta": 0.000408,
+      "peak_linear": 0.40946,
+      "boundary_delta": 1e-06,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v6_tt",
         "throttle": 0.04,
         "load": 0.0,
         "stage": "race",
-        "loop_corr": 0.997
+        "loop_corr": 1.0
       }
     },
     {
@@ -734,7 +734,7 @@
       "filename": "eng_v8_cross_900.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_cross_900.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_cross_900.ogg",
-      "ogg_bytes": 13879,
+      "ogg_bytes": 11916,
       "category": "engine",
       "description": "900 RPM OpenGrid engine-sim Cross-Plane V8 lope idle loop",
       "loop": true,
@@ -746,15 +746,15 @@
       "reference_rpm": 900,
       "fundamental_hz": 60.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.65347,
-      "boundary_delta": 0.0001,
+      "peak_linear": 0.71842,
+      "boundary_delta": 4.6e-05,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v8_crossplane",
         "throttle": 0.08,
         "load": 0.1,
         "stage": "sport",
-        "loop_corr": 0.979
+        "loop_corr": 0.997
       }
     },
     {
@@ -762,7 +762,7 @@
       "filename": "eng_v8_cross_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_cross_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_cross_low.ogg",
-      "ogg_bytes": 14325,
+      "ogg_bytes": 12296,
       "category": "engine",
       "description": "2100 RPM OpenGrid engine-sim Cross-Plane V8 muscle pull loop",
       "loop": true,
@@ -774,15 +774,15 @@
       "reference_rpm": 2100,
       "fundamental_hz": 140.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.49222,
-      "boundary_delta": 5.7e-05,
+      "peak_linear": 0.72365,
+      "boundary_delta": 0.000423,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v8_crossplane",
         "throttle": 0.65,
         "load": 0.7,
         "stage": "race",
-        "loop_corr": 0.995
+        "loop_corr": 1.0
       }
     },
     {
@@ -790,7 +790,7 @@
       "filename": "eng_v8_cross_4200.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_cross_4200.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_cross_4200.ogg",
-      "ogg_bytes": 12694,
+      "ogg_bytes": 11908,
       "category": "engine",
       "description": "4200 RPM OpenGrid engine-sim Cross-Plane V8 thunder roar loop",
       "loop": true,
@@ -802,8 +802,8 @@
       "reference_rpm": 4200,
       "fundamental_hz": 280.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.63409,
-      "boundary_delta": 0.000867,
+      "peak_linear": 0.60534,
+      "boundary_delta": 1.9e-05,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v8_crossplane",
@@ -818,7 +818,7 @@
       "filename": "eng_v8_cross_6800.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_cross_6800.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_cross_6800.ogg",
-      "ogg_bytes": 12854,
+      "ogg_bytes": 11651,
       "category": "engine",
       "description": "6800 RPM OpenGrid engine-sim Cross-Plane V8 redline roar loop",
       "loop": true,
@@ -830,8 +830,8 @@
       "reference_rpm": 6800,
       "fundamental_hz": 453.3,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.57375,
-      "boundary_delta": 6.2e-05,
+      "peak_linear": 0.64349,
+      "boundary_delta": 0.005108,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v8_crossplane",
@@ -846,7 +846,7 @@
       "filename": "eng_v8_cross_decel.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_cross_decel.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_cross_decel.ogg",
-      "ogg_bytes": 11864,
+      "ogg_bytes": 11322,
       "category": "engine",
       "description": "4200 RPM OpenGrid engine-sim Cross-Plane V8 off-throttle decel loop",
       "loop": true,
@@ -858,8 +858,8 @@
       "reference_rpm": 4200,
       "fundamental_hz": 280.0,
       "rms_dbfs": -14.0,
-      "peak_linear": 0.51271,
-      "boundary_delta": 0.000211,
+      "peak_linear": 0.50019,
+      "boundary_delta": 0.00145,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v8_crossplane",
@@ -874,7 +874,7 @@
       "filename": "eng_v8_flat_1100.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_flat_1100.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_flat_1100.ogg",
-      "ogg_bytes": 17810,
+      "ogg_bytes": 12387,
       "category": "engine",
       "description": "1100 RPM OpenGrid engine-sim Flat-Plane V8 idle loop",
       "loop": true,
@@ -885,16 +885,16 @@
       "num_frames": 72000,
       "reference_rpm": 1100,
       "fundamental_hz": 73.3,
-      "rms_dbfs": -12.202,
-      "peak_linear": 0.93481,
-      "boundary_delta": 7e-05,
+      "rms_dbfs": -12.2,
+      "peak_linear": 0.7413,
+      "boundary_delta": 0.000119,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v8_flatplane",
         "throttle": 0.08,
         "load": 0.1,
         "stage": "sport",
-        "loop_corr": 0.915
+        "loop_corr": 0.988
       }
     },
     {
@@ -902,7 +902,7 @@
       "filename": "eng_v8_flat_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_flat_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_flat_low.ogg",
-      "ogg_bytes": 16462,
+      "ogg_bytes": 13689,
       "category": "engine",
       "description": "2600 RPM OpenGrid engine-sim Flat-Plane V8 pull loop",
       "loop": true,
@@ -914,15 +914,15 @@
       "reference_rpm": 2600,
       "fundamental_hz": 173.3,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.55785,
-      "boundary_delta": 0.000163,
+      "peak_linear": 0.68534,
+      "boundary_delta": 0.000345,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v8_flatplane",
         "throttle": 0.62,
         "load": 0.68,
         "stage": "race",
-        "loop_corr": 0.822
+        "loop_corr": 0.996
       }
     },
     {
@@ -930,7 +930,7 @@
       "filename": "eng_v8_flat_5500.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_flat_5500.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_flat_5500.ogg",
-      "ogg_bytes": 16138,
+      "ogg_bytes": 13056,
       "category": "engine",
       "description": "5200 RPM OpenGrid engine-sim Flat-Plane V8 wail loop",
       "loop": true,
@@ -942,15 +942,15 @@
       "reference_rpm": 5200,
       "fundamental_hz": 346.7,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.60412,
-      "boundary_delta": 0.000265,
+      "peak_linear": 0.58743,
+      "boundary_delta": 0.004961,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v8_flatplane",
         "throttle": 0.9,
         "load": 0.92,
         "stage": "race",
-        "loop_corr": 0.994
+        "loop_corr": 0.999
       }
     },
     {
@@ -958,7 +958,7 @@
       "filename": "eng_v8_flat_8000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_flat_8000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_flat_8000.ogg",
-      "ogg_bytes": 15108,
+      "ogg_bytes": 12731,
       "category": "engine",
       "description": "8000 RPM OpenGrid engine-sim Flat-Plane V8 redline scream loop",
       "loop": true,
@@ -970,8 +970,8 @@
       "reference_rpm": 8000,
       "fundamental_hz": 533.3,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.7042,
-      "boundary_delta": 0.000425,
+      "peak_linear": 0.69607,
+      "boundary_delta": 0.000115,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v8_flatplane",
@@ -986,7 +986,7 @@
       "filename": "eng_v8_flat_decel.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_v8_flat_decel.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_v8_flat_decel.ogg",
-      "ogg_bytes": 13929,
+      "ogg_bytes": 12022,
       "category": "engine",
       "description": "5200 RPM OpenGrid engine-sim Flat-Plane V8 off-throttle decel loop",
       "loop": true,
@@ -998,15 +998,15 @@
       "reference_rpm": 5200,
       "fundamental_hz": 346.7,
       "rms_dbfs": -14.0,
-      "peak_linear": 0.47232,
-      "boundary_delta": 2.4e-05,
+      "peak_linear": 0.48308,
+      "boundary_delta": 0.0032,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v8_flatplane",
         "throttle": 0.04,
         "load": 0.0,
         "stage": "race",
-        "loop_corr": 0.995
+        "loop_corr": 0.999
       }
     },
     {
@@ -1014,7 +1014,7 @@
       "filename": "eng_sc_v8_whine.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_sc_v8_whine.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_sc_v8_whine.ogg",
-      "ogg_bytes": 13904,
+      "ogg_bytes": 12203,
       "category": "engine",
       "description": "4200 RPM OpenGrid engine-sim Supercharged V8 + helical blower loop",
       "loop": true,
@@ -1026,15 +1026,15 @@
       "reference_rpm": 4200,
       "fundamental_hz": 280.0,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.69566,
-      "boundary_delta": 7.6e-05,
+      "peak_linear": 0.63455,
+      "boundary_delta": 9e-05,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v8_supercharged",
         "throttle": 0.92,
         "load": 0.95,
         "stage": "race",
-        "loop_corr": 1.0
+        "loop_corr": 0.999
       }
     },
     {
@@ -1042,7 +1042,7 @@
       "filename": "eng_sc_v8_6800.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_sc_v8_6800.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_sc_v8_6800.ogg",
-      "ogg_bytes": 15002,
+      "ogg_bytes": 12748,
       "category": "engine",
       "description": "6800 RPM OpenGrid engine-sim Supercharged V8 redline + blower loop",
       "loop": true,
@@ -1054,15 +1054,15 @@
       "reference_rpm": 6800,
       "fundamental_hz": 453.3,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.66286,
-      "boundary_delta": 0.000281,
+      "peak_linear": 0.67193,
+      "boundary_delta": 1e-05,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "v8_supercharged",
         "throttle": 1.0,
         "load": 1.0,
         "stage": "race",
-        "loop_corr": 0.999
+        "loop_corr": 1.0
       }
     },
     {
@@ -1070,7 +1070,7 @@
       "filename": "eng_rotary4_1100.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_rotary4_1100.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_rotary4_1100.ogg",
-      "ogg_bytes": 13521,
+      "ogg_bytes": 11598,
       "category": "engine",
       "description": "1100 RPM OpenGrid 26B 4-Rotor peripheral-port BRAP idle loop",
       "loop": true,
@@ -1082,15 +1082,15 @@
       "reference_rpm": 1100,
       "fundamental_hz": 73.3,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.63747,
-      "boundary_delta": 4.6e-05,
+      "peak_linear": 0.6799,
+      "boundary_delta": 9.5e-05,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "rotary_4",
         "throttle": 0.08,
         "load": 0.1,
         "stage": "sport",
-        "loop_corr": 0.985
+        "loop_corr": 0.996
       }
     },
     {
@@ -1098,7 +1098,7 @@
       "filename": "eng_rotary4_low.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_rotary4_low.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_rotary4_low.ogg",
-      "ogg_bytes": 21315,
+      "ogg_bytes": 15553,
       "category": "engine",
       "description": "2600 RPM OpenGrid 26B 4-Rotor pull loop",
       "loop": true,
@@ -1110,15 +1110,15 @@
       "reference_rpm": 2600,
       "fundamental_hz": 173.3,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.67541,
-      "boundary_delta": 1e-06,
+      "peak_linear": 0.58053,
+      "boundary_delta": 0.000189,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "rotary_4",
         "throttle": 0.65,
         "load": 0.7,
         "stage": "race",
-        "loop_corr": 0.992
+        "loop_corr": 0.997
       }
     },
     {
@@ -1126,7 +1126,7 @@
       "filename": "eng_rotary4_6000.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_rotary4_6000.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_rotary4_6000.ogg",
-      "ogg_bytes": 18363,
+      "ogg_bytes": 17348,
       "category": "engine",
       "description": "5500 RPM OpenGrid 26B 4-Rotor 787B howl loop",
       "loop": true,
@@ -1138,15 +1138,15 @@
       "reference_rpm": 5500,
       "fundamental_hz": 366.7,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.85361,
-      "boundary_delta": 0.00049,
+      "peak_linear": 0.58798,
+      "boundary_delta": 0.008263,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "rotary_4",
         "throttle": 0.92,
         "load": 0.95,
         "stage": "race",
-        "loop_corr": 0.993
+        "loop_corr": 0.998
       }
     },
     {
@@ -1154,7 +1154,7 @@
       "filename": "eng_rotary4_8500.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_rotary4_8500.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_rotary4_8500.ogg",
-      "ogg_bytes": 18784,
+      "ogg_bytes": 17746,
       "category": "engine",
       "description": "8500 RPM OpenGrid 26B 4-Rotor redline razor shriek loop",
       "loop": true,
@@ -1166,15 +1166,15 @@
       "reference_rpm": 8500,
       "fundamental_hz": 566.7,
       "rms_dbfs": -12.2,
-      "peak_linear": 0.6179,
-      "boundary_delta": 1.2e-05,
+      "peak_linear": 0.61236,
+      "boundary_delta": 2.7e-05,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "rotary_4",
         "throttle": 1.0,
         "load": 1.0,
         "stage": "race",
-        "loop_corr": 0.967
+        "loop_corr": 0.992
       }
     },
     {
@@ -1182,7 +1182,7 @@
       "filename": "eng_rotary4_decel.wav",
       "relative_wav_path": "ue5/Import/Audio/eng_rotary4_decel.wav",
       "relative_ogg_path": "web/public/assets/audio/eng_rotary4_decel.ogg",
-      "ogg_bytes": 17241,
+      "ogg_bytes": 13694,
       "category": "engine",
       "description": "5400 RPM OpenGrid 26B 4-Rotor off-throttle decel loop",
       "loop": true,
@@ -1194,15 +1194,15 @@
       "reference_rpm": 5400,
       "fundamental_hz": 360.0,
       "rms_dbfs": -14.0,
-      "peak_linear": 0.90627,
-      "boundary_delta": 8.7e-05,
+      "peak_linear": 0.59913,
+      "boundary_delta": 0.002086,
       "license": "MIT (AngeTheGreat engine-sim, vendored in core/third_party/engine_sim/) + Apache-2.0 OpenGrid DSP",
       "engine_sim": {
         "preset": "rotary_4",
         "throttle": 0.04,
         "load": 0.0,
         "stage": "race",
-        "loop_corr": 0.994
+        "loop_corr": 0.999
       }
     },
     {
@@ -1210,7 +1210,7 @@
       "filename": "turbo_spool_loop.wav",
       "relative_wav_path": "ue5/Import/Audio/turbo_spool_loop.wav",
       "relative_ogg_path": "web/public/assets/audio/turbo_spool_loop.ogg",
-      "ogg_bytes": 19401,
+      "ogg_bytes": 19126,
       "category": "drivetrain_induction",
       "description": "Warm Garrett/BorgWarner turbocharger compressor spool + pressurized charge-pipe rush loop",
       "loop": true,
@@ -1221,9 +1221,9 @@
       "num_frames": 72000,
       "reference_rpm": null,
       "fundamental_hz": 2400.0,
-      "rms_dbfs": -13.0,
-      "peak_linear": 0.84628,
-      "boundary_delta": 8.4e-05,
+      "rms_dbfs": -14.5,
+      "peak_linear": 0.76654,
+      "boundary_delta": 6.2e-05,
       "license": "CC-BY-NC-4.0"
     },
     {
@@ -1252,7 +1252,7 @@
       "filename": "exhaust_backfire_pop.wav",
       "relative_wav_path": "ue5/Import/Audio/exhaust_backfire_pop.wav",
       "relative_ogg_path": "web/public/assets/audio/exhaust_backfire_pop.ogg",
-      "ogg_bytes": 9588,
+      "ogg_bytes": 9191,
       "category": "drivetrain_induction",
       "description": "Deep anti-lag exhaust shotgun bang + chest-punch sub-bass shockwave",
       "loop": false,
@@ -1263,8 +1263,8 @@
       "num_frames": 26400,
       "reference_rpm": null,
       "fundamental_hz": 110.0,
-      "rms_dbfs": -12.015,
-      "peak_linear": 0.94983,
+      "rms_dbfs": -14.051,
+      "peak_linear": 0.94166,
       "boundary_delta": 0.0,
       "license": "CC-BY-NC-4.0"
     },
@@ -1273,7 +1273,7 @@
       "filename": "exhaust_antilag_pop2.wav",
       "relative_wav_path": "ue5/Import/Audio/exhaust_antilag_pop2.wav",
       "relative_ogg_path": "web/public/assets/audio/exhaust_antilag_pop2.ogg",
-      "ogg_bytes": 9578,
+      "ogg_bytes": 9232,
       "category": "drivetrain_induction",
       "description": "Deep low-pitched anti-lag overrun double-pop bang",
       "loop": false,
@@ -1284,8 +1284,8 @@
       "num_frames": 26400,
       "reference_rpm": null,
       "fundamental_hz": 92.0,
-      "rms_dbfs": -11.563,
-      "peak_linear": 0.94012,
+      "rms_dbfs": -14.0,
+      "peak_linear": 0.86488,
       "boundary_delta": 0.0,
       "license": "CC-BY-NC-4.0"
     },

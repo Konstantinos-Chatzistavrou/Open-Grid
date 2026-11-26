@@ -50,36 +50,36 @@ interface EngineVoiceSpec {
 
 const ENGINE_VOICES: Record<EngineVoiceId, EngineVoiceSpec> = {
   v8_crossplane: {
-    firingsPerRev: 4.0, subRatio: 0.25, bankRatio: 0.75, harmRatio: 1.5,
-    mainGain: 0.76, subGain: 0.74, bankGain: 0.38, harmGain: 0.14,
-    combL: 0.0024, combR: 0.0043,
-    f1: [112, 2.2, 8.0], f2: [330, 1.8, 5.5], f3: [1220, 2.4, 4.2],
-    sf1: [115, 1.6, 4.2], sf2: [420, 1.5, 3.0], sf3: [1620, 2.0, 2.4],
-    lopeHz: 17.5, lopeDepth: 0.032, drive: 4.4, boost: 'none', revRpm: 7200, waveKey: 'crossplane',
+    firingsPerRev: 4.0, subRatio: 0.25, bankRatio: 0.5, harmRatio: 2.0,
+    mainGain: 0.78, subGain: 0.82, bankGain: 0.52, harmGain: 0.08,
+    combL: 0.0026, combR: 0.0029,
+    f1: [86, 1.8, 9.5], f2: [250, 1.5, 6.2], f3: [1120, 1.8, 1.8],
+    sf1: [88, 1.4, 5.8], sf2: [290, 1.4, 3.8], sf3: [1350, 1.7, 0.8],
+    lopeHz: 16.5, lopeDepth: 0.024, drive: 3.2, boost: 'none', revRpm: 7200, waveKey: 'crossplane',
   },
   v8_twin_turbo: {
-    firingsPerRev: 4.0, subRatio: 0.25, bankRatio: 0.75, harmRatio: 1.5,
-    mainGain: 0.74, subGain: 0.68, bankGain: 0.36, harmGain: 0.16,
-    combL: 0.0028, combR: 0.0046,
-    f1: [104, 2.4, 8.5], f2: [295, 1.9, 5.8], f3: [1180, 2.3, 3.8],
-    sf1: [118, 1.7, 4.4], sf2: [435, 1.6, 2.8], sf3: [1680, 2.0, 2.2],
-    lopeHz: 18.0, lopeDepth: 0.026, drive: 4.2, boost: 'turbo', revRpm: 7800, waveKey: 'crossplane',
+    firingsPerRev: 4.0, subRatio: 0.25, bankRatio: 0.5, harmRatio: 2.0,
+    mainGain: 0.76, subGain: 0.78, bankGain: 0.48, harmGain: 0.10,
+    combL: 0.0027, combR: 0.0030,
+    f1: [84, 1.9, 9.5], f2: [245, 1.6, 6.2], f3: [1150, 1.8, 1.6],
+    sf1: [90, 1.4, 5.8], sf2: [305, 1.4, 3.6], sf3: [1380, 1.7, 0.8],
+    lopeHz: 17.0, lopeDepth: 0.020, drive: 3.1, boost: 'turbo', revRpm: 7800, waveKey: 'crossplane',
   },
   v8_supercharged: {
-    firingsPerRev: 4.0, subRatio: 0.25, bankRatio: 0.75, harmRatio: 1.5,
-    mainGain: 0.78, subGain: 0.76, bankGain: 0.40, harmGain: 0.14,
-    combL: 0.0026, combR: 0.0048,
-    f1: [98, 2.5, 9.0], f2: [310, 1.7, 6.0], f3: [1350, 2.2, 4.5],
-    sf1: [115, 1.6, 4.6], sf2: [440, 1.5, 3.2], sf3: [1850, 1.9, 3.0],
-    lopeHz: 15.5, lopeDepth: 0.038, drive: 4.8, boost: 'supercharger', revRpm: 7200, waveKey: 'crossplane',
+    firingsPerRev: 4.0, subRatio: 0.25, bankRatio: 0.5, harmRatio: 2.0,
+    mainGain: 0.80, subGain: 0.86, bankGain: 0.54, harmGain: 0.08,
+    combL: 0.0028, combR: 0.0031,
+    f1: [82, 1.9, 10.0], f2: [240, 1.5, 6.4], f3: [1180, 1.8, 1.8],
+    sf1: [86, 1.4, 6.2], sf2: [295, 1.4, 4.0], sf3: [1420, 1.7, 1.0],
+    lopeHz: 15.0, lopeDepth: 0.028, drive: 3.4, boost: 'supercharger', revRpm: 7200, waveKey: 'crossplane',
   },
   v8_flatplane: {
-    firingsPerRev: 4.0, subRatio: 0.5, bankRatio: 1.003, harmRatio: 2.0,
-    mainGain: 0.80, subGain: 0.30, bankGain: 0.42, harmGain: 0.36,
+    firingsPerRev: 4.0, subRatio: 0.5, bankRatio: 1.0, harmRatio: 2.0,
+    mainGain: 0.80, subGain: 0.44, bankGain: 0.42, harmGain: 0.20,
     combL: 0.0018, combR: 0.0019,
-    f1: [165, 2.0, 5.5], f2: [520, 2.1, 5.5], f3: [1780, 2.8, 6.8],
-    sf1: [158, 1.6, 3.2], sf2: [560, 1.7, 3.4], sf3: [2150, 2.1, 3.6],
-    lopeHz: 24.0, lopeDepth: 0.014, drive: 4.6, boost: 'none', revRpm: 9000, waveKey: 'flatplane',
+    f1: [118, 1.7, 7.2], f2: [380, 1.7, 5.5], f3: [1520, 2.0, 2.6],
+    sf1: [115, 1.4, 4.6], sf2: [410, 1.5, 3.6], sf3: [1720, 1.8, 1.4],
+    lopeHz: 22.0, lopeDepth: 0.012, drive: 3.3, boost: 'none', revRpm: 9000, waveKey: 'flatplane',
   },
   v12_na: {
     firingsPerRev: 6.0, subRatio: 0.5, bankRatio: 1.002, harmRatio: 2.0,
@@ -225,44 +225,44 @@ interface CameraAcousticProfile {
 
 const CAMERA_PROFILES: Record<CameraPerspective, CameraAcousticProfile> = {
   chase: {
-    f1GainOff: 0, f2GainOff: 0, f3GainOff: 0, cabinSubDb: 0,
-    toneCapHz: 16500, toneScale: 1.0, centerGain: 0.72, haasWidth: 0.36,
-    boostMul: 1.0, intakeMul: 0.75, gearMul: 1.0, tyreMul: 1.0, kerbMul: 1.0,
-    windMul: 1.0, windCutoffMul: 1.0, brakeMul: 1.0, thumpMul: 1.0,
-    popMul: 1.0, burbleMul: 1.0, popLpHz: 0, burbleLpHz: 760,
-    tunnelMul: 1.0, tunnelFloor: 0,
+    f1GainOff: 1.4, f2GainOff: 0.6, f3GainOff: -1.6, cabinSubDb: 1.2,
+    toneCapHz: 6800, toneScale: 0.88, centerGain: 0.76, haasWidth: 0.32,
+    boostMul: 0.88, intakeMul: 0.78, gearMul: 0.68, tyreMul: 1.0, kerbMul: 1.0,
+    windMul: 0.72, windCutoffMul: 0.78, brakeMul: 0.95, thumpMul: 1.0,
+    popMul: 0.52, burbleMul: 0.78, popLpHz: 1450, burbleLpHz: 620,
+    tunnelMul: 0.95, tunnelFloor: 0,
   },
   bumper: {
-    f1GainOff: 0.4, f2GainOff: 0.6, f3GainOff: 1.5, cabinSubDb: 0,
-    toneCapHz: 17200, toneScale: 1.08, centerGain: 0.70, haasWidth: 0.40,
-    boostMul: 0.95, intakeMul: 0.90, gearMul: 0.90, tyreMul: 1.28, kerbMul: 1.32,
-    windMul: 1.25, windCutoffMul: 1.15, brakeMul: 1.22, thumpMul: 1.12,
-    popMul: 1.12, burbleMul: 1.10, popLpHz: 0, burbleLpHz: 840,
-    tunnelMul: 1.08, tunnelFloor: 0,
+    f1GainOff: 1.2, f2GainOff: 0.8, f3GainOff: -0.8, cabinSubDb: 0.8,
+    toneCapHz: 7400, toneScale: 0.94, centerGain: 0.74, haasWidth: 0.36,
+    boostMul: 0.88, intakeMul: 0.92, gearMul: 0.62, tyreMul: 1.22, kerbMul: 1.26,
+    windMul: 0.82, windCutoffMul: 0.85, brakeMul: 1.12, thumpMul: 1.10,
+    popMul: 0.58, burbleMul: 0.84, popLpHz: 1650, burbleLpHz: 680,
+    tunnelMul: 1.00, tunnelFloor: 0,
   },
   hood: {
-    f1GainOff: -0.4, f2GainOff: 0.8, f3GainOff: 1.4, cabinSubDb: 0.5,
-    toneCapHz: 16500, toneScale: 1.05, centerGain: 0.80, haasWidth: 0.22,
-    boostMul: 1.35, intakeMul: 1.65, gearMul: 1.18, tyreMul: 0.95, kerbMul: 0.95,
-    windMul: 1.05, windCutoffMul: 1.05, brakeMul: 1.05, thumpMul: 1.05,
-    popMul: 0.85, burbleMul: 0.82, popLpHz: 0, burbleLpHz: 720,
-    tunnelMul: 0.92, tunnelFloor: 0,
+    f1GainOff: 0.8, f2GainOff: 0.9, f3GainOff: -0.8, cabinSubDb: 1.2,
+    toneCapHz: 6600, toneScale: 0.90, centerGain: 0.82, haasWidth: 0.22,
+    boostMul: 1.18, intakeMul: 1.55, gearMul: 0.82, tyreMul: 0.92, kerbMul: 0.92,
+    windMul: 0.74, windCutoffMul: 0.80, brakeMul: 1.00, thumpMul: 1.05,
+    popMul: 0.44, burbleMul: 0.68, popLpHz: 1350, burbleLpHz: 600,
+    tunnelMul: 0.88, tunnelFloor: 0,
   },
   cockpit: {
-    f1GainOff: 0.8, f2GainOff: 0.4, f3GainOff: -1.8, cabinSubDb: 2.5,
-    toneCapHz: 4200, toneScale: 0.62, centerGain: 0.84, haasWidth: 0.18,
-    boostMul: 1.15, intakeMul: 1.45, gearMul: 1.45, tyreMul: 0.78, kerbMul: 0.88,
-    windMul: 0.52, windCutoffMul: 0.55, brakeMul: 0.62, thumpMul: 1.18,
-    popMul: 0.58, burbleMul: 0.65, popLpHz: 2200, burbleLpHz: 520,
-    tunnelMul: 0.68, tunnelFloor: 0,
+    f1GainOff: 1.6, f2GainOff: 0.6, f3GainOff: -2.6, cabinSubDb: 3.4,
+    toneCapHz: 3200, toneScale: 0.58, centerGain: 0.85, haasWidth: 0.16,
+    boostMul: 1.02, intakeMul: 1.35, gearMul: 1.05, tyreMul: 0.74, kerbMul: 0.86,
+    windMul: 0.42, windCutoffMul: 0.52, brakeMul: 0.60, thumpMul: 1.16,
+    popMul: 0.36, burbleMul: 0.54, popLpHz: 1050, burbleLpHz: 460,
+    tunnelMul: 0.62, tunnelFloor: 0,
   },
   garage: {
-    f1GainOff: 0.9, f2GainOff: 0.5, f3GainOff: 0.4, cabinSubDb: 1.0,
-    toneCapHz: 15500, toneScale: 0.98, centerGain: 0.74, haasWidth: 0.34,
-    boostMul: 1.08, intakeMul: 0.95, gearMul: 0, tyreMul: 0, kerbMul: 0,
+    f1GainOff: 1.8, f2GainOff: 0.8, f3GainOff: -1.0, cabinSubDb: 1.8,
+    toneCapHz: 7200, toneScale: 0.90, centerGain: 0.76, haasWidth: 0.30,
+    boostMul: 0.96, intakeMul: 0.95, gearMul: 0, tyreMul: 0, kerbMul: 0,
     windMul: 0, windCutoffMul: 1.0, brakeMul: 0, thumpMul: 1.0,
-    popMul: 1.05, burbleMul: 1.08, popLpHz: 0, burbleLpHz: 780,
-    tunnelMul: 1.0, tunnelFloor: 0.42,
+    popMul: 0.56, burbleMul: 0.85, popLpHz: 1500, burbleLpHz: 650,
+    tunnelMul: 0.95, tunnelFloor: 0.38,
   },
 };
 
@@ -291,28 +291,28 @@ interface ExhaustStageProfile {
 
 const EXHAUST_PROFILES: Record<ExhaustStage, ExhaustStageProfile> = {
   stock: {
-    f1GainOff: 0.4, f2GainOff: -0.4, f3GainOff: -1.6,
-    toneCapHz: 8600, toneScale: 0.78, shaperKey: 's:1.02', shaperDrive: 1.02,
-    popGainMul: 0.55, popChance: 0.45, popCountMin: 1, popCountSpan: 2,
-    popRateMin: 0.78, popRateSpan: 0.16, popLpHz: 2600,
-    burbleGainMul: 0.52, burbleCountMin: 1, burbleCountSpan: 2,
-    shiftBarkMul: 0.65, flameMul: 0.45,
+    f1GainOff: 0.8, f2GainOff: -0.2, f3GainOff: -2.2,
+    toneCapHz: 4200, toneScale: 0.76, shaperKey: 's:1.02', shaperDrive: 1.02,
+    popGainMul: 0.0, popChance: 0.0, popCountMin: 0, popCountSpan: 1,
+    popRateMin: 0.72, popRateSpan: 0.12, popLpHz: 1100,
+    burbleGainMul: 0.34, burbleCountMin: 1, burbleCountSpan: 1,
+    shiftBarkMul: 0.32, flameMul: 0.0,
   },
   sport: {
-    f1GainOff: 0, f2GainOff: 0, f3GainOff: 0,
-    toneCapHz: 13800, toneScale: 1.0, shaperKey: 's:1.06', shaperDrive: 1.06,
-    popGainMul: 1.0, popChance: 1.0, popCountMin: 2, popCountSpan: 3,
-    popRateMin: 0.84, popRateSpan: 0.26, popLpHz: 0,
-    burbleGainMul: 1.0, burbleCountMin: 2, burbleCountSpan: 2,
-    shiftBarkMul: 1.0, flameMul: 1.0,
+    f1GainOff: 0.6, f2GainOff: 0.4, f3GainOff: -0.6,
+    toneCapHz: 5800, toneScale: 0.94, shaperKey: 's:1.05', shaperDrive: 1.05,
+    popGainMul: 0.44, popChance: 0.45, popCountMin: 1, popCountSpan: 1,
+    popRateMin: 0.74, popRateSpan: 0.16, popLpHz: 1400,
+    burbleGainMul: 0.68, burbleCountMin: 1, burbleCountSpan: 2,
+    shiftBarkMul: 0.56, flameMul: 0.55,
   },
   race: {
-    f1GainOff: -0.3, f2GainOff: 0.9, f3GainOff: 2.2,
-    toneCapHz: 16200, toneScale: 1.16, shaperKey: 's:1.22', shaperDrive: 1.22,
-    popGainMul: 1.32, popChance: 1.0, popCountMin: 3, popCountSpan: 3,
-    popRateMin: 0.92, popRateSpan: 0.24, popLpHz: 0,
-    burbleGainMul: 1.38, burbleCountMin: 3, burbleCountSpan: 2,
-    shiftBarkMul: 1.28, flameMul: 1.25,
+    f1GainOff: 0.4, f2GainOff: 0.9, f3GainOff: 0.6,
+    toneCapHz: 7200, toneScale: 1.08, shaperKey: 's:1.14', shaperDrive: 1.14,
+    popGainMul: 0.66, popChance: 0.75, popCountMin: 1, popCountSpan: 2,
+    popRateMin: 0.80, popRateSpan: 0.18, popLpHz: 1750,
+    burbleGainMul: 0.88, burbleCountMin: 2, burbleCountSpan: 2,
+    shiftBarkMul: 0.74, flameMul: 0.85,
   },
 };
 
@@ -1000,8 +1000,12 @@ export class GameAudio {
       this.triggerTurboBov(t, Math.max(0.75, intensity));
       this.boostSpool *= 0.28;
     }
-    this.exhaustPop(t + 0.03, intensity);
-    this.garageFlame = Math.max(this.garageFlame, (0.75 + 0.45 * intensity) * stage.flameMul);
+    if (this.exhaustStage === 'race' && intensity > 0.72) {
+      this.exhaustPop(t + 0.04, intensity * 0.65);
+      this.garageFlame = Math.max(this.garageFlame, (0.55 + 0.30 * intensity) * stage.flameMul);
+    } else if (this.exhaustStage !== 'stock') {
+      this.exhaustBurble(t + 0.04, intensity * 0.75);
+    }
   }
 
   /**
@@ -1106,9 +1110,11 @@ export class GameAudio {
         this.garageRpm += accelRate * safeDt;
         if (this.garageRpm >= redline) {
           this.garageRpm = redline - 240;
-          this.garageLimCutUntil = now + 72; // authentic crisp fuel/ignition rev-limiter bounce!
-          if (!this.muted) this.shiftBark(t, 0.9);
-          this.garageFlame = Math.max(this.garageFlame, 1.15 * stage.flameMul);
+          this.garageLimCutUntil = now + 78; // authentic crisp fuel/ignition rev-limiter bounce (no gunshot spam!)
+          if (!this.muted && !this.wasmPhysicalAudioActive && this.exhaustStage === 'race') {
+            this.exhaustBurble(t, 0.55);
+          }
+          this.garageFlame = Math.max(this.garageFlame, 0.72 * stage.flameMul);
           this.garageWasHighRpm = true;
         }
       } else {
@@ -1121,26 +1127,28 @@ export class GameAudio {
         }
       }
 
-      // Multi-tier anti-lag pops + trailing overrun burbles when letting off Rev in Garage
-      if (revPressed && this.garageRpm > 3400) {
-        this.garageWasHighRpm = true;
-        this.garageAntiLagRemaining = stage.popCountMin + Math.floor(Math.random() * Math.max(1, stage.popCountSpan - 1));
-        this.garageBurbleRemaining = this.exhaustStage === 'stock' ? 1 : 2 + Math.floor(Math.random() * 2);
-      }
-      if (!revPressed && this.garageWasHighRpm) {
-        if (this.garageRpm > 2500 && this.garageAntiLagRemaining > 0 && !this.muted && t > this.nextCrackleAt) {
-          const inten = Math.min(1, (this.garageRpm - 2300) / Math.max(2800, redline - 2300));
-          this.exhaustPop(t, inten);
-          this.garageFlame = Math.max(this.garageFlame, (0.80 + 0.35 * inten) * stage.flameMul);
-          this.garageAntiLagRemaining--;
-          this.nextCrackleAt = t + 0.24 + Math.random() * 0.22;
-        } else if (this.garageAntiLagRemaining <= 0 && this.garageBurbleRemaining > 0 && this.garageRpm > 1800 && !this.muted && t > this.nextCrackleAt) {
-          const bInten = clamp((this.garageRpm - 1600) / 2800, 0.35, 0.9);
-          this.exhaustBurble(t, bInten);
-          this.garageBurbleRemaining--;
-          this.nextCrackleAt = t + 0.20 + Math.random() * 0.18;
-        } else if (this.garageRpm <= 1800 || (this.garageAntiLagRemaining <= 0 && this.garageBurbleRemaining <= 0)) {
-          this.garageWasHighRpm = false;
+      // Overrun burbles (and rare high-RPM Race pop) when letting off Rev in Garage (skipped if WASM owns overrun)
+      if (!this.wasmPhysicalAudioActive) {
+        if (revPressed && this.garageRpm > redline * 0.65) {
+          this.garageWasHighRpm = true;
+          this.garageAntiLagRemaining = this.exhaustStage === 'race' ? 1 : 0;
+          this.garageBurbleRemaining = this.exhaustStage === 'stock' ? 0 : 1 + Math.floor(Math.random() * 2);
+        }
+        if (!revPressed && this.garageWasHighRpm) {
+          if (this.garageRpm > redline * 0.55 && this.garageAntiLagRemaining > 0 && !this.muted && t > this.nextCrackleAt) {
+            const inten = Math.min(0.8, (this.garageRpm - 2800) / Math.max(2800, redline - 2800));
+            this.exhaustPop(t, inten);
+            this.garageFlame = Math.max(this.garageFlame, (0.55 + 0.25 * inten) * stage.flameMul);
+            this.garageAntiLagRemaining--;
+            this.nextCrackleAt = t + 0.34 + Math.random() * 0.22;
+          } else if (this.garageAntiLagRemaining <= 0 && this.garageBurbleRemaining > 0 && this.garageRpm > 1900 && !this.muted && t > this.nextCrackleAt) {
+            const bInten = clamp((this.garageRpm - 1600) / 3000, 0.30, 0.75);
+            this.exhaustBurble(t, bInten);
+            this.garageBurbleRemaining--;
+            this.nextCrackleAt = t + 0.24 + Math.random() * 0.20;
+          } else if (this.garageRpm <= 1900 || (this.garageAntiLagRemaining <= 0 && this.garageBurbleRemaining <= 0)) {
+            this.garageWasHighRpm = false;
+          }
         }
       }
       // Lift-off BOV + pop right as a swap pulse ends
@@ -1164,8 +1172,8 @@ export class GameAudio {
 
     e.oMain.frequency.setTargetAtTime(f * lope, t, tc);
     e.oSub.frequency.setTargetAtTime(f * vSpec.subRatio * lope, t, tc);
-    e.oBank.frequency.setTargetAtTime(f * vSpec.bankRatio * (2 - lope), t, tc);
-    e.oHarm.frequency.setTargetAtTime(f * vSpec.harmRatio, t, tc);
+    e.oBank.frequency.setTargetAtTime(f * vSpec.bankRatio * lope, t, tc);
+    e.oHarm.frequency.setTargetAtTime(f * vSpec.harmRatio * lope, t, tc);
 
     const rpmNorm = clamp((rpm - 650) / Math.max(5500, redline - 650), 0, 1);
     const load = 0.16 + 0.84 * thr;
@@ -2209,11 +2217,11 @@ export class GameAudio {
     }
   }
 
-  /** Clean motorsport downshift rev-match blip (subtle single real exhaust pop, no metallic click). */
+  /** Clean motorsport downshift rev-match blip (subtle warm exhaust burble, never a gunshot). */
   private downshiftBlipSound(t: number, intensity: number) {
-    if (this._muted) return;
-    const inten = clamp(intensity, 0.35, 0.9);
-    this.exhaustPop(t + 0.03, inten * 0.75);
+    if (this._muted || this.wasmPhysicalAudioActive) return;
+    const inten = clamp(intensity, 0.30, 0.75);
+    this.exhaustBurble(t + 0.03, inten * 0.75);
   }
 
   /**
@@ -2343,17 +2351,14 @@ export class GameAudio {
       this.shiftBark(t, clamp((rawRpm - 2200) / 4800, 0.5, 1.0));
     }
 
-    // Crisp redline rev-limiter bounce (strictly at true redline under heavy throttle — NEVER interferes with launch!)
+    // Crisp redline rev-limiter bounce: clean rhythmic ignition cut ONLY (ZERO gunshot spam at top speed!)
     let limDip = 1.0;
-    if (!stalled && rawRpm >= redline * 0.975 && rawThr > 0.65) {
+    if (!stalled && rawRpm >= redline * 0.980 && rawThr > 0.65) {
       if (nowMs >= this.revLimiterNextToggle) {
-        this.revLimiterCutUntil = nowMs + 36;
-        this.revLimiterNextToggle = nowMs + 78;
-        if (!this.muted && Math.random() < 0.55) {
-          this.exhaustPop(t, 0.85);
-        }
+        this.revLimiterCutUntil = nowMs + 34;
+        this.revLimiterNextToggle = nowMs + 84;
       }
-      if (nowMs < this.revLimiterCutUntil) limDip = 0.58;
+      if (nowMs < this.revLimiterCutUntil) limDip = 0.64;
     } else {
       this.revLimiterCutUntil = 0;
     }
@@ -2387,8 +2392,8 @@ export class GameAudio {
     const e = this.eng;
     e.oMain.frequency.setTargetAtTime(f * lope, t, tc);
     e.oSub.frequency.setTargetAtTime(f * vSpec.subRatio * lope, t, tc);
-    e.oBank.frequency.setTargetAtTime(f * vSpec.bankRatio * (2 - lope), t, tc);
-    e.oHarm.frequency.setTargetAtTime(f * vSpec.harmRatio, t, tc);
+    e.oBank.frequency.setTargetAtTime(f * vSpec.bankRatio * lope, t, tc);
+    e.oHarm.frequency.setTargetAtTime(f * vSpec.harmRatio * lope, t, tc);
 
     // Exhaust gas flow & intake induction roar (fallback synth)
     const rpmNorm = clamp((rpm - 650) / Math.max(5500, redline - 650), 0, 1);
@@ -2510,63 +2515,65 @@ export class GameAudio {
 
     this.lastRpm = rawRpm;
 
-    // Multi-tier off-throttle exhaust acoustics:
-    // - Tier 1 (High-RPM WOT lift-off): dramatic spaced anti-lag gunshot bangs (`exhaustPop`) + tailpipe flames
-    // - Tier 2 (Mid-RPM 2400-4600 lift-off OR trailing after anti-lag on sport/race): 2-4 warm muffled overrun burbles (`exhaustBurble`)
-    if (thr > 0.42 && rpm > 3200) {
-      this.wasOnThrottle = true;
-      this.wasMidThrottle = false;
-      this.antiLagRemaining = 0;
-      this.burbleRemaining = 0;
-    } else if (thr > 0.20 && rpm >= 2400 && rpm <= 4600) {
-      this.wasMidThrottle = true;
-      this.burbleRemaining = 0;
-    } else if (this.wasOnThrottle && !tcActive && rawThr < 0.10 && rpm > 2900) {
-      this.wasOnThrottle = false;
-      this.wasMidThrottle = false;
-      if (Math.random() <= stage.popChance) {
-        this.antiLagRemaining = stage.popCountMin + Math.floor(Math.random() * stage.popCountSpan);
-        this.antiLagUntil = t + 2.1;
-        this.nextCrackleAt = t + 0.16 + Math.random() * 0.14;
-      } else if (this.exhaustStage !== 'stock') {
-        this.burbleRemaining = stage.burbleCountMin + Math.floor(Math.random() * stage.burbleCountSpan);
-        this.burbleUntil = t + 2.2;
-        this.nextBurbleAt = t + 0.16 + Math.random() * 0.12;
-      }
-    } else if (this.wasMidThrottle && !tcActive && rawThr < 0.10 && rpm >= 2400 && rpm <= 4600 && this.antiLagRemaining === 0) {
-      this.wasMidThrottle = false;
-      this.burbleRemaining = stage.burbleCountMin + Math.floor(Math.random() * stage.burbleCountSpan);
-      this.burbleUntil = t + 2.3;
-      this.nextBurbleAt = t + 0.14 + Math.random() * 0.12;
-    } else if (rawThr > 0.18 || rpm < 1800) {
-      this.antiLagRemaining = 0;
-      this.burbleRemaining = 0;
-      if (rpm < 2200) {
+    // Multi-tier off-throttle exhaust acoustics (ONLY in WebAudio fallback mode — when WASM physical audio is active,
+    // C++ engine_audio.cpp handles overrun cleanly so we NEVER double-trigger gunshots on throttle lift!)
+    if (!this.wasmPhysicalAudioActive) {
+      if (thr > 0.62 && rpm > redline * 0.70) {
+        this.wasOnThrottle = true;
+        this.wasMidThrottle = false;
+        this.antiLagRemaining = 0;
+        this.burbleRemaining = 0;
+      } else if (thr > 0.25 && rpm >= 2400 && rpm <= 4800) {
+        this.wasMidThrottle = true;
+        this.burbleRemaining = 0;
+      } else if (this.wasOnThrottle && !tcActive && rawThr < 0.10 && rpm > redline * 0.62) {
         this.wasOnThrottle = false;
         this.wasMidThrottle = false;
+        if (stage.popCountMin > 0 && Math.random() <= stage.popChance) {
+          this.antiLagRemaining = stage.popCountMin + Math.floor(Math.random() * stage.popCountSpan);
+          this.antiLagUntil = t + 1.4;
+          this.nextCrackleAt = t + 0.18 + Math.random() * 0.14;
+        } else if (this.exhaustStage !== 'stock') {
+          this.burbleRemaining = stage.burbleCountMin + Math.floor(Math.random() * stage.burbleCountSpan);
+          this.burbleUntil = t + 1.8;
+          this.nextBurbleAt = t + 0.16 + Math.random() * 0.14;
+        }
+      } else if (this.wasMidThrottle && !tcActive && rawThr < 0.10 && rpm >= 2400 && rpm <= 4800 && this.antiLagRemaining === 0 && this.exhaustStage !== 'stock') {
+        this.wasMidThrottle = false;
+        this.burbleRemaining = stage.burbleCountMin + Math.floor(Math.random() * stage.burbleCountSpan);
+        this.burbleUntil = t + 1.9;
+        this.nextBurbleAt = t + 0.18 + Math.random() * 0.14;
+      } else if (rawThr > 0.18 || rpm < 1800) {
+        this.antiLagRemaining = 0;
+        this.burbleRemaining = 0;
+        if (rpm < 2200) {
+          this.wasOnThrottle = false;
+          this.wasMidThrottle = false;
+        }
       }
-    }
 
-    if (!this.muted && !stalled && this.antiLagRemaining > 0 && t < this.antiLagUntil && t >= this.nextCrackleAt) {
-      const inten = clamp((rpm - 2300) / Math.max(2800, redline - 2300), 0.55, 1.0);
-      this.exhaustPop(t, inten);
-      this.antiLagRemaining--;
-      if (this.antiLagRemaining === 0 && this.exhaustStage !== 'stock' && rpm > 2100) {
-        // Transition smoothly from anti-lag bangs into 2-3 trailing warm coasting overrun burbles!
-        this.burbleRemaining = 2 + (this.exhaustStage === 'race' && Math.random() < 0.65 ? 1 : 0);
-        this.burbleUntil = t + 2.0;
-        this.nextBurbleAt = t + 0.24 + Math.random() * 0.16;
-      } else {
-        // Slow natural anti-lag rhythm: 0.26 - 0.52 s between bangs (occasionally a crisp 0.15 s double-pop)
-        const isDouble = this.antiLagRemaining > 0 && Math.random() < 0.28;
-        this.nextCrackleAt = t + (isDouble ? 0.14 + Math.random() * 0.06 : 0.28 + Math.random() * 0.24);
+      if (!this.muted && !stalled && this.antiLagRemaining > 0 && t < this.antiLagUntil && t >= this.nextCrackleAt) {
+        const inten = clamp((rpm - 2600) / Math.max(2800, redline - 2600), 0.40, 0.85);
+        this.exhaustPop(t, inten);
+        this.antiLagRemaining--;
+        if (this.antiLagRemaining === 0 && this.exhaustStage !== 'stock' && rpm > 2100) {
+          this.burbleRemaining = 1 + (this.exhaustStage === 'race' ? 1 : 0);
+          this.burbleUntil = t + 1.6;
+          this.nextBurbleAt = t + 0.28 + Math.random() * 0.16;
+        } else {
+          this.nextCrackleAt = t + 0.34 + Math.random() * 0.26;
+        }
+      } else if (!this.muted && !stalled && this.antiLagRemaining === 0 && this.burbleRemaining > 0 && t < this.burbleUntil && t >= this.nextBurbleAt && rpm > 1900) {
+        const bInten = clamp((rpm - 1800) / 2900, 0.30, 0.78);
+        this.exhaustBurble(t, bInten);
+        this.burbleRemaining--;
+        this.nextBurbleAt = t + 0.24 + Math.random() * 0.22;
       }
-    } else if (!this.muted && !stalled && this.antiLagRemaining === 0 && this.burbleRemaining > 0 && t < this.burbleUntil && t >= this.nextBurbleAt && rpm > 1800) {
-      const bInten = clamp((rpm - 1700) / 2900, 0.35, 0.95);
-      this.exhaustBurble(t, bInten);
-      this.burbleRemaining--;
-      // Gentle authentic Forza coasting gurgle cadence (0.20 - 0.39 s spacing — zero machine-gun rattle!)
-      this.nextBurbleAt = t + 0.20 + Math.random() * 0.19;
+    } else {
+      this.wasOnThrottle = false;
+      this.wasMidThrottle = false;
+      this.antiLagRemaining = 0;
+      this.burbleRemaining = 0;
     }
 
     // Tyres: dry rubber scrub stem (up to 0.55) + dual-formant tread squeal weighted by normal load
@@ -2597,9 +2604,9 @@ export class GameAudio {
     this.tyre!.f2.frequency.setTargetAtTime(1520 + 620 * Math.min(1.6, slip), t, 0.04);
 
     if (slow) {
-      const v = Math.min(1, absSpeed / 70);
-      this.wind!.g.gain.setTargetAtTime(this.muted ? 0 : Math.pow(v, 1.8) * 0.42 * cam.windMul, t, 0.14);
-      this.wind!.f.frequency.setTargetAtTime((260 + 1080 * v) * cam.windCutoffMul, t, 0.14);
+      const v = Math.min(1, absSpeed / 85);
+      this.wind!.g.gain.setTargetAtTime(this.muted ? 0 : Math.pow(v, 1.8) * 0.22 * cam.windMul, t, 0.14);
+      this.wind!.f.frequency.setTargetAtTime((220 + 540 * v) * cam.windCutoffMul, t, 0.14);
     }
 
     if (this.wasmPhysicalAudioActive && this.workletNode && this.workletGain) {
@@ -2615,12 +2622,12 @@ export class GameAudio {
       b[5] = Math.max(out[OUT.boostBar] || 0, this.boostSpool * 1.4);
       b[6] = this.resolveWasmTurboEnabled() ? 1 : 0;
       b[7] = (out[OUT.bovVenting] || 0) > 0.5 ? 1 : 0;
-      b[8] = (out[OUT.shiftCut] || 0) > 0.5 || limDip < 0.9 ? 1 : 0;
+      b[8] = (out[OUT.shiftCut] || 0) > 0.5 ? 1 : 0;
       b[11] = (out[OUT.gearGrind] || 0) > 0.5 ? 1 : 0;
       const physWhineHz = out[OUT.gearWhineHz] || 0;
       const isDogBox = Math.round(out[OUT.transmissionType] || 0) === 1;
       b[12] = physWhineHz > 40 ? physWhineHz : gearFreq;
-      b[13] = gearPresence * (isDogBox ? 1.0 : isRaceBox ? 0.85 : 0.35);
+      b[13] = gearPresence * (isDogBox ? 0.58 : isRaceBox ? 0.18 : 0.0);
       b[14] = out[OUT.drivelineClunk] || 0;
       b[15] = out[OUT.tcSlipRatio] > 0 ? out[OUT.tcSlipRatio] : 1;
       b[16] = out[OUT.tcTorqueRatio] >= 1 ? out[OUT.tcTorqueRatio] : 1;
@@ -2718,51 +2725,52 @@ export class GameAudio {
     }, 185);
   }
 
-  /** Crisp real ignition-cut exhaust bang on high-RPM upshifts + synced flame flash. */
+  /** Crisp subtle upshift exhaust bark (zero duplicate triggers when WASM physical engine handles shiftCut!). */
   private shiftBark(t: number, intensity: number) {
     if (this._muted) return;
     const inten = clamp(intensity, 0, 1);
     const cam = CAMERA_PROFILES[this.cameraPerspective];
     const stage = EXHAUST_PROFILES[this.exhaustStage];
-    this.drivingFlame = Math.max(this.drivingFlame, (0.92 + 0.26 * inten) * stage.flameMul);
+    this.drivingFlame = Math.max(this.drivingFlame, (0.65 + 0.25 * inten) * stage.flameMul);
     if (this.wasmPhysicalAudioActive) {
-      this.postWasmTrigger('pop', clamp(0.65 + 0.35 * inten, 0.4, 1.0));
+      // C++ VehicleAudioEngine already fires shift bark on shift_cut_active edge -> no duplicate bang!
       return;
     }
     const id = ANTILAG_POP_IDS[this.antiLagPopIdx++ % ANTILAG_POP_IDS.length];
-    const rate = (this.exhaustStage === 'race' ? 0.96 : 0.90) + Math.random() * 0.18;
-    const bangGain = clamp((0.62 + 0.26 * inten) * stage.shiftBarkMul * cam.popMul, 0.12, 1.15);
+    const rate = (this.exhaustStage === 'race' ? 0.88 : 0.80) + Math.random() * 0.14;
+    const bangGain = clamp((0.36 + 0.18 * inten) * stage.shiftBarkMul * cam.popMul, 0.08, 0.65);
     const lpHz = cam.popLpHz > 0 && stage.popLpHz > 0
       ? Math.min(cam.popLpHz, stage.popLpHz)
-      : (cam.popLpHz || stage.popLpHz);
+      : (cam.popLpHz || stage.popLpHz || 1500);
     if (this.playStemOneShot(id, t, bangGain, rate, true, lpHz) || this.playStemOneShot('exhaust_backfire_pop', t, bangGain, rate, true, lpHz)) {
       return;
     }
-    this.burst(t, 0.075, 'bandpass', 180 + Math.random() * 60, 1.4, 0.42 * (0.5 + 0.5 * inten) * stage.shiftBarkMul * cam.popMul, true);
+    this.burst(t, 0.065, 'bandpass', 165 + Math.random() * 45, 1.4, 0.24 * (0.5 + 0.5 * inten) * stage.shiftBarkMul * cam.popMul, true);
   }
 
-  /** Deep slow real anti-lag / overrun exhaust gunshot pop + synced tailpipe flame flash. */
+  /** Muffled tailpipe overrun pop + synced tailpipe flame flash (band-limited <= 1.75 kHz, never a gunshot). */
   private exhaustPop(t: number, intensity: number) {
     if (this._muted) return;
-    const inten = clamp(intensity, 0.45, 1.0);
-    const cam = CAMERA_PROFILES[this.cameraPerspective];
     const stage = EXHAUST_PROFILES[this.exhaustStage];
-    this.drivingFlame = Math.max(this.drivingFlame, (0.82 + 0.34 * inten) * stage.flameMul);
+    if (stage.popGainMul <= 0.01) return;
+    const inten = clamp(intensity, 0.35, 0.90);
+    const cam = CAMERA_PROFILES[this.cameraPerspective];
+    this.drivingFlame = Math.max(this.drivingFlame, (0.55 + 0.25 * inten) * stage.flameMul);
     if (this.wasmPhysicalAudioActive) {
-      this.postWasmTrigger('pop', inten);
+      this.postWasmTrigger('pop', inten * 0.65);
       return;
     }
     const id = ANTILAG_POP_IDS[this.antiLagPopIdx++ % ANTILAG_POP_IDS.length];
     const rate = stage.popRateMin + Math.random() * stage.popRateSpan;
-    const popGain = clamp((0.56 + Math.random() * 0.24) * (0.75 + 0.25 * inten) * stage.popGainMul * cam.popMul, 0.10, 1.15);
+    const popGain = clamp((0.34 + Math.random() * 0.14) * (0.72 + 0.28 * inten) * stage.popGainMul * cam.popMul, 0.06, 0.62);
     const lpHz = cam.popLpHz > 0 && stage.popLpHz > 0
       ? Math.min(cam.popLpHz, stage.popLpHz)
-      : (cam.popLpHz || stage.popLpHz);
+      : (cam.popLpHz || stage.popLpHz || 1450);
     if (this.playStemOneShot(id, t, popGain, rate, true, lpHz) || this.playStemOneShot('exhaust_backfire_pop', t, popGain, rate, true, lpHz)) {
       return;
     }
-    const g = (0.18 + Math.random() * 0.16) * inten * stage.popGainMul * cam.popMul;
-    this.burst(t, 0.045 + Math.random() * 0.025, 'bandpass', 210 + Math.random() * 140, 1.6, g, true);
+    const g = (0.12 + Math.random() * 0.09) * inten * stage.popGainMul * cam.popMul;
+    this.burst(t, 0.055 + Math.random() * 0.025, 'bandpass', 175 + Math.random() * 90, 1.5, g, true);
   }
 
   /**

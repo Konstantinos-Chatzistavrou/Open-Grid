@@ -301,7 +301,7 @@ PresetSpec getPreset(EngineVoice voice) {
                 {0, 0, 0,   0.0, 2.0, 0.95}, {0, 1, 0, 240.0, 3.5, 0.90}, {0, 2, 0, 480.0, 5.0, 1.02},
                 {1, 3, 1, 360.0, 2.5, 0.92}, {1, 4, 1, 600.0, 4.0, 1.00}, {1, 5, 1, 120.0, 1.5, 0.88},
             };
-            s.acoustic = { 92.0f, 5.2f, 360.0f, 1.4f, 4.0f, 1650.0f, 1.9f, 5.5f, 480.0f, 0.42f, 3.4f, 3.9f, 0.34f, 1.75f, 9000.0f, 3.0f, false, false };
+            s.acoustic = { 82.0f, 7.2f, 290.0f, 1.3f, 4.8f, 1480.0f, 1.6f, 2.4f, 440.0f, 0.44f, 3.2f, 3.4f, 0.15f, 1.44f, 9000.0f, 3.0f, false, false };
             break;
         }
         case EngineVoice::V12Na: {
@@ -313,7 +313,7 @@ PresetSpec getPreset(EngineVoice voice) {
             s.crankMassKg = 14.5; s.flywheelMassKg = 7.0; s.flywheelRadiusIn = 5.5; s.frictionLbFt = 3.5;
             s.intakeFlowCfm = 1450.0; s.runnerFlowCfm = 225.0; s.runnerLenIn = 4.6;
             s.exOutletCfm = 2100.0; s.exPrimaryLenIn = 22.0; s.exPrimaryCfm = 420.0;
-            s.exLen0In = 38.0; s.exLen1In = 52.0; s.exVol0 = 0.08; s.exVol1 = 0.08;
+            s.exLen0In = 44.0; s.exLen1In = 46.5; s.exVol0 = 0.08; s.exVol1 = 0.08;
             s.camDurDeg = 242.0; s.camGamma = 0.85; s.camLiftMm = 15.2;
             s.intakeLobeCenterDeg = 94.0; s.exhaustLobeCenterDeg = 112.0; s.flowAtten = 1.15;
             s.journalDegs = { 0.0, 120.0, 240.0, 240.0, 120.0, 0.0 };
@@ -323,7 +323,7 @@ PresetSpec getPreset(EngineVoice voice) {
                 {1, 0, 0,  75.0, 0.5, 0.82}, {1, 1, 0, 555.0, 0.4, 0.76}, {1, 2, 0, 315.0, 2.8, 0.95},
                 {1, 3, 0, 675.0, 1.5, 1.05}, {1, 4, 0, 195.0, 0.6, 0.84}, {1, 5, 0, 435.0, 1.4, 1.02},
             };
-            s.acoustic = { 105.0f, 4.5f, 440.0f, 1.5f, 3.6f, 2150.0f, 2.1f, 6.2f, 560.0f, 0.44f, 2.6f, 3.1f, 0.36f, 1.65f, 9300.0f, 6.0f, false, false };
+            s.acoustic = { 94.0f, 6.4f, 360.0f, 1.35f, 4.5f, 1850.0f, 1.7f, 2.8f, 520.0f, 0.44f, 2.5f, 2.65f, 0.16f, 1.38f, 9300.0f, 6.0f, false, false };
             break;
         }
         case EngineVoice::V10Screamer: {
@@ -345,7 +345,7 @@ PresetSpec getPreset(EngineVoice voice) {
                 {1, 0, 0, 1 * 72.0, 5.0, 0.78}, {1, 1, 0, 3 * 72.0, 4.0, 0.86}, {1, 2, 0, 9 * 72.0, 3.0, 0.94},
                 {1, 3, 0, 5 * 72.0, 2.0, 1.06}, {1, 4, 0, 7 * 72.0, 1.0, 0.82},
             };
-            s.acoustic = { 98.0f, 5.0f, 410.0f, 1.5f, 4.2f, 1850.0f, 2.0f, 6.0f, 520.0f, 0.45f, 2.9f, 3.4f, 0.36f, 1.72f, 9000.0f, 5.0f, false, false };
+            s.acoustic = { 88.0f, 6.8f, 340.0f, 1.35f, 4.8f, 1680.0f, 1.65f, 2.6f, 490.0f, 0.46f, 2.8f, 2.95f, 0.16f, 1.42f, 9000.0f, 5.0f, false, false };
             break;
         }
         case EngineVoice::I6Forged: {
@@ -364,7 +364,7 @@ PresetSpec getPreset(EngineVoice voice) {
                 {0, 0, 0,   0.0, 6.0, 0.90}, {0, 1, 0, 480.0, 4.8, 0.95}, {0, 2, 0, 240.0, 3.6, 0.92},
                 {0, 3, 1, 600.0, 3.6, 0.97}, {0, 4, 1, 120.0, 4.8, 0.98}, {0, 5, 1, 360.0, 6.0, 0.93},
             };
-            s.acoustic = { 84.0f, 5.8f, 320.0f, 1.4f, 4.4f, 1380.0f, 1.7f, 4.2f, 430.0f, 0.36f, 3.9f, 4.4f, 0.30f, 1.80f, 8200.0f, 3.0f, true, false };
+            s.acoustic = { 76.0f, 7.8f, 265.0f, 1.3f, 5.2f, 1260.0f, 1.5f, 1.8f, 410.0f, 0.38f, 3.6f, 3.8f, 0.14f, 1.46f, 8200.0f, 3.0f, true, false };
             break;
         }
         case EngineVoice::V6TwinTurbo: {
@@ -384,7 +384,7 @@ PresetSpec getPreset(EngineVoice voice) {
                 {0, 0, 0,   0.0, 2.5, 0.94}, {0, 1, 0, 240.0, 4.0, 0.98}, {0, 2, 0, 480.0, 5.5, 0.91},
                 {1, 3, 1, 120.0, 3.0, 0.96}, {1, 4, 1, 360.0, 4.5, 1.00}, {1, 5, 1, 600.0, 2.0, 0.89},
             };
-            s.acoustic = { 88.0f, 5.5f, 345.0f, 1.4f, 4.2f, 1520.0f, 1.8f, 4.8f, 470.0f, 0.40f, 3.6f, 4.1f, 0.32f, 1.82f, 8000.0f, 3.0f, true, false };
+            s.acoustic = { 78.0f, 7.6f, 285.0f, 1.3f, 5.0f, 1340.0f, 1.55f, 2.0f, 440.0f, 0.42f, 3.4f, 3.6f, 0.14f, 1.48f, 8000.0f, 3.0f, true, false };
             break;
         }
         case EngineVoice::V8Flatplane:
@@ -409,11 +409,11 @@ PresetSpec getPreset(EngineVoice voice) {
                 {1, 2, 1, 3 * 90.0, 7.0, 0.92}, {1, 3, 1, 5 * 90.0, 0.5, 0.78},
             };
             s.acoustic = {
-                isTT ? 86.0f : 94.0f, isTT ? 6.0f : 5.0f,
-                isTT ? 350.0f : 395.0f, 1.45f, 4.2f,
-                isTT ? 1480.0f : 1920.0f, 1.9f, isTT ? 4.8f : 5.8f,
-                490.0f, isTT ? 0.38f : 0.44f,
-                3.1f, 3.6f, 0.34f, isTT ? 1.88f : 1.72f,
+                isTT ? 76.0f : 82.0f, isTT ? 8.2f : 7.0f,
+                isTT ? 265.0f : 310.0f, 1.35f, 5.2f,
+                isTT ? 1320.0f : 1620.0f, 1.6f, isTT ? 1.8f : 2.5f,
+                460.0f, isTT ? 0.40f : 0.46f,
+                3.1f, 3.25f, 0.15f, isTT ? 1.46f : 1.42f,
                 isTT ? 8200.0f : 9000.0f, 4.0f, isTT, false
             };
             break;
@@ -422,7 +422,7 @@ PresetSpec getPreset(EngineVoice voice) {
             // Acoustic profile for our dedicated 4-Rotor 26B peripheral-port Wankel core
             s.name = "OpenGrid Kaze 26B 4-Rotor";
             s.redlineRpm = 10200.0;
-            s.acoustic = { 102.0f, 4.8f, 460.0f, 1.6f, 4.2f, 2250.0f, 2.1f, 5.6f, 640.0f, 0.38f, 2.7f, 3.2f, 0.35f, 1.90f, 10200.0f, 4.0f, true, false };
+            s.acoustic = { 92.0f, 6.8f, 380.0f, 1.45f, 4.6f, 1880.0f, 1.7f, 2.4f, 580.0f, 0.40f, 2.7f, 2.85f, 0.15f, 1.48f, 10200.0f, 4.0f, true, false };
             break;
         }
         case EngineVoice::I4Turbo: {
@@ -443,7 +443,7 @@ PresetSpec getPreset(EngineVoice voice) {
                 {0, 2, 1, 180.0, 3.0, 0.96},
                 {0, 3, 1, 360.0, 4.2, 0.92},
             };
-            s.acoustic = { 78.0f, 5.4f, 275.0f, 1.45f, 4.6f, 1420.0f, 1.85f, 4.8f, 420.0f, 0.42f, 4.1f, 4.5f, 0.31f, 1.88f, 8200.0f, 2.0f, true, false };
+            s.acoustic = { 72.0f, 7.6f, 240.0f, 1.35f, 5.2f, 1260.0f, 1.55f, 2.0f, 400.0f, 0.44f, 3.8f, 4.0f, 0.14f, 1.48f, 8200.0f, 2.0f, true, false };
             break;
         }
         case EngineVoice::I5Turbo: {
@@ -455,7 +455,7 @@ PresetSpec getPreset(EngineVoice voice) {
             s.crankMassKg = 13.0; s.flywheelMassKg = 8.5; s.frictionLbFt = 4.6;
             s.intakePlenumL = 1.05; s.intakeFlowCfm = 680.0; s.runnerFlowCfm = 200.0; s.runnerLenIn = 15.0;
             s.exOutletCfm = 1080.0; s.exPrimaryLenIn = 32.0; s.exPrimaryCfm = 450.0;
-            s.exLen0In = 90.0; s.exLen1In = 96.0; s.exVol0 = 0.28; s.exVol1 = 0.28; s.exVelDecay = 0.80;
+            s.exLen0In = 90.0; s.exLen1In = 94.0; s.exVol0 = 0.28; s.exVol1 = 0.28; s.exVelDecay = 0.80;
             s.camDurDeg = 230.0; s.camGamma = 1.00; s.camLiftMm = 11.6; s.flowAtten = 1.16;
             // 72-deg crank throws, classic 1-2-4-5-3 firing every 144 deg -> unmistakable 2.5x half-order warble!
             s.journalDegs = { 0.0, 144.0, 576.0, 288.0, 432.0 };
@@ -466,7 +466,7 @@ PresetSpec getPreset(EngineVoice voice) {
                 {0, 3, 1, 288.0, 3.8, 1.00},
                 {0, 4, 1, 432.0, 5.2, 0.94},
             };
-            s.acoustic = { 82.0f, 6.0f, 310.0f, 1.50f, 4.9f, 1540.0f, 1.90f, 5.0f, 455.0f, 0.40f, 3.8f, 4.4f, 0.34f, 1.92f, 8000.0f, 2.5f, true, false };
+            s.acoustic = { 74.0f, 8.2f, 265.0f, 1.35f, 5.4f, 1340.0f, 1.6f, 2.2f, 430.0f, 0.42f, 3.6f, 3.8f, 0.14f, 1.50f, 8000.0f, 2.5f, true, false };
             break;
         }
         case EngineVoice::V8Supercharged:
@@ -481,7 +481,7 @@ PresetSpec getPreset(EngineVoice voice) {
             s.frictionLbFt = 15.0;
             s.intakeFlowCfm = isSC ? 1120.0 : 880.0; s.runnerFlowCfm = 145.0; s.runnerLenIn = 12.0;
             s.exOutletCfm = 1250.0; s.exPrimaryLenIn = 29.0; s.exPrimaryCfm = 560.0;
-            s.exLen0In = 98.0; s.exLen1In = 140.0; // authentic unequal cross-plane V8 burble!
+            s.exLen0In = 104.0; s.exLen1In = 108.0; // balanced dual H/X-pipe banks (zero off-frequency split beat!)
             s.exVol0 = 0.36; s.exVol1 = 0.36; s.exVelDecay = 0.8;
             s.camDurDeg = 228.0; s.camGamma = 0.95; s.camLiftMm = 14.5; s.flowAtten = 1.08;
             s.journalDegs = { 0.0, 270.0, 90.0, 180.0 };
@@ -491,7 +491,7 @@ PresetSpec getPreset(EngineVoice voice) {
                 {1, 0, 1, 3 * 90.0, 3.0, 1.00}, {1, 1, 1, 6 * 90.0, 7.0, 0.90},
                 {1, 2, 1, 4 * 90.0, 5.0, 0.96}, {1, 3, 1, 1 * 90.0, 1.0, 1.02},
             };
-            s.acoustic = { 74.0f, 6.8f, 290.0f, 1.3f, 4.8f, 1280.0f, 1.6f, 4.2f, 380.0f, 0.42f, 4.3f, 5.1f, 0.32f, 1.95f, 7200.0f, 4.0f, false, isSC };
+            s.acoustic = { 68.0f, 9.2f, 225.0f, 1.25f, 5.8f, 1150.0f, 1.45f, 1.6f, 360.0f, 0.44f, 3.9f, 4.1f, 0.13f, 1.48f, 7200.0f, 4.0f, false, isSC };
             break;
         }
     }
@@ -587,61 +587,61 @@ PerspectiveMix getPerspectiveTarget(CameraPerspective p) {
     PerspectiveMix m{};
     switch (p) {
         case CameraPerspective::ExteriorRear:
-            // Full tailpipe punch, wide stereo banks, strong overrun pops & crackles, moderate intake
+            // Full chesty tailpipe punch, wide stereo banks, natural overrun burbles, warm ear-safe top end
             m.exhaustGain   = 1.18f;
-            m.stereoWidth   = 1.00f;
-            m.popGain       = 1.28f;
-            m.intakeGain    = 0.68f;
-            m.turboScGain   = 0.78f;
-            m.mechGain      = 0.25f;
-            m.gearWhineGain = 0.30f;
-            m.envRefGain    = 1.00f;
-            m.cabinLpHz     = 16500.0f;
-            m.cabinBoomDb   = 0.0f;
-            m.cabinDampDb   = 0.0f;
+            m.stereoWidth   = 0.92f;
+            m.popGain       = 0.56f;
+            m.intakeGain    = 0.72f;
+            m.turboScGain   = 0.72f;
+            m.mechGain      = 0.22f;
+            m.gearWhineGain = 0.24f;
+            m.envRefGain    = 0.95f;
+            m.cabinLpHz     = 7600.0f;
+            m.cabinBoomDb   = 1.2f;
+            m.cabinDampDb   = -0.8f;
             break;
         case CameraPerspective::HoodBumper:
-            // Loud induction plenum roar (+5 dB), crisp valvetrain tick, prominent turbo/SC, tighter exhaust
-            m.exhaustGain   = 0.74f;
-            m.stereoWidth   = 0.55f;
-            m.popGain       = 0.65f;
-            m.intakeGain    = 1.78f;
-            m.turboScGain   = 1.55f;
-            m.mechGain      = 1.35f;
-            m.gearWhineGain = 0.72f;
-            m.envRefGain    = 0.88f;
-            m.cabinLpHz     = 14800.0f;
-            m.cabinBoomDb   = 1.0f;
-            m.cabinDampDb   = 0.0f;
+            // Prominent induction plenum roar (+5 dB), mechanical detail, tight exhaust
+            m.exhaustGain   = 0.78f;
+            m.stereoWidth   = 0.52f;
+            m.popGain       = 0.34f;
+            m.intakeGain    = 1.72f;
+            m.turboScGain   = 1.35f;
+            m.mechGain      = 1.15f;
+            m.gearWhineGain = 0.55f;
+            m.envRefGain    = 0.85f;
+            m.cabinLpHz     = 6600.0f;
+            m.cabinBoomDb   = 1.8f;
+            m.cabinDampDb   = -1.0f;
             break;
         case CameraPerspective::InteriorCockpit:
-            // Warm low-passed cabin exhaust (<2.8 kHz), boosted 68-115 Hz chassis boom, clear intake + gearbox whine
-            m.exhaustGain   = 0.78f;
-            m.stereoWidth   = 0.46f;
-            m.popGain       = 0.68f;
-            m.intakeGain    = 1.35f;
-            m.turboScGain   = 1.18f;
-            m.mechGain      = 0.88f;
-            m.gearWhineGain = 1.32f;
-            m.envRefGain    = 0.52f;
-            m.cabinLpHz     = 2650.0f;
-            m.cabinBoomDb   = 5.8f;
-            m.cabinDampDb   = -2.4f;
+            // Warm low-passed cabin exhaust (<2.5 kHz), boosted 72-110 Hz chassis boom, clear intake + subtle gearbox
+            m.exhaustGain   = 0.82f;
+            m.stereoWidth   = 0.44f;
+            m.popGain       = 0.32f;
+            m.intakeGain    = 1.32f;
+            m.turboScGain   = 1.05f;
+            m.mechGain      = 0.78f;
+            m.gearWhineGain = 0.95f;
+            m.envRefGain    = 0.48f;
+            m.cabinLpHz     = 2450.0f;
+            m.cabinBoomDb   = 6.4f;
+            m.cabinDampDb   = -2.8f;
             break;
         case CameraPerspective::ExteriorChase:
         default:
-            // Balanced hero mix (exhaust body + tailpipe bark + intake + turbo/SC + environment reflections)
-            m.exhaustGain   = 1.00f;
-            m.stereoWidth   = 0.85f;
-            m.popGain       = 1.00f;
+            // Balanced Forza-style hero mix: deep chesty exhaust growl + warm intake + controlled overrun
+            m.exhaustGain   = 1.05f;
+            m.stereoWidth   = 0.80f;
+            m.popGain       = 0.44f;
             m.intakeGain    = 1.00f;
-            m.turboScGain   = 1.00f;
-            m.mechGain      = 0.42f;
-            m.gearWhineGain = 0.48f;
-            m.envRefGain    = 1.00f;
-            m.cabinLpHz     = 15500.0f;
-            m.cabinBoomDb   = 0.0f;
-            m.cabinDampDb   = 0.0f;
+            m.turboScGain   = 0.88f;
+            m.mechGain      = 0.34f;
+            m.gearWhineGain = 0.36f;
+            m.envRefGain    = 0.92f;
+            m.cabinLpHz     = 6900.0f;
+            m.cabinBoomDb   = 1.4f;
+            m.cabinDampDb   = -1.0f;
             break;
     }
     return m;
@@ -781,8 +781,13 @@ struct EngineAudioSynth::Impl {
     Biquad bodyEqL, bodyEqR;
     Biquad raspEqL, raspEqR;
     Biquad decelEqL, decelEqR;
+    Biquad harshCutEqL, harshCutEqR;
     Biquad toneLpL, toneLpR;
     Biquad intakeBp, intakeLp;
+    Biquad growlLp, singLp;
+    float growlPhase = 0.0f;
+    float throttleStabEnv = 0.0f;
+    float combRoughState = 0.0f;
 
     // Perspective / Interior Cockpit acoustic shaping
     Biquad cabinExLpL, cabinExLpR;
@@ -887,15 +892,15 @@ struct EngineAudioSynth::Impl {
 
         float stageSubBoost = 0.0f;
         float stageRaspBoost = 0.0f;
-        float stageLpMax = 9200.0f;
+        float stageLpMax = 5200.0f;
         if (cfg.exhaustStage == ExhaustStage::Stock) {
-            stageSubBoost = -1.2f;
-            stageRaspBoost = -2.6f;
-            stageLpMax = 5800.0f;
+            stageSubBoost = -0.8f;
+            stageRaspBoost = -1.6f;
+            stageLpMax = 3600.0f;
         } else if (cfg.exhaustStage == ExhaustStage::RaceTitanium) {
-            stageSubBoost = 1.4f;
-            stageRaspBoost = 2.4f;
-            stageLpMax = 12800.0f;
+            stageSubBoost = 1.2f;
+            stageRaspBoost = 0.9f;
+            stageLpMax = 6600.0f;
         }
 
         subShelfL.setLowShelf(fs, a.subHz, a.subGainDb + stageSubBoost);
@@ -907,27 +912,33 @@ struct EngineAudioSynth::Impl {
         raspEqL.setPeaking(fs, a.raspHz, a.raspQ, a.raspGainDb + stageRaspBoost);
         raspEqR.setPeaking(fs, a.raspHz, a.raspQ, a.raspGainDb + stageRaspBoost);
 
-        decelEqL.setPeaking(fs, a.bodyHz * 1.65f, 2.2f, 0.0f);
-        decelEqR.setPeaking(fs, a.bodyHz * 1.65f, 2.2f, 0.0f);
+        decelEqL.setPeaking(fs, a.bodyHz * 1.55f, 1.9f, 0.0f);
+        decelEqR.setPeaking(fs, a.bodyHz * 1.55f, 1.9f, 0.0f);
 
-        toneLpL.setLowpass(fs, stageLpMax, 0.75f);
-        toneLpR.setLowpass(fs, stageLpMax, 0.75f);
+        // Fletcher-Munson ear-comfort harshness dip around 3.1 kHz (prevents ear fatigue at top speed/redline!)
+        harshCutEqL.setPeaking(fs, 3100.0f, 0.85f, -2.5f);
+        harshCutEqR.setPeaking(fs, 3100.0f, 0.85f, -2.5f);
+
+        toneLpL.setLowpass(fs, stageLpMax, 0.72f);
+        toneLpR.setLowpass(fs, stageLpMax, 0.72f);
 
         intakeBp.setBandpass(fs, a.intakeHz, 1.35f);
-        intakeLp.setLowpass(fs, 3600.0f, 0.8f);
+        intakeLp.setLowpass(fs, 2900.0f, 0.78f);
+        growlLp.setLowpass(fs, 255.0f, 0.72f);
+        singLp.setLowpass(fs, 1650.0f, 0.707f);
 
-        turboNoiseBp.setBandpass(fs, 3200.0f, 2.8f);
-        flutterBp.setBandpass(fs, 1150.0f, 3.2f);
+        turboNoiseBp.setBandpass(fs, 2800.0f, 2.4f);
+        flutterBp.setBandpass(fs, 1080.0f, 2.8f);
 
-        mechHp.setHighpass(fs, 1350.0f, 0.75f);
-        mechBp.setBandpass(fs, 3250.0f, 1.45f);
-        gearBp.setBandpass(fs, 1200.0f, 1.55f);
-        gearLp.setLowpass(fs, 4400.0f, 0.75f);
-        starterBp.setBandpass(fs, 380.0f, 1.25f);
-        wetSpecHpL.setHighpass(fs, 2400.0f, 0.707f);
-        wetSpecHpR.setHighpass(fs, 2400.0f, 0.707f);
-        wastegateBp.setBandpass(fs, 1450.0f, 1.25f);
-        camBarkEq.setPeaking(fs, a.intakeHz * 2.2f, 1.6f, 0.0f);
+        mechHp.setHighpass(fs, 1250.0f, 0.75f);
+        mechBp.setBandpass(fs, 2750.0f, 1.35f);
+        gearBp.setBandpass(fs, 1050.0f, 1.55f);
+        gearLp.setLowpass(fs, 2250.0f, 0.72f);
+        starterBp.setBandpass(fs, 360.0f, 1.25f);
+        wetSpecHpL.setHighpass(fs, 2100.0f, 0.707f);
+        wetSpecHpR.setHighpass(fs, 2100.0f, 0.707f);
+        wastegateBp.setBandpass(fs, 1250.0f, 1.25f);
+        camBarkEq.setPeaking(fs, a.intakeHz * 2.0f, 1.5f, 0.0f);
 
         updatePerspectiveFilters(fs);
     }
@@ -939,8 +950,13 @@ struct EngineAudioSynth::Impl {
         bodyEqL.reset(); bodyEqR.reset();
         raspEqL.reset(); raspEqR.reset();
         decelEqL.reset(); decelEqR.reset();
+        harshCutEqL.reset(); harshCutEqR.reset();
         toneLpL.reset(); toneLpR.reset();
         intakeBp.reset(); intakeLp.reset();
+        growlLp.reset(); singLp.reset();
+        growlPhase = 0.0f;
+        throttleStabEnv = 0.0f;
+        combRoughState = 0.0f;
         cabinExLpL.reset(); cabinExLpR.reset();
         cabinBoomEqL.reset(); cabinBoomEqR.reset();
         cabinDampEqL.reset(); cabinDampEqR.reset();
@@ -1471,36 +1487,49 @@ struct EngineAudioSynth::Impl {
         }
         prevCtrlStarter = ctrl.starterCrank;
 
-        // Automatic physics-driven BOV flutter, high-RPM anti-lag bangs, and light off-throttle burbles!
+        // Automatic physics-driven BOV flutter, rare high-RPM overrun pops, and warm off-throttle burbles!
         const bool hasTurbo = a.hasTurbo || ctrl.turboEnabled;
         if (autoPopCooldown > 0.0f) autoPopCooldown -= blockDt;
         if (autoBurbleCooldown > 0.0f) autoBurbleCooldown -= blockDt;
         const float thrDrop = prevThr - smoothThr;
-        if (thrDrop > 0.25f && smoothRpm > a.redlineRpm * 0.42f) {
-            if (hasTurbo && prevBoost > 0.35f) {
+        if (thrDrop > 0.30f && smoothRpm > a.redlineRpm * 0.45f) {
+            if (hasTurbo && prevBoost > 0.38f) {
                 triggerFlutter(prevBoost);
             }
-            if (autoPopCooldown <= 0.0f && cfg.exhaustStage != ExhaustStage::Stock) {
-                const float popInt = clampf((smoothRpm / a.redlineRpm) * (cfg.exhaustStage == ExhaustStage::RaceTitanium ? 1.05f : 0.72f), 0.35f, 1.15f);
+            // Authentic exhaust pops ONLY on sharp lift-off from genuine high-RPM WOT (never gunshot spam on every lift!)
+            const float popMinRpmFrac = (cfg.exhaustStage == ExhaustStage::RaceTitanium) ? 0.68f : 0.76f;
+            const float popMinDrop    = (cfg.exhaustStage == ExhaustStage::RaceTitanium) ? 0.45f : 0.56f;
+            if (autoPopCooldown <= 0.0f && cfg.exhaustStage != ExhaustStage::Stock &&
+                thrDrop > popMinDrop && smoothRpm > a.redlineRpm * popMinRpmFrac) {
+                const float popInt = clampf((smoothRpm / a.redlineRpm) * (cfg.exhaustStage == ExhaustStage::RaceTitanium ? 0.68f : 0.42f), 0.25f, 0.72f);
                 spawnPop(popInt);
-                autoPopCooldown = 0.26f + 0.18f * rng.next01();
+                autoPopCooldown = (cfg.exhaustStage == ExhaustStage::RaceTitanium ? 0.95f : 1.65f) + 0.55f * rng.next01();
+            } else if (autoBurbleCooldown <= 0.0f && cfg.exhaustStage != ExhaustStage::Stock && smoothRpm > 2400.0f) {
+                spawnBurble(cfg.exhaustStage == ExhaustStage::RaceTitanium ? 0.52f : 0.36f);
+                autoBurbleCooldown = 0.24f + 0.16f * rng.next01();
             }
         }
-        // Light off-throttle overrun burbles when coasting down 4800 -> 2100 RPM on Sport/RaceTitanium
+        // Warm off-throttle overrun burbles when coasting down 5000 -> 2000 RPM on Sport/RaceTitanium
         if (cfg.exhaustStage != ExhaustStage::Stock &&
             smoothThr < 0.08f && smoothLoad < 0.16f &&
-            smoothRpm >= 2100.0f && smoothRpm <= 4800.0f &&
-            rpmSlope < -120.0f && autoBurbleCooldown <= 0.0f) {
-            const float rpmFrac = clampf((smoothRpm - 2100.0f) / 2700.0f, 0.0f, 1.0f);
-            const float stageScale = (cfg.exhaustStage == ExhaustStage::RaceTitanium) ? 0.68f : 0.44f;
-            const float bInt = clampf((0.28f + 0.45f * rpmFrac) * stageScale * (0.75f + 0.50f * rng.next01()), 0.20f, 0.85f);
+            smoothRpm >= 2000.0f && smoothRpm <= 5000.0f &&
+            rpmSlope < -160.0f && autoBurbleCooldown <= 0.0f) {
+            const float rpmFrac = clampf((smoothRpm - 2000.0f) / 3000.0f, 0.0f, 1.0f);
+            const float stageScale = (cfg.exhaustStage == ExhaustStage::RaceTitanium) ? 0.52f : 0.34f;
+            const float bInt = clampf((0.22f + 0.38f * rpmFrac) * stageScale * (0.75f + 0.45f * rng.next01()), 0.16f, 0.62f);
             spawnBurble(bInt);
-            autoBurbleCooldown = (cfg.exhaustStage == ExhaustStage::RaceTitanium ? 0.085f : 0.135f) + 0.12f * rng.next01();
+            autoBurbleCooldown = (cfg.exhaustStage == ExhaustStage::RaceTitanium ? 0.15f : 0.22f) + 0.18f * rng.next01();
         }
+        // Dramatic throttle-stab intake/exhaust bark envelope (real manifold vacuum-to-WOT pressure surge!)
+        const float thrRise = std::max(0.0f, smoothThr - prevThr);
+        if (thrRise > 0.04f) {
+            throttleStabEnv = std::max(throttleStabEnv, clampf(thrRise * 3.2f, 0.0f, 1.0f));
+        }
+        throttleStabEnv *= std::exp(-blockDt / 0.145f);
         prevThr = smoothThr;
         prevBoost = smoothBoost;
 
-        // Dynamic load-responsive tone shaping (Forza Horizon 6 acoustic core)
+        // Dynamic load-responsive tone shaping (Forza Horizon 6 deep warm acoustic core)
         const float rpmNorm = clampf((smoothRpm - 850.0f) / std::max(1000.0f, a.redlineRpm - 850.0f), 0.0f, 1.0f);
         const float loadEff = clampf(std::max(smoothThr, smoothLoad), 0.0f, 1.0f);
         const float decelAmt = clampf((0.12f - smoothThr) / 0.12f, 0.0f, 1.0f) * clampf((smoothRpm - 1800.0f) / 2200.0f, 0.0f, 1.0f);
@@ -1511,19 +1540,26 @@ struct EngineAudioSynth::Impl {
         exhaustGasTemp += (targetTemp - exhaustGasTemp) * (1.0f - std::exp(-blockDt / tempTau));
         const float tempDelayScale = 1.0f / (1.0f + 0.064f * exhaustGasTemp); // ~0.940 at full heat (~6% shorter)
 
-        // Lowpass opens wide under WOT load and warms softly at closed-throttle cruise
-        const float stageBright = (cfg.exhaustStage == ExhaustStage::RaceTitanium) ? 1.25f
-                                : (cfg.exhaustStage == ExhaustStage::Stock) ? 0.72f : 1.0f;
-        const float lpCut = clampf((1550.0f + rpmNorm * 3200.0f + std::pow(loadEff, 0.8f) * (5400.0f + rpmNorm * 3200.0f) - decelAmt * 950.0f) * stageBright,
-                                   1150.0f, 14500.0f);
-        toneLpL.setLowpass(fs, lpCut, 0.78f);
-        toneLpR.setLowpass(fs, lpCut, 0.78f);
+        // Lowpass opens richly under WOT load while staying strictly ear-safe at top speed/redline (never shrill 14.5 kHz!)
+        const float stageBright = (cfg.exhaustStage == ExhaustStage::RaceTitanium) ? 1.15f
+                                : (cfg.exhaustStage == ExhaustStage::Stock) ? 0.74f : 1.0f;
+        const float stageCapHz  = (cfg.exhaustStage == ExhaustStage::RaceTitanium) ? 6600.0f
+                                : (cfg.exhaustStage == ExhaustStage::Stock) ? 3600.0f : 5200.0f;
+        const float lpCut = clampf((1250.0f + rpmNorm * 1650.0f + std::pow(loadEff, 0.85f) * (2450.0f + rpmNorm * 1150.0f) - decelAmt * 550.0f) * stageBright,
+                                   950.0f, stageCapHz);
+        toneLpL.setLowpass(fs, lpCut, 0.72f);
+        toneLpR.setLowpass(fs, lpCut, 0.72f);
 
-        // Hollow metallic engine-braking mid-pipe resonance during off-throttle decel!
-        decelEqL.setPeaking(fs, a.bodyHz * (1.35f + 0.55f * rpmNorm), 2.1f, decelAmt * 5.2f);
-        decelEqR.setPeaking(fs, a.bodyHz * (1.35f + 0.55f * rpmNorm), 2.1f, decelAmt * 5.2f);
+        // Fletcher-Munson ear-comfort harshness control: smoothly dips piercing 2.5-4.2 kHz band at high RPM / top speed
+        const float harshDipDb = -2.2f - 4.4f * std::pow(rpmNorm, 1.45f);
+        harshCutEqL.setPeaking(fs, 3100.0f, 0.85f, harshDipDb);
+        harshCutEqR.setPeaking(fs, 3100.0f, 0.85f, harshDipDb);
 
-        // VTEC / VarioCam high-cam lobe crossover above ~62% of redline under high load (crisp induction bark!)
+        // Subtle hollow engine-braking mid-pipe resonance during off-throttle decel
+        decelEqL.setPeaking(fs, a.bodyHz * (1.28f + 0.42f * rpmNorm), 1.85f, decelAmt * 2.4f);
+        decelEqR.setPeaking(fs, a.bodyHz * (1.28f + 0.42f * rpmNorm), 1.85f, decelAmt * 2.4f);
+
+        // VTEC / VarioCam high-cam lobe crossover above ~62% of redline under high load (warm induction bark!)
         const bool camSupported = (cfg.voice == EngineVoice::Flat6Na || cfg.voice == EngineVoice::V12Na ||
                                    cfg.voice == EngineVoice::V10Screamer || cfg.voice == EngineVoice::V8Flatplane ||
                                    cfg.voice == EngineVoice::I4Turbo);
@@ -1531,16 +1567,16 @@ struct EngineAudioSynth::Impl {
         const float targetCam = (camSupported && rpmNorm >= camThresh && loadEff > 0.62f)
                               ? clampf((rpmNorm - camThresh) / 0.12f, 0.0f, 1.0f) : 0.0f;
         camCrossoverEnv += (targetCam - camCrossoverEnv) * (1.0f - std::exp(-blockDt / 0.055f));
-        camBarkEq.setPeaking(fs, clampf(a.intakeHz * (1.85f + 0.55f * rpmNorm), 600.0f, 4200.0f), 1.55f, camCrossoverEnv * 4.2f);
+        camBarkEq.setPeaking(fs, clampf(a.intakeHz * (1.65f + 0.45f * rpmNorm), 550.0f, 2900.0f), 1.45f, camCrossoverEnv * 2.2f);
 
-        // Intake carbon-airbox formant sweeps subtly up with RPM (and opens brighter on high cam!)
-        intakeBp.setBandpass(fs, a.intakeHz * (0.82f + 0.75f * rpmNorm + 0.18f * camCrossoverEnv), 1.35f);
+        // Intake carbon-airbox formant sweeps subtly up with RPM
+        intakeBp.setBandpass(fs, a.intakeHz * (0.80f + 0.65f * rpmNorm + 0.14f * camCrossoverEnv), 1.30f);
 
-        // Primary header comb waveguide delay lengths (samples, shortened dynamically by exhaust gas temperature!)
+        // Primary header comb waveguide delay lengths (subtle feedback prevents metallic off-frequency ringing!)
         const float combSampsL = a.pipeCombMsL * 0.001f * fs * tempDelayScale;
         const float combSampsR = a.pipeCombMsR * 0.001f * fs * tempDelayScale;
-        const float combFb = a.pipeFeedback * (cfg.exhaustStage == ExhaustStage::RaceTitanium ? 1.15f
-                                             : cfg.exhaustStage == ExhaustStage::Stock ? 0.75f : 1.0f);
+        const float combFb = a.pipeFeedback * (cfg.exhaustStage == ExhaustStage::RaceTitanium ? 1.12f
+                                             : cfg.exhaustStage == ExhaustStage::Stock ? 0.72f : 1.0f);
         const int haasSamps = std::max(1, static_cast<int>(0.0028f * fs)); // 2.8 ms stereo tailpipe width
         const int erTap1 = static_cast<int>(0.0115f * fs);
         const int erTap2 = static_cast<int>(0.0193f * fs);
@@ -1583,39 +1619,65 @@ struct EngineAudioSynth::Impl {
         const float baseIntakeGain = a.intakeMix * (0.06f + 0.94f * std::pow(loadEff, 1.25f)) * (0.55f + 0.45f * rpmNorm);
         const float reverbWet = clampf(ctrl.reverbMix, 0.0f, 0.85f);
 
-        // Forced induction frequencies
-        const float turboWhineHz = 1850.0f + smoothBoost * 1650.0f + rpmNorm * 1450.0f;
-        const float scWhineHz = (smoothRpm / 60.0f) * 2.4f * 4.0f * 2.2f; // 4-lobe roots @ 2.4x pulley
-        const float scGain = a.hasSupercharger ? clampf((0.025f + 0.13f * loadEff) * (0.35f + 0.65f * rpmNorm), 0.0f, 0.16f) : 0.0f;
-        const float turboSpoolLevel = hasTurbo ? clampf(smoothBoost * 0.58f + std::max(0.0f, rpmNorm - 0.18f) * loadEff * 0.45f, 0.0f, 1.0f) : 0.0f;
+        // Forced induction frequencies (ear-safe upper limits; aerodynamic air rush leads over pure sine whine)
+        const float turboWhineHz = clampf(1550.0f + smoothBoost * 1050.0f + rpmNorm * 850.0f, 1400.0f, 3550.0f);
+        const float scWhineHz = clampf((smoothRpm / 60.0f) * 2.1f * 4.0f * 1.9f, 220.0f, 3100.0f); // 4-lobe roots
+        const float scGain = a.hasSupercharger ? clampf((0.018f + 0.072f * loadEff) * (0.35f + 0.65f * rpmNorm), 0.0f, 0.095f) : 0.0f;
+        const float turboSpoolLevel = hasTurbo ? clampf(smoothBoost * 0.52f + std::max(0.0f, rpmNorm - 0.18f) * loadEff * 0.38f, 0.0f, 1.0f) : 0.0f;
         if (hasTurbo) {
-            turboNoiseBp.setBandpass(fs, clampf(2100.0f + turboSpoolLevel * 3400.0f, 1400.0f, 7500.0f), 2.6f);
+            turboNoiseBp.setBandpass(fs, clampf(1850.0f + turboSpoolLevel * 2100.0f, 1300.0f, 4400.0f), 2.3f);
         }
 
-        // Straight-cut motorsport gearbox whine parameters (exact physical gear_whine_hz when provided, else speed fallback)
+        // Straight-cut motorsport gearbox whine (strictly capped <= 2.4 kHz fundamental so top speed never pierces!)
         const float speedNorm = clampf(smoothSpeedMps / 5.5f, 0.0f, 1.0f);
-        const float coastShift = 1.0f + 0.032f * decelAmt;
-        const float loadPitchMod = 1.0f + 0.018f * loadEff;
+        const float coastShift = 1.0f + 0.028f * decelAmt;
+        const float loadPitchMod = 1.0f + 0.016f * loadEff;
         const float rawMeshHz = (smoothGearWhineHz > 40.0f)
                               ? (smoothGearWhineHz * coastShift * loadPitchMod)
-                              : ((210.0f + smoothSpeedMps * 27.5f + smoothRpm * 0.038f) * coastShift * loadPitchMod);
-        const float gearMeshHz1 = clampf(rawMeshHz, 180.0f, 4200.0f);
-        const float gearMeshHz2 = clampf(gearMeshHz1 * 1.492f, 260.0f, 6200.0f);
+                              : ((190.0f + smoothSpeedMps * 21.0f + smoothRpm * 0.032f) * coastShift * loadPitchMod);
+        const float gearMeshHz1 = clampf(rawMeshHz, 180.0f, 2400.0f);
+        const float gearMeshHz2 = clampf(gearMeshHz1 * 1.492f, 260.0f, 3200.0f);
 
-        // External wastegate screamer-pipe level (opens raw exhaust bypass above 0.95 bar under WOT!)
+        // External wastegate screamer-pipe level (warmer bandpass, restrained max gain)
         const float wgOpen = (hasTurbo && (ctrl.externalWastegate || cfg.exhaustStage == ExhaustStage::RaceTitanium)
-                              && smoothBoost > 0.92f && loadEff > 0.72f)
-                           ? clampf((smoothBoost - 0.92f) / 0.55f, 0.0f, 1.0f) * clampf((loadEff - 0.72f) / 0.25f, 0.0f, 1.0f)
+                              && smoothBoost > 0.95f && loadEff > 0.74f)
+                           ? clampf((smoothBoost - 0.95f) / 0.55f, 0.0f, 1.0f) * clampf((loadEff - 0.74f) / 0.25f, 0.0f, 1.0f)
                            : 0.0f;
         if (wgOpen > 0.01f) {
-            wastegateBp.setBandpass(fs, clampf(1150.0f + rpmNorm * 1350.0f + smoothBoost * 320.0f, 700.0f, 3600.0f), 1.35f);
+            wastegateBp.setBandpass(fs, clampf(950.0f + rpmNorm * 850.0f + smoothBoost * 220.0f, 700.0f, 2150.0f), 1.30f);
         }
-        const float gearBaseAmp = smoothGearWhine * (0.28f + 0.62f * loadEff + 0.42f * decelAmt)
+        const float gearBaseAmp = smoothGearWhine * (0.24f + 0.54f * loadEff + 0.36f * decelAmt)
                                 * (0.06f * rpmNorm + 0.94f * speedNorm)
-                                * (0.55f + 0.45f * clampf(smoothSpeedMps / 65.0f, 0.0f, 1.0f)) * 0.16f;
+                                * (0.55f + 0.45f * clampf(smoothSpeedMps / 70.0f, 0.0f, 1.0f)) * 0.082f;
         if (smoothGearWhine > 0.002f) {
-            gearBp.setBandpass(fs, clampf(gearMeshHz1 * (1.18f - 0.16f * decelAmt), 350.0f, 3800.0f), 1.45f + 0.55f * decelAmt);
+            gearBp.setBandpass(fs, clampf(gearMeshHz1 * (1.12f - 0.14f * decelAmt), 320.0f, 2250.0f), 1.45f + 0.45f * decelAmt);
         }
+
+        // Phase-locked Forza Horizon 6 / GT7 per-architecture harmonic signature (100% locked to real firing order!)
+        const float fireHz = clampf((smoothRpm / 60.0f) * a.firingsPerRev, 18.0f, 950.0f);
+        const bool isDeepMuscleV8 = (cfg.voice == EngineVoice::V8Crossplane || cfg.voice == EngineVoice::V8Supercharged);
+        const bool isFlatV8 = (cfg.voice == EngineVoice::V8Flatplane || cfg.voice == EngineVoice::V8TwinTurbo);
+        const bool isV12 = (cfg.voice == EngineVoice::V12Na);
+        const bool isV10 = (cfg.voice == EngineVoice::V10Screamer);
+        const bool isFlat6 = (cfg.voice == EngineVoice::Flat6Na);
+        const bool isI6 = (cfg.voice == EngineVoice::I6Forged);
+        const bool isI5 = (cfg.voice == EngineVoice::I5Turbo);
+
+        const float stabBoost = 1.0f + 0.28f * throttleStabEnv;
+        const float growlBaseAmp = (isDeepMuscleV8 ? 0.38f : isFlatV8 ? 0.26f : isV10 || isFlat6 ? 0.25f : 0.23f)
+                                 * (0.34f + 0.66f * std::pow(loadEff, 0.78f)) * stabBoost
+                                 * (1.0f - 0.18f * rpmNorm)
+                                 * (ctrl.ignitionCut ? 0.28f : 1.0f);
+        const float subHalfWeight = isDeepMuscleV8 ? 0.78f : isFlatV8 ? 0.42f : isV10 || isFlat6 || isI5 ? 0.56f : 0.48f;
+        const float subQuarterWeight = isDeepMuscleV8 ? (0.42f * clampf((4600.0f - smoothRpm) / 2800.0f, 0.0f, 1.0f)) : 0.0f;
+        // Softly low-passed 0.75x order gives authentic cross-plane V8 uneven bank burble without any HF dissonance!
+        const float crossBurbleWeight = isDeepMuscleV8 ? (0.24f * clampf((4800.0f - smoothRpm) / 3000.0f, 0.0f, 1.0f)) : 0.0f;
+        // Architectural upper-harmonic drama (soaring 2x soprano on V12/Flat-V8/I6/Rotary; brassy 1.5x howl on V10/Flat-6!)
+        const float singRatio = (isV10 || isFlat6 || cfg.voice == EngineVoice::V6TwinTurbo) ? 1.5f : 2.0f;
+        const float singBase = (isV12 ? 0.18f : isV10 ? 0.17f : isFlatV8 ? 0.15f : isFlat6 ? 0.14f : isI6 || isI5 || isRotary ? 0.12f : 0.05f);
+        const float singAmp = singBase * std::pow(loadEff, 0.90f) * std::pow(clampf((rpmNorm - 0.25f) / 0.75f, 0.0f, 1.0f), 1.25f)
+                            * stabBoost * (ctrl.ignitionCut ? 0.25f : 1.0f);
+        const float combRoughAlpha = 1.0f - std::exp(-twoPi * 28.0f * invFs);
 
         // Valvetrain/mechanical texture idle presence boost
         const float mechIdleBoost = 1.0f + 0.55f * clampf((1800.0f - smoothRpm) / 1000.0f, 0.0f, 1.0f);
@@ -1721,15 +1783,21 @@ struct EngineAudioSynth::Impl {
                     const float bodyPulse = std::sin(p.ringPhase) * 0.52f + std::sin(p.ringPhase * 0.5f) * 0.22f;
                     const float attack = 1.0f - std::exp(-p.age * 260.0f);
                     const float decay = std::exp(-20.0f * p.age);
-                    burbleMono += std::tanh((bandNoise + bodyPulse) * attack * decay * 1.15f) * p.intensity * 0.55f;
+                    burbleMono += std::tanh((bandNoise + bodyPulse) * attack * decay * 1.05f) * p.intensity * 0.48f;
                 } else {
-                    // Sharp broadband anti-lag gunshot crack + chesty sub-bass shockwave
-                    p.lpState += (nRaw - p.lpState) * 0.025f;
-                    p.hpState += (nRaw - p.hpState) * 0.28f;
-                    const float subBlast = p.lpState * 6.5f * std::exp(-16.0f * p.age);
-                    const float sharpCrack = (nRaw - p.hpState) * 1.45f * std::exp(-48.0f * p.age);
-                    const float midTail = p.hpState * 1.15f * std::exp(-22.0f * p.age);
-                    popMono += std::tanh((subBlast + sharpCrack + midTail) * 1.35f) * p.intensity;
+                    // Authentic muffled tailpipe exhaust pop (band-limited 65..880 Hz chest thump + pipe resonance;
+                    // ZERO raw broadband white-noise gunshot crack!)
+                    const float u = p.age / p.duration;
+                    p.lpState += (nRaw - p.lpState) * 0.032f;       // ~245 Hz warm lowpass pressure wave
+                    p.hpState += (p.lpState - p.hpState) * 0.009f;  // ~70 Hz sub-tailpipe thump separation
+                    const float subThump = p.hpState * 5.2f * std::exp(-15.0f * p.age);
+                    const float pipeBark = (p.lpState - p.hpState) * 3.8f * std::exp(-28.0f * p.age);
+                    const float fPop = p.subFreq * (1.0f - 0.25f * u);
+                    p.phase += twoPi * fPop * invFs;
+                    if (p.phase > twoPi) p.phase -= twoPi;
+                    const float chestWave = std::sin(p.phase) * 0.55f * std::exp(-22.0f * p.age);
+                    const float attack = 1.0f - std::exp(-p.age * 380.0f);
+                    popMono += std::tanh((subThump + pipeBark + chestWave) * attack * 1.10f) * p.intensity * 0.62f;
                 }
             }
             const float totalPop = (popMono + burbleMono) * curPersp.popGain;
@@ -1770,9 +1838,25 @@ struct EngineAudioSynth::Impl {
                 starterSig = starterBp.process(rng.nextSigned()) * flareEnv * 0.26f;
             }
 
-            // 4. Exhaust EQ stack: Helmholtz sub-bass + core body + titanium rasp + hollow decel + dynamic LP
-            float sL = (wgL * crankExhaustScale + totalPop * 0.95f);
-            float sR = (wgR * crankExhaustScale + totalPop * 0.90f);
+            // 4. Phase-locked per-architecture chest growl & musical harmonic sing + Exhaust EQ stack + ear-safe control
+            growlPhase += twoPi * (fireHz * 0.25f) * invFs;
+            if (growlPhase > twoPi) growlPhase -= twoPi;
+            combRoughState += (rng.nextSigned() - combRoughState) * combRoughAlpha;
+            const float roughMod = 1.0f + 0.055f * combRoughState * (0.45f + 0.55f * loadEff);
+
+            const float g1 = std::sin(growlPhase * 4.0f); // exact firing fundamental (1.0x fireHz)
+            const float gHalf = std::sin(growlPhase * 2.0f); // deep lower-octave bank rumble (0.5x fireHz)
+            const float gQuarter = (subQuarterWeight > 0.001f) ? std::sin(growlPhase) : 0.0f; // 0.25x cross-plane V8 lope
+            const float gCross = (crossBurbleWeight > 0.001f) ? std::sin(growlPhase * 3.0f) : 0.0f; // 0.75x LP-only burble
+            const float growlRaw = (g1 * 0.56f + gHalf * subHalfWeight + gQuarter * subQuarterWeight + gCross * crossBurbleWeight)
+                                 * growlBaseAmp * roughMod;
+            const float growlChest = growlLp.process(growlRaw) * crankExhaustScale;
+
+            const float singRaw = (singAmp > 0.001f) ? (std::sin(growlPhase * (4.0f * singRatio)) * singAmp * roughMod) : 0.0f;
+            const float singHarm = singLp.process(singRaw) * crankExhaustScale;
+
+            float sL = (wgL * crankExhaustScale * roughMod + growlChest + singHarm + totalPop * 0.44f);
+            float sR = (wgR * crankExhaustScale * roughMod + growlChest + singHarm * 0.96f + totalPop * 0.42f);
 
             sL = subShelfL.process(sL);
             sR = subShelfR.process(sR);
@@ -1783,12 +1867,12 @@ struct EngineAudioSynth::Impl {
             sL = decelEqL.process(sL);
             sR = decelEqR.process(sR);
 
-            // Warm asymmetric pipe saturation (adds rich 2nd + 3rd exhaust harmonics without harsh clipping)
-            sL = std::tanh(drive * (sL + 0.11f * sL * sL)) * normSat;
-            sR = std::tanh(drive * (sR + 0.11f * sR * sR)) * normSat;
+            // Warm asymmetric pipe saturation (rich 2nd-harmonic exhaust body without harsh clipped fuzz)
+            sL = std::tanh(drive * (sL + 0.09f * sL * sL)) * normSat;
+            sR = std::tanh(drive * (sR + 0.09f * sR * sR)) * normSat;
 
-            sL = toneLpL.process(sL);
-            sR = toneLpR.process(sR);
+            sL = harshCutEqL.process(toneLpL.process(sL));
+            sR = harshCutEqR.process(toneLpR.process(sR));
 
             // Keep pre-cabin exterior exhaust copy for tunnel/canyon wall reflections!
             const float exExtL = sL;
@@ -1831,13 +1915,13 @@ struct EngineAudioSynth::Impl {
                 turboPhase += twoPi * turboWhineHz * invFs;
                 if (turboPhase > twoPi) turboPhase -= twoPi;
                 const float airRush = turboNoiseBp.process(rng.nextSigned());
-                const float turbineTone = std::sin(turboPhase) * 0.014f;
-                fiMono += (turbineTone + airRush * 0.12f) * std::pow(turboSpoolLevel, 1.2f) * (0.30f + 0.70f * loadEff);
+                const float turbineTone = std::sin(turboPhase) * 0.005f;
+                fiMono += (turbineTone + airRush * 0.095f) * std::pow(turboSpoolLevel, 1.25f) * (0.28f + 0.72f * loadEff);
             }
             if (wgOpen > 0.01f) {
-                // External wastegate screamer pipe: raw bypass pulse + broadband exhaust hiss
-                const float wgSrc = (exL + exR) * 0.55f + rng.nextSigned() * 0.45f;
-                fiMono += std::tanh(wastegateBp.process(wgSrc) * 2.1f) * wgOpen * 0.24f;
+                // External wastegate screamer pipe: warm band-limited bypass pulse
+                const float wgSrc = (exL + exR) * 0.62f + rng.nextSigned() * 0.38f;
+                fiMono += std::tanh(wastegateBp.process(wgSrc) * 1.6f) * wgOpen * 0.11f;
             }
             if (flutterEnv > 0.005f) {
                 flutterAge += invFs;
@@ -1849,14 +1933,14 @@ struct EngineAudioSynth::Impl {
                     const float pulse = std::pow(0.5f + 0.5f * std::sin(twoPi * pulseFreq * flutterAge), 2.4f);
                     const float decay = std::exp(-3.4f * u);
                     const float whoosh = flutterBp.process(rng.nextSigned());
-                    flutterMono = whoosh * pulse * decay * flutterEnv * 0.58f;
+                    flutterMono = whoosh * pulse * decay * flutterEnv * 0.44f;
                     fiMono += flutterMono;
                 }
             }
             if (a.hasSupercharger && scGain > 0.002f) {
-                scPhase += twoPi * clampf(scWhineHz, 220.0f, 6800.0f) * invFs;
+                scPhase += twoPi * scWhineHz * invFs;
                 if (scPhase > twoPi) scPhase -= twoPi;
-                const float scTone = std::sin(scPhase) * 0.65f + std::sin(scPhase * 2.0f) * 0.24f + std::sin(scPhase * 3.0f) * 0.08f;
+                const float scTone = std::sin(scPhase) * 0.78f + std::sin(scPhase * 2.0f) * 0.18f;
                 fiMono += scTone * scGain;
             }
             fiMono *= curPersp.turboScGain;
@@ -1925,8 +2009,8 @@ struct EngineAudioSynth::Impl {
             const float envWetL = cabinRefLpL.process(slapL + tunOutL + ovL + wetL) * curPersp.envRefGain;
             const float envWetR = cabinRefLpR.process(slapR + tunOutR + ovR + wetR) * curPersp.envRefGain;
 
-            // Dynamic overall master presence (clean 10-14 dB crest factor, strictly bounded [-1, 1] via tanh!)
-            const float master = (0.42f + 0.36f * loadEff) * (0.76f + 0.24f * rpmNorm);
+            // Dynamic overall master presence: dramatic Forza load punch (purring cruise -> thunderous WOT bark!)
+            const float master = (0.35f + 0.46f * std::pow(loadEff, 0.85f) + 0.12f * throttleStabEnv) * (0.76f + 0.24f * rpmNorm);
             float finalL = std::tanh((wideL + erL * reverbWet * curPersp.envRefGain + envWetL) * master);
             float finalR = std::tanh((wideR + erR * reverbWet * curPersp.envRefGain + envWetR) * master);
             // Never hand a non-finite sample to the host (tanh(NaN) = NaN): silence beats a speaker-damaging burst.

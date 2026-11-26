@@ -177,47 +177,51 @@ def make_full_length_seamless_loop(x: np.ndarray, f_fire: float, target_samples:
 
 
 def presence_shelf(freqs: np.ndarray, gain_db: float) -> np.ndarray:
-    if gain_db == 0.0:
-        return np.ones_like(freqs)
-    lin = 10.0 ** (gain_db / 20.0)
-    w = 1.0 / (1.0 + ((freqs - 1650.0) / 1400.0) ** 2)
-    return 1.0 + (lin - 1.0) * w
+    # Warm midrange character + gentle 3.1 kHz ear-comfort de-esser (never shrill at redline!)
+    out = np.ones_like(freqs)
+    if gain_db != 0.0:
+        lin = 10.0 ** (min(gain_db, 1.4) / 20.0)
+        w = 1.0 / (1.0 + ((freqs - 950.0) / 750.0) ** 2)
+        out = out * (1.0 + (lin - 1.0) * w)
+    # Gentle -2.8 dB ear-comfort dip around 3.2 kHz
+    dip = 10.0 ** (-2.8 / 20.0)
+    w_dip = 1.0 / (1.0 + ((freqs - 3200.0) / 1400.0) ** 2)
+    return out * (1.0 + (dip - 1.0) * w_dip)
 
 
 def synth_clean_warm_turbo_spool(rng: np.random.Generator) -> np.ndarray:
     """
-    1.50 s zero-voice, zero-RC-car Garrett/BorgWarner turbocharger compressor spool loop:
-    warm 2400 Hz & 4800 Hz blade-pass whistle + pressurized charge-pipe intake whoosh (1400–5200 Hz).
+    1.50 s zero-voice, ear-safe Garrett/BorgWarner turbocharger compressor spool loop:
+    warm 1950 Hz blade-pass whistle + pressurized charge-pipe intake rush (1200–3800 Hz).
     """
     n = LOOP_SAMPLES
     t = np.arange(n, dtype=np.float64) / SAMPLE_RATE
-    f1 = synth_mod._exact_cycle_freq(2400.0, LOOP_DURATION_S)
-    f2 = synth_mod._exact_cycle_freq(4800.0, LOOP_DURATION_S)
-    fm = 0.25 * np.sin(2.0 * math.pi * (2.0 / LOOP_DURATION_S) * t) + 0.12 * np.sin(2.0 * math.pi * (4.0 / LOOP_DURATION_S) * t + 1.1)
+    f1 = synth_mod._exact_cycle_freq(1950.0, LOOP_DURATION_S)
+    f2 = synth_mod._exact_cycle_freq(3900.0, LOOP_DURATION_S)
+    fm = 0.22 * np.sin(2.0 * math.pi * (2.0 / LOOP_DURATION_S) * t) + 0.10 * np.sin(2.0 * math.pi * (4.0 / LOOP_DURATION_S) * t + 1.1)
     wheel = (
-        0.78 * np.sin(2.0 * math.pi * f1 * t + fm)
-        + 0.20 * np.sin(2.0 * math.pi * f2 * t + 2.0 * fm + 0.4)
-        + 0.08 * np.sin(2.0 * math.pi * (f1 + 40.0) * t + fm)
+        0.84 * np.sin(2.0 * math.pi * f1 * t + fm)
+        + 0.12 * np.sin(2.0 * math.pi * f2 * t + 2.0 * fm + 0.4)
     )
-    wheel = np.tanh(wheel * 1.05)
+    wheel = np.tanh(wheel * 1.02)
     wheel /= float(np.sqrt(np.mean(wheel * wheel))) + 1e-9
 
-    # Pressurized charge-pipe air whoosh (1400..5400 Hz smooth aerodynamic rush)
+    # Pressurized charge-pipe air whoosh (1200..3800 Hz smooth aerodynamic rush)
     air = real_mod.fft_filter(
         rng.standard_normal(n),
-        lambda f: real_mod.butter_bp(f, 1350.0, 5400.0, order=2.5)
-        * (1.0 + 1.2 / (1.0 + ((f - 2500.0) / 700.0) ** 2)),
+        lambda f: real_mod.butter_bp(f, 1150.0, 3850.0, order=2.5)
+        * (1.0 + 1.1 / (1.0 + ((f - 2100.0) / 650.0) ** 2)),
     )
     air /= float(np.sqrt(np.mean(air * air))) + 1e-9
 
-    # Subtle 1.33 Hz boost breathing (100% periodic)
     breath = 1.0 + 0.05 * np.sin(2.0 * math.pi * (2.0 / LOOP_DURATION_S) * t)
-    return synth_mod._finalize_loop((0.46 * wheel + 0.54 * air) * breath, target_rms_dbfs=-13.0)
+    return synth_mod._finalize_loop((0.32 * wheel + 0.68 * air) * breath, target_rms_dbfs=-14.5)
 
 
 def synth_deep_antilag_pop(rng: np.random.Generator, pitch_scale: float = 1.0, double_pop: bool = False) -> np.ndarray:
     """
-    0.55 s zero-voice, chest-thumping rally/supercar anti-lag gunshot bang + natural exhaust decay.
+    0.55 s zero-voice, warm muffled motorsport tailpipe overrun pop (110..1500 Hz chest thump + pipe resonance,
+    zero harsh 4 kHz gunshot crack!).
     """
     dur_s = 0.55
     n = int(round(SAMPLE_RATE * dur_s))
@@ -226,33 +230,33 @@ def synth_deep_antilag_pop(rng: np.random.Generator, pitch_scale: float = 1.0, d
     def one_bang(t0: float, amp: float, p_mul: float) -> np.ndarray:
         dt = np.maximum(0.0, t - t0)
         active = (t >= t0).astype(np.float64)
-        # Chest-punch sub-bass shockwave (135 Hz -> 42 Hz rapid pitch drop over 45 ms)
-        f_inst = (42.0 + 95.0 * np.exp(-dt / 0.018)) * p_mul
+        # Warm chest-thump tailpipe pressure pulse (115 Hz -> 42 Hz)
+        f_inst = (42.0 + 73.0 * np.exp(-dt / 0.022)) * p_mul
         ph = 2.0 * math.pi * np.cumsum(f_inst) / SAMPLE_RATE
-        sub = np.sin(ph) * np.exp(-dt / 0.048) * (1.0 - np.exp(-dt / 0.0012))
+        sub = np.sin(ph) * np.exp(-dt / 0.052) * (1.0 - np.exp(-dt / 0.0022))
 
-        # Explosive exhaust crack (wideband 180..4200 Hz gas detonation transient)
+        # Band-limited resonant exhaust-pipe bark (120..1450 Hz — warm & authentic, NOT a white-noise gunshot!)
         raw_n = rng.standard_normal(n)
-        crack = real_mod.fft_filter(
+        bark = real_mod.fft_filter(
             raw_n,
-            lambda f: real_mod.butter_bp(f, 140.0 * p_mul, 4400.0 * p_mul, order=2.0)
-            * (1.0 + 1.8 / (1.0 + ((f - 520.0 * p_mul) / 260.0) ** 2)),
+            lambda f: real_mod.butter_bp(f, 115.0 * p_mul, 1450.0 * p_mul, order=2.5)
+            * (1.0 + 1.4 / (1.0 + ((f - 360.0 * p_mul) / 210.0) ** 2)),
         )
-        crack /= float(np.sqrt(np.mean(crack * crack))) + 1e-9
-        env_crack = (np.exp(-dt / 0.014) * 0.85 + np.exp(-dt / 0.075) * 0.35) * (1.0 - np.exp(-dt / 0.0008))
+        bark /= float(np.sqrt(np.mean(bark * bark))) + 1e-9
+        env_bark = (np.exp(-dt / 0.022) * 0.72 + np.exp(-dt / 0.085) * 0.30) * (1.0 - np.exp(-dt / 0.0020))
 
-        # Warm outdoor tailpipe reflection tail
-        tail_n = real_mod.fft_filter(rng.standard_normal(n), lambda f: real_mod.butter_bp(f, 90.0, 1800.0, order=2.0))
+        # Warm muffled tailpipe reflection decay
+        tail_n = real_mod.fft_filter(rng.standard_normal(n), lambda f: real_mod.butter_bp(f, 80.0, 950.0, order=2.0))
         tail_n /= float(np.sqrt(np.mean(tail_n * tail_n))) + 1e-9
-        env_tail = np.exp(-dt / 0.14) * (1.0 - np.exp(-dt / 0.012)) * 0.24
+        env_tail = np.exp(-dt / 0.14) * (1.0 - np.exp(-dt / 0.014)) * 0.22
 
-        return active * amp * (0.95 * sub + 1.15 * crack * env_crack + tail_n * env_tail)
+        return active * amp * (1.05 * sub + 0.78 * bark * env_bark + tail_n * env_tail)
 
     y = one_bang(0.010, 1.0, pitch_scale)
     if double_pop:
-        y = y + one_bang(0.115, 0.62, pitch_scale * 0.92)
-    y = np.tanh(y * 1.35)
-    return synth_mod._finalize_oneshot(y, target_rms_dbfs=-11.5, fade_in_ms=1.5, fade_out_ms=70.0)
+        y = y + one_bang(0.135, 0.58, pitch_scale * 0.90)
+    y = np.tanh(y * 1.15)
+    return synth_mod._finalize_oneshot(y, target_rms_dbfs=-14.0, fade_in_ms=2.5, fade_out_ms=80.0)
 
 
 def run_dyno_job(job: DynoJob, dyno_bin: Path, tmp_dir: Path, audio_dir: Path, web_ogg_dir: Path) -> tuple[str, dict]:
@@ -278,7 +282,7 @@ def run_dyno_job(job: DynoJob, dyno_bin: Path, tmp_dir: Path, audio_dir: Path, w
 
     shaped = real_mod.fft_filter(
         looped,
-        lambda f: real_mod.butter_bp(f, 28.0, 14500.0, order=2.5)
+        lambda f: real_mod.butter_bp(f, 28.0, 6800.0, order=2.5)
         * presence_shelf(f, job.presence_db),
     )
     target_db = -14.0 if job.load <= 0.05 else -12.2

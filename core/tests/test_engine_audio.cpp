@@ -357,4 +357,98 @@ RS_TEST(vehicle_audio) {
         test::check("full-vehicle audio is 100% finite, strictly true-peak limited (<=0.97), DC-free and punchy",
                     all_finite && max_abs > 0.15 && max_abs <= 0.97 && dc_offset < 0.015 && rms > 0.03 && crest_db > 5.0);
     }
+
+    // -------------------------------------------------------------------------
+    // 4. Spectral Realism Verification: Deep V8 Growl, Muffled Overrun & Ear-Safe Top Speed
+    // -------------------------------------------------------------------------
+    {
+        auto band_power = [&](const std::vector<float>& x, double f_lo, double f_hi, double step_hz) {
+            double total = 0.0;
+            for (double f = f_lo; f <= f_hi + 1e-6; f += step_hz) {
+                total += goertzel_power(x, kFs, f);
+            }
+            return total;
+        };
+
+        // 4a. Cross-Plane V8 @ 3200 RPM WOT: deep growl (50..360 Hz) must dominate piercing 2.8..6.0 kHz harshness
+        rs::EngineAudioSynth v8;
+        rs::EngineAudioConfig vcfg{};
+        vcfg.voice = rs::EngineVoice::V8Crossplane;
+        vcfg.sampleRate = kFs;
+        vcfg.simFrequency = 5200;
+        vcfg.fluidSubsteps = 3;
+        vcfg.exhaustStage = rs::ExhaustStage::Sport;
+        v8.initialize(vcfg);
+        v8.warmup(0.08f, 3200.0f, 0.95f);
+
+        rs::EngineAudioControl c{};
+        c.rpm = 3200.0f;
+        c.throttle = 0.95f;
+        c.load = 0.95f;
+        c.exhaustStage = rs::ExhaustStage::Sport;
+        c.perspective = rs::CameraPerspective::ExteriorChase;
+        v8.setControl(c);
+        std::vector<float> L(8192), R(8192), mono(8192);
+        v8.renderStereo(L.data(), R.data(), 8192);
+        for (int i = 0; i < 8192; ++i) mono[i] = 0.5f * (L[i] + R[i]);
+
+        const double v8_growl = band_power(mono, 50.0, 360.0, 10.0);
+        const double v8_harsh = band_power(mono, 2800.0, 6000.0, 120.0);
+        const double v8_ratio_db = 10.0 * std::log10(std::max(v8_growl, 1e-9) / std::max(v8_harsh, 1e-9));
+
+        // 4b. Sport exhaust mid-RPM lift-off (4400 RPM -> throttle 0): warm burble only, NO gunshot HF crack!
+        c.rpm = 4400.0f;
+        c.throttle = 0.80f;
+        c.load = 0.80f;
+        v8.setControl(c);
+        v8.renderStereo(L.data(), R.data(), 2048);
+        c.throttle = 0.0f;
+        c.load = 0.0f;
+        c.rpm = 4100.0f;
+        v8.setControl(c);
+        v8.renderStereo(L.data(), R.data(), 8192);
+        double lift_peak = 0.0;
+        for (int i = 0; i < 8192; ++i) {
+            mono[i] = 0.5f * (L[i] + R[i]);
+            lift_peak = std::max(lift_peak, static_cast<double>(std::max(std::abs(L[i]), std::abs(R[i]))));
+        }
+        const double lift_hf = band_power(mono, 3200.0, 7200.0, 160.0);
+        const double lift_lo = band_power(mono, 60.0, 420.0, 15.0);
+
+        // 4c. Top-speed full redline (V8 @ 7150 RPM, 88 m/s = 317 km/h): ear-safe warm balance, no shrill whistle
+        rs::VehicleAudioEngine full_v8;
+        rs::VehicleAudioConfig fvcfg{};
+        fvcfg.engine = vcfg;
+        full_v8.initialize(fvcfg);
+        full_v8.warmup(0.08f, 7150.0f, 1.0f);
+        rs::VehicleAudioTelemetry top{};
+        top.rpm = 7150.0f;
+        top.redline_rpm = 7200.0f;
+        top.throttle = 1.0f;
+        top.load = 1.0f;
+        top.speed_mps = 88.0f;
+        top.exhaust_stage = rs::ExhaustStage::Sport;
+        top.perspective = rs::CameraPerspective::ExteriorChase;
+        for (int w = 0; w < 4; ++w) {
+            top.wheels[w].contact = true;
+            top.wheels[w].load_n = 4200.0f;
+            top.wheels[w].angular_velocity = 266.0f;
+            top.wheels[w].radius_m = 0.33f;
+        }
+        full_v8.setTelemetry(top);
+        full_v8.renderStereo(L.data(), R.data(), 8192);
+        for (int i = 0; i < 8192; ++i) mono[i] = 0.5f * (L[i] + R[i]);
+        const double top_body = band_power(mono, 70.0, 1400.0, 25.0);
+        const double top_harsh = band_power(mono, 3000.0, 7500.0, 150.0);
+        const double top_ratio_db = 10.0 * std::log10(std::max(top_body, 1e-9) / std::max(top_harsh, 1e-9));
+
+        std::printf("         spectral check: V8 growl/harsh=%.1f dB | lift-off peak=%.3f lo/hf=%.1f dB | top-speed body/harsh=%.1f dB\n",
+                    v8_ratio_db, lift_peak,
+                    10.0 * std::log10(std::max(lift_lo, 1e-9) / std::max(lift_hf, 1e-9)),
+                    top_ratio_db);
+        test::check("Cross-Plane V8 has deep chest growl dominating 2.8-6 kHz harshness (> +14 dB)", v8_ratio_db > 14.0);
+        test::check("Sport lift-off produces warm muffled overrun without full-scale HF gunshot blasts",
+                    lift_peak < 0.78 && lift_lo > lift_hf * 10.0);
+        test::check("Top-speed redline (317 km/h) stays warm and ear-safe (body > harsh by > +10 dB)", top_ratio_db > 10.0);
+    }
 }

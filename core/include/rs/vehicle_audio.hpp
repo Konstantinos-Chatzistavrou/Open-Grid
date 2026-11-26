@@ -493,7 +493,7 @@ struct VehicleAudioTelemetry {
         t.engine_misfire = out.engine_misfire;
         t.gear_grind = out.gear_grind;
         t.gear_whine_hz = static_cast<float>(out.gear_whine_hz);
-        t.gear_whine_level = (cfg.drivetrain.transmission == "dog_box") ? 0.65f : 0.22f;
+        t.gear_whine_level = (cfg.drivetrain.transmission == "dog_box") ? 0.52f : 0.0f;
         t.driveline_clunk_nm = static_cast<float>(out.driveline_clunk_nm);
         t.tc_slip_ratio = static_cast<float>(out.tc_slip_ratio);
         t.tc_torque_ratio = static_cast<float>(out.tc_torque_ratio);
@@ -593,8 +593,18 @@ public:
         if (t.bov_venting && !prevBov_) engine_.triggerTurboFlutter(std::max(0.4f, t.boost_bar));
         prevBov_ = t.bov_venting;
 
-        if ((t.shift_cut_active && !prevShiftCut_) || (t.engine_misfire && !prevMisfire_)) {
-            engine_.triggerExhaustPop(t.shift_cut_active ? 0.92f : 0.75f);
+        if (t.shift_cut_active && !prevShiftCut_) {
+            // Subtle high-load upshift exhaust bark ONLY (never gunshot spam on limiter or coast!)
+            if (t.throttle > 0.55f && t.rpm > t.redline_rpm * 0.62f) {
+                if (t.exhaust_stage == ExhaustStage::RaceTitanium) {
+                    engine_.triggerExhaustPop(0.48f);
+                } else if (t.exhaust_stage == ExhaustStage::Sport) {
+                    engine_.triggerOverrunBurble(0.45f);
+                }
+            }
+        }
+        if (t.engine_misfire && !prevMisfire_) {
+            engine_.triggerOverrunBurble(0.42f);
         }
         prevShiftCut_ = t.shift_cut_active;
         prevMisfire_ = t.engine_misfire;
@@ -798,10 +808,10 @@ private:
                                    : 0.0f;
         const float brakeSquealHz = audio::clampf(3150.0f + (maxBrakeTemp - 100.0f) * 1.4f, 2400.0f, 4800.0f);
 
-        // Wind rush scales with v^2 (audibly opens past 110 km/h)
-        const float vNorm = audio::clampf(tel_.speed_mps / 85.0f, 0.0f, 1.4f);
-        const float windAmp = vNorm * vNorm * 0.24f * (isCockpit ? 0.62f : 1.0f);
-        windLp_.setLowpass(fs_, audio::clampf(380.0f + tel_.speed_mps * 14.0f, 350.0f, 2400.0f), 0.707f);
+        // Deep aerodynamic wind buffeting (scales smoothly with v^2, strictly warm <= 980 Hz, zero ear-piercing whistle!)
+        const float vNorm = audio::clampf(tel_.speed_mps / 95.0f, 0.0f, 1.15f);
+        const float windAmp = std::min(0.15f, vNorm * vNorm * 0.13f) * (isCockpit ? 0.58f : 1.0f);
+        windLp_.setLowpass(fs_, audio::clampf(280.0f + tel_.speed_mps * 6.8f, 260.0f, 980.0f), 0.707f);
         const float windPan = audio::clampf(tel_.sideslip_rad * 1.4f, -0.45f, 0.45f);
 
         // Torque-converter pump/stator hydraulic whirr under slip/multiplication
@@ -965,9 +975,7 @@ private:
             float aeroL = 0.0f, aeroR = 0.0f;
             if (windAmp > 0.0005f) {
                 const float wNoise = windHp_.process(windLp_.process(rng_.nextSigned()));
-                windWhistlePhase_ += audio::kTwoPiF * audio::clampf(420.0f + tel_.speed_mps * 9.5f, 350.0f, 1600.0f) * invFs_;
-                if (windWhistlePhase_ > audio::kTwoPiF) windWhistlePhase_ -= audio::kTwoPiF;
-                const float wSig = (wNoise * 0.90f + std::sin(windWhistlePhase_) * 0.06f) * windAmp;
+                const float wSig = wNoise * windAmp;
                 aeroL += wSig * (1.0f - windPan);
                 aeroR += wSig * (1.0f + windPan);
             }
