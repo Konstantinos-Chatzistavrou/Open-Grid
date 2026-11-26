@@ -398,7 +398,9 @@
   },
   "brakes": {
     "max_total_torque_nm": 7000,
-    "bias_front": 0.67
+    "bias_front": 0.67,
+    "migration_front": 0.025,
+    "disc_type": "carbon_ceramic"
   },
   "engine": {
     "cylinders": 8,

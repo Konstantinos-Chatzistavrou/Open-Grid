@@ -138,9 +138,13 @@ struct ChassisDynamicsConfig {
     bool bushing_compliance_enabled = false;         // Elastokinematic bushing compliance (toe/camber/recession under Fx/Fy)
     bool progressive_bump_stops_enabled = false;     // Smooth exponential polyurethane jounce packers (when axle uses linear default)
     bool kingpin_3d_ffb_enabled = false;             // Full 3D kingpin wrench (Fx*scrub lockup/kerb/torque-steer + KPI Fz jacking + Mx)
+    bool elastic_column_enabled = false;             // Elastic 2-DOF steering column + tie-rod compliance oscillator (LMU DD feel)
     double brake_bias_offset = 0.0;                  // Live cockpit brake bias trim (+front / -rear)
     double brake_migration_override = -999.0;        // Live cockpit BMIG override (>= -0.5 overrides CarConfig::brake_migration_front)
     double hybrid_deploy_mode = 1.0;                 // 0.0 = harvest only, 0.5 = balanced, 1.0 = attack/quali
+    double engine_braking_scale = 1.0;               // 0.4..1.6 adjustable in-car engine braking (EBR coast map)
+    double throttle_map_gamma = 1.0;                 // 0.65 quali / 1.0 linear / 1.65 wet progressive pedal curve
+    double brake_duct_open = 1.0;                    // 0.25..1.0 brake duct opening (closing cuts drag up to -2.4% at cost of hotter brakes)
 };
 
 // Nearby traffic / rival car snapshot for 3D multi-car slipstream, side-drafting, tandem push-draft & wake buffeting.
@@ -164,6 +168,7 @@ struct AeroWakeState {
     double tandem_push_drag_delta = 0.0;          // -0.06..-0.13 base-pressure relief when trailing car tucks behind our rear bumper
     double lateral_suction_n = 0.0;               // Bernoulli lateral venturi suction/bow-wave force (+ = left, N) in wheel-to-wheel passes
     double wake_turbulence_0_to_1 = 0.0;          // 0..1 unsteady vortex-shedding buffeting intensity (chassis moments + FFB nibble)
+    double wake_lateral_asymmetry = 0.0;          // -1..+1 off-center wake gradient (+ = left in wake / right in clean air -> yaw/roll pull!)
     double hot_air_delta_c = 0.0;                 // +0..+12 C hot exhaust/radiator wake air raising IAT & reducing intake air density
     double cooling_airflow_scale = 1.0;           // 1.0 clean air .. 0.68 starved radiator/oil/brake-duct airflow in close draft
     double wake_phase_s = 0.0;                    // deterministic simulation time for vortex buffeting harmonic phase
@@ -254,6 +259,7 @@ struct VehicleOutput {
     double hybrid_regen_kw = 0.0;            // live MGU-K regenerative braking harvest (kW)
     bool hybrid_bbw_active = false;          // true when Brake-by-Wire is actively blending regen & hydraulic brakes
     double front_adhesion_ratio = 1.0;       // min(FL, FR) brush adhesion ratio (1 = stuck .. 0 = full slide; pre-squeal scrub audio)
+    double wake_asymmetry = 0.0;             // -1..+1 off-center dirty-air wake gradient (asymmetric yaw/roll pull on overtake peek)
 };
 
 // Physical effect multipliers (filled from DamageModel each tick when damage is enabled).
@@ -400,7 +406,8 @@ private:
     std::array<double, 4> unsprung_z_{};    // 2-DOF unsprung wheel vertical offset relative to static equilibrium, m
     std::array<double, 4> unsprung_vz_{};   // 2-DOF unsprung wheel vertical velocity (wheel hop), m/s
     AeroWakeState aero_wake_{};
-    double delayed_rear_dirty_air_ = 1.0;   // travelling dirty-air wave advection lag (front wing sees wake L/v before rear wing)
+    double delayed_floor_dirty_air_ = 1.0;  // travelling dirty-air wave advection lag at underbody floor (0.5 * L / v)
+    double delayed_rear_dirty_air_ = 1.0;   // travelling dirty-air wave advection lag at rear wing (L / v)
     int last_gear_ = 1;                     // auto-clutch: detects gear changes
     double shift_timer_ = 0;                // auto-clutch / AMT: active declutch hold timer (s)
     double shift_release_timer_ = 0;        // auto-clutch / AMT: post-sync clutch release ramp (s)
@@ -412,6 +419,8 @@ private:
     bool recovering_from_miss_ = false;     // auto-clutch: a missed shift is being recovered (clutch held open until the retry completes)
     double prev_steer_rad_ = 0.0;           // previous tick average front road-wheel steer angle (for column damping/inertia)
     double prev_steer_vel_rads_ = 0.0;      // previous tick steering wheel angular velocity (rad/s)
+    double col_twist_rad_ = 0.0;            // elastic 2-DOF steering column torsional twist state (rad)
+    double col_twist_vel_rads_ = 0.0;       // elastic 2-DOF steering column torsional velocity state (rad/s)
 
     double steer_angle(int wheel) const;
     double roll_centre(int wheel) const;      // roll centre height of the wheel's axle, m (migrates with heave)

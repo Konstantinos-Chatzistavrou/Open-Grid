@@ -20,6 +20,10 @@
     "bump_stop_rate_n_per_m": 300000,
     "damper_bump_ns_per_m": 2900,
     "damper_rebound_ns_per_m": 5700,
+    "heave_spring_rate_n_per_m": 120000,
+    "heave_gap_m": 0.008,
+    "heave_damper_bump_ns_per_m": 4500,
+    "heave_damper_rebound_ns_per_m": 6500,
     "anti_roll_rate_n_per_m": 42000,
     "roll_centre_height_m": 0.06,
     "max_steer_deg": 32,
@@ -99,6 +103,10 @@
     "bump_stop_rate_n_per_m": 300000,
     "damper_bump_ns_per_m": 3100,
     "damper_rebound_ns_per_m": 6100,
+    "heave_spring_rate_n_per_m": 135000,
+    "heave_gap_m": 0.008,
+    "heave_damper_bump_ns_per_m": 4800,
+    "heave_damper_rebound_ns_per_m": 6800,
     "anti_roll_rate_n_per_m": 28000,
     "roll_centre_height_m": 0.1,
     "static_camber_deg": -2.4,
@@ -398,7 +406,9 @@
   },
   "brakes": {
     "max_total_torque_nm": 9500,
-    "bias_front": 0.72
+    "bias_front": 0.72,
+    "migration_front": 0.03,
+    "disc_type": "carbon_ceramic"
   },
   "engine": {
     "cylinders": 8,

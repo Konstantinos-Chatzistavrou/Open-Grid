@@ -296,6 +296,7 @@ struct SteeringParams {
     double rack_friction_nm = 4.5;           // N m rack & kingpin dry/seal Coulomb friction
     double column_damping_nms_per_rad = 18.0;// N m s/rad hydraulic/column viscous damping at rack scale
     double column_inertia_kgm2 = 0.045;      // kg m^2 steering wheel + column rotational inertia
+    double column_stiffness_nm_per_rad = 180.0; // N m/rad elastic steering column + tie-rod compliance stiffness (LMU DD feel)
 };
 
 // Hybrid ERS / MGU-K electric motor, regenerative Brake-by-Wire (BBW) & front-axle e-AWD (LMU Hypercar / modern supercars).

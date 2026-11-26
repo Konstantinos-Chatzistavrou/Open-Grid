@@ -35,6 +35,8 @@ struct DrivetrainInput {
     double brake_bias_offset = 0.0;                  // live cockpit brake-bias adjustment (+ = more front, - = more rear)
     double brake_migration_override = -999.0;        // >= -0.5 overrides CarConfig::brake_migration_front (BMIG)
     double hybrid_deploy_mode = 1.0;                 // 0.0 = harvest only, 0.5 = balanced, 1.0 = attack/quali
+    double engine_braking_scale = 1.0;               // 0.4..1.6 in-car MFD engine-braking coast map (1.0 = stock)
+    double throttle_map_gamma = 1.0;                 // 0.65 quali / 1.0 linear / 1.65 progressive wet pedal curve
 };
 
 // International Standard Atmosphere (ISA) barometric altitude, ambient air Celsius, asphalt track Celsius & humidity model.

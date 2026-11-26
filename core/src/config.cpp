@@ -476,6 +476,7 @@ CarConfig parse_car_config(const std::string& text) {
         sp.rack_friction_nm = num_or(st, "rack_friction_nm", sp.rack_friction_nm);
         sp.column_damping_nms_per_rad = num_or(st, "column_damping_nms_per_rad", sp.column_damping_nms_per_rad);
         sp.column_inertia_kgm2 = num_or(st, "column_inertia_kgm2", sp.column_inertia_kgm2);
+        sp.column_stiffness_nm_per_rad = num_or(st, "column_stiffness_nm_per_rad", sp.column_stiffness_nm_per_rad);
     }
     if (d.contains("front_diff")) c.drivetrain.front_diff = parse_diff(d.at("front_diff"));
     if (d.contains("rear_diff")) c.drivetrain.rear_diff = parse_diff(d.at("rear_diff"));

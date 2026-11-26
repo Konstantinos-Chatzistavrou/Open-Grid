@@ -584,6 +584,7 @@ AeroWakeState Vehicle::compute_aero_wake_field(const Vec3& my_pos, const Vec3& m
     double side_draft_rear_df_loss = 0.0;
     double lateral_suction_n = 0.0;
     double wake_turb = 0.0;
+    double wake_asym = 0.0;
     double hot_air_c = 0.0;
     double cool_loss = 0.0;
 
@@ -632,6 +633,12 @@ AeroWakeState Vehicle::compute_aero_wake_field(const Vec3& my_pos, const Vec3& m
                 const double shear_boost = 0.65 + 0.55 * std::sin(clamp(u_lat, 0.0, 1.0) * kPi);
                 const double turb_i = clamp(lat_f * lon_f * shear_boost * speed_gate * std::sqrt(df_ref), 0.0, 1.0);
                 wake_turb = std::max(wake_turb, turb_i);
+
+                // Asymmetric off-center wake gradient: peaks when peeking half a car-width out of the slipstream!
+                // + = wake core to our left (right half in clean air), - = wake core to our right (left half in clean air).
+                const double signed_u = clamp(wake_center_lat / cone_hw, -1.0, 1.0);
+                const double asym_i = 4.0 * signed_u * (1.0 - std::abs(signed_u)) * lon_f * speed_gate * std::sqrt(drag_ref);
+                wake_asym += asym_i;
 
                 // Thermal wake (hot exhaust + radiator discharge decays faster than momentum deficit)
                 const double lon_therm = std::exp(-std::max(0.0, lon - 4.0) / 14.0) * clamp((lon - 2.8) / 3.5, 0.0, 1.0);
@@ -698,6 +705,7 @@ AeroWakeState Vehicle::compute_aero_wake_field(const Vec3& my_pos, const Vec3& m
     wake.dirty_air_rear_downforce_scale = clamp((1.0 - dirty_rear_accum) * (1.0 - side_draft_rear_df_loss), 0.74, 1.0);
     wake.lateral_suction_n = clamp(lateral_suction_n, -650.0, 650.0);
     wake.wake_turbulence_0_to_1 = clamp(wake_turb, 0.0, 1.0);
+    wake.wake_lateral_asymmetry = clamp(wake_asym, -1.0, 1.0);
     wake.hot_air_delta_c = clamp(hot_air_c, 0.0, 14.0);
     wake.cooling_airflow_scale = clamp(1.0 - cool_loss, 0.65, 1.0);
     return wake;
@@ -1176,6 +1184,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     din.brake_bias_offset = chassis_dyn_.brake_bias_offset;
     din.brake_migration_override = chassis_dyn_.brake_migration_override;
     din.hybrid_deploy_mode = chassis_dyn_.hybrid_deploy_mode;
+    din.engine_braking_scale = chassis_dyn_.engine_braking_scale;
+    din.throttle_map_gamma = chassis_dyn_.throttle_map_gamma;
     // ---- Transmission-specific clutch, shift-interrupt & auto-blip orchestration
     // Every gearbox type behaves like its real-world mechanical counterpart:
     //   * AutomaticTorqueConverter: fluid coupling + TCC lock-up (no clutch pedal management)
@@ -1536,7 +1546,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         // not the disc), cooled by airflow (vented disc: h = base + k v) and radiation (eps sigma A (T^4 - Ta^4)).
         const BrakeThermal& bt = cfg_.brake_thermal;
         const double v_car = length(s.velocity);
-        const double wake_brake_cool = clamp(aero_wake_.cooling_airflow_scale, 0.55, 1.0);
+        const double duct_open = clamp(chassis_dyn_.brake_duct_open, 0.25, 1.0);
+        const double wake_brake_cool = clamp(aero_wake_.cooling_airflow_scale, 0.55, 1.0) * (0.35 + 0.65 * duct_open);
         const double wake_brake_hot_c = std::max(0.0, aero_wake_.hot_air_delta_c);
         const double disc_cp = (bt.disc_type == BrakeDiscType::CarbonCarbon) ? 710.0
                              : (bt.disc_type == BrakeDiscType::CarbonCeramic ? 620.0 : 460.0);
@@ -1774,17 +1785,27 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     const double yaw_drag_mult = aero_wake_.yaw_aero_enabled ? (1.0 + 0.35 * sin_beta * sin_beta + a.steer_drag_gain * steer_sq) : 1.0;
     const double yaw_rear_down_mult = aero_wake_.yaw_aero_enabled ? (1.0 - 0.30 * sin_beta * sin_beta) : 1.0;
     const double steer_df_scale = aero_wake_.yaw_aero_enabled ? clamp(1.0 - a.steer_downforce_loss * steer_sq, 0.85, 1.0) : 1.0;
-    const double eff_drag_scale = clamp(aero_wake_.drag_scale, 0.55, 1.25) * yaw_drag_mult * active_drag_mult;
+    const double duct_open_aero = clamp(chassis_dyn_.brake_duct_open, 0.25, 1.0);
+    // Closing brake ducts trims cooling drag by up to -2.4% on long straights at the cost of hotter rotors
+    const double duct_drag_mult = 1.0 - 0.024 * (1.0 - duct_open_aero);
+    const double eff_drag_scale = clamp(aero_wake_.drag_scale, 0.55, 1.25) * yaw_drag_mult * active_drag_mult * duct_drag_mult;
     double eff_front_down_scale = clamp(aero_wake_.dirty_air_front_downforce_scale, 0.50, 1.10);
-    // Travelling dirty-air wave advection lag: front wing encounters wake changes at t=0, rear wing L/v (~40-60 ms) later!
+    // Per-element travelling dirty-air wave advection lag:
+    //   1) Front wing / splitter sees wake at t = 0
+    //   2) Underbody floor / diffuser sees wake at 0.5 * L / v (~22 ms)
+    //   3) Rear wing sees wake at L / v (~45 ms)
     const double raw_rear_dirty = clamp(aero_wake_.dirty_air_rear_downforce_scale, 0.65, 1.10);
+    const double raw_floor_dirty = 0.5 * (eff_front_down_scale + raw_rear_dirty);
     if (aero_wake_.yaw_aero_enabled && v > 10.0 && dt > 0.0) {
         const double tau_rear = clamp(cfg_.wheelbase / std::max(v, 15.0), 0.02, 0.18);
+        const double tau_floor = 0.5 * tau_rear;
+        delayed_floor_dirty_air_ += (raw_floor_dirty - delayed_floor_dirty_air_) * clamp(dt / tau_floor, 0.0, 1.0);
         delayed_rear_dirty_air_ += (raw_rear_dirty - delayed_rear_dirty_air_) * clamp(dt / tau_rear, 0.0, 1.0);
     } else {
+        delayed_floor_dirty_air_ = raw_floor_dirty;
         delayed_rear_dirty_air_ = raw_rear_dirty;
     }
-    const double eff_rear_down_scale = delayed_rear_dirty_air_;
+    const double eff_rear_down_scale = 0.45 * delayed_floor_dirty_air_ + 0.55 * delayed_rear_dirty_air_;
 
     // Thermal wake slightly reduces local intake/flow air density via ideal-gas T_amb / (T_amb + dT_wake)
     const double wake_hot_c = std::max(0.0, aero_wake_.hot_air_delta_c);
@@ -1919,6 +1940,18 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         total_aero_yaw_nm += yaw_buffet_nm;
         out.steer_torque += 14.0 * tb * (0.55 * h2 + 0.45 * h3);
     }
+    // Asymmetric off-center dirty-air wake yaw/roll/steering tug when peeking half a car-width out to overtake:
+    // clean-air half carries higher drag & downforce, pulling nose gently toward the clean-air lane!
+    if (std::abs(aero_wake_.wake_lateral_asymmetry) > 1e-3 && v > 20.0) {
+        const double asym = clamp(aero_wake_.wake_lateral_asymmetry, -1.0, 1.0);
+        const double half_tr = 0.5 * cfg_.front.track;
+        const double q_norm = clamp((0.5 * rho_air * v * v) / 2200.0, 0.0, 2.5);
+        const double asym_yaw_nm = -asym * 0.22 * length(f_drag) * half_tr;
+        const double asym_roll_nm = asym * 0.14 * std::max(0.0, f_down_tot) * half_tr;
+        torque += s.orientation.rotate({asym_roll_nm, 0.0, asym_yaw_nm});
+        total_aero_yaw_nm += asym_yaw_nm;
+        out.steer_torque += -asym * 12.0 * q_norm;
+    }
 
     out.force = force;
     out.torque = torque;
@@ -1995,7 +2028,20 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const double inert_rim_nm = sp.column_inertia_kgm2 * alpha_sw;
         out.power_steering_gain = boost_frac;
         out.steering_assist_torque_nm = assist_rack_nm;
-        out.steering_column_torque_nm = (rack_net_nm / ratio) - fric_rim_nm - damp_rim_nm - inert_rim_nm;
+        const double raw_rim_nm = (rack_net_nm / ratio) - fric_rim_nm - damp_rim_nm - inert_rim_nm;
+        if (chassis_dyn_.elastic_column_enabled && dt > 0.0) {
+            // Elastic 2-DOF steering column + tie-rod torsional compliance oscillator (unconditionally stable semi-implicit):
+            // exact steady-state torque transmission (k_col * theta == raw_rim_nm) while naturally shaping 400 Hz kerb spikes!
+            const double I_col = std::max(sp.column_inertia_kgm2, 0.015);
+            const double k_col = std::max(sp.column_stiffness_nm_per_rad, 40.0);
+            const double c_col = std::max(2.0 * 0.72 * std::sqrt(I_col * k_col), 1.5); // ~0.72 critical damping (crisp, zero ringing)
+            const double denom = 1.0 + (dt / I_col) * (c_col + dt * k_col);
+            col_twist_vel_rads_ = (col_twist_vel_rads_ + (dt / I_col) * (raw_rim_nm - k_col * col_twist_rad_)) / denom;
+            col_twist_rad_ = clamp(col_twist_rad_ + dt * col_twist_vel_rads_, -0.35, 0.35);
+            out.steering_column_torque_nm = k_col * col_twist_rad_ + 0.35 * c_col * col_twist_vel_rads_;
+        } else {
+            out.steering_column_torque_nm = raw_rim_nm;
+        }
     }
 
     out.slipstream_drag_scale = eff_drag_scale;
@@ -2017,6 +2063,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     out.hybrid_regen_kw = drivetrain_.systems.hybrid_regen_kw;
     out.hybrid_bbw_active = drivetrain_.systems.hybrid_bbw_active;
     out.front_adhesion_ratio = std::min(out.wheels[FL].adhesion_ratio, out.wheels[FR].adhesion_ratio);
+    out.wake_asymmetry = aero_wake_.wake_lateral_asymmetry;
     return out;
 }
 

@@ -183,6 +183,7 @@ void UOpenGridVehicleComponent::ApplyFeatureFlags()
     Vehicle_->chassis_dynamics().bushing_compliance_enabled = true;
     Vehicle_->chassis_dynamics().progressive_bump_stops_enabled = true;
     Vehicle_->chassis_dynamics().kingpin_3d_ffb_enabled = true;
+    Vehicle_->chassis_dynamics().elastic_column_enabled = true;
     Vehicle_->engine_systems().torsional_compliance_enabled = true;
     Vehicle_->engine_systems().dog_box_flat_shift_cut = true;
     // A car whose file does not name its gearbox gets the manual synchromesh box, exactly as in the browser build (web/wasm/bridge.cpp
@@ -584,6 +585,9 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     Cmd.settings.brake_bias_offset = FMath::Clamp(BrakeBiasOffset, -0.20f, 0.20f);
     Cmd.settings.brake_migration_override = (BrakeMigrationOverride >= -0.5f) ? static_cast<double>(BrakeMigrationOverride) : -999.0;
     Cmd.settings.hybrid_deploy_mode = FMath::Clamp(HybridDeployMode, 0.0f, 1.0f);
+    Cmd.settings.engine_braking_scale = FMath::Clamp(EngineBrakingScale, 0.4f, 1.6f);
+    Cmd.settings.throttle_map_gamma = FMath::Clamp(ThrottleMapGamma, 0.5f, 2.2f);
+    Cmd.settings.brake_duct_open = FMath::Clamp(BrakeDuctOpen, 0.25f, 1.0f);
     UOpenGridWeatherSubsystem* WeatherSub = (bAutoSyncWorldWeather && GetWorld())
         ? GetWorld()->GetSubsystem<UOpenGridWeatherSubsystem>() : nullptr;
     if (WeatherSub)
@@ -827,6 +831,7 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
     HybridRegenKw = static_cast<float>(Out.hybrid_regen_kw);
     bHybridBbwActive = Out.hybrid_bbw_active;
     FrontAdhesionRatio = static_cast<float>(Out.front_adhesion_ratio);
+    WakeAsymmetry = static_cast<float>(Out.wake_asymmetry);
 
     // Interpolate wheel poses in body-local space between PrevRecord_ and LastRecord_ and transform by the live
     // game-thread RenderChassis so wheels in UE 5.8 never lag the interpolated chassis by one step.

@@ -428,6 +428,18 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Hybrid", meta=(ClampMin="0.0", ClampMax="1.0"))
     float HybridDeployMode = 1.0f;
 
+    /** Adjustable in-car Engine Braking coast map (0.4 = free-rolling entry .. 1.0 = stock .. 1.6 = aggressive rotation). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Drivetrain", meta=(ClampMin="0.4", ClampMax="1.6"))
+    float EngineBrakingScale = 1.0f;
+
+    /** Throttle pedal non-linearity map (0.65 = Quali aggressive, 1.0 = Linear race, 1.65 = Progressive wet). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Drivetrain", meta=(ClampMin="0.5", ClampMax="2.2"))
+    float ThrottleMapGamma = 1.0f;
+
+    /** Brake cooling duct opening (0.25..1.0: closing ducts trims aero drag up to -2.4% at the cost of hotter discs). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Brakes", meta=(ClampMin="0.25", ClampMax="1.0"))
+    float BrakeDuctOpen = 1.0f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Assists")
     bool bAbs = true;
 
@@ -722,6 +734,10 @@ public:
     /** Front axle minimum brush contact-patch adhesion ratio (1 = stuck .. 0 = full slide; MetaSounds pre-squeal rubber scrub). */
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")
     float FrontAdhesionRatio = 1.0f;
+
+    /** Off-center dirty-air wake gradient (-1..+1; non-zero when peeking half a car-width out of slipstream). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float WakeAsymmetry = 0.0f;
 
     /** Per-wheel kinematic, thermal, acoustic, and interpolated pose state (FL=0, FR=1, RL=2, RR=3). */
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Wheels")

@@ -504,8 +504,13 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
     double t_engine = 0;
     if (!stalled) {
         double rpm = engine_rpm();
+        // Throttle pedal map (0.65 quali / 1.0 linear / 1.65 progressive wet) before idle controller & auto-blip
+        const double raw_thr = clamp(in.throttle, 0.0, 1.0);
+        const double shaped_thr = (std::abs(in.throttle_map_gamma - 1.0) > 1e-4 && raw_thr > 0.0)
+                                ? std::pow(raw_thr, clamp(in.throttle_map_gamma, 0.5, 2.2))
+                                : raw_thr;
         // Idle controller: opens the throttle a little when revs fall below idle.
-        double thr = std::max(in.throttle, clamp((e.idle_rpm - rpm) / 300.0, 0.0, 1.0) * 0.5);
+        double thr = std::max(shaped_thr, clamp((e.idle_rpm - rpm) / 300.0, 0.0, 1.0) * 0.5);
         // Closed-loop electronic throttle auto-blip on downshifts (SequentialDogBox, AutomatedManual, DualClutchDct).
         if (systems.auto_blip_active && systems.auto_blip_throttle > 0.0) {
             thr = std::max(thr, clamp(systems.auto_blip_throttle, 0.0, 1.0));
@@ -654,8 +659,9 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
             }
         }
 
+        const double ebr_scale = clamp(in.engine_braking_scale, 0.35, 1.75);
         t_engine = thr * engine_torque_full(rpm) * in.engine_power_scale * turbo_mult * nos_mult * health_mult
-                   - (1 - thr) * (e.friction_const + e.friction_linear * engine_omega);
+                   - (1 - thr) * ebr_scale * (e.friction_const + e.friction_linear * engine_omega);
 
         // ---- BSFC Fuel Consumption (~250 g/kWh under load + idle flow) + Physical Fuel Tank Leak Drain
         if (systems.fuel_liters > 0.0) {

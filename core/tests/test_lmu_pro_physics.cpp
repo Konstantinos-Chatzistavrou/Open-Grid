@@ -294,4 +294,122 @@ RS_TEST(lmu_pro_physics) {
                     aged.thermal_stiffness_factor(&tp) > fresh.thermal_stiffness_factor(&tp) + 0.02 &&
                     aged.zone_health_grip_factor() < fresh.zone_health_grip_factor() - 0.015);
     }
+
+    // 8. Asymmetric Off-Center Dirty-Air Wake Yaw/Roll/Steering Pull (peeking half a car-width out to overtake!)
+    {
+        const Vec3 my_pos{0.0, 0.0, 0.0};
+        const Vec3 my_vel{65.0, 0.0, 0.0};
+        const Vec3 my_fwd{1.0, 0.0, 0.0};
+        AeroTrafficCar lead;
+        lead.position = {11.0, 0.0, 0.0};
+        lead.velocity = {65.0, 0.0, 0.0};
+        lead.forward = {1.0, 0.0, 0.0};
+
+        const AeroWakeState centered = Vehicle::compute_aero_wake_field({0.0, 0.0, 0.0}, my_vel, my_fwd, {lead});
+        // Peek RIGHT (y = -0.85 m): lead wake core is to our LEFT (+Y) -> right half of nose enters clean air!
+        const AeroWakeState peek_right = Vehicle::compute_aero_wake_field({0.0, -0.85, 0.0}, my_vel, my_fwd, {lead});
+        test::check("off-center overtake peek creates strong wake_lateral_asymmetry (0 when centered, > 0.4 when peeking right)",
+                    std::abs(centered.wake_lateral_asymmetry) < 1e-6 &&
+                    peek_right.wake_lateral_asymmetry > 0.40);
+
+        Vehicle v_asym(base_cfg);
+        v_asym.aero_wake() = peek_right;
+        v_asym.aero_wake().wake_turbulence_0_to_1 = 0.0; // isolate steady off-center wake pull from unsteady Strouhal phase
+        v_asym.aero_wake().yaw_aero_enabled = true;
+        v_asym.reset_motion(65.0, 6);
+        ChassisState cs;
+        cs.position = {0.0, 0.0, 2.0};
+        cs.velocity = {65.0, 0.0, 0.0};
+        std::array<WheelContact, 4> no_c{};
+        const VehicleOutput o_asym = v_asym.update(cs, no_c, 0.0025);
+        test::check("asymmetric wake pulls yaw moment & steering rack toward the clean-air lane on overtake peek",
+                    o_asym.wake_asymmetry > 0.40 &&
+                    o_asym.aero_yaw_moment_nm < -40.0 &&
+                    o_asym.steer_torque < -5.0);
+    }
+
+    // 9. Elastic 2-DOF Steering Column Compliance Oscillator (shapes 400 Hz spikes, exact steady-state torque)
+    {
+        Vehicle v_rigid(base_cfg), v_elastic(base_cfg);
+        v_rigid.chassis_dynamics().kingpin_3d_ffb_enabled = true;
+        v_elastic.chassis_dynamics().kingpin_3d_ffb_enabled = true;
+        v_elastic.chassis_dynamics().elastic_column_enabled = true;
+        v_rigid.reset_motion(35.0, 4);
+        v_elastic.reset_motion(35.0, 4);
+
+        ChassisState cs;
+        cs.position = {0.0, 0.0, base_cfg.cg_height};
+        cs.velocity = {35.0, 0.0, 0.0};
+        DriverInput turn;
+        turn.steer = 0.25;
+        turn.gear = 4;
+        v_rigid.set_input(turn);
+        v_elastic.set_input(turn);
+        const auto rays = v_rigid.wheel_rays(cs);
+        std::array<WheelContact, 4> c{};
+        for (int w = 0; w < 4; ++w) {
+            c[w].hit = true;
+            c[w].point = {rays[w].origin.x, rays[w].origin.y, 0.0};
+            c[w].distance = rays[w].origin.z;
+            c[w].normal = {0.0, 0.0, 1.0};
+        }
+        const VehicleOutput o_r0 = v_rigid.update(cs, c, 0.0025);
+        const VehicleOutput o_e0 = v_elastic.update(cs, c, 0.0025);
+        VehicleOutput o_r1{}, o_e1{};
+        for (int i = 0; i < 120; ++i) { // 300 ms settle to steady state
+            o_r1 = v_rigid.update(cs, c, 0.0025);
+            o_e1 = v_elastic.update(cs, c, 0.0025);
+        }
+        test::check("elastic 2-DOF steering column damps step-tick spikes initially and converges to steady-state rim torque",
+                    std::abs(o_e0.steering_column_torque_nm) < std::abs(o_r0.steering_column_torque_nm) * 0.65 &&
+                    std::abs(o_e1.steering_column_torque_nm - o_r1.steering_column_torque_nm) < 0.6);
+    }
+
+    // 10. In-Car MFD Controls (Engine Braking EBR, Throttle Map Gamma, Brake Duct Cooling vs Drag) + GT3 Spec Load
+    {
+        Simulation sim_ebr_lo(base_cfg, flat), sim_ebr_hi(base_cfg, flat);
+        sim_ebr_lo.vehicle.chassis_dynamics().engine_braking_scale = 0.45;
+        sim_ebr_hi.vehicle.chassis_dynamics().engine_braking_scale = 1.55;
+        sim_ebr_lo.reset({}, 0.0, 42.0, 4);
+        sim_ebr_hi.reset({}, 0.0, 42.0, 4);
+        DriverInput coast;
+        coast.throttle = 0.0; coast.gear = 4; coast.auto_clutch = true;
+        for (int i = 0; i < 400; ++i) { sim_ebr_lo.step(coast); sim_ebr_hi.step(coast); }
+        test::check("higher Engine Braking (EBR) coast map decelerates car more strongly off-throttle",
+                    sim_ebr_hi.last.speed < sim_ebr_lo.last.speed - 0.25);
+
+        // Throttle map gamma: wet progressive (1.65) delivers less mid-pedal torque than quali (0.65)
+        Simulation sim_wet(base_cfg, flat), sim_quali(base_cfg, flat);
+        sim_wet.vehicle.chassis_dynamics().throttle_map_gamma = 1.65;
+        sim_quali.vehicle.chassis_dynamics().throttle_map_gamma = 0.65;
+        sim_wet.reset({}, 0.0, 30.0, 4);
+        sim_quali.reset({}, 0.0, 30.0, 4);
+        DriverInput half_thr;
+        half_thr.throttle = 0.50; half_thr.gear = 4; half_thr.auto_clutch = true;
+        for (int i = 0; i < 300; ++i) { sim_wet.step(half_thr); sim_quali.step(half_thr); }
+        test::check("throttle map gamma shapes half-pedal acceleration (quali > progressive wet)",
+                    sim_quali.last.speed > sim_wet.last.speed + 1.2);
+
+        // Brake duct trade-off: closed ducts (0.30) cut aero drag but run discs hotter than open ducts (1.0)
+        Simulation sim_open(base_cfg, flat), sim_closed(base_cfg, flat);
+        sim_open.vehicle.chassis_dynamics().brake_duct_open = 1.0;
+        sim_closed.vehicle.chassis_dynamics().brake_duct_open = 0.30;
+        sim_open.reset({}, 0.0, 60.0, 7);
+        sim_closed.reset({}, 0.0, 60.0, 7);
+        sim_open.vehicle.set_brake_temperature(500.0);
+        sim_closed.vehicle.set_brake_temperature(500.0);
+        DriverInput cruise;
+        cruise.throttle = 0.5; cruise.gear = 7; cruise.auto_clutch = true;
+        for (int i = 0; i < 400; ++i) { sim_open.step(cruise); sim_closed.step(cruise); }
+        test::check("closing brake ducts trims straight-line aero drag (-1.5%) while reducing disc convective cooling",
+                    sim_closed.last.aero_drag_n < sim_open.last.aero_drag_n * 0.99 &&
+                    sim_closed.last.wheels[FL].brake_temp_c > sim_open.last.wheels[FL].brake_temp_c + 8.0);
+
+        // Verify GT3 & Hypercar class specs loaded heave springs, BMIG & carbon-ceramic brakes cleanly
+        const CarConfig gt3 = load_car_config(std::string(RS_DATA_DIR) + "/cars/tornado_gt3.json");
+        test::check("tornado_gt3.json loads GT3 heave springs, BMIG & carbon-ceramic brake spec",
+                    gt3.front.heave_spring_rate > 100000.0 &&
+                    gt3.brake_migration_front > 0.02 &&
+                    gt3.brake_thermal.disc_type == BrakeDiscType::CarbonCeramic);
+    }
 }

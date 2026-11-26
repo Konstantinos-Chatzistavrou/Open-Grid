@@ -68,7 +68,7 @@ struct Car {
     std::array<rs::WheelRay, 4> rays;
     std::array<rs::WheelContactPatchRays, 4> patch_rays;
     std::array<double, 4> spin{};
-    std::vector<double> buf = std::vector<double>(480, 0.0);
+    std::vector<double> buf = std::vector<double>(496, 0.0);
     std::vector<double> aero_traffic_buf = std::vector<double>(16 * 12, 0.0); // up to 16 nearby cars x 12 doubles
     std::unique_ptr<rs::DynoRoad> dyno_road;     // garage dyno (rs/dyno.hpp): set between rs_dyno_begin / rs_dyno_end
     std::unique_ptr<rs::DynoMeter> dyno_meter;
@@ -110,6 +110,7 @@ EMSCRIPTEN_KEEPALIVE int rs_create(const char* json) {
         c->vehicle->chassis_dynamics().bushing_compliance_enabled = true;
         c->vehicle->chassis_dynamics().progressive_bump_stops_enabled = true;
         c->vehicle->chassis_dynamics().kingpin_3d_ffb_enabled = true;
+        c->vehicle->chassis_dynamics().elastic_column_enabled = true;
         c->vehicle->engine_systems().torsional_compliance_enabled = true;
         c->vehicle->engine_systems().dog_box_flat_shift_cut = true;
         // Street/GT cars without an explicit dog_box/dct spec run the physical H-pattern synchromesh cone clutch.
@@ -639,6 +640,13 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     b[477] = c.out.wake_turbulence;
     b[478] = c.out.wake_hot_air_c;
     b[479] = c.out.wake_cooling_scale;
+    // LMU pro-driver telemetry: pre-squeal adhesion scrub, BMIG, Hybrid ERS & asymmetric wake pull [480..485]
+    b[480] = c.out.front_adhesion_ratio;
+    b[481] = c.out.effective_brake_bias_front;
+    b[482] = c.out.hybrid_soc;
+    b[483] = c.out.hybrid_deploy_kw;
+    b[484] = c.out.hybrid_regen_kw;
+    b[485] = c.out.wake_asymmetry;
 }
 }  // namespace
 

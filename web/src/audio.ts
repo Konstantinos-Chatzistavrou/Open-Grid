@@ -2580,12 +2580,19 @@ export class GameAudio {
       if (s * w > squeal) { squeal = s * w; slip = s; }
     }
     squeal = Math.max(0, Math.min(1, squeal)) * Math.min(1, absSpeed / 3.5);
+    // LMU pre-squeal brush contact-patch micro-slip scrub cue: wakes subtly as front adhesion drops below 0.84 (~100 ms before squeal!)
+    const frontAdh = (out.length > OUT.frontAdhesionRatio && out[OUT.frontAdhesionRatio] > 0) ? out[OUT.frontAdhesionRatio] : 1;
+    const preScrub = clamp((0.84 - frontAdh) / 0.34, 0, 1) * clamp((absSpeed - 4) / 14, 0, 1);
+    const dryMix = Math.max(squeal, preScrub * 0.32);
     if (this.stemDryTyreSrc && this.stemDryTyreGain) {
       const dryFactor = this.onGravel ? 0.15 : Math.max(0.25, 1 - this.roadWetness * 0.75);
-      this.stemDryTyreSrc.playbackRate.setTargetAtTime(clamp(0.72 + Math.min(1.4, slip) * 0.42 + Math.min(0.3, absSpeed / 120), 0.65, 1.85), t, 0.04);
-      this.stemDryTyreGain.gain.setTargetAtTime(this.muted ? 0 : squeal * dryFactor * 0.55 * cam.tyreMul, t, 0.04);
+      const scrubRate = squeal > 0.05
+        ? clamp(0.72 + Math.min(1.4, slip) * 0.42 + Math.min(0.3, absSpeed / 120), 0.65, 1.85)
+        : clamp(0.62 + preScrub * 0.24 + Math.min(0.2, absSpeed / 140), 0.58, 1.05);
+      this.stemDryTyreSrc.playbackRate.setTargetAtTime(scrubRate, t, 0.04);
+      this.stemDryTyreGain.gain.setTargetAtTime(this.muted ? 0 : dryMix * dryFactor * 0.55 * cam.tyreMul, t, 0.04);
     }
-    this.tyre!.g.gain.setTargetAtTime(this.muted ? 0 : squeal * 0.28 * (this.stemDryTyreSrc ? 0.18 : 1) * cam.tyreMul, t, 0.04);
+    this.tyre!.g.gain.setTargetAtTime(this.muted ? 0 : dryMix * 0.28 * (this.stemDryTyreSrc ? 0.18 : 1) * cam.tyreMul, t, 0.04);
     this.tyre!.f.frequency.setTargetAtTime(780 + 380 * Math.min(1.6, slip), t, 0.04);
     this.tyre!.f2.frequency.setTargetAtTime(1520 + 620 * Math.min(1.6, slip), t, 0.04);
 

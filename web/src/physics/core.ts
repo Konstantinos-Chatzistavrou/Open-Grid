@@ -147,7 +147,7 @@ export class CoreCar {
   get buf(): Float64Array {
     const m = mod!;
     if (!this._buf || this._buf.buffer !== m.HEAPF64.buffer) {
-      this._buf = new Float64Array(m.HEAPF64.buffer, this._ptr, 480);
+      this._buf = new Float64Array(m.HEAPF64.buffer, this._ptr, 496);
       this._raysBuf = this._buf.subarray(16, 40);
       this._raysPatchBuf = this._buf.subarray(280, 352);
     }
@@ -437,6 +437,13 @@ export const OUT = {
   wakeTurbulence: 477,                  // 0..1 unsteady Strouhal vortex-shedding buffeting intensity
   wakeHotAirC: 478,                     // +0..+14 C hot exhaust/radiator wake air raising IAT
   wakeCoolingScale: 479,                // 1.0..0.65 radiator/oil/brake-duct airflow scale in close draft
+  // LMU pro-driver telemetry [480..485]
+  frontAdhesionRatio: 480,              // min(FL, FR) contact-patch brush adhesion (1 = stuck .. 0 = slide; pre-squeal scrub)
+  effectiveBrakeBiasFront: 481,         // live front brake bias after cockpit offset & dynamic BMIG
+  hybridSoc: 482,                       // 0..1 HV hybrid battery state of charge
+  hybridDeployKw: 483,                  // live MGU-K electric deployment power, kW
+  hybridRegenKw: 484,                   // live MGU-K regenerative braking harvest power, kW
+  wakeAsymmetry: 485,                   // -1..+1 off-center dirty-air wake gradient on overtake peek
 } as const;
 
 export interface LapInfo { laps: number; current: number; last: number; best: number; distance: number; position: number; finished: boolean; routeLength: number }
