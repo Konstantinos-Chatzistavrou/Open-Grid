@@ -1649,6 +1649,10 @@ async function main() {
     voiceMutePeer: (id) => { if (voice.toggleMutePeer(id)) menu.voiceMutedPeers.add(id); else menu.voiceMutedPeers.delete(id); },
     voiceBlockPeer: (id) => { voice.blockPeer(id); menu.voiceMutedPeers.add(id); hud.toast('🚫 PLAYER BLOCKED', 'Voice & chat muted'); },
     musicToggle: (on) => { audio.musicEnabled = on; },
+    audioEngineMode: (m) => {
+      audio.setAudioEngineMode(m);
+      hud.toast('🔊 AUDIO ENGINE', m === 'real_samples' ? 'Real Recorded Cars (CC-BY 3.0)' : 'Engine-Sim + 192-Tap Muffler IR (WASM)');
+    },
     specClassToggle: (on) => {
       specClass = on;
       if (carKey() !== builtKey) { rebuildPlayer(); spawn(); syncPose(); }
@@ -1672,6 +1676,7 @@ async function main() {
   menu.nr = nr;
   menu.ret = ret;
   menu.gfx = gfx;
+  menu.audioEngineMode = audio.audioEngineMode;
   const loader = new Loader();
   menu.loader = loader;
   menu.sp = sp;

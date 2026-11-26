@@ -195,6 +195,7 @@ const ANTILAG_POP_IDS = [
 
 export type CameraPerspective = 'chase' | 'hood' | 'cockpit' | 'bumper' | 'garage';
 export type ExhaustStage = 'stock' | 'sport' | 'race';
+export type AudioEngineMode = 'real_samples' | 'engine_sim';
 
 /** Pre-allocated static camera perspective acoustic mixing profiles (zero per-frame allocations). */
 interface CameraAcousticProfile {
@@ -439,6 +440,9 @@ export class GameAudio {
   private lastWasmTurbo = false;
   private carId = 'vela_gt';
   private customVoiceTag = '';
+  private _audioEngineMode: AudioEngineMode = (() => {
+    try { return localStorage.getItem('og.audioMode') === 'engine_sim' ? 'engine_sim' : 'real_samples'; } catch { return 'real_samples'; }
+  })();
 
   // 4-zone physical combustion & FX audio stems (`/assets/audio/<id>.ogg`) with graceful synth fallback
   private stemBuffers = new Map<string, AudioBuffer>();
@@ -558,9 +562,40 @@ export class GameAudio {
     }
   }
 
-  /** True when the C++17 physical WASM AudioWorklet owns vehicle synthesis (disabled in lowPower mode). */
+  /** Active A/B audio synthesis mode: 'real_samples' (CC-BY 3.0 real car recordings) vs 'engine_sim' (WASM thermodynamic + 192-tap muffler IR). */
+  get audioEngineMode(): AudioEngineMode {
+    return this._audioEngineMode;
+  }
+
+  /** Switch live between Real Recorded Cars (CC-BY 3.0) and Engine-Sim + Exhaust IR (WASM) with zero audio overlap. */
+  setAudioEngineMode(mode: AudioEngineMode): void {
+    if (mode === this._audioEngineMode) return;
+    this._audioEngineMode = mode;
+    try { localStorage.setItem('og.audioMode', mode); } catch { /* storage blocked */ }
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    if (mode === 'real_samples') {
+      if (this.workletGain) this.workletGain.gain.setTargetAtTime(0, t, 0.015);
+      if (this.workletNode) this.workletNode.port.postMessage({ type: 'active', active: false });
+      this.preloadVoiceStems(this.voiceId);
+      this.preloadFxStems();
+      this.syncEngineStemSources();
+    } else {
+      this.muteFallbackVehicleBuses(t);
+      if (!this.wasmAudioReady && !this.wasmAudioLoading && !this.lowPower) {
+        void this.initWasmWorklet();
+      } else {
+        this.syncWasmVoice();
+      }
+      this.preloadVoiceStems(this.voiceId);
+      this.syncEngineStemSources();
+    }
+  }
+
+  /** True when the C++17 physical WASM AudioWorklet owns vehicle synthesis (only in 'engine_sim' mode & non-lowPower). */
   get wasmPhysicalAudioActive(): boolean {
-    return this.wasmAudioReady && !this.lowPower && this.workletNode !== null;
+    return this._audioEngineMode === 'engine_sim' && this.wasmAudioReady && !this.lowPower && this.workletNode !== null;
   }
 
   private resolveWasmVoiceId(): number {
@@ -1302,7 +1337,7 @@ export class GameAudio {
     this.buildEngine();
     this.tyre = this.buildTyreSynth();
     this.wind = this.loopNoise('lowpass', 420, 0.7);
-    if (!this.lowPower) {
+    if (!this.lowPower && this._audioEngineMode === 'engine_sim') {
       void this.initWasmWorklet();
     }
   }
@@ -1834,11 +1869,21 @@ export class GameAudio {
     this.stemKerbGain = mkFxBus(false);
   }
 
+  private stemPackDir(): 'audio_real' | 'audio' {
+    return this._audioEngineMode === 'real_samples' ? 'audio_real' : 'audio';
+  }
+
+  private stemKey(id: string, dir: 'audio_real' | 'audio' = this.stemPackDir()): string {
+    return `${dir}:${id}`;
+  }
+
   private preloadVoiceStems(voice: EngineVoiceId) {
     const zones = ENGINE_STEM_ZONES[voice] ?? ENGINE_STEM_ZONES.v8_crossplane;
     const decel = ENGINE_DECEL_STEM[voice] ?? ENGINE_DECEL_STEM.v8_crossplane;
-    // Queue decel right behind the 4 primary zones so active ON-LOAD stems unlock first, then OFF-LOAD decel immediately after
-    this.enqueueStem(decel.id, true);
+    // Queue decel only for engine_sim pack (real_samples shapes closed-throttle decel cleanly on the 4 real zones without synthetic blend)
+    if (this._audioEngineMode === 'engine_sim') {
+      this.enqueueStem(decel.id, true);
+    }
     for (let i = zones.length - 1; i >= 0; i--) this.enqueueStem(zones[i].id, true);
   }
 
@@ -1848,15 +1893,16 @@ export class GameAudio {
   }
 
   private enqueueStem(id: string, highPriority: boolean) {
-    if (this.stemBuffers.has(id) || this.stemAttempted.has(id)) return;
-    if (this.stemQueue.includes(id)) {
+    const key = this.stemKey(id);
+    if (this.stemBuffers.has(key) || this.stemAttempted.has(key)) return;
+    if (this.stemQueue.includes(key)) {
       if (highPriority) {
-        this.stemQueue = [id, ...this.stemQueue.filter((x) => x !== id)];
+        this.stemQueue = [key, ...this.stemQueue.filter((x) => x !== key)];
       }
       return;
     }
-    if (highPriority) this.stemQueue.unshift(id);
-    else this.stemQueue.push(id);
+    if (highPriority) this.stemQueue.unshift(key);
+    else this.stemQueue.push(key);
     if (!this.stemDecoding) void this.drainStemQueue();
   }
 
@@ -1866,8 +1912,8 @@ export class GameAudio {
     this.stemDecoding = true;
     try {
       while (this.stemQueue.length > 0 && this.ctx) {
-        const id = this.stemQueue.shift()!;
-        await this.loadStem(id);
+        const key = this.stemQueue.shift()!;
+        await this.loadStem(key);
         // Yield at least 1 render frame (~20 ms) before starting the next OGG decode so WebGPU stays butter-smooth
         await new Promise<void>((r) => setTimeout(r, 20));
       }
@@ -1876,19 +1922,22 @@ export class GameAudio {
     }
   }
 
-  /** Non-blocking fetch + decode for `/assets/audio/<id>.ogg` with one-time caching and silent fallback. */
-  private async loadStem(id: string): Promise<void> {
-    if (this.stemBuffers.has(id) || this.stemAttempted.has(id)) return;
+  /** Non-blocking fetch + decode for `/assets/<pack>/<id>.ogg` with one-time caching and silent fallback. */
+  private async loadStem(key: string): Promise<void> {
+    if (this.stemBuffers.has(key) || this.stemAttempted.has(key)) return;
     const ctx = this.ctx;
     if (!ctx || typeof fetch !== 'function') return;
-    this.stemAttempted.add(id);
+    this.stemAttempted.add(key);
+    const sep = key.indexOf(':');
+    const dir = sep > 0 ? key.slice(0, sep) : this.stemPackDir();
+    const id = sep > 0 ? key.slice(sep + 1) : key;
     try {
-      const res = await fetch(`/assets/audio/${id}.ogg`);
+      const res = await fetch(`/assets/${dir}/${id}.ogg`);
       if (!res.ok) return;
       const ab = await res.arrayBuffer();
       if (!this.ctx) return;
       const buf = await this.ctx.decodeAudioData(ab);
-      this.stemBuffers.set(id, buf);
+      this.stemBuffers.set(key, buf);
       this.onStemDecoded(id, buf);
     } catch {
       // Silently fall back to procedural synth in offline / headless / missing-asset environments
@@ -1935,16 +1984,17 @@ export class GameAudio {
 
     for (let i = 0; i < 4; i++) {
       const z = zones[i];
+      const zk = this.stemKey(z.id);
       const zg = this.stemZoneGains[i];
       if (!zg) continue;
-      if (this.stemZoneIds[i] !== z.id || (!this.stemZoneSrcs[i] && this.stemBuffers.has(z.id))) {
+      if (this.stemZoneIds[i] !== zk || (!this.stemZoneSrcs[i] && this.stemBuffers.has(zk))) {
         const old = this.stemZoneSrcs[i];
         if (old) {
           try { old.stop(); old.disconnect(); } catch {}
           this.stemZoneSrcs[i] = null;
           this.stemZoneIds[i] = null;
         }
-        const buf = this.stemBuffers.get(z.id);
+        const buf = this.stemBuffers.get(zk);
         if (buf) {
           const src = ctx.createBufferSource();
           src.buffer = buf;
@@ -1953,19 +2003,20 @@ export class GameAudio {
           src.connect(zg);
           src.start();
           this.stemZoneSrcs[i] = src;
-          this.stemZoneIds[i] = z.id;
+          this.stemZoneIds[i] = zk;
         }
       }
     }
 
     const decel = ENGINE_DECEL_STEM[this.voiceId] ?? ENGINE_DECEL_STEM.v8_crossplane;
-    if (this.stemDecelGain && (this.stemDecelId !== decel.id || (!this.stemDecelSrc && this.stemBuffers.has(decel.id)))) {
+    const dk = this.stemKey(decel.id);
+    if (this.stemDecelGain && (this.stemDecelId !== dk || (!this.stemDecelSrc && this.stemBuffers.has(dk)))) {
       if (this.stemDecelSrc) {
         try { this.stemDecelSrc.stop(); this.stemDecelSrc.disconnect(); } catch {}
         this.stemDecelSrc = null;
         this.stemDecelId = null;
       }
-      const dBuf = this.stemBuffers.get(decel.id);
+      const dBuf = this.stemBuffers.get(dk);
       if (dBuf) {
         const src = ctx.createBufferSource();
         src.buffer = dBuf;
@@ -1974,7 +2025,7 @@ export class GameAudio {
         src.connect(this.stemDecelGain);
         src.start();
         this.stemDecelSrc = src;
-        this.stemDecelId = decel.id;
+        this.stemDecelId = dk;
       }
     }
   }
@@ -1982,7 +2033,7 @@ export class GameAudio {
   private hasAllEngineStems(): boolean {
     const zones = ENGINE_STEM_ZONES[this.voiceId] ?? ENGINE_STEM_ZONES.v8_crossplane;
     for (let i = 0; i < 4; i++) {
-      if (this.stemZoneSrcs[i] === null || this.stemZoneIds[i] !== zones[i].id) return false;
+      if (this.stemZoneSrcs[i] === null || this.stemZoneIds[i] !== this.stemKey(zones[i].id)) return false;
     }
     return true;
   }
@@ -2024,7 +2075,7 @@ export class GameAudio {
     }
 
     // Forza-grade ON-LOAD <-> OFF-LOAD DECEL dynamic crossfade (closed-throttle vacuum engine braking)
-    const hasDecel = this.stemDecelSrc !== null && this.stemDecelId === decelZone.id && this.stemDecelGain !== null;
+    const hasDecel = this.stemDecelSrc !== null && this.stemDecelId === this.stemKey(decelZone.id) && this.stemDecelGain !== null;
     let decelBlend = 0;
     if (hasDecel) {
       const decelRate = clamp(rpm / decelZone.refRpm, 0.42, 1.65);
@@ -2174,7 +2225,9 @@ export class GameAudio {
   ): boolean {
     const ctx = this.ctx;
     if (!ctx || !this.out || this._muted) return false;
-    const buf = this.stemBuffers.get(id);
+    const buf = this.stemBuffers.get(this.stemKey(id))
+      ?? this.stemBuffers.get(`audio_real:${id}`)
+      ?? this.stemBuffers.get(`audio:${id}`);
     if (!buf) return false;
     const src = ctx.createBufferSource();
     src.buffer = buf;

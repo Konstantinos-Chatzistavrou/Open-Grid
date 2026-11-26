@@ -145,6 +145,7 @@ export interface MenuHooks {
   voiceBlockPeer?(peerId: string): void;
   publicMatchmake?(): void;
   musicToggle?(on: boolean): void;
+  audioEngineMode?(mode: 'real_samples' | 'engine_sim'): void;
   launchAcademy?(lesson: AcademyLesson): void;
   launchCalendar?(ev: CalendarEvent): void;
   specClassToggle?(on: boolean): void;
@@ -225,6 +226,7 @@ export class Menu {
   garageEngineOn = false;
   private revHoldActive = false;
   musicOn = true;
+  audioEngineMode: 'real_samples' | 'engine_sim' = 'real_samples';
   specClass = false;
   modHub: ModHubStore = loadModHub();
   completedLessons: string[] = loadCompletedLessons();
@@ -482,6 +484,7 @@ export class Menu {
       <div class="dim note">String-table localization (UE5 Localization Dashboard ready) with automatic text-expansion layouts.</div>
       <h3>♿ ${t('settings.accessibility')}</h3>
       ${row('WALKABLE GARAGE', chip('nr-walk', '1', 'On (Default)', this.nr.walkableGarage) + chip('nr-walk', '0', 'Orbit Only', !this.nr.walkableGarage), 'Walk around your car in the garage to inspect the hood, oil cap, and locker.')}
+      ${row('ENGINE AUDIO MODE (A/B)', chip('audio-engine', 'real_samples', '🎙 Real Cars (CC-BY)', this.audioEngineMode === 'real_samples') + chip('audio-engine', 'engine_sim', '⚙ Engine-Sim + Muffler IR (WASM)', this.audioEngineMode === 'engine_sim'), 'Compare real recorded supercars (AMG C63, Ferrari 458/F12, GT3, Huracán, GT-R, Supra, RX-7) live against the thermodynamic WASM engine + 192-tap exhaust muffler IR.')}
       ${row('DYNAMIC ADAPTIVE MUSIC', chip('music', '1', '🎵 Adaptive ON', this.musicOn) + chip('music', '0', 'OFF', !this.musicOn), 'Reacts to speed, shifts into chase tempo during police pursuits, and swells at the finish line.')}
       ${row('ANNUAL SEASON PRESTIGE', `<button class="chip" data-act="prestige">★ Prestige Reset (Season ${this.ret.seasonYear} · ★${this.ret.prestige})</button>`, 'Resets rank/XP for a permanent Prestige badge while keeping 100% of your owned cars & garage builds.')}
       ${row(t('settings.colorblind').toUpperCase(),
@@ -802,6 +805,7 @@ export class Menu {
           <button id="g-ign-btn" class="chip ${this.garageEngineOn ? 'on' : ''}" data-act="g-ignition" title="Toggle engine ignition ON / OFF">🔑<span class="lbl"> ${this.garageEngineOn ? 'Stop' : 'Start'}</span></button>
           <button class="chip" data-act="g-dyno" title="Put the car on the dyno: run it, hear it, measure power and top speed">📈<span class="lbl"> Dyno</span></button>
           <button class="chip g-rev-btn" data-hold="g-rev" title="Hold to rev engine &amp; shoot exhaust flames" oncontextmenu="return false">🔥<span class="lbl"> Rev</span></button>
+          <button class="chip" data-act="audio-engine-toggle" title="A/B compare Real Recorded Cars (CC-BY) vs Engine-Sim + Muffler IR (WASM)">🔊<span class="lbl"> ${this.audioEngineMode === 'real_samples' ? 'Real Cars' : 'Sim+IR'}</span></button>
           <button class="chip" data-act="g-cam-cycle" title="Cycle showroom camera angle">📷<span class="lbl"> ${camNow.label}</span></button>
           ${this.nr.walkableGarage ? `<button class="chip ${this.garageWalkActive ? 'on' : ''}" data-act="g-walk" title="Walk around your car">🚶</button>` : ''}
           <button class="primary g-drive-btn" data-act="play">DRIVE ▶</button>
@@ -1602,6 +1606,20 @@ export class Menu {
       case 'voice-block': this.hooks.voiceBlockPeer?.(v); this.render(); break;
       case 'pmatch': this.hooks.publicMatchmake?.(); break;
       case 'music': this.musicOn = v === '1'; this.hooks.musicToggle?.(this.musicOn); this.render(); break;
+      case 'audio-engine': {
+        const m = v === 'engine_sim' ? 'engine_sim' : 'real_samples';
+        this.audioEngineMode = m;
+        this.hooks.audioEngineMode?.(m);
+        this.render();
+        break;
+      }
+      case 'audio-engine-toggle': {
+        const m = this.audioEngineMode === 'real_samples' ? 'engine_sim' : 'real_samples';
+        this.audioEngineMode = m;
+        this.hooks.audioEngineMode?.(m);
+        this.render();
+        break;
+      }
       case 'spec-class': this.specClass = v === '1'; this.hooks.specClassToggle?.(this.specClass); this.render(); break;
       case 'mod-sub': {
         const on = toggleModSub(this.modHub, v);

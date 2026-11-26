@@ -345,16 +345,25 @@ def make_phase_locked_loop(
 
 def master_real_engine_loop(
     x: np.ndarray,
-    low_shelf_gain_db: float = 2.4,
-    high_cut_hz: float = 13500.0,
-    target_rms_dbfs: float = -12.5,
+    low_shelf_gain_db: float = 2.8,
+    high_cut_hz: float = 7400.0,
+    target_rms_dbfs: float = -12.2,
 ) -> np.ndarray:
-    """Gentle warm exhaust mastering (zero synthetic buzz, preserves 100% real recording timbre)."""
+    """Warm, dramatic, ear-safe exhaust mastering (preserves 100% real recording timbre, zero redline ear fatigue)."""
+    # Gentle Fletcher-Munson ear-comfort dip around 3.1 kHz (-2.4 dB) so high-RPM WOT stays thrilling, never shrill
+    def comfort_dip(f: np.ndarray) -> np.ndarray:
+        f_safe = np.maximum(f, 1.0)
+        bw = 0.55
+        dist = np.log2(f_safe / 3100.0) / bw
+        dip_db = -2.4 * np.exp(-0.5 * dist * dist)
+        return 10.0 ** (dip_db / 20.0)
+
     y = fft_filter(
         x,
-        lambda f: butter_bp(f, 32.0, high_cut_hz, order=2.5)
-        * low_shelf_db(f, 165.0, low_shelf_gain_db)
-        * high_shelf_db(f, 5200.0, -1.8),
+        lambda f: butter_bp(f, 30.0, high_cut_hz, order=2.5)
+        * low_shelf_db(f, 155.0, low_shelf_gain_db)
+        * comfort_dip(f)
+        * high_shelf_db(f, 4400.0, -2.4),
     )
     return synth_mod._finalize_loop(y, target_rms_dbfs=target_rms_dbfs)
 
@@ -426,25 +435,35 @@ REAL_ENGINE_SPECS: list[RealZoneSpec] = [
     RealZoneSpec("eng_rotary4_8500", "8500 RPM Real Mazda RX-7 Rotary redline shriek loop", 8500, 2.0,
                  ("rotary_rx7",), 283.3, 0.40, 1.45, 0.34, 1.5),
 
-    # Forged Twin-Turbo I6 / V6 (Nissan Skyline GT-R R34 + GT-R Fi Exhaust + Supra A80)
+    # Forged Twin-Turbo I6 (Nissan Skyline GT-R R34 + Supra A80 + GT-R Fi Exhaust)
     RealZoneSpec("eng_tt_i6_1000", "1000 RPM Real Nissan Skyline GT-R R34 idle loop", 1000, 3.0,
-                 ("i6_r34", "i6_gtr_fi", "i6_supra_a80"), 50.0, 0.76, 1.38, 0.75, 2.8),
-    RealZoneSpec("eng_tt_i6_low", "2400 RPM Real Nissan Skyline GT-R R34 / GT-R baritone pull loop", 2400, 3.0,
-                 ("i6_r34", "i6_gtr_fi", "i6_supra_a80"), 120.0, 0.74, 1.32, 0.60, 2.5),
-    RealZoneSpec("eng_tt_i6_4000", "4500 RPM Real Nissan GT-R Fi Exhaust / R34 boost pull loop", 4500, 3.0,
-                 ("i6_gtr_fi", "i6_r34", "i6_supra_a80"), 225.0, 0.74, 1.30, 0.55, 2.0),
-    RealZoneSpec("eng_tt_i6_7000", "7000 RPM Real Nissan GT-R Fi Exhaust / R34 redline wail loop", 7000, 3.0,
-                 ("i6_gtr_fi", "i6_r34", "i6_supra_a80"), 350.0, 0.72, 1.26, 0.48, 1.8),
+                 ("i6_r34", "i6_supra_a80", "i6_gtr_fi"), 50.0, 0.76, 1.38, 0.75, 2.8),
+    RealZoneSpec("eng_tt_i6_low", "2400 RPM Real Nissan Skyline GT-R R34 / Supra baritone pull loop", 2400, 3.0,
+                 ("i6_r34", "i6_supra_a80", "i6_gtr_fi"), 120.0, 0.74, 1.32, 0.60, 2.5),
+    RealZoneSpec("eng_tt_i6_4000", "4500 RPM Real Nissan Skyline GT-R R34 / GT-R boost pull loop", 4500, 3.0,
+                 ("i6_r34", "i6_gtr_fi", "i6_supra_a80"), 225.0, 0.74, 1.30, 0.55, 2.2),
+    RealZoneSpec("eng_tt_i6_7000", "7000 RPM Real Nissan Skyline GT-R R34 / GT-R redline wail loop", 7000, 3.0,
+                 ("i6_r34", "i6_gtr_fi", "i6_supra_a80"), 350.0, 0.72, 1.26, 0.48, 2.0),
 
-    # Cross-Plane V8 (Corvette C6 Z06 + Mustang GT S550 + AMG C63 W205)
-    RealZoneSpec("eng_v8_cross_900", "900 RPM Real Corvette C6 Z06 / Mustang GT Cross-Plane V8 lope idle loop", 900, 4.0,
-                 ("v8c_z06", "v8c_mustang", "v8c_c63"), 60.0, 0.76, 1.30, 0.75, 3.4),
-    RealZoneSpec("eng_v8_cross_low", "2100 RPM Real Corvette Z06 / Mustang GT Cross-Plane V8 burble pull loop", 2100, 4.0,
-                 ("v8c_z06", "v8c_mustang", "v8c_c63"), 140.0, 0.72, 1.34, 0.55, 3.0),
-    RealZoneSpec("eng_v8_cross_4200", "4200 RPM Real Corvette Z06 / AMG C63 Cross-Plane V8 thunder roar loop", 4200, 4.0,
-                 ("v8c_z06", "v8c_c63", "v8c_mustang"), 280.0, 0.66, 1.32, 0.48, 2.6),
+    # Twin-Turbo V6 (Real Nissan GT-R R35 VR38DETT 3.8L Twin-Turbo V6 Fi Exhaust)
+    RealZoneSpec("eng_v6_tt_1000", "1000 RPM Real Nissan GT-R R35 VR38DETT Twin-Turbo V6 idle loop", 1000, 3.0,
+                 ("i6_gtr_fi", "i6_r34"), 50.0, 0.76, 1.38, 0.75, 3.0),
+    RealZoneSpec("eng_v6_tt_low", "2400 RPM Real Nissan GT-R R35 VR38DETT Twin-Turbo V6 mid-pull loop", 2400, 3.0,
+                 ("i6_gtr_fi", "i6_r34"), 120.0, 0.74, 1.32, 0.60, 2.8),
+    RealZoneSpec("eng_v6_tt_4500", "4500 RPM Real Nissan GT-R R35 VR38DETT Twin-Turbo V6 boost roar loop", 4500, 3.0,
+                 ("i6_gtr_fi", "i6_r34"), 225.0, 0.74, 1.30, 0.55, 2.4),
+    RealZoneSpec("eng_v6_tt_7200", "7200 RPM Real Nissan GT-R R35 VR38DETT Twin-Turbo V6 redline loop", 7200, 3.0,
+                 ("i6_gtr_fi", "i6_r34"), 360.0, 0.70, 1.26, 0.48, 2.0),
+
+    # Cross-Plane V8 (Mercedes-AMG C63 + Corvette C6 Z06 + Mustang GT S550)
+    RealZoneSpec("eng_v8_cross_900", "900 RPM Real Corvette C6 Z06 / AMG C63 / Mustang GT Cross-Plane V8 lope idle loop", 900, 4.0,
+                 ("v8c_z06", "v8c_c63", "v8c_mustang"), 60.0, 0.76, 1.30, 0.75, 3.8),
+    RealZoneSpec("eng_v8_cross_low", "2100 RPM Real AMG C63 / Corvette Z06 / Mustang GT Cross-Plane V8 deep growl loop", 2100, 4.0,
+                 ("v8c_c63", "v8c_z06", "v8c_mustang"), 140.0, 0.72, 1.34, 0.55, 3.6),
+    RealZoneSpec("eng_v8_cross_4200", "4200 RPM Real AMG C63 / Corvette Z06 Cross-Plane V8 thunder roar loop", 4200, 4.0,
+                 ("v8c_c63", "v8c_z06", "v8c_mustang"), 280.0, 0.66, 1.32, 0.48, 3.2),
     RealZoneSpec("eng_v8_cross_6800", "6800 RPM Real Corvette Z06 / AMG C63 Cross-Plane V8 redline roar loop", 6800, 4.0,
-                 ("v8c_z06", "v8c_c63", "v8c_mustang"), 453.3, 0.62, 1.28, 0.45, 2.2),
+                 ("v8c_z06", "v8c_c63", "v8c_mustang"), 453.3, 0.62, 1.28, 0.45, 2.8),
 
     # Flat-Plane V8 (Ferrari 458 Speciale Novitec / 458 Spider Capristo / Shelby GT350)
     RealZoneSpec("eng_v8_flat_1100", "1100 RPM Real Ferrari 458 Capristo Flat-Plane V8 idle loop", 1100, 4.0,
@@ -600,11 +619,11 @@ def extract_best_real_zone(spec: RealZoneSpec, cache: AudioCache) -> tuple[np.nd
             f0s, confs, rmss, nacts, bodys = tr["f0"], tr["conf"], tr["rms"], tr["nact"], tr["body"]
             rms_ref = max(0.03, tr["rms_p80"])
             # Skip first 4.0 s & last 4.0 s of every recording to avoid video intros/outros
-        skip_f = int(round(4.0 / (hop / SAMPLE_RATE)))
-        i_start = min(max(0, n_f - W - 1), skip_f)
-        i_end = max(i_start + 1, n_f - W - skip_f)
+            skip_f = int(round(4.0 / (hop / SAMPLE_RATE)))
+            i_start = min(max(0, n_f - W - 1), skip_f)
+            i_end = max(i_start + 1, n_f - W - skip_f)
 
-        for i in range(i_start, i_end, 2):
+            for i in range(i_start, i_end, 2):
                 sub_f = f0s[i : i + W]
                 sub_c = confs[i : i + W]
                 sub_r = rmss[i : i + W]
@@ -689,18 +708,18 @@ def extract_real_exhaust_bang(
     seg = x[start : start + n].copy()
     if seg.shape[0] < n:
         seg = np.pad(seg, (0, n - seg.shape[0]))
-    # Warm deep exhaust gunshot shaping (keep huge 45-350 Hz chest punch, tame harsh mic-clip fizz > 8 kHz)
+    # Warm muffled tailpipe pop shaping (deep 36..1750 Hz chest thump, zero ear-splitting gunshot HF crack!)
     seg = fft_filter(
         seg,
-        lambda f: butter_bp(f, 32.0, 9500.0, order=2.0)
-        * low_shelf_db(f, 180.0, 3.2)
-        * high_shelf_db(f, 4500.0, -2.5),
+        lambda f: butter_bp(f, 36.0, 1750.0, order=2.5)
+        * low_shelf_db(f, 155.0, 3.6)
+        * high_shelf_db(f, 950.0, -3.5),
     )
-    # Clean exponential tail envelope so no unrelated background noise leaks in after the bang!
+    # Clean exponential tail envelope so no unrelated background noise leaks in after the pop!
     t = np.arange(n, dtype=np.float64) / SAMPLE_RATE
-    tail_env = np.where(t < 0.08, 1.0, np.exp(-(t - 0.08) / 0.16))
+    tail_env = np.where(t < 0.06, 1.0, np.exp(-(t - 0.06) / 0.14))
     seg = seg * tail_env
-    final = synth_mod._finalize_oneshot(seg, target_rms_dbfs=-11.5, fade_in_ms=1.5, fade_out_ms=65.0)
+    final = synth_mod._finalize_oneshot(seg, target_rms_dbfs=-14.2, fade_in_ms=3.5, fade_out_ms=70.0)
     return final, {"source_key": src_key, "start_s": round(start / SAMPLE_RATE, 2), "end_s": round((start + n) / SAMPLE_RATE, 2)}
 
 
@@ -859,8 +878,8 @@ def main() -> None:
         entry: dict[str, object] = {
             "id": stem_id,
             "filename": f"{stem_id}.wav",
-            "relative_wav_path": f"ue5/Import/Audio/{stem_id}.wav",
-            "relative_ogg_path": f"web/public/assets/audio/{stem_id}.ogg",
+            "relative_wav_path": f"{args.audio_dir.as_posix()}/{stem_id}.wav",
+            "relative_ogg_path": f"{args.web_ogg_dir.as_posix()}/{stem_id}.ogg",
             "ogg_bytes": ogg_bytes,
             "category": category,
             "description": description,
@@ -981,8 +1000,8 @@ def main() -> None:
         "sample_rate_hz": SAMPLE_RATE,
         "bit_depth": BIT_DEPTH,
         "channels": CHANNELS,
-        "output_dir": "ue5/Import/Audio",
-        "web_ogg_dir": "web/public/assets/audio",
+        "output_dir": args.audio_dir.as_posix(),
+        "web_ogg_dir": args.web_ogg_dir.as_posix(),
         "web_ogg_total_bytes": total_ogg_bytes,
         "stem_count": len(manifest_stems),
         "sources_used": [

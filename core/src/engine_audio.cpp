@@ -186,6 +186,37 @@ struct DelayLine {
     }
 };
 
+// Zero-allocation 192-tap (4.0 ms @ 48 kHz) physical exhaust/muffler + tailpipe + ground-bounce FIR convolver.
+// Gives real thermodynamic combustion pressure pulses authentic muffler-chamber chest depth, fiberglass damping,
+// metallic pipe wall sheen, and rear-diffuser/asphalt stereo reflections — with ZERO synthetic sine oscillators!
+template <int NTaps>
+struct ExhaustIrConvolver {
+    std::array<float, NTaps> buf{};
+    std::array<float, NTaps> ir{};
+    int writeIdx = 0;
+
+    void reset() {
+        buf.fill(0.0f);
+        writeIdx = 0;
+    }
+
+    inline float process(float x) {
+        buf[writeIdx] = x;
+        float acc = 0.0f;
+        int idx = writeIdx;
+        int k = 0;
+        for (; idx >= 0; --idx, ++k) {
+            acc += buf[idx] * ir[k];
+        }
+        idx = NTaps - 1;
+        for (; k < NTaps; --idx, ++k) {
+            acc += buf[idx] * ir[k];
+        }
+        if (++writeIdx >= NTaps) writeIdx = 0;
+        return acc;
+    }
+};
+
 // ---- Engine-sim geometric preset specs -------------------------------------------------------
 
 struct CylSpec {
@@ -784,8 +815,7 @@ struct EngineAudioSynth::Impl {
     Biquad harshCutEqL, harshCutEqR;
     Biquad toneLpL, toneLpR;
     Biquad intakeBp, intakeLp;
-    Biquad growlLp, singLp;
-    float growlPhase = 0.0f;
+    ExhaustIrConvolver<192> irConvL, irConvR;
     float throttleStabEnv = 0.0f;
     float combRoughState = 0.0f;
 
@@ -877,6 +907,91 @@ struct EngineAudioSynth::Impl {
         lastFilterDampDb = curPersp.cabinDampDb;
     }
 
+    void buildExhaustIr(ExhaustIrConvolver<192>& conv, float fs, bool rightChannel) {
+        const auto& a = preset.acoustic;
+        constexpr int N = 192;
+        std::array<float, N> h{};
+        const float twoPi = 2.0f * static_cast<float>(kPi);
+
+        const bool isStock = (cfg.exhaustStage == ExhaustStage::Stock);
+        const bool isRace  = (cfg.exhaustStage == ExhaustStage::RaceTitanium);
+
+        // 1. Direct tailpipe acoustic impulse (damped in stock muffler, punchy in straight-pipe race titanium)
+        h[0] = isStock ? 0.44f : (isRace ? 0.68f : 0.56f);
+
+        // 2. Physical Helmholtz muffler chamber + mid-pipe baffle + stainless/titanium wall sheen modes
+        const float fHelm  = clampf(a.subHz * 1.12f, 65.0f, 165.0f);
+        const float fMid   = clampf(a.bodyHz * 0.90f, 180.0f, 440.0f);
+        const float fWall  = clampf(a.raspHz * 0.78f, 720.0f, 1520.0f);
+        const float tauHelm = isStock ? 0.0033f : (isRace ? 0.0019f : 0.0025f);
+        const float tauMid  = isStock ? 0.0018f : (isRace ? 0.0012f : 0.0015f);
+        const float tauWall = isStock ? 0.00035f : (isRace ? 0.00072f : 0.00050f);
+
+        const float gHelm = isStock ? 0.22f : (isRace ? 0.16f : 0.19f);
+        const float gMid  = isStock ? 0.13f : (isRace ? 0.14f : 0.14f);
+        const float gWall = isStock ? 0.015f : (isRace ? 0.095f : 0.048f);
+        const float phOff = rightChannel ? 0.52f : 0.0f;
+
+        // Deterministic seeded micro-scattering inside fiberglass muffler wool & perforated core
+        uint32_t seed = 0x51A7C31Du ^ (static_cast<uint32_t>(cfg.voice) * 2654435761u) ^ (rightChannel ? 0x9E3779B9u : 0u);
+        auto nextSigned = [&seed]() -> float {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            return (static_cast<float>(seed & 0xFFFFu) / 32767.5f) - 1.0f;
+        };
+
+        const float woolAmp = isStock ? 0.075f : (isRace ? 0.045f : 0.060f);
+        const float woolTau = isStock ? 0.0021f : (isRace ? 0.0014f : 0.0017f);
+
+        for (int k = 1; k < N; ++k) {
+            const float t = static_cast<float>(k) / fs;
+            const float win = 0.5f * (1.0f + std::cos(static_cast<float>(kPi) * static_cast<float>(k) / static_cast<float>(N - 1)));
+            float v = 0.0f;
+            v += gHelm * std::cos(twoPi * fHelm * t) * std::exp(-t / tauHelm);
+            v += gMid  * std::cos(twoPi * fMid  * t + phOff) * std::exp(-t / tauMid);
+            v += gWall * std::sin(twoPi * fWall * t + phOff * 0.7f) * std::exp(-t / tauWall);
+            if (t >= 0.00030f) {
+                v += woolAmp * nextSigned() * std::exp(-(t - 0.00030f) / woolTau);
+            }
+            h[k] += v * win;
+        }
+
+        // 3. Physical discrete reflections: rear bumper diffuser (~0.65 ms) + asphalt ground bounce (2*0.31m/343 = ~1.81 ms)
+        auto addSoftTap = [&](float delayMs, float gain) {
+            const float pos = delayMs * 0.001f * fs;
+            const int c = static_cast<int>(std::round(pos));
+            const float weights[3] = { 0.25f, 0.50f, 0.25f };
+            for (int d = -1; d <= 1; ++d) {
+                const int idx = c + d;
+                if (idx >= 1 && idx < N - 1) {
+                    h[idx] += gain * weights[d + 1];
+                }
+            }
+        };
+        addSoftTap(rightChannel ? 0.72f : 0.63f, isStock ? 0.14f : 0.20f);
+        addSoftTap(rightChannel ? 1.98f : 1.81f, isStock ? 0.22f : 0.28f); // asphalt ground image reflection
+        addSoftTap(rightChannel ? 3.12f : 2.91f, 0.11f);
+
+        // 4. Fiberglass high-frequency absorption smoothing (removes artificial digital buzz, keeps acoustic warmth!)
+        const int smoothPasses = isStock ? 3 : (isRace ? 1 : 2);
+        std::array<float, N> tmp{};
+        for (int pass = 0; pass < smoothPasses; ++pass) {
+            tmp[0] = h[0];
+            for (int k = 1; k < N - 1; ++k) {
+                tmp[k] = 0.25f * h[k - 1] + 0.50f * h[k] + 0.25f * h[k + 1];
+            }
+            tmp[N - 1] = 0.5f * h[N - 1];
+            h = tmp;
+        }
+
+        // 5. L2 energy normalization so all voices & exhaust stages stay cleanly unity-matched
+        double sum2 = 0.0;
+        for (int k = 0; k < N; ++k) sum2 += static_cast<double>(h[k]) * h[k];
+        const float norm = (sum2 > 1e-9) ? static_cast<float>(1.0 / std::sqrt(sum2)) : 1.0f;
+        for (int k = 0; k < N; ++k) conv.ir[k] = h[k] * norm;
+    }
+
     void setupFilters() {
         const float fs = static_cast<float>(cfg.sampleRate);
         const auto& a = preset.acoustic;
@@ -924,8 +1039,9 @@ struct EngineAudioSynth::Impl {
 
         intakeBp.setBandpass(fs, a.intakeHz, 1.35f);
         intakeLp.setLowpass(fs, 2900.0f, 0.78f);
-        growlLp.setLowpass(fs, 255.0f, 0.72f);
-        singLp.setLowpass(fs, 1650.0f, 0.707f);
+
+        buildExhaustIr(irConvL, fs, false);
+        buildExhaustIr(irConvR, fs, true);
 
         turboNoiseBp.setBandpass(fs, 2800.0f, 2.4f);
         flutterBp.setBandpass(fs, 1080.0f, 2.8f);
@@ -953,8 +1069,7 @@ struct EngineAudioSynth::Impl {
         harshCutEqL.reset(); harshCutEqR.reset();
         toneLpL.reset(); toneLpR.reset();
         intakeBp.reset(); intakeLp.reset();
-        growlLp.reset(); singLp.reset();
-        growlPhase = 0.0f;
+        irConvL.reset(); irConvR.reset();
         throttleStabEnv = 0.0f;
         combRoughState = 0.0f;
         cabinExLpL.reset(); cabinExLpR.reset();
@@ -1653,30 +1768,8 @@ struct EngineAudioSynth::Impl {
             gearBp.setBandpass(fs, clampf(gearMeshHz1 * (1.12f - 0.14f * decelAmt), 320.0f, 2250.0f), 1.45f + 0.45f * decelAmt);
         }
 
-        // Phase-locked Forza Horizon 6 / GT7 per-architecture harmonic signature (100% locked to real firing order!)
-        const float fireHz = clampf((smoothRpm / 60.0f) * a.firingsPerRev, 18.0f, 950.0f);
-        const bool isDeepMuscleV8 = (cfg.voice == EngineVoice::V8Crossplane || cfg.voice == EngineVoice::V8Supercharged);
-        const bool isFlatV8 = (cfg.voice == EngineVoice::V8Flatplane || cfg.voice == EngineVoice::V8TwinTurbo);
-        const bool isV12 = (cfg.voice == EngineVoice::V12Na);
-        const bool isV10 = (cfg.voice == EngineVoice::V10Screamer);
-        const bool isFlat6 = (cfg.voice == EngineVoice::Flat6Na);
-        const bool isI6 = (cfg.voice == EngineVoice::I6Forged);
-        const bool isI5 = (cfg.voice == EngineVoice::I5Turbo);
-
-        const float stabBoost = 1.0f + 0.28f * throttleStabEnv;
-        const float growlBaseAmp = (isDeepMuscleV8 ? 0.38f : isFlatV8 ? 0.26f : isV10 || isFlat6 ? 0.25f : 0.23f)
-                                 * (0.34f + 0.66f * std::pow(loadEff, 0.78f)) * stabBoost
-                                 * (1.0f - 0.18f * rpmNorm)
-                                 * (ctrl.ignitionCut ? 0.28f : 1.0f);
-        const float subHalfWeight = isDeepMuscleV8 ? 0.78f : isFlatV8 ? 0.42f : isV10 || isFlat6 || isI5 ? 0.56f : 0.48f;
-        const float subQuarterWeight = isDeepMuscleV8 ? (0.42f * clampf((4600.0f - smoothRpm) / 2800.0f, 0.0f, 1.0f)) : 0.0f;
-        // Softly low-passed 0.75x order gives authentic cross-plane V8 uneven bank burble without any HF dissonance!
-        const float crossBurbleWeight = isDeepMuscleV8 ? (0.24f * clampf((4800.0f - smoothRpm) / 3000.0f, 0.0f, 1.0f)) : 0.0f;
-        // Architectural upper-harmonic drama (soaring 2x soprano on V12/Flat-V8/I6/Rotary; brassy 1.5x howl on V10/Flat-6!)
-        const float singRatio = (isV10 || isFlat6 || cfg.voice == EngineVoice::V6TwinTurbo) ? 1.5f : 2.0f;
-        const float singBase = (isV12 ? 0.18f : isV10 ? 0.17f : isFlatV8 ? 0.15f : isFlat6 ? 0.14f : isI6 || isI5 || isRotary ? 0.12f : 0.05f);
-        const float singAmp = singBase * std::pow(loadEff, 0.90f) * std::pow(clampf((rpmNorm - 0.25f) / 0.75f, 0.0f, 1.0f), 1.25f)
-                            * stabBoost * (ctrl.ignitionCut ? 0.25f : 1.0f);
+        // Organic combustion roughness + throttle-stab dynamic punch (ZERO synthetic sine-wave oscillators!)
+        const float stabBoost = 1.0f + 0.26f * throttleStabEnv;
         const float combRoughAlpha = 1.0f - std::exp(-twoPi * 28.0f * invFs);
 
         // Valvetrain/mechanical texture idle presence boost
@@ -1838,25 +1931,12 @@ struct EngineAudioSynth::Impl {
                 starterSig = starterBp.process(rng.nextSigned()) * flareEnv * 0.26f;
             }
 
-            // 4. Phase-locked per-architecture chest growl & musical harmonic sing + Exhaust EQ stack + ear-safe control
-            growlPhase += twoPi * (fireHz * 0.25f) * invFs;
-            if (growlPhase > twoPi) growlPhase -= twoPi;
+            // 4. Physical 192-tap Exhaust/Muffler + Tailpipe + Ground-Bounce FIR Convolution (ZERO synthetic sine waves!)
             combRoughState += (rng.nextSigned() - combRoughState) * combRoughAlpha;
-            const float roughMod = 1.0f + 0.055f * combRoughState * (0.45f + 0.55f * loadEff);
+            const float roughMod = (1.0f + 0.055f * combRoughState * (0.45f + 0.55f * loadEff)) * stabBoost;
 
-            const float g1 = std::sin(growlPhase * 4.0f); // exact firing fundamental (1.0x fireHz)
-            const float gHalf = std::sin(growlPhase * 2.0f); // deep lower-octave bank rumble (0.5x fireHz)
-            const float gQuarter = (subQuarterWeight > 0.001f) ? std::sin(growlPhase) : 0.0f; // 0.25x cross-plane V8 lope
-            const float gCross = (crossBurbleWeight > 0.001f) ? std::sin(growlPhase * 3.0f) : 0.0f; // 0.75x LP-only burble
-            const float growlRaw = (g1 * 0.56f + gHalf * subHalfWeight + gQuarter * subQuarterWeight + gCross * crossBurbleWeight)
-                                 * growlBaseAmp * roughMod;
-            const float growlChest = growlLp.process(growlRaw) * crankExhaustScale;
-
-            const float singRaw = (singAmp > 0.001f) ? (std::sin(growlPhase * (4.0f * singRatio)) * singAmp * roughMod) : 0.0f;
-            const float singHarm = singLp.process(singRaw) * crankExhaustScale;
-
-            float sL = (wgL * crankExhaustScale * roughMod + growlChest + singHarm + totalPop * 0.44f);
-            float sR = (wgR * crankExhaustScale * roughMod + growlChest + singHarm * 0.96f + totalPop * 0.42f);
+            float sL = irConvL.process(wgL * crankExhaustScale * roughMod) + totalPop * 0.44f;
+            float sR = irConvR.process(wgR * crankExhaustScale * roughMod) + totalPop * 0.42f;
 
             sL = subShelfL.process(sL);
             sR = subShelfR.process(sR);
