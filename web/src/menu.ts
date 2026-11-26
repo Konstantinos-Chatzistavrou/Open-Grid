@@ -478,14 +478,15 @@ export class Menu {
       <div class="dim note">${esc(this.gfxNote || 'Auto tunes resolution and effects for this device once.')}</div>`;
     return `<div class="lobby-screen"><div class="card lobby-card settings-card">
       <div class="lobby-head"><button data-act="settings-back" class="back-btn">← Back</button><div><div class="kicker">OPTIONS</div><h2>Settings</h2></div></div>
+      <h3>🔊 Audio &amp; Engine Sound (A/B Test)</h3>
+      ${row('ENGINE AUDIO ENGINE', chip('audio-engine', 'real_samples', '🎙 Real Recorded Cars (CC-BY)', this.audioEngineMode === 'real_samples') + chip('audio-engine', 'engine_sim', '⚙ Engine-Sim + Muffler IR (WASM)', this.audioEngineMode === 'engine_sim'), 'Switch live while driving or in Garage: compare Real Recorded Supercars (Z06, Mustang, Ferrari 458/F12/812, GT3, Huracán, GT-R, Supra, RX-7) vs Thermodynamic Engine-Sim + 192-tap Exhaust Muffler IR.')}
+      ${row('DYNAMIC ADAPTIVE MUSIC', chip('music', '1', '🎵 Adaptive ON', this.musicOn) + chip('music', '0', 'OFF', !this.musicOn), 'Reacts to speed, shifts into chase tempo during police pursuits, and swells at the finish line.')}
       <h3>Driving assists</h3>${assists}
       <h3>🌍 ${t('settings.language')}</h3>
       <div class="chips">${LANGS.map((l) => chip('lang', l.code, l.native, getLang() === l.code)).join('')}</div>
       <div class="dim note">String-table localization (UE5 Localization Dashboard ready) with automatic text-expansion layouts.</div>
       <h3>♿ ${t('settings.accessibility')}</h3>
       ${row('WALKABLE GARAGE', chip('nr-walk', '1', 'On (Default)', this.nr.walkableGarage) + chip('nr-walk', '0', 'Orbit Only', !this.nr.walkableGarage), 'Walk around your car in the garage to inspect the hood, oil cap, and locker.')}
-      ${row('ENGINE AUDIO MODE (A/B)', chip('audio-engine', 'real_samples', '🎙 Real Cars (CC-BY)', this.audioEngineMode === 'real_samples') + chip('audio-engine', 'engine_sim', '⚙ Engine-Sim + Muffler IR (WASM)', this.audioEngineMode === 'engine_sim'), 'Compare real recorded supercars (AMG C63, Ferrari 458/F12, GT3, Huracán, GT-R, Supra, RX-7) live against the thermodynamic WASM engine + 192-tap exhaust muffler IR.')}
-      ${row('DYNAMIC ADAPTIVE MUSIC', chip('music', '1', '🎵 Adaptive ON', this.musicOn) + chip('music', '0', 'OFF', !this.musicOn), 'Reacts to speed, shifts into chase tempo during police pursuits, and swells at the finish line.')}
       ${row('ANNUAL SEASON PRESTIGE', `<button class="chip" data-act="prestige">★ Prestige Reset (Season ${this.ret.seasonYear} · ★${this.ret.prestige})</button>`, 'Resets rank/XP for a permanent Prestige badge while keeping 100% of your owned cars & garage builds.')}
       ${row(t('settings.colorblind').toUpperCase(),
         (['off', 'protanopia', 'deuteranopia', 'tritanopia'] as ColorblindMode[]).map((m) => chip('a11y-cb', m, m[0].toUpperCase() + m.slice(1), this.a11y.colorblind === m)).join(''),
@@ -805,7 +806,7 @@ export class Menu {
           <button id="g-ign-btn" class="chip ${this.garageEngineOn ? 'on' : ''}" data-act="g-ignition" title="Toggle engine ignition ON / OFF">🔑<span class="lbl"> ${this.garageEngineOn ? 'Stop' : 'Start'}</span></button>
           <button class="chip" data-act="g-dyno" title="Put the car on the dyno: run it, hear it, measure power and top speed">📈<span class="lbl"> Dyno</span></button>
           <button class="chip g-rev-btn" data-hold="g-rev" title="Hold to rev engine &amp; shoot exhaust flames" oncontextmenu="return false">🔥<span class="lbl"> Rev</span></button>
-          <button class="chip" data-act="audio-engine-toggle" title="A/B compare Real Recorded Cars (CC-BY) vs Engine-Sim + Muffler IR (WASM)">🔊<span class="lbl"> ${this.audioEngineMode === 'real_samples' ? 'Real Cars' : 'Sim+IR'}</span></button>
+          <button class="chip on" data-act="audio-engine-toggle" title="A/B compare Real Recorded Cars (CC-BY) vs Engine-Sim + Muffler IR (WASM)">🔊 ${this.audioEngineMode === 'real_samples' ? 'Real' : 'Sim+IR'}</button>
           <button class="chip" data-act="g-cam-cycle" title="Cycle showroom camera angle">📷<span class="lbl"> ${camNow.label}</span></button>
           ${this.nr.walkableGarage ? `<button class="chip ${this.garageWalkActive ? 'on' : ''}" data-act="g-walk" title="Walk around your car">🚶</button>` : ''}
           <button class="primary g-drive-btn" data-act="play">DRIVE ▶</button>
