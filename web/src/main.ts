@@ -1724,6 +1724,31 @@ async function main() {
         menu.officialEvents = s.events;
         if (menu.screen === 'lobby') menu.render();
       }).catch((e: Error) => { menu.officialNote = e.message; if (menu.screen === 'lobby') menu.render(); });
+      void cloud.subscription().then((sub) => {
+        menu.patreonInfo = sub;
+        if (menu.screen === 'lobby' || menu.screen === 'profile') menu.render();
+      }).catch(() => {});
+    },
+    connectPatreon: () => {
+      if (!cloud.available) return;
+      void cloud.patreonConnectUrl().then(({ url }) => {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        menu.officialNote = '✓ Patreon opened in a new tab — after authorizing, click "Refresh Pass"!';
+        menu.render();
+      }).catch((e: Error) => {
+        menu.officialNote = e.message;
+        menu.render();
+      });
+    },
+    refreshSubscription: () => {
+      if (!cloud.available) return;
+      void Promise.all([mp.refresh(), cloud.subscription()]).then(([, sub]) => {
+        menu.patreonInfo = sub;
+        menu.officialNote = sub.active
+          ? `✓ Online Pass active (${sub.tier === 'trial' ? '7-Day Free Trial' : `Patreon ${sub.tier}`} · ${sub.daysLeft}d remaining)!`
+          : 'No active Patreon pass yet — subscribe on Patreon with the same email (or click Connect Patreon).';
+        menu.render();
+      }).catch((e: Error) => { menu.officialNote = e.message; menu.render(); });
     },
     registerOfficialSeries: (seriesId) => {
       if (!cloud.available) return;

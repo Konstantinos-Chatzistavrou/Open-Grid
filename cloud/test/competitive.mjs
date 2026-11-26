@@ -5,6 +5,7 @@
 // Runs directly in Node 24+ (native TS stripping) in <1s -> runs on every GitHub CI build!
 import assert from 'node:assert/strict';
 import { emailError, hashPassword, hmacSha256Hex, normalizeEmail, passwordError, timingSafeEqualHex, verifyPassword } from '../src/auth.ts';
+import { hmacMd5Hex, md5Hex, parsePatreonIdentity, parsePatreonWebhook } from '../src/patreon.ts';
 import {
   OFFICIAL_SERIES, TRIAL_DURATION_MS, applyDropWeeks, calcChampionshipPoints,
   computeRestorativeVerdict, computeSof, driverGradeOf, evaluateSafetyAndLicense,
@@ -31,6 +32,54 @@ await test('PBKDF2-SHA256 password hashing & constant-time verification', async 
   assert.equal(salt.length, 32);
   assert.equal(await verifyPassword('ApexRacing2026!', hash, salt), true);
   assert.equal(await verifyPassword('WrongPassword99!', hash, salt), false);
+});
+
+await test('RFC 1321 MD5 & Patreon X-Patreon-Signature HMAC-MD5 verification', () => {
+  // Official RFC 1321 MD5 test vectors
+  assert.equal(md5Hex(''), 'd41d8cd98f00b204e9800998ecf8427e');
+  assert.equal(md5Hex('abc'), '900150983cd24fb0d6963f7d28e17f72');
+  assert.equal(md5Hex('message digest'), 'f96b697d7cb7938d525a2f31aaf161d0');
+  // Official RFC 2202 HMAC-MD5 test vector #2: key = "Jefe", data = "what do ya want for nothing?"
+  assert.equal(hmacMd5Hex('Jefe', 'what do ya want for nothing?'), '750c783e6ab0b503eaa86e310a5db738');
+});
+
+await test('Patreon webhook & OAuth2 membership tier mapping (Pro / Team Pro / Cancel)', () => {
+  const now = 1_795_000_000_000;
+  const createEv = parsePatreonWebhook('members:pledge:create', {
+    data: {
+      attributes: { email: 'Patron@Example.COM', patron_status: 'active_patron', currently_entitled_amount_cents: 500 },
+      relationships: { user: { data: { id: 'pat_42' } }, campaign: { data: { id: 'camp_1' } } },
+    },
+  }, { nowMs: now, campaignId: 'camp_1' });
+  assert.equal(createEv.patreonUserId, 'pat_42');
+  assert.equal(createEv.email, 'patron@example.com');
+  assert.equal(createEv.tier, 'pro');
+  assert.equal(createEv.resetJokers, true);
+  assert.ok(createEv.expiresAt > now + 30 * 86400e3);
+
+  const teamEv = parsePatreonWebhook('members:pledge:update', {
+    data: {
+      attributes: { email: 'patron@example.com', patron_status: 'active_patron', currently_entitled_amount_cents: 1000 },
+      relationships: { user: { data: { id: 'pat_42' } } },
+    },
+  }, { nowMs: now });
+  assert.equal(teamEv.tier, 'team_pro');
+
+  const delEv = parsePatreonWebhook('members:pledge:delete', {
+    data: {
+      attributes: { email: 'patron@example.com', patron_status: 'active_patron', currently_entitled_amount_cents: 500 },
+      relationships: { user: { data: { id: 'pat_42' } } },
+    },
+  }, { nowMs: now });
+  assert.equal(delEv.tier, 'none');
+  assert.equal(delEv.expiresAt, 0);
+
+  const oauth = parsePatreonIdentity({
+    data: { id: 'pat_99', attributes: { email: 'racer@opengrid.gg' } },
+    included: [{ type: 'member', attributes: { patron_status: 'active_patron', currently_entitled_amount_cents: 1200 } }],
+  }, { nowMs: now });
+  assert.equal(oauth.tier, 'team_pro');
+  assert.equal(oauth.patreonUserId, 'pat_99');
 });
 
 await test('HMAC-SHA256 billing webhook signature verification', async () => {

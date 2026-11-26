@@ -151,6 +151,8 @@ export interface MenuHooks {
   joinOfficialSplit?(eventKey: string): void;
   refreshSchedule?(): void;
   refreshHubTab?(tab: 'splits' | 'champs' | 'hotlaps' | 'leagues', seriesId?: string): void;
+  connectPatreon?(): void;
+  refreshSubscription?(): void;
   createTeam?(name: string, tag: string): void;
   createLeague?(spec: { name: string; description?: string; seriesRules?: string; password?: string }): void;
   joinLeague?(code: string, password?: string): void;
@@ -220,6 +222,7 @@ export class Menu {
   officialEvents: OfficialSeriesEvent[] = [];
   officialSeason = '';
   officialNote = '';
+  patreonInfo: { patreonUrl?: string | null; patreonConnected?: boolean; patreonOAuthEnabled?: boolean; proMinUsd?: number; teamMinUsd?: number; daysLeft?: number } | null = null;
   lobbyTab: 'splits' | 'champs' | 'hotlaps' | 'leagues' = 'splits';
   champSeries = 'gt3_championship';
   champStandings: { account: string; name: string; license: string; dr: number; locked_car: string; points: number; starts: number; wins: number; podiums: number }[] = [];
@@ -1205,8 +1208,14 @@ export class Menu {
       const sr = (mp?.sr ?? 2.5).toFixed(2);
       const jokers = mp?.jokersLeft ?? 2;
       const subLabel = !this.cloud.available ? 'Offline / Local'
-        : mp?.subTier === 'pro' || mp?.subTier === 'team_pro' ? '★ OpenGrid Pro (Ad-Free)'
-        : mp?.subActive ? '✓ 7-Day Free Online Trial (Ad-Free)' : 'Online Pass Expired';
+        : mp?.subTier === 'pro' || mp?.subTier === 'team_pro' ? `🧡 ${mp.subTier === 'team_pro' ? 'Team Pro' : 'OpenGrid Pro'} (Patreon · Ad-Free)`
+        : mp?.subActive ? `✓ 7-Day Free Trial (${this.patreonInfo?.daysLeft ?? 7}d left)` : 'Patreon Pass Required for Official Ranked';
+      const patreonBar = this.cloud.available ? `<div class="opts" style="margin-bottom:10px;padding:8px 10px;border:1px solid #ff6b3d44;border-radius:10px;background:#ff6b3d12;flex-wrap:wrap;gap:8px">
+          <span class="dim small-note">🧡 <b>Non-Profit Server Pass (100% Ad-Free):</b> Base game, cars, tracks, SP &amp; Private P2P stay free forever. Patreon (${this.patreonInfo?.proMinUsd ? `$${this.patreonInfo.proMinUsd}/mo` : 'supporter tier'}) covers our official online servers &amp; stewarding.</span>
+          ${this.patreonInfo?.patreonUrl ? `<a class="small primary" style="text-decoration:none;display:inline-flex;align-items:center;padding:5px 10px;border-radius:6px" href="${esc(this.patreonInfo.patreonUrl)}" target="_blank" rel="noopener noreferrer">🧡 Subscribe on Patreon</a>` : ''}
+          ${this.patreonInfo?.patreonOAuthEnabled ? `<button class="small primary" data-act="patreon-connect">${this.patreonInfo.patreonConnected || mp?.patreonLinked ? '✓ Patreon Linked (Re-sync)' : '🔗 Connect Patreon'}</button>` : ''}
+          <button class="small" data-act="patreon-refresh">↻ Refresh Pass</button>
+        </div>` : '';
       const seriesCards = (this.officialEvents.length ? this.officialEvents : [
         { id: 'rookie_sprint', title: 'OpenGrid Rookie GT Sprint', subtitle: 'Fixed Setup · 20m cadence · Class R+', minLicense: 'R', intervalMin: 20, maxPerSplit: 12, laps: 3, startsInSec: 600, registrants: 0, eligible: true, eventKey: '', myEntry: null },
         { id: 'gt3_championship', title: 'OpenGrid GT3 World Championship', subtitle: 'BoP Equalized · 45m cadence · SOF Splits · Class D+', minLicense: 'D', intervalMin: 45, maxPerSplit: 16, laps: 5, startsInSec: 1800, registrants: 0, eligible: false, eventKey: '', myEntry: null },
@@ -1238,6 +1247,7 @@ export class Menu {
           ${mp?.badSport ? '<span class="pill" style="border-color:#ff4757;color:#ff4757">⚠ BAD-SPORT QUARANTINE</span>' : ''}
           ${this.cloud.available ? '<button class="small" data-act="official-refresh">↻ Refresh</button>' : ''}
         </div>
+        ${patreonBar}
         <div class="chips" style="margin-bottom:12px">
           <button class="chip ${this.lobbyTab === 'splits' ? 'on' : ''}" data-act="lobby-tab" data-v="splits">🏁 Official Splits</button>
           <button class="chip ${this.lobbyTab === 'champs' ? 'on' : ''}" data-act="lobby-tab" data-v="champs">🏆 Championships</button>
@@ -1496,7 +1506,7 @@ export class Menu {
       case 'laylow': this.hooks.layLow?.(); break;
       case 'garage-open': this.garageHideUi = false; this.garageNote = ''; this.show('garage'); this.hooks.preview(); break;
       case 'home': this.show('title'); break;
-      case 'profile-open': this.profileFrom = this.screen === 'profile' ? this.profileFrom : this.screen; this.unameDraft = null; this.unameNote = ''; this.friendNote = ''; this.show('profile'); break;
+      case 'profile-open': this.profileFrom = this.screen === 'profile' ? this.profileFrom : this.screen; this.unameDraft = null; this.unameNote = ''; this.friendNote = ''; this.show('profile'); if (!this.patreonInfo) this.hooks.refreshSchedule?.(); break;
       case 'profile-back': this.show(this.profileFrom); break;
       case 'uname-save': void this.saveName(); break;
       case 'friend-add': void this.friendAct(this.friendDraft, 'add'); break;
@@ -1748,6 +1758,8 @@ export class Menu {
       case 'official-reg': this.hooks.registerOfficialSeries?.(v); break;
       case 'official-join': this.hooks.joinOfficialSplit?.(v); break;
       case 'official-refresh': this.hooks.refreshHubTab?.(this.lobbyTab, this.champSeries); this.hooks.refreshSchedule?.(); break;
+      case 'patreon-connect': this.hooks.connectPatreon?.(); break;
+      case 'patreon-refresh': this.hooks.refreshSubscription?.(); break;
       case 'lobby-tab':
         this.lobbyTab = (v as typeof this.lobbyTab) || 'splits';
         this.officialNote = '';
@@ -2091,6 +2103,14 @@ export class Menu {
       <h3>🔐 OpenGrid Account Login</h3>
       ${authBlock}
       ${this.authNote ? `<div class="pnote ${this.authNote.startsWith('✓') ? '' : 'bad'}">${esc(this.authNote)}</div>` : ''}
+      ${online ? `<h3>🧡 Non-Profit Patreon Online Pass</h3>
+      <p class="dim small-note">Use the same email as your Patreon account (or link Patreon below) to automatically unlock official ranked splits, championships &amp; restorative protests. Base game, cars, tracks, SP &amp; Private P2P are always 100% free and ad-free.</p>
+      <div class="opts" style="flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <span class="pill ${mp?.subActive ? 'gold' : ''}">${mp?.subTier === 'pro' || mp?.subTier === 'team_pro' ? `🧡 Active (${esc(mp.subTier)})` : mp?.subActive ? '✓ 7-Day Free Trial' : 'Pass Inactive'}</span>
+        ${this.patreonInfo?.patreonUrl ? `<a class="small primary" style="text-decoration:none;display:inline-flex;align-items:center;padding:5px 10px;border-radius:6px" href="${esc(this.patreonInfo.patreonUrl)}" target="_blank" rel="noopener noreferrer">🧡 Open Patreon</a>` : ''}
+        ${this.patreonInfo?.patreonOAuthEnabled ? `<button class="small primary" data-act="patreon-connect">${mp?.patreonLinked ? '✓ Patreon Linked' : '🔗 Connect Patreon'}</button>` : ''}
+        <button class="small" data-act="patreon-refresh">↻ Refresh Pass</button>
+      </div>` : ''}
       <h3>Username</h3>
       <p class="dim">Friends add you by it; it shows on the race leaderboard, over your car and on your number plate (up to ${PLATE_MAX} characters).
         ${online ? 'You can change it once every 30 days.' : ''}</p>

@@ -8,10 +8,19 @@ export interface Env {
   IP_SALT?: string;
   /** replay checker & steward key (wrangler secret put VERIFIER_KEY) */
   VERIFIER_KEY?: string;
-  /** HMAC-SHA256 webhook secret for Stripe/Paddle subscription updates (wrangler secret put BILLING_SECRET) */
+  /** HMAC-SHA256 admin webhook secret for manual Pro grants (wrangler secret put BILLING_SECRET) */
   BILLING_SECRET?: string;
-  /** Optional hosted Stripe/Paddle Payment Link URL for OpenGrid Pro subscriptions (zero backend SDK cost!) */
-  STRIPE_PAYMENT_LINK?: string;
+  /** Non-profit Patreon page URL (e.g. https://www.patreon.com/opengrid) — funds official ranked servers */
+  PATREON_URL?: string;
+  /** Patreon webhook secret for HMAC-MD5 X-Patreon-Signature verification (wrangler secret put PATREON_WEBHOOK_SECRET) */
+  PATREON_WEBHOOK_SECRET?: string;
+  /** Optional Patreon OAuth2 credentials for 1-click "Connect Patreon" in-game */
+  PATREON_CLIENT_ID?: string;
+  PATREON_CLIENT_SECRET?: string;
+  PATREON_CAMPAIGN_ID?: string;
+  /** Minimum monthly pledge in USD cents for OpenGrid Pro (default 500 = $5) and Team Pro (default 1000 = $10) */
+  PATREON_PRO_CENTS?: string;
+  PATREON_TEAM_CENTS?: string;
   ALLOWED_ORIGINS?: string;
   /** local tests only (.dev.vars): honour the x-test-ip header to simulate players on different networks */
   ALLOW_TEST_IP?: string;
@@ -37,7 +46,7 @@ export function cors(r: Response, env: Env) {
   if (r.status === 101) return r;   // WebSocket upgrade: headers are immutable
   const h = new Headers(r.headers);
   h.set('access-control-allow-origin', env.ALLOWED_ORIGINS === '*' || !env.ALLOWED_ORIGINS ? '*' : env.ALLOWED_ORIGINS.split(',')[0]);
-  h.set('access-control-allow-headers', 'content-type, authorization, x-opengrid-signature');
+  h.set('access-control-allow-headers', 'content-type, authorization, x-opengrid-signature, x-patreon-signature, x-patreon-event');
   h.set('access-control-allow-methods', 'GET, POST, OPTIONS');
   return new Response(r.body, { status: r.status, headers: h });
 }
@@ -95,6 +104,7 @@ export const profileOf = (a: AccountRow) => {
     subTier,
     subExpiresAt,
     subActive: isSubscriptionActive(subTier, subExpiresAt),
+    patreonLinked: Boolean(a.billing_customer_id?.startsWith('patreon:')),
     dr,
     drRd: Math.round((a.dr_rd ?? 180) * 10) / 10,
     drGrade: driverGradeOf(dr),

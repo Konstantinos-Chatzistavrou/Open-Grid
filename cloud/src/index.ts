@@ -22,6 +22,7 @@ import { CAR_REQ, CAR_VMAX_KMH, MOD_REQ, SKIN_REQ, levelOf } from '../../web/src
 import { cleanCustom } from '../../web/src/custom-data';
 import { usernameError } from '../../web/src/username';
 import { emailError, hashPassword, hmacSha256Hex, normalizeEmail, passwordError, timingSafeEqualHex, verifyPassword } from './auth';
+import { DEFAULT_PRO_MIN_CENTS, DEFAULT_TEAM_MIN_CENTS, hmacMd5Hex, parsePatreonIdentity, parsePatreonWebhook } from './patreon';
 import { paceOf } from './pace';
 import {
   OFFICIAL_SERIES, TRIAL_DURATION_MS, computeRestorativeVerdict, currentSeasonId,
@@ -45,9 +46,17 @@ const byEmail = (env: Env, e: string) => env.DB.prepare('SELECT * FROM accounts 
 function requireActiveSub(acct: AccountRow): Response | null {
   if (isSubscriptionActive(acct.sub_tier, acct.sub_expires_at)) return null;
   return json({
-    error: 'Active OpenGrid Online Pass (or 7-day Trial) required for official ranked splits, championships, and restorative protests. Single-player, garage, and private P2P lobbies remain free forever.',
+    error: 'Your 7-day free trial ended. Official ranked splits, championships, and restorative protests are funded by our non-profit Patreon Pass (100% ad-free). Single-player, garage, cars, tracks, and private P2P lobbies remain free forever!',
     code: 'SUBSCRIPTION_REQUIRED',
   }, 402);
+}
+
+function patreonOpts(env: Env) {
+  return {
+    proMinCents: Number(env.PATREON_PRO_CENTS) || DEFAULT_PRO_MIN_CENTS,
+    teamMinCents: Number(env.PATREON_TEAM_CENTS) || DEFAULT_TEAM_MIN_CENTS,
+    campaignId: env.PATREON_CAMPAIGN_ID || undefined,
+  };
 }
 
 export default {
@@ -62,7 +71,81 @@ async function route(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url), path = url.pathname;
   if (path === '/' || path === '/v1') return json({ service: 'opengrid', ok: true, season: currentSeasonId(), adFree: true });
 
-  // ---- Billing Webhook (HMAC-SHA256 signed with BILLING_SECRET) ----
+  // ---- Patreon Non-Profit Supporter Webhook (HMAC-MD5 X-Patreon-Signature, $0/mo automated unlock!) ----
+  if (path === '/v1/patreon/webhook' && req.method === 'POST') {
+    if (!env.PATREON_WEBHOOK_SECRET) return json({ error: 'patreon webhook not configured' }, 503);
+    const rawBody = await req.text();
+    const sig = (req.headers.get('x-patreon-signature') ?? '').trim().toLowerCase();
+    const expected = hmacMd5Hex(env.PATREON_WEBHOOK_SECRET, rawBody);
+    if (!timingSafeEqualHex(sig, expected)) return json({ error: 'invalid patreon signature' }, 403);
+    const evType = (req.headers.get('x-patreon-event') ?? 'members:pledge:update').toLowerCase();
+    let payload: Record<string, unknown>;
+    try { payload = JSON.parse(rawBody); } catch { return json({ error: 'bad json' }, 400); }
+    const ent = parsePatreonWebhook(evType, payload, patreonOpts(env));
+    if (ent.patronStatus === 'other_campaign') return json({ ok: true, ignored: true });
+    const custId = ent.patreonUserId ? `patreon:${ent.patreonUserId}` : null;
+    let target: { id: string } | null = null;
+    if (custId) {
+      target = await env.DB.prepare('SELECT id FROM accounts WHERE billing_customer_id = ?').bind(custId).first<{ id: string }>();
+    }
+    if (!target && ent.email) {
+      target = await env.DB.prepare('SELECT id FROM accounts WHERE LOWER(email) = ?').bind(ent.email).first<{ id: string }>();
+    }
+    if (!target) return json({ ok: true, matched: false });
+    await env.DB.prepare(
+      'UPDATE accounts SET sub_tier = ?, sub_expires_at = ?, billing_customer_id = COALESCE(?, billing_customer_id), jokers_left = CASE WHEN ? = 1 THEN 2 ELSE jokers_left END WHERE id = ?',
+    ).bind(ent.tier, ent.expiresAt, custId, ent.resetJokers ? 1 : 0, target.id).run();
+    return json({ ok: true, matched: true, accountId: target.id, tier: ent.tier });
+  }
+
+  // ---- Patreon OAuth2 Callback (1-click "Connect Patreon" -> instant D1 Pro activation) ----
+  if (path === '/v1/patreon/callback' && req.method === 'GET') {
+    if (!env.PATREON_CLIENT_ID || !env.PATREON_CLIENT_SECRET) return new Response('Patreon OAuth not configured', { status: 503 });
+    const code = url.searchParams.get('code') ?? '';
+    const state = url.searchParams.get('state') ?? '';
+    const [acctId, expStr, sig] = state.split('.');
+    const exp = Number(expStr) || 0;
+    const stateSecret = env.PATREON_CLIENT_SECRET + '|' + (env.IP_SALT ?? 'opengrid-patreon');
+    const expectedSig = await hmacSha256Hex(stateSecret, `${acctId}.${exp}`);
+    if (!code || !acctId || exp < Date.now() || !timingSafeEqualHex((sig ?? '').toLowerCase(), expectedSig)) {
+      return new Response('Invalid or expired Patreon authorization link. Return to OpenGrid and try again.', { status: 400 });
+    }
+    const redirectUri = `${url.origin}/v1/patreon/callback`;
+    const tokRes = await fetch('https://www.patreon.com/api/oauth2/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        grant_type: 'authorization_code',
+        client_id: env.PATREON_CLIENT_ID,
+        client_secret: env.PATREON_CLIENT_SECRET,
+        redirect_uri: redirectUri,
+      }),
+    });
+    if (!tokRes.ok) return new Response('Could not verify Patreon login. Please try again from OpenGrid.', { status: 502 });
+    const tok = await tokRes.json<{ access_token?: string }>();
+    if (!tok.access_token) return new Response('Missing Patreon access token.', { status: 502 });
+    const idRes = await fetch(
+      'https://www.patreon.com/api/oauth2/v2/identity?include=memberships,memberships.campaign&fields%5Buser%5D=email,full_name&fields%5Bmember%5D=patron_status,currently_entitled_amount_cents',
+      { headers: { authorization: `Bearer ${tok.access_token}` } },
+    );
+    if (!idRes.ok) return new Response('Could not read Patreon membership status.', { status: 502 });
+    const idJson = await idRes.json<Record<string, unknown>>();
+    const ent = parsePatreonIdentity(idJson, patreonOpts(env));
+    const custId = ent.patreonUserId ? `patreon:${ent.patreonUserId}` : null;
+    await env.DB.prepare(
+      'UPDATE accounts SET sub_tier = CASE WHEN ? != \'none\' THEN ? ELSE sub_tier END, sub_expires_at = CASE WHEN ? != \'none\' THEN ? ELSE sub_expires_at END, billing_customer_id = COALESCE(?, billing_customer_id) WHERE id = ?',
+    ).bind(ent.tier, ent.tier, ent.tier, ent.expiresAt, custId, acctId).run();
+    const okMsg = ent.tier !== 'none'
+      ? `OpenGrid ${ent.tier === 'team_pro' ? 'Team Pro' : 'Pro'} Pass ACTIVATED! You can close this tab and click "Refresh Pass" in OpenGrid.`
+      : 'Patreon linked, but no active OpenGrid supporter pledge was found yet. Subscribe on Patreon and click "Refresh Pass" in OpenGrid.';
+    return new Response(
+      `<!doctype html><meta charset="utf-8"><title>OpenGrid Patreon</title><body style="background:#0d1017;color:#eef2ff;font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0"><div style="max-width:460px;padding:28px;border:1px solid #ffffff22;border-radius:14px;background:#141925"><h2>🧡 OpenGrid Patreon Pass</h2><p>${okMsg}</p><p style="opacity:.7;font-size:13px">Thank you for funding our non-profit, 100% ad-free racing servers!</p></div></body>`,
+      { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } },
+    );
+  }
+
+  // ---- Generic Admin Billing Webhook (HMAC-SHA256 signed with BILLING_SECRET for manual grants/giveaways) ----
   if (path === '/v1/billing/webhook' && req.method === 'POST') {
     if (!env.BILLING_SECRET) return json({ error: 'billing not configured' }, 503);
     const rawBody = await req.text();
@@ -307,37 +390,66 @@ async function route(req: Request, env: Env): Promise<Response> {
     const exp = acct.sub_expires_at ?? 0;
     const active = isSubscriptionActive(tier, exp);
     const daysLeft = exp > Date.now() ? Math.ceil((exp - Date.now()) / 86_400_000) : 0;
-    const checkoutUrl = env.STRIPE_PAYMENT_LINK
-      ? `${env.STRIPE_PAYMENT_LINK}${env.STRIPE_PAYMENT_LINK.includes('?') ? '&' : '?'}client_reference_id=${encodeURIComponent(acct.id)}`
-      : null;
+    const opts = patreonOpts(env);
+    const patreonOAuthEnabled = Boolean(env.PATREON_CLIENT_ID && env.PATREON_CLIENT_SECRET);
     return json({
-      tier, active, expiresAt: exp, daysLeft, adFree: true, checkoutUrl,
+      tier, active, expiresAt: exp, daysLeft, adFree: true, nonProfit: true,
+      patreonUrl: env.PATREON_URL || null,
+      patreonConnected: Boolean(acct.billing_customer_id?.startsWith('patreon:')),
+      patreonOAuthEnabled,
+      proMinUsd: opts.proMinCents / 100,
+      teamMinUsd: opts.teamMinCents / 100,
       benefits: [
-        '100% Ad-Free Managed Official Servers',
+        '100% Non-Profit & Ad-Free: Patreon funds our official online servers & D1 cloud database',
         'Scheduled 20m / 45m / 60m SOF Splits & License Ladder (R -> PRO)',
-        'Official Multi-Week Championships & Endurance Events',
+        'Official Multi-Week Championships & Multiclass Endurance Teams',
         'Fault-Aware Safety Rating (0x Victim Shield) & Restorative Protests (DR/SR Refunds)',
-        'Season Disconnect Jokers & Verified Global Hotlap Ghosts / Telemetry',
-        'Hosted Private Leagues & Endurance Teams',
+        'Season Disconnect Jokers & C++20 Verified Global Hotlap Leaderboards',
+        'Hosted Private Leagues & Custom Rules',
         'Zero Hostage Content: All Cars, Tracks, SP & Private P2P Stay Free Forever',
       ],
     });
   }
 
+  // ---- Patreon OAuth2 Start URL (signed CSRF state tied to this OpenGrid account) ----
+  if (path === '/v1/patreon/connect' && req.method === 'GET') {
+    if (!env.PATREON_CLIENT_ID || !env.PATREON_CLIENT_SECRET) {
+      return json({ error: 'Patreon OAuth is not configured yet — use the same email on Patreon & OpenGrid for automatic webhook unlock!' }, 503);
+    }
+    const exp = Date.now() + 15 * 60_000;
+    const stateSecret = env.PATREON_CLIENT_SECRET + '|' + (env.IP_SALT ?? 'opengrid-patreon');
+    const sig = await hmacSha256Hex(stateSecret, `${acct.id}.${exp}`);
+    const state = `${acct.id}.${exp}.${sig}`;
+    const redirectUri = `${url.origin}/v1/patreon/callback`;
+    const authUrl = `https://www.patreon.com/oauth2/authorize?response_type=code&client_id=${encodeURIComponent(env.PATREON_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent('identity identity[email] identity.memberships')}&state=${encodeURIComponent(state)}`;
+    return json({ url: authUrl });
+  }
+
   // ---- Hosted Private Leagues (Custom Rules, BoP, Passwords & Community Stewards) ----
   if (path === '/v1/leagues' && req.method === 'GET') {
     const rows = await env.DB.prepare(
-      `SELECT l.id, l.name, l.join_code, l.owner, l.config_json, l.max_drivers, m.role,
-              (SELECT COUNT(*) FROM league_members x WHERE x.league_id = l.id) AS members
-       FROM leagues l JOIN league_members m ON m.league_id = l.id WHERE m.account = ? ORDER BY l.created DESC`,
-    ).bind(acct.id).all();
-    return json({ leagues: rows.results });
+      `SELECT l.id, l.name, l.join_code AS code, l.join_code, l.owner, l.config_json, l.max_drivers, l.created,
+              CASE WHEN l.password_hash IS NOT NULL THEN 1 ELSE 0 END AS is_private,
+              (SELECT COUNT(*) FROM league_members x WHERE x.league_id = l.id) AS member_count
+       FROM leagues l ORDER BY l.created DESC LIMIT 50`,
+    ).all();
+    const leagues = (rows.results as Record<string, unknown>[]).map((r) => {
+      let cfg: Record<string, unknown> = {};
+      try { cfg = JSON.parse(String(r.config_json ?? '{}')); } catch { /* default */ }
+      return {
+        ...r,
+        description: String(cfg.description ?? 'Custom OpenGrid League'),
+        series_rules: `${cfg.laps ?? 5}L · ${cfg.bop !== false ? 'BoP' : 'Open'} · ${cfg.realism !== false ? 'Realism' : 'Respawns'}`,
+        bop_enabled: cfg.bop !== false ? 1 : 0,
+      };
+    });
+    return json({ leagues });
   }
 
   if (path === '/v1/leagues' && req.method === 'POST') {
     const subErr = requireActiveSub(acct);
     if (subErr) return subErr;
-    const b = await req.json<{ name?: string; password?: string; laps?: number; realism?: boolean; bop?: boolean; route?: string; maxDrivers?: number }>();
+    const b = await req.json<{ name?: string; description?: string; password?: string; laps?: number; realism?: boolean; bop?: boolean; route?: string; maxDrivers?: number }>();
     const name = String(b.name ?? '').trim().slice(0, 40);
     if (name.length < 3) return json({ error: 'League name must be at least 3 characters.' }, 400);
     const pw = b.password ? String(b.password) : '';
@@ -345,6 +457,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     const lid = randomId(12);
     const joinCode = `LG${randomId(6).toUpperCase()}`;
     const cfg = JSON.stringify({
+      description: String(b.description ?? '').trim().slice(0, 120),
       laps: Math.max(1, Math.min(20, Math.round(Number(b.laps) || 5))),
       realism: b.realism !== false,
       bop: b.bop !== false,
@@ -361,14 +474,14 @@ async function route(req: Request, env: Env): Promise<Response> {
     } catch {
       return json({ error: 'That league name is already taken.' }, 409);
     }
-    return json({ ok: true, id: lid, name, joinCode, config: JSON.parse(cfg) });
+    return json({ ok: true, id: lid, name, code: joinCode, joinCode, isPrivate: Boolean(hashed), config: JSON.parse(cfg) });
   }
 
   if (path === '/v1/leagues/join' && req.method === 'POST') {
     const subErr = requireActiveSub(acct);
     if (subErr) return subErr;
-    const b = await req.json<{ joinCode?: string; password?: string }>();
-    const code = String(b.joinCode ?? '').trim().toUpperCase().slice(0, 16);
+    const b = await req.json<{ code?: string; joinCode?: string; password?: string }>();
+    const code = String(b.joinCode ?? b.code ?? '').trim().toUpperCase().slice(0, 16);
     const lg = await env.DB.prepare('SELECT * FROM leagues WHERE join_code = ?').bind(code).first<{
       id: string; name: string; join_code: string; password_hash: string | null; password_salt: string | null; max_drivers: number;
     }>();
@@ -380,7 +493,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     const cnt = await env.DB.prepare('SELECT COUNT(*) AS n FROM league_members WHERE league_id = ?').bind(lg.id).first<{ n: number }>();
     if ((cnt?.n ?? 0) >= lg.max_drivers) return json({ error: 'This league is full.' }, 409);
     await env.DB.prepare("INSERT OR IGNORE INTO league_members (league_id, account, role, joined_at) VALUES (?, ?, 'driver', ?)").bind(lg.id, acct.id, Date.now()).run();
-    return json({ ok: true, id: lg.id, name: lg.name, joinCode: lg.join_code });
+    return json({ ok: true, id: lg.id, leagueId: lg.id, name: lg.name, code: lg.join_code, joinCode: lg.join_code });
   }
 
   // ---- Scheduled Official Series Registration & Balanced SOF Split Seeding ----

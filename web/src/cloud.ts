@@ -18,7 +18,7 @@ export interface Profile {
   prefs?: Record<string, unknown>;
   avatarGear?: Record<string, unknown>;
   clean: number; strikes: number; banned: boolean; created: number;
-  subTier?: SubTier; subExpiresAt?: number; subActive?: boolean;
+  subTier?: SubTier; subExpiresAt?: number; subActive?: boolean; patreonLinked?: boolean;
   dr?: number; drRd?: number; drGrade?: string; sr?: number; license?: LicenseClass;
   mprRaces?: number; rollingCpi?: number; badSport?: boolean; cleanStreak?: number; jokersLeft?: number;
   stats?: { starts: number; wins: number; podiums: number; poles: number; incidents: number; corners: number };
@@ -130,8 +130,15 @@ export class Cloud {
   report(raceId: string, player: string, why: string) { return this.call<{ ok: true }>('POST', '/v1/report', { raceId, player, why }); }
   replay(raceId: string, data: string) { return this.call<{ ok: true }>('POST', `/v1/replay/${encodeURIComponent(raceId)}`, { data }); }
 
-  // ---- Competitive OpenGrid Online Network ----
-  subscription() { return this.call<{ tier: SubTier; active: boolean; expiresAt: number; daysLeft: number; adFree: boolean; checkoutUrl?: string | null; benefits: string[] }>('GET', '/v1/subscription'); }
+  // ---- Competitive OpenGrid Online Network (Non-Profit Patreon Funded · 100% Ad-Free) ----
+  subscription() {
+    return this.call<{
+      tier: SubTier; active: boolean; expiresAt: number; daysLeft: number; adFree: boolean; nonProfit?: boolean;
+      patreonUrl?: string | null; patreonConnected?: boolean; patreonOAuthEnabled?: boolean;
+      proMinUsd?: number; teamMinUsd?: number; benefits: string[];
+    }>('GET', '/v1/subscription');
+  }
+  patreonConnectUrl() { return this.call<{ url: string }>('GET', '/v1/patreon/connect'); }
   schedule() { return this.call<ScheduleResponse>('GET', '/v1/schedule', undefined, true); }
   registerSeries(seriesId: string, car: string) {
     return this.call<{ ok: true; eventKey: string; seriesId: string; startsAt: number; registrants: number }>('POST', '/v1/schedule/register', { seriesId, car });
