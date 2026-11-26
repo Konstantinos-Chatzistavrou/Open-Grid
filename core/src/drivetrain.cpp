@@ -518,10 +518,13 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         if (systems.shift_cut_active && !systems.auto_blip_active) thr = 0; // ignition cut during upshift
         if (systems.fuel_consumption_enabled && systems.fuel_liters <= 0.0) thr = 0; // out of fuel
 
-        // ---- Turbocharger spool, boost pressure, Blow-Off Valve (BOV) & Intercooler Heat Soak (IAT + Altitude)
+        // ---- Turbocharger spool, boost pressure, Blow-Off Valve (BOV) & Intercooler Heat Soak (IAT + Altitude + Wake)
+        const double wake_hot_c = std::max(0.0, in.wake_hot_air_c);
+        const double wake_cool = clamp(in.wake_cooling_scale, 0.55, 1.0);
+        const double eff_cool_air_v = std::abs(in.airspeed_mps) * wake_cool;
         AtmosphericEnvironment env;
         env.enabled = in.atmosphere_enabled;
-        env.ambient_air_c = in.ambient_air_c;
+        env.ambient_air_c = in.ambient_air_c + wake_hot_c;
         env.altitude_m = in.altitude_m;
         env.humidity_0_to_1 = in.humidity_0_to_1;
 
@@ -563,12 +566,12 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
                 systems.surge_boost_bar = 0.0;
             }
             // Adiabatic compressor heating + air-to-air intercooler heat soak (at altitude, compressor works at higher PR):
-            const double t_amb_c = env.enabled ? env.ambient_air_c : 25.0;
+            const double t_amb_c = env.enabled ? env.ambient_air_c : (25.0 + wake_hot_c);
             const double t_amb_k = t_amb_c + 273.15;
             double pr = 1.0 + std::max(0.0, systems.boost_bar);
             const double alt_turbo_factor = env.turbo_altitude_power_factor(systems.boost_bar, &pr);
             const double t_comp_c = t_amb_c + t_amb_k * (std::pow(pr, 0.286) - 1.0) / 0.72;
-            const double airflow_eff = clamp(systems.intercooler_eff * (0.45 + 0.55 * std::min(1.0, std::abs(in.airspeed_mps) / 38.0))
+            const double airflow_eff = clamp(systems.intercooler_eff * (0.45 + 0.55 * std::min(1.0, eff_cool_air_v / 38.0))
                                              * in.radiator_cooling_scale, 0.15, 0.92);
             const double target_iat = t_comp_c - airflow_eff * (t_comp_c - t_amb_c);
             systems.intake_air_temp_c += (target_iat - systems.intake_air_temp_c) * std::min(1.0, h * 0.45);
@@ -604,7 +607,7 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
                 systems.turbo_surge = 0.0;
                 systems.surge_boost_bar = 0.0;
             }
-            systems.intake_air_temp_c = env.enabled ? (env.ambient_air_c + 3.0) : 28.0;
+            systems.intake_air_temp_c = env.enabled ? (env.ambient_air_c + 3.0) : (28.0 + wake_hot_c);
             systems.iat_power_factor = 1.0;
             turbo_mult *= env.na_engine_power_factor();
         }
@@ -624,9 +627,9 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
                                * (1.0 + 0.35 * std::max(0.0, systems.boost_bar))
                                * (nos_mult > 1.0 ? 1.45 : 1.0)
                                * oil_heat_mult;
-        const double oil_eq_c = env.enabled ? (82.0 + 0.45 * (env.ambient_air_c - 25.0)) : 82.0;
-        const double cooling = (0.16 + 0.008 * std::max(0.0, in.airspeed_mps))
-                             * clamp(in.radiator_cooling_scale * in.oil_cooling_scale, 0.12, 1.0)
+        const double oil_eq_c = env.enabled ? (82.0 + 0.45 * (env.ambient_air_c - 25.0)) : (82.0 + 0.45 * std::max(0.0, in.wake_hot_air_c));
+        const double cooling = (0.16 + 0.008 * eff_cool_air_v)
+                             * clamp(in.radiator_cooling_scale * in.oil_cooling_scale * clamp(in.wake_cooling_scale, 0.55, 1.0), 0.12, 1.0)
                              * (systems.oil_temp_c - oil_eq_c);
         systems.oil_temp_c = clamp(systems.oil_temp_c + h * (heat_load - cooling) * 0.12, 20.0, 165.0);
 
@@ -670,11 +673,12 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
     // into the coolant (~0.7 x brake power + idle) outruns the radiator (airflow, the fan when stopped, damage) and falls
     // in the cold. Estimates: 60 kJ/K (coolant + the metal it wets), radiator 1.0 + 0.045 v kW/K.
     {
-        const double amb = in.atmosphere_enabled ? in.ambient_air_c : 25.0;
+        const double amb = (in.atmosphere_enabled ? in.ambient_air_c : 25.0) + std::max(0.0, in.wake_hot_air_c);
         const double p_kw = std::max(0.0, t_engine * engine_omega) / 1000.0;
         const double q_in = (stalled ? 0.0 : 2.5) + 0.7 * p_kw;
         const double open = clamp((systems.coolant_temp_c - 87.0) / 10.0, 0.0, 1.0);
-        const double ua = (1.0 + 0.045 * std::max(0.0, in.airspeed_mps)) * clamp(in.radiator_cooling_scale, 0.1, 1.0);
+        const double wake_cool = clamp(in.wake_cooling_scale, 0.55, 1.0);
+        const double ua = (1.0 + 0.045 * std::max(0.0, in.airspeed_mps) * wake_cool) * clamp(in.radiator_cooling_scale, 0.1, 1.0);
         const double q_out = (ua * open + 0.04) * (systems.coolant_temp_c - amb);
         systems.coolant_temp_c = clamp(systems.coolant_temp_c + h * (q_in - q_out) / 60.0, amb - 1.0, 135.0);
     }

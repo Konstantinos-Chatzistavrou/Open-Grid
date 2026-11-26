@@ -152,6 +152,37 @@ struct OPENGRIDPHYSICS_API FOpenGridWheelState
 };
 
 /**
+ * Nearby traffic / rival car snapshot for UE 5.8 3D multi-car slipstream, crosswind-drifted wake cones,
+ * bidirectional tandem push-draft, side-drafting, Bernoulli lateral suction & unsteady wake buffeting.
+ */
+USTRUCT(BlueprintType)
+struct OPENGRIDPHYSICS_API FOpenGridAeroTrafficCar
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Aero")
+    FVector PositionCm = FVector::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Aero")
+    FVector VelocityCms = FVector::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Aero")
+    FVector Forward = FVector::ForwardVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Aero")
+    float DragArea = 0.68f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Aero")
+    float LiftArea = 0.35f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Aero")
+    float WidthCm = 190.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Aero")
+    float HeightCm = 125.0f;
+};
+
+/**
  * 6 directional crash morph-target weights (0..1) for driving GPU morph targets on AOpenGridCarPawn.
  */
 USTRUCT(BlueprintType)
@@ -363,6 +394,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
     bool bAutoSyncWorldWeather = true;
 
+    /** Automatically compute 3D multi-car slipstream, crosswind-drifted wake, tandem push-draft & side-drafting against sibling OpenGrid vehicles. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Aero")
+    bool bAutoComputeAeroWake = true;
+
+    /** Push custom nearby traffic/AI car snapshots into the 3D multi-car aerodynamic wake solver (merged with sibling vehicles if bAutoComputeAeroWake is true). */
+    UFUNCTION(BlueprintCallable, Category="OpenGrid|Aero")
+    void UpdateAeroTraffic(const TArray<FOpenGridAeroTrafficCar>& NearbyCars);
+
     // ---- Drivetrain and assists -------------------------------------------------------------------------------------
 
     /** Turbocharger stage (0 = naturally aspirated, 1 = 0.7 bar, 2 = 1.15 bar, 3 = 1.65 bar). */
@@ -560,6 +599,52 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float AeroBalanceFront = 0.45f;
+
+    /** Live 3D multi-car slipstream drag multiplier (< 1.0 in tow/train/push-draft, > 1.0 when side-drafted). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float SlipstreamDragScale = 1.0f;
+
+    /** Live front & rear dirty-air downforce multipliers (< 1.0 behind traffic; front loses more -> cornering understeer). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float DirtyAirFrontScale = 1.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float DirtyAirRearScale = 1.0f;
+
+    /** Side-drafting drag delta (+0.06..+0.11 when rival side-drafts our rear quarter; -0.045 when we side-draft them). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float SideDraftDragDelta = 0.0f;
+
+    /** Bidirectional tandem push-draft drag relief (-0.06..-0.13 when trailing car tucks behind our rear bumper). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float TandemPushDragDelta = 0.0f;
+
+    /** Unsteady vortex-shedding wake buffeting intensity (0..1) for cockpit camera shake, wind audio & FFB nibble. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float WakeTurbulence = 0.0f;
+
+    /** Hot exhaust/radiator wake air temperature rise entering intakes (+0..+14 C) & cooling airflow scale (1.0..0.65). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float WakeHotAirCelsius = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float WakeCoolingScale = 1.0f;
+
+    /** Live 6-DOF aerodynamic forces & yaw moment (N, N m). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float AeroDragN = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float AeroDownforceFrontN = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float AeroDownforceRearN = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float AeroSideForceN = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Aero")
+    float AeroYawMomentNm = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float StreetRubberAtCar = 0.0f;
@@ -848,4 +933,6 @@ private:
     bool bPrevScrape_ = false;
     int32 PrevMissedShifts_ = 0;
     double PrevDamageEnergyKj_ = 0.0;
+    std::vector<rs::AeroTrafficCar> ManualAeroTraffic_;
+    static TArray<TWeakObjectPtr<UOpenGridVehicleComponent>> ActiveVehicles_;
 };

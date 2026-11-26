@@ -22,6 +22,8 @@ struct DrivetrainInput {
     bool starter_crank = false;                      // physical starter motor cranking
     double airspeed_mps = 0.0;                       // vehicle forward speed for oil/intercooler radiator cooling
     double radiator_cooling_scale = 1.0;             // 1.0 intact .. 0.15 punctured by front-zone crash damage / drained coolant
+    double wake_cooling_scale = 1.0;                 // 1.0 clean air .. 0.68 starved airflow in close turbulent slipstream
+    double wake_hot_air_c = 0.0;                     // +0..+12 C hot exhaust/radiator wake air ahead raising IAT & oil/water temps
     double oil_cooling_scale = 1.0;                  // 1.0 intact .. 0.20 punctured oil pan / drained engine oil
     double oil_starvation_wear_rate = 0.0;           // extra engine_health degradation/s when oil sump runs dry
     double fuel_leak_lps = 0.0;                      // L/s fuel tank puncture drain rate

@@ -54,6 +54,9 @@ struct VehicleSettings {
     bool carbon_body_panels = false;
     bool roll_cage = false;
     bool race_suspension = false;
+    // Live multi-car 3D slipstream / side-draft / tandem push-draft / dirty-air wake (updated from game thread / UE5 world)
+    bool has_aero_wake = false;
+    AeroWakeState aero_wake{};
 };
 
 /** Game / render thread -> physics thread. Levels (axes, settings) replace the previous command's; edges add up. */
@@ -303,6 +306,11 @@ private:
         spec.roll_cage = s.roll_cage;
         spec.race_suspension = s.race_suspension;
         vehicle_->damage_model().set_structural_spec(spec);
+        if (s.has_aero_wake) {
+            const bool keep_yaw = vehicle_->aero_wake().yaw_aero_enabled;
+            vehicle_->aero_wake() = s.aero_wake;
+            vehicle_->aero_wake().yaw_aero_enabled = keep_yaw || s.aero_wake.yaw_aero_enabled;
+        }
     }
 
     Vehicle* vehicle_;

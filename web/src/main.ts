@@ -3183,18 +3183,30 @@ async function main() {
       const spd = Math.hypot(lv.x, lv.z);
       if (live) {
         let draftingFactor = 0;
-        if (ai.mode === 'race' && spd > 8) {
+        const aeroNearby: { px: number; py: number; pz: number; vx: number; vy: number; vz: number; fx: number; fy: number; fz: number }[] = [];
+        if (ai.mode !== 'off' && ai.cars.length) {
           const fwdX = 2 * (quat.x * quat.z + quat.w * quat.y);
           const fwdZ = 1 - 2 * (quat.x * quat.x + quat.y * quat.y);
           for (const rival of ai.cars) {
             const dx = rival.pos.x - pos.x, dz = rival.pos.z - pos.z;
             const d = Math.hypot(dx, dz);
-            if (d > 2.5 && d < 24) {
+            if (d > 1.5 && d < 60 && aeroNearby.length < 16) {
+              const yaw = rival.root.rotation.y;
+              const rfx = Math.sin(yaw), rfz = Math.cos(yaw);
+              const rv = rival.parked || ai.held ? 0 : (rival.v || 0);
+              aeroNearby.push({
+                px: rival.pos.x, py: rival.pos.y, pz: rival.pos.z,
+                vx: rfx * rv, vy: 0, vz: rfz * rv,
+                fx: rfx, fy: 0, fz: rfz,
+              });
+            }
+            if (ai.mode === 'race' && spd > 8 && d > 2.5 && d < 24) {
               const align = (dx * fwdX + dz * fwdZ) / d;
               if (align > 0.85) draftingFactor = Math.max(draftingFactor, (1 - d / 24) * align);
             }
           }
         }
+        core.setAeroTraffic(aeroNearby, ticks * DT);
         // the damage report DamageVisuals reads from the core at 20 Hz (no core call + 4 arrays per frame here)
         const dmg = damage.last;
         const damageLevel = dmg ? Math.min(1, Math.max(dmg.severity ?? 0, (dmg.zone[0] + dmg.zone[1] + dmg.zone[2] + dmg.zone[3]) * 0.3)) : 0;

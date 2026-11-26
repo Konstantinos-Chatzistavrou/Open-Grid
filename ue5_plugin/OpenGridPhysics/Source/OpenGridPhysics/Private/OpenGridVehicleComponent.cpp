@@ -48,6 +48,8 @@ FVector ToFVector(const rs::ue5::UeVec3& V) { return FVector(V.x, V.y, V.z); }
 rs::ue5::UeVec3 ToUe(const FVector& V) { return {V.X, V.Y, V.Z}; }
 }  // namespace
 
+TArray<TWeakObjectPtr<UOpenGridVehicleComponent>> UOpenGridVehicleComponent::ActiveVehicles_;
+
 UOpenGridVehicleComponent::UOpenGridVehicleComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
@@ -304,12 +306,14 @@ void UOpenGridVehicleComponent::BeginPlay()
         UE_LOG(LogOpenGrid, Warning, TEXT("Tick Physics Async is off in Project Settings > Physics: using the frame-tick fallback (handling will depend on frame rate)"));
     }
     bCarLoaded = true;
+    ActiveVehicles_.AddUnique(this);
     bAsyncRun_.store(bAsyncPhysicsActive, std::memory_order_release);
     SetAsyncPhysicsTickEnabled(bAsyncPhysicsActive);
 }
 
 void UOpenGridVehicleComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    ActiveVehicles_.Remove(this);
     QuiesceAsyncPhysics();
     SetAsyncPhysicsTickEnabled(false);
     if (UPrimitiveComponent* Body = Body_.Get())
@@ -596,6 +600,35 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
         RainRateMmPerHr = static_cast<float>(WS.rain_mm_per_hr);
         RoadWaterMm = static_cast<float>(WS.surface_water_mm);
     }
+    if (bAutoComputeAeroWake || !ManualAeroTraffic_.empty())
+    {
+        std::vector<rs::AeroTrafficCar> Nearby = ManualAeroTraffic_;
+        if (bAutoComputeAeroWake)
+        {
+            UWorld* MyWorld = GetWorld();
+            for (int32 i = ActiveVehicles_.Num() - 1; i >= 0; --i)
+            {
+                UOpenGridVehicleComponent* Other = ActiveVehicles_[i].Get();
+                if (!Other) { ActiveVehicles_.RemoveAtSwap(i); continue; }
+                if (Other == this || Other->GetWorld() != MyWorld || !Other->bCarLoaded) continue;
+                UPrimitiveComponent* OtherBody = Other->Body_.Get();
+                if (!OtherBody) continue;
+                rs::AeroTrafficCar TC;
+                TC.position = rs::ue5::pos_from_ue(ToUe(OtherBody->GetComponentLocation()));
+                TC.velocity = rs::ue5::vel_from_ue(ToUe(OtherBody->GetPhysicsLinearVelocity()));
+                TC.forward = rs::normalized(rs::ue5::dir_from_ue(ToUe(OtherBody->GetForwardVector())));
+                TC.drag_area = Other->Config_.aero.drag_area;
+                TC.lift_area = Other->Config_.aero.lift_area;
+                Nearby.push_back(TC);
+            }
+        }
+        const rs::Vec3 MyPos = rs::ue5::pos_from_ue(ToUe(Body->GetComponentLocation()));
+        const rs::Vec3 MyVel = rs::ue5::vel_from_ue(ToUe(Body->GetPhysicsLinearVelocity()));
+        const rs::Vec3 MyFwd = rs::normalized(rs::ue5::dir_from_ue(ToUe(Body->GetForwardVector())));
+        Cmd.settings.has_aero_wake = true;
+        Cmd.settings.aero_wake = rs::Vehicle::compute_aero_wake_field(
+            MyPos, MyVel, MyFwd, Nearby, Cmd.settings.wind_world_mps, ElapsedTimeS_);
+    }
     if (Bridge_->submit_command(Cmd))
     {
         bShiftUpRequested_ = bShiftDownRequested_ = bRepairRequested_ = false;
@@ -758,6 +791,19 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
     FrontRideHeightCm = static_cast<float>(Out.front_ride_height_m * rs::ue5::kMetersToCm);
     RearRideHeightCm = static_cast<float>(Out.rear_ride_height_m * rs::ue5::kMetersToCm);
     AeroBalanceFront = static_cast<float>(Out.aero_balance_front);
+    SlipstreamDragScale = static_cast<float>(Out.slipstream_drag_scale);
+    DirtyAirFrontScale = static_cast<float>(Out.dirty_air_downforce_scale);
+    DirtyAirRearScale = static_cast<float>(Out.dirty_air_rear_downforce_scale);
+    SideDraftDragDelta = static_cast<float>(Out.side_draft_drag_delta);
+    TandemPushDragDelta = static_cast<float>(Out.tandem_push_drag_delta);
+    WakeTurbulence = static_cast<float>(Out.wake_turbulence);
+    WakeHotAirCelsius = static_cast<float>(Out.wake_hot_air_c);
+    WakeCoolingScale = static_cast<float>(Out.wake_cooling_scale);
+    AeroDragN = static_cast<float>(Out.aero_drag_n);
+    AeroDownforceFrontN = static_cast<float>(Out.aero_downforce_front_n);
+    AeroDownforceRearN = static_cast<float>(Out.aero_downforce_rear_n);
+    AeroSideForceN = static_cast<float>(Out.aero_side_force_n);
+    AeroYawMomentNm = static_cast<float>(Out.aero_yaw_moment_nm);
     if (Bridge_.IsValid())
     {
         StreetRubberAtCar = static_cast<float>(Bridge_->street_rubber_at_car());
@@ -948,6 +994,24 @@ void UOpenGridVehicleComponent::HandleBodyHit(UPrimitiveComponent* HitComponent,
     Impact.impulse = ImpulseNs;
     Impact.other = OtherActor ? static_cast<uint64>(OtherActor->GetUniqueID()) : 0;
     Bridge_->submit_impact(Impact);
+}
+
+void UOpenGridVehicleComponent::UpdateAeroTraffic(const TArray<FOpenGridAeroTrafficCar>& NearbyCars)
+{
+    ManualAeroTraffic_.clear();
+    ManualAeroTraffic_.reserve(static_cast<std::size_t>(NearbyCars.Num()));
+    for (const FOpenGridAeroTrafficCar& C : NearbyCars)
+    {
+        rs::AeroTrafficCar TC;
+        TC.position = rs::ue5::pos_from_ue(ToUe(C.PositionCm));
+        TC.velocity = rs::ue5::vel_from_ue(ToUe(C.VelocityCms));
+        TC.forward = rs::normalized(rs::ue5::dir_from_ue(ToUe(C.Forward)));
+        TC.drag_area = C.DragArea;
+        TC.lift_area = C.LiftArea;
+        TC.width_m = C.WidthCm * rs::ue5::kCmToMeters;
+        TC.height_m = C.HeightCm * rs::ue5::kCmToMeters;
+        ManualAeroTraffic_.push_back(TC);
+    }
 }
 
 void UOpenGridVehicleComponent::RepairAndService()

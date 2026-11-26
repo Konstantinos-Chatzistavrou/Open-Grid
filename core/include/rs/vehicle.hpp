@@ -136,11 +136,31 @@ struct ChassisDynamicsConfig {
     bool progressive_bump_stops_enabled = false;     // Smooth exponential polyurethane jounce packers (when axle uses linear default)
 };
 
-// Aerodynamic slipstream (drafting tow), turbulent dirty-air front downforce loss, and drift yaw-angle aero scaling.
+// Nearby traffic / rival car snapshot for 3D multi-car slipstream, side-drafting, tandem push-draft & wake buffeting.
+struct AeroTrafficCar {
+    Vec3 position{};                 // world position (m)
+    Vec3 velocity{};                 // world velocity (m/s)
+    Vec3 forward{1.0, 0.0, 0.0};     // unit heading vector
+    double drag_area = 0.68;         // Cd * A (m^2; larger boxy cars cast wider/deeper slipstreams)
+    double lift_area = 0.35;         // Cl * A (m^2; high-downforce cars cast stronger wingtip dirty-air vortices)
+    double width_m = 1.90;           // vehicle width (m)
+    double height_m = 1.25;          // vehicle height (m)
+};
+
+// Full 3D aerodynamic slipstream (multi-car drafting train), tandem push-draft, side-drafting, dirty-air balance shift,
+// unsteady wake buffeting, thermal exhaust/radiator starvation & 6-DOF yaw/roll aero scaling.
 struct AeroWakeState {
-    double drag_scale = 1.0;                      // 1.0 in clean air, down to 0.72 (-28% drag) in optimal slipstream tow
-    double dirty_air_front_downforce_scale = 1.0; // 1.0 in clean air, down to 0.70 (-30% front downforce / understeer) in wake
-    bool yaw_aero_enabled = false;                // true: sideslip angle beta increases frontal drag (+35%) & sheds rear wing lift
+    double drag_scale = 1.0;                      // 1.0 clean air; down to ~0.62 in multi-car train, up to ~1.12 when side-drafted
+    double dirty_air_front_downforce_scale = 1.0; // 1.0 clean air; down to ~0.60 (-40% front downforce / understeer in dirty air)
+    double dirty_air_rear_downforce_scale = 1.0;  // 1.0 clean air; down to ~0.80 (-20% rear downforce in deep dirty air / aero loose)
+    double side_draft_drag_delta = 0.0;           // +0.06..+0.11 when rival side-drafts our rear quarter (-0.045 when we side-draft them)
+    double tandem_push_drag_delta = 0.0;          // -0.06..-0.13 base-pressure relief when trailing car tucks behind our rear bumper
+    double lateral_suction_n = 0.0;               // Bernoulli lateral venturi suction/bow-wave force (+ = left, N) in wheel-to-wheel passes
+    double wake_turbulence_0_to_1 = 0.0;          // 0..1 unsteady vortex-shedding buffeting intensity (chassis moments + FFB nibble)
+    double hot_air_delta_c = 0.0;                 // +0..+12 C hot exhaust/radiator wake air raising IAT & reducing intake air density
+    double cooling_airflow_scale = 1.0;           // 1.0 clean air .. 0.68 starved radiator/oil/brake-duct airflow in close draft
+    double wake_phase_s = 0.0;                    // deterministic simulation time for vortex buffeting harmonic phase
+    bool yaw_aero_enabled = false;                // true: 6-DOF yaw/roll aero, drag pitch moment, wake buffeting & thermal wake coupling
 };
 
 struct VehicleOutput {
@@ -188,6 +208,17 @@ struct VehicleOutput {
     bool clutch_locked = false;
     double slipstream_drag_scale = 1.0;
     double dirty_air_downforce_scale = 1.0;
+    double dirty_air_rear_downforce_scale = 1.0;
+    double side_draft_drag_delta = 0.0;      // + = being side-drafted (slowed), - = side-drafting rival
+    double tandem_push_drag_delta = 0.0;     // - = trailing car relieving our rear base-pressure drag ("push draft")
+    double wake_turbulence = 0.0;            // 0..1 unsteady vortex-shedding buffeting in dirty air
+    double wake_hot_air_c = 0.0;             // +C hot exhaust/radiator wake air entering intakes
+    double wake_cooling_scale = 1.0;         // 1.0 clean air .. 0.68 starved radiator/brake airflow in close draft
+    double aero_drag_n = 0.0;                // live total aerodynamic drag force (N)
+    double aero_downforce_front_n = 0.0;     // live front axle aerodynamic downforce (N; negative = lift)
+    double aero_downforce_rear_n = 0.0;      // live rear axle aerodynamic downforce (N; negative = lift)
+    double aero_side_force_n = 0.0;          // live lateral aerodynamic side force + Bernoulli wheel-to-wheel suction (N, +left)
+    double aero_yaw_moment_nm = 0.0;         // live aerodynamic yaw moment (weathercocking + wake buffeting, N m)
     double chassis_twist_deg = 0.0;          // frame twist angle between front and rear axles (deg)
     double ayc_yaw_moment_nm = 0.0;          // Active Torque-Vectoring E-Diff pro-rotation yaw moment (N m)
     bool drs_active = false;                 // Active Aero low-drag mode active
@@ -264,8 +295,20 @@ public:
     const ChassisDynamicsConfig& chassis_dynamics() const { return chassis_dyn_; }
     AtmosphericEnvironment& atmosphere() { return atmosphere_; }
     const AtmosphericEnvironment& atmosphere() const { return atmosphere_; }
-    /** Compute aerodynamic slipstream drag reduction (up to -28%) and dirty-air front downforce loss (up to -30%) behind lead cars. */
+    /** Legacy single-field slipstream helper (kept API-compatible; delegates to compute_aero_wake_field). */
     static AeroWakeState compute_slipstream_wake(const Vec3& my_pos, const Vec3& my_fwd, const std::vector<Vec3>& lead_car_positions);
+    /**
+     * Full 3D wind-advected multi-car aerodynamic wake solver (surpasses iRacing draft model):
+     *   - Multi-car drafting train stacking (up to -38% drag in 3+ car packs)
+     *   - Crosswind-drifted wake cones (offset downwind to stay in the tow!)
+     *   - Bidirectional tandem push-draft (trailing car relieves lead car's rear base drag by up to -13%!)
+     *   - Side-drafting (+10.5% drag on leader when rival pulls alongside rear quarter + aero-loose rear wash)
+     *   - Bernoulli lateral suction in close wheel-to-wheel passes + unsteady vortex buffeting + thermal radiator/IAT wake!
+     */
+    static AeroWakeState compute_aero_wake_field(const Vec3& my_pos, const Vec3& my_vel, const Vec3& my_fwd,
+                                                 const std::vector<AeroTrafficCar>& nearby_cars,
+                                                 const Vec3& ambient_wind_world_mps = {0.0, 0.0, 0.0},
+                                                 double sim_time_s = 0.0);
 
     /** Enable 15 Hz 2-DOF unsprung wheel-hop & radial tyre carcass vertical dynamics, 3-zone I/M/O tread thermals, and 4x4 contact patch grid. */
     bool unsprung_dynamics_enabled = false;

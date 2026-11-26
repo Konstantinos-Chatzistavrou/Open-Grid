@@ -547,26 +547,158 @@ WheelContact Vehicle::resolve_footprint_16(const WheelFootprint16Rays& footprint
     return best;
 }
 
-AeroWakeState Vehicle::compute_slipstream_wake(const Vec3& my_pos, const Vec3& my_fwd, const std::vector<Vec3>& lead_car_positions) {
+AeroWakeState Vehicle::compute_aero_wake_field(const Vec3& my_pos, const Vec3& my_vel, const Vec3& my_fwd,
+                                               const std::vector<AeroTrafficCar>& nearby_cars,
+                                               const Vec3& ambient_wind_world_mps, double sim_time_s) {
     AeroWakeState wake;
-    const Vec3 fwd = length(my_fwd) > 1e-6 ? normalized(my_fwd) : Vec3{1, 0, 0};
-    double best_tow = 0.0;
-    for (const Vec3& lead : lead_car_positions) {
-        const Vec3 rel = lead - my_pos;
+    wake.wake_phase_s = sim_time_s;
+    const Vec3 fwd = length(my_fwd) > 1e-6 ? normalized(my_fwd) : Vec3{1.0, 0.0, 0.0};
+    Vec3 left = cross({0.0, 0.0, 1.0}, fwd);
+    left = length(left) > 1e-6 ? normalized(left) : Vec3{0.0, 1.0, 0.0};
+
+    const double my_speed = std::max(0.0, dot(my_vel, fwd));
+    const double wind_lat = dot(ambient_wind_world_mps, left);
+
+    double tow_single_max = 0.0;
+    double tow_sum = 0.0;
+    double dirty_front_accum = 0.0;
+    double dirty_rear_accum = 0.0;
+    double tandem_push_delta = 0.0;
+    double side_draft_delta = 0.0;
+    double side_draft_rear_df_loss = 0.0;
+    double lateral_suction_n = 0.0;
+    double wake_turb = 0.0;
+    double hot_air_c = 0.0;
+    double cool_loss = 0.0;
+
+    for (const AeroTrafficCar& car : nearby_cars) {
+        const Vec3 rel = car.position - my_pos;
+        if (std::abs(rel.z) > 3.5) continue; // ignore vehicles on overpasses or bridges
         const double lon = dot(rel, fwd);
-        if (lon < 3.5 || lon > 42.0) continue; // slipstream wake cone: 3.5 m .. 42 m ahead
-        const Vec3 lat_v = rel - fwd * lon;
-        const double lat = length(lat_v);
-        const double cone_half_width = 1.15 + 0.035 * lon;
-        if (lat >= cone_half_width) continue;
-        const double lat_factor = 1.0 - (lat / cone_half_width) * (lat / cone_half_width);
-        // Peak tow at ~9-16 m behind lead bumper, tapering smoothly to 42 m
-        const double lon_factor = lon < 9.0 ? (lon - 3.5) / 5.5 : 1.0 - (lon - 9.0) / 33.0;
-        best_tow = std::max(best_tow, clamp(lat_factor * lon_factor, 0.0, 1.0));
+        const double lat = dot(rel, left);
+        if (lon > 58.0 || lon < -14.0 || std::abs(lat) > 14.0) continue;
+
+        const Vec3 other_fwd = length(car.forward) > 1e-6 ? normalized(car.forward) : fwd;
+        const double heading_align = dot(other_fwd, fwd);
+        const double other_speed = std::max(0.0, dot(car.velocity, other_fwd));
+        const double wake_speed = std::max(my_speed, other_speed);
+        const double speed_gate = clamp((wake_speed - 10.0) / 22.0, 0.0, 1.0);
+        if (speed_gate <= 1e-4) continue;
+
+        const double car_w = clamp(car.width_m, 1.4, 2.5);
+        const double drag_ref = clamp(car.drag_area / 0.68, 0.55, 1.75);
+        const double df_ref = clamp((0.35 + std::max(0.0, car.lift_area)) / 0.70, 0.65, 2.25);
+
+        // A. Lead-car slipstream cone (crosswind-advected), multi-car drafting train, dirty-air understeer,
+        //    unsteady vortex-shedding buffeting, and thermal exhaust/radiator wake starvation.
+        if (heading_align > 0.45 && lon >= 3.2 && lon <= 55.0) {
+            const double t_age = lon / std::max(other_speed, 18.0);
+            // Crosswind shifts the shed wake downwind (driver must offset downwind to remain inside the tow!)
+            const double wake_center_lat = lat + wind_lat * t_age * 0.72;
+            const double eff_lat = std::abs(wake_center_lat);
+            const double cone_hw = 0.58 * car_w + 0.038 * lon + 0.025 * std::abs(wind_lat) * t_age;
+            if (eff_lat < cone_hw) {
+                const double u_lat = eff_lat / cone_hw;
+                const double lat_f = clamp((1.0 - u_lat * u_lat) * (1.0 - 0.35 * u_lat * u_lat), 0.0, 1.0);
+                const double lon_f = (lon < 8.5)
+                    ? clamp((lon - 3.2) / 5.3, 0.25, 1.0)
+                    : std::exp(-(lon - 8.5) / 24.0) * clamp((55.0 - lon) / 10.0, 0.0, 1.0);
+                const double tow_i = clamp(lat_f * lon_f * speed_gate * std::sqrt(drag_ref), 0.0, 1.0);
+                tow_single_max = std::max(tow_single_max, tow_i);
+                tow_sum += tow_i;
+
+                // Dirty-air downforce loss (front loses ~2x rear -> authentic cornering understeer in dirty air)
+                const double dirty_i = clamp(lat_f * lon_f * speed_gate * std::sqrt(df_ref), 0.0, 1.15);
+                dirty_front_accum = 1.0 - (1.0 - dirty_front_accum) * (1.0 - clamp(0.36 * dirty_i, 0.0, 0.42));
+                dirty_rear_accum = 1.0 - (1.0 - dirty_rear_accum) * (1.0 - clamp(0.18 * dirty_i, 0.0, 0.22));
+
+                // Unsteady wingtip vortex buffeting (peaks along the wake shear layer & close turbulent core)
+                const double shear_boost = 0.65 + 0.55 * std::sin(clamp(u_lat, 0.0, 1.0) * kPi);
+                const double turb_i = clamp(lat_f * lon_f * shear_boost * speed_gate * std::sqrt(df_ref), 0.0, 1.0);
+                wake_turb = std::max(wake_turb, turb_i);
+
+                // Thermal wake (hot exhaust + radiator discharge decays faster than momentum deficit)
+                const double lon_therm = std::exp(-std::max(0.0, lon - 4.0) / 14.0) * clamp((lon - 2.8) / 3.5, 0.0, 1.0);
+                const double therm_i = clamp(lat_f * lon_therm * speed_gate, 0.0, 1.0);
+                hot_air_c += 10.5 * therm_i;
+                cool_loss = std::max(cool_loss, 0.30 * therm_i);
+            }
+        }
+
+        // B. Bidirectional tandem push-draft: trailing car tucked behind our rear bumper fills our low-pressure
+        //    rear base wake, giving the LEAD car up to -13% aerodynamic drag relief!
+        if (heading_align > 0.45 && lon <= -3.2 && lon >= -11.5) {
+            const double d_back = -lon;
+            const double rear_hw = 0.56 * car_w + 0.04 * d_back;
+            const double lat_abs = std::abs(lat);
+            if (lat_abs < rear_hw) {
+                const double u = lat_abs / rear_hw;
+                const double lat_p = 1.0 - u * u;
+                const double lon_p = (d_back < 5.5)
+                    ? clamp((d_back - 3.2) / 2.3, 0.35, 1.0)
+                    : clamp((11.5 - d_back) / 6.0, 0.0, 1.0);
+                const double push_i = clamp(lat_p * lon_p * speed_gate, 0.0, 1.0);
+                tandem_push_delta = std::min(tandem_push_delta, -0.13 * push_i);
+            }
+        }
+
+        // C. Side-drafting & wheel-to-wheel rear-quarter aero wash:
+        //    - Rival alongside our rear quarter (lon in [-5.8, -0.3]) spikes OUR drag (+6..+11%) & disturbs rear DF.
+        //    - Our nose alongside rival's rear quarter (lon in [+0.3, +5.8]) gives us a small (-4.5%) drag assist.
+        const double lat_abs = std::abs(lat);
+        if (heading_align > 0.45 && lat_abs >= 1.35 && lat_abs <= 4.2) {
+            const double lat_sd = clamp((4.2 - lat_abs) / 2.3, 0.0, 1.0) * clamp((lat_abs - 1.35) / 0.55, 0.0, 1.0);
+            if (lon <= -0.3 && lon >= -5.8) {
+                const double lon_sd = 1.0 - clamp(std::abs(lon - (-2.8)) / 3.0, 0.0, 1.0);
+                const double sd_hit = clamp(lat_sd * lon_sd * speed_gate, 0.0, 1.0);
+                side_draft_delta += 0.105 * sd_hit;
+                side_draft_rear_df_loss = std::max(side_draft_rear_df_loss, 0.085 * sd_hit);
+                wake_turb = std::max(wake_turb, 0.35 * sd_hit);
+            } else if (lon >= 0.3 && lon <= 5.8) {
+                const double lon_atk = 1.0 - clamp(std::abs(lon - 2.8) / 3.0, 0.0, 1.0);
+                const double sd_atk = clamp(lat_sd * lon_atk * speed_gate, 0.0, 1.0);
+                side_draft_delta -= 0.045 * sd_atk;
+            }
+        }
+
+        // D. Bernoulli Venturi lateral suction during close wheel-to-wheel passes (works for same-dir & opposing passes)
+        if (std::abs(lon) < 4.8 && lat_abs >= 1.55 && lat_abs <= 4.2) {
+            const double gap = std::max(0.25, lat_abs - 0.5 * (1.90 + car_w));
+            const double lon_overlap = clamp(1.0 - std::abs(lon) / 4.8, 0.0, 1.0);
+            const double v_pass = 0.5 * (my_speed + length(car.velocity));
+            const double suction_mag = clamp(0.11 * v_pass * v_pass * lon_overlap / (gap * gap + 0.35), 0.0, 420.0);
+            lateral_suction_n += (lat > 0.0 ? 1.0 : -1.0) * suction_mag;
+        }
     }
-    wake.drag_scale = 1.0 - 0.28 * best_tow;                      // up to -28% drag reduction in tow
-    wake.dirty_air_front_downforce_scale = 1.0 - 0.30 * best_tow; // up to -30% front downforce loss (dirty-air understeer)
+
+    // Sub-linear multi-car drafting train stacking (1 car ~ -28%, 2-car train ~ -34%, 3+ car train ~ -38%)
+    const double extra_train = std::max(0.0, tow_sum - tow_single_max);
+    const double eff_train_tow = tow_single_max + 0.36 * (1.0 - std::exp(-1.1 * extra_train));
+
+    wake.tandem_push_drag_delta = clamp(tandem_push_delta, -0.14, 0.0);
+    wake.side_draft_drag_delta = clamp(side_draft_delta, -0.06, 0.12);
+    wake.drag_scale = clamp(1.0 - 0.29 * eff_train_tow + wake.tandem_push_drag_delta + wake.side_draft_drag_delta, 0.58, 1.16);
+    wake.dirty_air_front_downforce_scale = clamp(1.0 - dirty_front_accum, 0.56, 1.0);
+    wake.dirty_air_rear_downforce_scale = clamp((1.0 - dirty_rear_accum) * (1.0 - side_draft_rear_df_loss), 0.74, 1.0);
+    wake.lateral_suction_n = clamp(lateral_suction_n, -650.0, 650.0);
+    wake.wake_turbulence_0_to_1 = clamp(wake_turb, 0.0, 1.0);
+    wake.hot_air_delta_c = clamp(hot_air_c, 0.0, 14.0);
+    wake.cooling_airflow_scale = clamp(1.0 - cool_loss, 0.65, 1.0);
     return wake;
+}
+
+AeroWakeState Vehicle::compute_slipstream_wake(const Vec3& my_pos, const Vec3& my_fwd, const std::vector<Vec3>& lead_car_positions) {
+    const Vec3 fwd = length(my_fwd) > 1e-6 ? normalized(my_fwd) : Vec3{1.0, 0.0, 0.0};
+    std::vector<AeroTrafficCar> traffic;
+    traffic.reserve(lead_car_positions.size());
+    for (const Vec3& p : lead_car_positions) {
+        AeroTrafficCar c;
+        c.position = p;
+        c.velocity = fwd * 55.0; // reference racing speed (~198 km/h) for position-only callers
+        c.forward = fwd;
+        traffic.push_back(c);
+    }
+    return compute_aero_wake_field(my_pos, fwd * 55.0, fwd, traffic);
 }
 
 VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelContact, 4>& contacts, double dt) {
@@ -1003,6 +1135,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     din.ambient_air_c = atmosphere_.ambient_air_c;
     din.altitude_m = atmosphere_.altitude_m;
     din.humidity_0_to_1 = atmosphere_.humidity_0_to_1;
+    din.wake_cooling_scale = clamp(aero_wake_.cooling_airflow_scale, 0.55, 1.0);
+    din.wake_hot_air_c = std::max(0.0, aero_wake_.hot_air_delta_c);
     // ---- Transmission-specific clutch, shift-interrupt & auto-blip orchestration
     // Every gearbox type behaves like its real-world mechanical counterpart:
     //   * AutomaticTorqueConverter: fluid coupling + TCC lock-up (no clutch pedal management)
@@ -1361,11 +1495,13 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         // not the disc), cooled by airflow (vented disc: h = base + k v) and radiation (eps sigma A (T^4 - Ta^4)).
         const BrakeThermal& bt = cfg_.brake_thermal;
         const double v_car = length(s.velocity);
+        const double wake_brake_cool = clamp(aero_wake_.cooling_airflow_scale, 0.55, 1.0);
+        const double wake_brake_hot_c = std::max(0.0, aero_wake_.hot_air_delta_c);
         for (int w = 0; w < 4; ++w) {
             const bool front = w < 2;
             const double cap = (front ? bt.disc_mass_front : bt.disc_mass_rear) * 460.0;
             const double area = front ? bt.disc_area_front : bt.disc_area_rear;
-            const double amb_brake_c = atmosphere_.enabled ? atmosphere_.ambient_air_c : 25.0;
+            const double amb_brake_c = (atmosphere_.enabled ? atmosphere_.ambient_air_c : 25.0) + wake_brake_hot_c;
             const double tk = disc_temp_[w] + 273.15, ta = amb_brake_c + 273.15;
             const double heat = drivetrain_.brake_torque[w] * std::abs(drivetrain_.wheel_omega[w]);
             const double w_rotor_mm = touching[w] ? std::max(contacts[w].water_depth_mm, road_water_mm) : road_water_mm;
@@ -1389,16 +1525,16 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             const double q_spray_quench = (w_rotor_mm > 0.15 && v_car > 5.0 && disc_temp_[w] > amb_brake_c)
                                         ? clamp(w_rotor_mm / 1.8, 0.0, 2.0) * (12.0 + 1.6 * v_car) * (disc_temp_[w] - amb_brake_c)
                                         : 0.0;
-            const double cool = (bt.cooling_base + bt.cooling_per_mps * v_car) * (disc_temp_[w] - amb_brake_c)
+            const double cool = (bt.cooling_base + bt.cooling_per_mps * v_car * wake_brake_cool) * (disc_temp_[w] - amb_brake_c)
                               + q_spray_quench
                               + 0.55 * 5.670e-8 * area * (tk * tk * tk * tk - ta * ta * ta * ta);
             disc_temp_[w] = clamp(disc_temp_[w] + h * (heat - cool) / cap, -20.0, 1100.0);
             const double wet_bite_scale = 1.0 - 0.34 * brake_water_film_[w];
             din.pad_mu[w] = brake_pad_mu(disc_temp_[w]) * wet_bite_scale;
             // Caliper DOT 4 brake fluid heat soak from hot rotor through pad + convective airflow cooling
-            const double fluid_amb_c = atmosphere_.enabled ? (atmosphere_.ambient_air_c + 15.0) : 40.0;
+            const double fluid_amb_c = (atmosphere_.enabled ? (atmosphere_.ambient_air_c + 15.0) : 40.0) + wake_brake_hot_c;
             const double d_fluid = 0.025 * std::max(0.0, disc_temp_[w] - fluid_temp_[w])
-                                 - (0.012 + 0.0015 * v_car) * (fluid_temp_[w] - fluid_amb_c);
+                                 - (0.012 + 0.0015 * v_car * wake_brake_cool) * (fluid_temp_[w] - fluid_amb_c);
             fluid_temp_[w] = clamp(fluid_temp_[w] + h * d_fluid, -10.0, 360.0);
             pad_wear_[w] = clamp(pad_wear_[w] + heat * 2.5e-10 * h, 0.0, 1.0);
         }
@@ -1549,15 +1685,18 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         torque += up * out.ayc_yaw_moment_nm;
     }
 
-    // ------------------------------------------------------------------ aerodynamics
+    // ------------------------------------------------------------------ 6-DOF aerodynamics & multi-car wake field
     // Relative air velocity includes 3D Dynamic Weather wind + gusts (v_air = v_chassis - v_wind when enabled).
-    // Drag:      F = -1/2 rho CdA |v_air| v_air * slipstream_drag_scale * yaw_drag_mult * active_aero_drag_mult
-    // Downforce: F = 1/2 rho ClA v_air_x^2, split between the axles by aero balance (with dirty-air, yaw stall & Active Aero).
+    // Includes 2D ride-height aero map, roll ground-effect seal loss, unsteady heave/pitch AoA damping,
+    // +0.24 m drag line-of-action pitch torque, 3D yaw polar + high-yaw (>45 deg) spin roof lift,
+    // vortex-induced drag coupling, multi-car slipstream/tandem-push/side-draft/dirty-air & unsteady wake buffeting.
     const AeroParams& a = cfg_.aero;
     const Vec3 v_air = atmosphere_.enabled ? (s.velocity - atmosphere_.wind_world_mps) : s.velocity;
     const double v = length(v_air);
     const Vec3 v_air_body = s.orientation.inv_rotate(v_air);
+    const Vec3 omega_body_aero = s.orientation.inv_rotate(s.angular_velocity);
     const double aero_beta = (std::abs(v_air_body.x) > 2.0) ? std::atan2(v_air_body.y, std::abs(v_air_body.x)) : out.sideslip;
+    const double beta_full = (v > 2.0) ? std::atan2(v_air_body.y, v_air_body.x) : 0.0;
     // Only a car whose spec declares the wing has it (aero.drs / aero.airbrake): road cars and fixed-wing race cars never switch it.
     out.drs_active = chassis_dyn_.active_aero_enabled && a.drs && out.speed > 50.0 && input_.throttle > 0.75
                    && input_.brake < 0.05 && std::abs(input_.steer) < 0.12;
@@ -1568,9 +1707,15 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     const double sin_beta = std::sin(clamp(aero_beta, -1.2, 1.2));
     const double yaw_drag_mult = aero_wake_.yaw_aero_enabled ? (1.0 + 0.35 * sin_beta * sin_beta) : 1.0;
     const double yaw_rear_down_mult = aero_wake_.yaw_aero_enabled ? (1.0 - 0.30 * sin_beta * sin_beta) : 1.0;
-    const double eff_drag_scale = clamp(aero_wake_.drag_scale, 0.65, 1.2) * yaw_drag_mult * active_drag_mult;
-    double eff_front_down_scale = clamp(aero_wake_.dirty_air_front_downforce_scale, 0.55, 1.1);
-    const double rho_air = atmosphere_.enabled ? atmosphere_.air_density_kg_m3() : a.air_density;
+    const double eff_drag_scale = clamp(aero_wake_.drag_scale, 0.55, 1.25) * yaw_drag_mult * active_drag_mult;
+    double eff_front_down_scale = clamp(aero_wake_.dirty_air_front_downforce_scale, 0.50, 1.10);
+    const double eff_rear_down_scale = clamp(aero_wake_.dirty_air_rear_downforce_scale, 0.65, 1.10);
+
+    // Thermal wake slightly reduces local intake/flow air density via ideal-gas T_amb / (T_amb + dT_wake)
+    const double wake_hot_c = std::max(0.0, aero_wake_.hot_air_delta_c);
+    const double t_amb_aero_k = (atmosphere_.enabled ? atmosphere_.ambient_air_c : 25.0) + 273.15;
+    const double rho_air = (atmosphere_.enabled ? atmosphere_.air_density_kg_m3() : a.air_density)
+                         * (t_amb_aero_k / (t_amb_aero_k + wake_hot_c));
     out.air_density_kg_m3 = rho_air;
 
     const double dz_f = 0.5 * (dz_[FL] + dz_[FR]), dz_r = 0.5 * (dz_[RL] + dz_[RR]);
@@ -1606,24 +1751,68 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         diffuser_scale = 0.82;
     }
 
+    // Roll-angle ground-effect undertray seal loss & unsteady heave/pitch-rate AoA damping
+    const Vec3 body_left_aero = s.orientation.rotate({0.0, 1.0, 0.0});
+    const double body_roll_rad = std::asin(clamp(body_left_aero.z, -1.0, 1.0));
+    const double roll_seal = aero_wake_.yaw_aero_enabled ? clamp(1.0 - 1.15 * body_roll_rad * body_roll_rad, 0.78, 1.0) : 1.0;
+    const double vx_body = v_air_body.x;
+    const double v_aoa_denom = std::max(std::abs(vx_body), 15.0);
+    const double vz_front_body = v_air_body.z - omega_body_aero.y * cfg_.dist_cg_front;
+    const double vz_rear_body = v_air_body.z + omega_body_aero.y * cfg_.dist_cg_rear;
+    const double heave_f_scale = aero_wake_.yaw_aero_enabled
+                               ? clamp(1.0 + 0.55 * clamp(vz_front_body / v_aoa_denom, -0.35, 0.35), 0.80, 1.20) : 1.0;
+    const double heave_r_scale = aero_wake_.yaw_aero_enabled
+                               ? clamp(1.0 + 0.55 * clamp(vz_rear_body / v_aoa_denom, -0.35, 0.35), 0.80, 1.20) : 1.0;
+
+    // High-yaw / backward-slide (> 45 deg) greenhouse roof lift transition during high-speed spins
+    const double abs_bf = std::abs(beta_full);
+    double spin_df_mult = 1.0;
+    double roof_lift_n = 0.0;
+    if (aero_wake_.yaw_aero_enabled && abs_bf > 0.7854 && v > 12.0) {
+        const double spin_t = clamp((abs_bf - 0.7854) / 1.5708, 0.0, 1.0);
+        spin_df_mult = 1.0 - 0.85 * spin_t;
+        roof_lift_n = 0.5 * rho_air * v * v * (0.28 * cd_area) * spin_t;
+    }
+
     // Apply asymmetric aerodynamic crash damage (crushed nose/splitter kills front downforce; crushed rear kills rear downforce)
     cl_front_area *= damage_.front_downforce;
     cl_rear_area *= damage_.rear_downforce;
-    force += v_air * (-0.5 * rho_air * cd_area * damage_.aero_drag * eff_drag_scale * v);
-    // Crosswind lateral aero side-force & mild yaw weathercocking when wind_world_mps is active
-    if (atmosphere_.enabled && length(atmosphere_.wind_world_mps) > 0.1) {
+
+    // Vortex-induced drag penalty whenever ride-height ground effect raises downforce above static baseline
+    const double cl_excess = std::max(0.0, (cl_front_area + cl_rear_area) - a.lift_area);
+    const double induced_cd_delta = aero_wake_.yaw_aero_enabled ? (0.055 * cl_excess) : 0.0;
+    const Vec3 f_drag = v_air * (-0.5 * rho_air * (cd_area + induced_cd_delta) * damage_.aero_drag * eff_drag_scale * v);
+    force += f_drag;
+    // Aerodynamic drag centre of pressure sits ~0.24 m above CG -> authentic nose-up pitch moment at 250-350 km/h
+    if (aero_wake_.yaw_aero_enabled && v > 1.0) {
+        torque += cross(s.orientation.rotate({0.0, 0.0, 0.24}), f_drag);
+    }
+
+    // Full 3D yaw lateral aero side-force & weathercocking (active in both still-air yaw & crosswinds) + Bernoulli suction
+    double total_aero_side_n = 0.0;
+    double total_aero_yaw_nm = 0.0;
+    const bool has_wind = atmosphere_.enabled && length(atmosphere_.wind_world_mps) > 0.1;
+    if ((aero_wake_.yaw_aero_enabled && std::abs(aero_beta) > 1e-4 && v > 2.0) || has_wind) {
         const double q_cross = 0.5 * rho_air * v * v;
         const double side_area = 2.6 * cd_area; // approx lateral silhouette area (m^2)
         const double cy = -1.65 * clamp(std::sin(aero_beta), -1.0, 1.0);
-        const Vec3 f_side = s.orientation.rotate({0.0, q_cross * side_area * cy, 0.0});
+        const double fy_yaw = q_cross * side_area * cy;
+        total_aero_side_n += fy_yaw;
+        const Vec3 f_side = s.orientation.rotate({0.0, fy_yaw, 0.0});
         force += f_side;
-        // Centre of lateral pressure sits slightly ahead of rear axle (~0.12 m forward of CG -> mild crosswind steering tug)
-        torque += cross(s.orientation.rotate({0.12, 0.0, 0.0}), f_side);
+        // Centre of lateral pressure sits ~0.12 m ahead of CG -> authentic crosswind / high-speed yaw steering tug
+        const Vec3 t_yaw = cross(s.orientation.rotate({0.12, 0.0, 0.0}), f_side);
+        torque += t_yaw;
+        total_aero_yaw_nm += dot(t_yaw, up);
     }
-    const double vx_body = v_air_body.x;
+    if (std::abs(aero_wake_.lateral_suction_n) > 1e-3) {
+        total_aero_side_n += aero_wake_.lateral_suction_n;
+        force += s.orientation.rotate({0.0, aero_wake_.lateral_suction_n, 0.0});
+    }
+
     const double q_dyn = 0.5 * rho_air * vx_body * vx_body;
-    const double f_down_front = q_dyn * cl_front_area * eff_front_down_scale;
-    const double f_down_rear = q_dyn * cl_rear_area * yaw_rear_down_mult * active_rear_down_mult * diffuser_scale;
+    const double f_down_front = q_dyn * cl_front_area * eff_front_down_scale * roll_seal * heave_f_scale * spin_df_mult - 0.5 * roof_lift_n;
+    const double f_down_rear = q_dyn * cl_rear_area * eff_rear_down_scale * yaw_rear_down_mult * active_rear_down_mult * diffuser_scale * roll_seal * heave_r_scale * spin_df_mult - 0.5 * roof_lift_n;
     const double f_down_tot = f_down_front + f_down_rear;
     out.aero_balance_front = (f_down_tot > 1e-6) ? clamp(f_down_front / f_down_tot, 0.0, 1.0) : a.front_balance;
     Vec3 p_front = s.position + s.orientation.rotate({cfg_.dist_cg_front, 0, 0});
@@ -1632,6 +1821,23 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     Vec3 f_rear = up * (-f_down_rear);
     force += f_front + f_rear;
     torque += cross(p_front - s.position, f_front) + cross(p_rear - s.position, f_rear);
+
+    // Deterministic multi-harmonic Strouhal vortex-shedding wake buffeting (chassis heave/roll/yaw + FFB steering nibble)
+    if (aero_wake_.wake_turbulence_0_to_1 > 1e-3 && v > 15.0) {
+        const double t_w = (aero_wake_.wake_phase_s > 0.0) ? aero_wake_.wake_phase_s : time_;
+        const double h1 = std::sin(2.0 * kPi * 4.7 * t_w);
+        const double h2 = std::sin(2.0 * kPi * 8.3 * t_w + 1.17);
+        const double h3 = std::sin(2.0 * kPi * 13.1 * t_w + 2.41);
+        const double q_norm = clamp((0.5 * rho_air * v * v) / 2200.0, 0.0, 2.5);
+        const double tb = clamp(aero_wake_.wake_turbulence_0_to_1, 0.0, 1.0) * q_norm;
+        const double yaw_buffet_nm = 260.0 * tb * (0.60 * h1 + 0.40 * h2);
+        const double roll_buffet_nm = 190.0 * tb * (0.50 * h2 + 0.50 * h3);
+        const double heave_buffet_n = 220.0 * tb * (0.55 * h1 - 0.45 * h3);
+        force += up * heave_buffet_n;
+        torque += s.orientation.rotate({roll_buffet_nm, 0.0, yaw_buffet_nm});
+        total_aero_yaw_nm += yaw_buffet_nm;
+        out.steer_torque += 14.0 * tb * (0.55 * h2 + 0.45 * h3);
+    }
 
     out.force = force;
     out.torque = torque;
@@ -1713,6 +1919,17 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
 
     out.slipstream_drag_scale = eff_drag_scale;
     out.dirty_air_downforce_scale = eff_front_down_scale;
+    out.dirty_air_rear_downforce_scale = eff_rear_down_scale;
+    out.side_draft_drag_delta = aero_wake_.side_draft_drag_delta;
+    out.tandem_push_drag_delta = aero_wake_.tandem_push_drag_delta;
+    out.wake_turbulence = aero_wake_.wake_turbulence_0_to_1;
+    out.wake_hot_air_c = aero_wake_.hot_air_delta_c;
+    out.wake_cooling_scale = aero_wake_.cooling_airflow_scale;
+    out.aero_drag_n = length(f_drag);
+    out.aero_downforce_front_n = f_down_front;
+    out.aero_downforce_rear_n = f_down_rear;
+    out.aero_side_force_n = total_aero_side_n;
+    out.aero_yaw_moment_nm = total_aero_yaw_nm;
     return out;
 }
 

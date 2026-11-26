@@ -34,6 +34,8 @@ interface RsModule {
   _rs_incandescence(tempC: number, emissivity: number): number;
   _rs_set_turbo_stage(id: number, stage: number): void;
   _rs_set_structural_spec(id: number, material: number, carbonPanels: number, rollCage: number, raceSusp: number): void;
+  _rs_aero_traffic_buffer(id: number): number;
+  _rs_set_aero_traffic(id: number, count: number, simTimeS: number): void;
   _rs_rays(id: number): void;
   _rs_rays_patch(id: number): void;
   _rs_step(id: number, dt: number): void;
@@ -120,7 +122,9 @@ export class CoreCar {
   private _buf: Float64Array | null = null;
   private _raysBuf: Float64Array | null = null;
   private _raysPatchBuf: Float64Array | null = null;
+  private _aeroTrafficBuf: Float64Array | null = null;
   private _ptr = 0;
+  private _aeroTrafficPtr = 0;
 
   constructor(json: string) {
     if (!mod) throw new Error('loadCore() first');
@@ -129,6 +133,7 @@ export class CoreCar {
     mod._free(p);
     if (this.id < 0) throw new Error('car config: ' + mod.UTF8ToString(mod._rs_last_error()));
     this._ptr = mod._rs_buffer(this.id);
+    this._aeroTrafficPtr = mod._rs_aero_traffic_buffer(this.id);
     mod._rs_info(this.id);
     const b = this.buf;
     this.info = {
@@ -178,6 +183,38 @@ export class CoreCar {
       rollCage ? 1 : 0,
       raceSusp ? 1 : 0,
     );
+  }
+
+  /**
+   * Feed nearby rival/traffic vehicles into the C++20 3D multi-car aerodynamic wake solver
+   * (crosswind-advected slipstream, multi-car drafting train, bidirectional tandem push-draft,
+   * side-drafting, Bernoulli lateral suction, dirty-air balance shift, vortex buffeting & thermal wake).
+   */
+  setAeroTraffic(
+    cars: ReadonlyArray<{
+      px: number; py: number; pz: number;
+      vx: number; vy: number; vz: number;
+      fx: number; fy: number; fz: number;
+      cdA?: number; clA?: number; widthM?: number;
+    }>,
+    simTimeS: number,
+  ) {
+    const m = mod!;
+    if (!this._aeroTrafficBuf || this._aeroTrafficBuf.buffer !== m.HEAPF64.buffer) {
+      this._aeroTrafficBuf = new Float64Array(m.HEAPF64.buffer, this._aeroTrafficPtr, 16 * 12);
+    }
+    const n = Math.min(16, cars.length);
+    const dst = this._aeroTrafficBuf;
+    for (let i = 0; i < n; i++) {
+      const c = cars[i], o = 12 * i;
+      dst[o] = c.px; dst[o + 1] = c.py; dst[o + 2] = c.pz;
+      dst[o + 3] = c.vx; dst[o + 4] = c.vy; dst[o + 5] = c.vz;
+      dst[o + 6] = c.fx; dst[o + 7] = c.fy; dst[o + 8] = c.fz;
+      dst[o + 9] = c.cdA ?? 0.68;
+      dst[o + 10] = c.clA ?? 0.35;
+      dst[o + 11] = c.widthM ?? 1.90;
+    }
+    m._rs_set_aero_traffic(this.id, n, simTimeS);
   }
 
   /** Crash input for the current tick: point in three world, impulse N s, other object id. */
@@ -391,6 +428,15 @@ export const OUT = {
   weatherLightning: 443,                // convective lightning flash intensity 0..1
   weatherWetness: 444,                  // shader/MPC asphalt wetness 0..1
   weatherDryingLine: 445,               // tyre-wake drying groove factor 0..1
+  // Live 3D multi-car slipstream, tandem push-draft, side-draft, dirty air & thermal wake telemetry [472..479]
+  slipstreamDragScale: 472,             // live drag multiplier (< 1.0 in tow/train/push, > 1.0 when side-drafted)
+  dirtyAirFrontScale: 473,              // front downforce multiplier in dirty air (0.56..1.0)
+  dirtyAirRearScale: 474,               // rear downforce multiplier in dirty air (0.74..1.0)
+  sideDraftDragDelta: 475,              // +0.06..+0.11 being side-drafted, -0.045 side-drafting rival
+  tandemPushDragDelta: 476,             // -0.06..-0.13 trailing car relieving our rear base drag
+  wakeTurbulence: 477,                  // 0..1 unsteady Strouhal vortex-shedding buffeting intensity
+  wakeHotAirC: 478,                     // +0..+14 C hot exhaust/radiator wake air raising IAT
+  wakeCoolingScale: 479,                // 1.0..0.65 radiator/oil/brake-duct airflow scale in close draft
 } as const;
 
 export interface LapInfo { laps: number; current: number; last: number; best: number; distance: number; position: number; finished: boolean; routeLength: number }

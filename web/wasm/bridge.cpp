@@ -69,6 +69,7 @@ struct Car {
     std::array<rs::WheelContactPatchRays, 4> patch_rays;
     std::array<double, 4> spin{};
     std::vector<double> buf = std::vector<double>(480, 0.0);
+    std::vector<double> aero_traffic_buf = std::vector<double>(16 * 12, 0.0); // up to 16 nearby cars x 12 doubles
     std::unique_ptr<rs::DynoRoad> dyno_road;     // garage dyno (rs/dyno.hpp): set between rs_dyno_begin / rs_dyno_end
     std::unique_ptr<rs::DynoMeter> dyno_meter;
     rs::InstrumentCluster cluster;               // dashboard needles (rs/cluster.hpp)
@@ -290,6 +291,37 @@ EMSCRIPTEN_KEEPALIVE void rs_set_structural_spec(int id, int material, int carbo
     spec.roll_cage = (roll_cage != 0);
     spec.race_suspension = (race_susp != 0);
     c.vehicle->damage_model().set_structural_spec(spec);
+}
+
+// Flat scratch buffer for up to 16 nearby traffic/rival cars (12 doubles per car in three.js Y-up axes):
+//   [0..2] pos xyz (m), [3..5] vel xyz (m/s), [6..8] forward xyz (unit), [9] CdA, [10] ClA, [11] width (m)
+EMSCRIPTEN_KEEPALIVE double* rs_aero_traffic_buffer(int id) { return g_cars[id]->aero_traffic_buf.data(); }
+
+// Compute full 3D multi-car slipstream, crosswind-advected wake, tandem push-draft, side-draft, Bernoulli suction & dirty air.
+EMSCRIPTEN_KEEPALIVE void rs_set_aero_traffic(int id, int count, double sim_time_s) {
+    Car& c = *g_cars[id];
+    const int n = std::max(0, std::min(16, count));
+    std::vector<rs::AeroTrafficCar> nearby;
+    nearby.reserve(static_cast<std::size_t>(n));
+    const double* src = c.aero_traffic_buf.data();
+    for (int i = 0; i < n; ++i) {
+        const double* p = src + 12 * i;
+        rs::AeroTrafficCar tc;
+        tc.position = to_core(p[0], p[1], p[2]);
+        tc.velocity = to_core(p[3], p[4], p[5]);
+        tc.forward = rs::normalized(to_core(p[6], p[7], p[8]));
+        tc.drag_area = p[9] > 0.1 ? p[9] : 0.68;
+        tc.lift_area = p[10] >= 0.0 ? p[10] : 0.35;
+        tc.width_m = p[11] > 0.8 ? p[11] : 1.90;
+        nearby.push_back(tc);
+    }
+    const rs::Vec3 my_fwd = c.cs.orientation.rotate({1.0, 0.0, 0.0});
+    const rs::Vec3 wind = c.vehicle->atmosphere().enabled ? c.vehicle->atmosphere().wind_world_mps : rs::Vec3{};
+    const bool keep_yaw = c.vehicle->aero_wake().yaw_aero_enabled;
+    rs::AeroWakeState wake = rs::Vehicle::compute_aero_wake_field(
+        c.cs.position, c.cs.velocity, my_fwd, nearby, wind, sim_time_s);
+    wake.yaw_aero_enabled = keep_yaw;
+    c.vehicle->aero_wake() = wake;
 }
 
 // IN  buf[0..12]: chassis state, three world, origin = CG:
@@ -596,6 +628,15 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     b[443] = weather_here.lightning_flash_0_to_1;
     b[444] = weather_here.wetness_0_to_1;
     b[445] = weather_here.drying_line_factor;
+    // Live 3D multi-car slipstream, tandem push-draft, side-draft, dirty air & thermal wake telemetry [472..479]
+    b[472] = c.out.slipstream_drag_scale;
+    b[473] = c.out.dirty_air_downforce_scale;
+    b[474] = c.out.dirty_air_rear_downforce_scale;
+    b[475] = c.out.side_draft_drag_delta;
+    b[476] = c.out.tandem_push_drag_delta;
+    b[477] = c.out.wake_turbulence;
+    b[478] = c.out.wake_hot_air_c;
+    b[479] = c.out.wake_cooling_scale;
 }
 }  // namespace
 
