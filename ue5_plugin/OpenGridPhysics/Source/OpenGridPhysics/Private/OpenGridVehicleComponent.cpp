@@ -680,7 +680,8 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
                                + std::abs(WO.fy * std::sin(WO.slip_angle) * std::max(VCar, 1.0));
             const double EvacScale = rs::clamp(Config_.tire(w).tread_void_ratio / 0.28, 0.25, 2.5);
             WeatherSub->CoreWeather().deposit_tyre_passage(WO.contact_point.x, WO.contact_point.y,
-                                                           VCar, WO.load, SlipP, EvacScale, static_cast<double>(DeltaTime));
+                                                           VCar, WO.load, SlipP, EvacScale, static_cast<double>(DeltaTime),
+                                                           WO.condition.mud_pickup);
             WaterSum += WO.condition.road_water_mm;
             ++ContactCount;
         }

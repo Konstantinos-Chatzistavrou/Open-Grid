@@ -144,6 +144,7 @@ void Vehicle::reset_motion(double v, int gear) {
         unsprung_vz_[w] = 0.0;
         fluid_temp_[w] = 45.0;
         pad_wear_[w] = 0.0;
+        brake_water_film_[w] = 0.0;
     }
     disc_init_ = true;
     EngineSystemState& sys = drivetrain_.systems;
@@ -847,7 +848,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         tire_condition_[w].brake_disc_temp_c = disc_temp_[w];
         // grip_factor() already incorporates thermal window, greasiness, wear cliff, zone health (blister/grain/flat-spot/
         // sidewall damage/marbles) and sidewall rollover; flat_spot_grip_factor() adds the once-per-rev glazed dip.
-        k.mu = cfg_.grip_for_surface(c.surface) * clamp(c.surface_mu_mult, 0.4, 1.25)
+        k.mu = cfg_.grip_for_surface(c.surface) * clamp(c.surface_mu_mult, 0.12, 1.25)
              * tire_condition_[w].grip_factor(&cfg_.tire(w))
              * tire_condition_[w].flat_spot_grip_factor(wheel_angle_[w]) * damage_.grip[w] * wet_mu;
         // Dynamic inclination / camber angle gamma in the tyre frame (+ = top tilted toward +left):
@@ -1226,6 +1227,18 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
                     tire_condition_[w].marble_pickup = clamp(tire_condition_[w].marble_pickup + pickup_rate * h, 0.0, 1.0);
                 }
             }
+            // Off-track wet grass / gravel / dirt excursion loads wet mud onto tyre tread (shed back onto asphalt for ~38 m!)
+            if (contacts[w].surface >= 0 && contacts[w].surface < static_cast<int>(cfg_.surface_grip.size())) {
+                const std::string& sname = cfg_.surface_grip[contacts[w].surface].first;
+                if (sname == "grass" || sname == "gravel" || sname == "dirt") {
+                    const double w_off = std::max(contacts[w].water_depth_mm, road_water_mm);
+                    const double v_roll = std::hypot(k.vx, k.vy);
+                    if (w_off > 0.05 && v_roll > 1.5) {
+                        const double mud_rate = clamp(w_off / 0.8, 0.25, 1.5) * clamp(v_roll / 12.0, 0.2, 2.0) * 1.4;
+                        tire_condition_[w].mud_pickup = clamp(tire_condition_[w].mud_pickup + mud_rate * h, 0.0, 0.95);
+                    }
+                }
+            }
             tyre_t[w] = -f.fx * k.re;                                // road pushes back on the wheel
             double c_rr = rolling_resistance_coeff(tp, k.vx, op.dpi);
             roll_t[w] = c_rr * k.load * k.re;
@@ -1285,10 +1298,33 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             const double amb_brake_c = atmosphere_.enabled ? atmosphere_.ambient_air_c : 25.0;
             const double tk = disc_temp_[w] + 273.15, ta = amb_brake_c + 273.15;
             const double heat = drivetrain_.brake_torque[w] * std::abs(drivetrain_.wheel_omega[w]);
+            const double w_rotor_mm = touching[w] ? std::max(contacts[w].water_depth_mm, road_water_mm) : road_water_mm;
+            // Standing-water spray coats unbraked rotors and quenches hot discs; braking pads wipe & flash-boil the film!
+            if (w_rotor_mm > 0.25 && v_car > 8.0 && drivetrain_.brake_torque[w] < 50.0) {
+                const double target_film = clamp((w_rotor_mm - 0.20) / 2.0, 0.0, 1.0) * clamp((v_car - 8.0) / 28.0, 0.0, 1.0);
+                // Hot rotors (> 220 C) flash-evaporate incoming spray faster than cool cruising rotors
+                const double hot_boil_block = clamp((disc_temp_[w] - 180.0) / 320.0, 0.0, 0.75);
+                const double eff_target = target_film * (1.0 - hot_boil_block);
+                if (eff_target > brake_water_film_[w]) {
+                    brake_water_film_[w] += (eff_target - brake_water_film_[w]) * clamp(h / 2.2, 0.0, 1.0);
+                }
+            } else if (w_rotor_mm <= 0.10) {
+                brake_water_film_[w] = std::max(0.0, brake_water_film_[w] - h * (0.25 + 0.01 * v_car));
+            }
+            if (heat > 1500.0 && brake_water_film_[w] > 0.0) {
+                // Pad swipe + thermal flash-boil clears rotor water film in ~0.25-0.45 s of firm braking
+                const double wipe_rate = (3.6 + 2.4 * clamp(heat / 50000.0, 0.0, 2.5)) * (1.0 + clamp(disc_temp_[w] / 180.0, 0.0, 2.0));
+                brake_water_film_[w] = std::max(0.0, brake_water_film_[w] - wipe_rate * h);
+            }
+            const double q_spray_quench = (w_rotor_mm > 0.15 && v_car > 5.0 && disc_temp_[w] > amb_brake_c)
+                                        ? clamp(w_rotor_mm / 1.8, 0.0, 2.0) * (12.0 + 1.6 * v_car) * (disc_temp_[w] - amb_brake_c)
+                                        : 0.0;
             const double cool = (bt.cooling_base + bt.cooling_per_mps * v_car) * (disc_temp_[w] - amb_brake_c)
+                              + q_spray_quench
                               + 0.55 * 5.670e-8 * area * (tk * tk * tk * tk - ta * ta * ta * ta);
             disc_temp_[w] = clamp(disc_temp_[w] + h * (heat - cool) / cap, -20.0, 1100.0);
-            din.pad_mu[w] = brake_pad_mu(disc_temp_[w]);
+            const double wet_bite_scale = 1.0 - 0.34 * brake_water_film_[w];
+            din.pad_mu[w] = brake_pad_mu(disc_temp_[w]) * wet_bite_scale;
             // Caliper DOT 4 brake fluid heat soak from hot rotor through pad + convective airflow cooling
             const double fluid_amb_c = atmosphere_.enabled ? (atmosphere_.ambient_air_c + 15.0) : 40.0;
             const double d_fluid = 0.025 * std::max(0.0, disc_temp_[w] - fluid_temp_[w])
@@ -1322,9 +1358,10 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         wo.slip_angle = std::atan(tan_alpha_[w]);
         wo.condition = tire_condition_[w];
         wo.brake_temp_c = disc_temp_[w];
-        wo.brake_mu = brake_pad_mu(disc_temp_[w]);
+        wo.brake_mu = brake_pad_mu(disc_temp_[w]) * (1.0 - 0.34 * brake_water_film_[w]);
         wo.brake_fluid_temp_c = fluid_temp_[w];
         wo.brake_pad_wear = pad_wear_[w];
+        wo.brake_water_film = brake_water_film_[w];
         if (!touching[w]) continue;
         const Kin& k = kin[w];
         double fx = fx_sum[w] / n_sub, fy = fy_sum[w] / n_sub, mx = mx_sum[w] / n_sub, mz = mz_sum[w] / n_sub;

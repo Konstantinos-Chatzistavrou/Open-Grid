@@ -147,6 +147,7 @@ struct TireCondition {
     double carcass_hysteresis_w = 0.0;    // W, viscoelastic flexing power from deformable carcass ring into bulk Node 2
     double brake_disc_temp_c = 30.0;      // C, adjacent brake rotor temperature for rim -> cavity air radiant heat soak
     double marble_pickup = 0.0;           // 0..1 off-line rubber marbles / street grit stuck to hot tread (scrubs off on clean asphalt)
+    double mud_pickup = 0.0;              // 0..1 wet mud / grass dirt stuck to tread from off-track excursions (drags onto asphalt!)
 
     // Internal change trackers (allows legacy tests that teleport temperature_c directly to stay consistent
     // while keeping continuous 3-node ODE integration pure during simulation).

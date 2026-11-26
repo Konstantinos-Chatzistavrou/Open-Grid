@@ -89,6 +89,7 @@ void UOpenGridWeatherSubsystem::BindTrackGeometryCm(const TArray<FOpenGridTrackW
         C.banking_rad = FMath::DegreesToRadians(static_cast<double>(S.BankingDeg));
         C.crown_m = FMath::Max(0.0, static_cast<double>(S.CrownCm) * 0.01);
         C.shade_0_to_1 = FMath::Clamp(static_cast<double>(S.StaticShade01), 0.0, 1.0);
+        C.wind_shelter_0_to_1 = FMath::Clamp(static_cast<double>(S.WindShelter01), 0.0, 1.0);
         C.ideal_offset_m = -static_cast<double>(S.IdealOffsetRightCm) * 0.01; // +left in core = -right in UE
         C.initial_rubber = FMath::Clamp(static_cast<double>(S.InitialRubber01), 0.0, 1.0);
         C.drain_rate = FMath::Max(0.1, static_cast<double>(S.DrainRate));
@@ -106,6 +107,37 @@ bool UOpenGridWeatherSubsystem::BindTrackHeightfieldCm(const TArray<float>& Cell
         ElevMm.push_back(static_cast<double>(Cm) * 10.0); // 1 UE cm = 10 mm
     }
     return Weather_.bind_track_heightfield(ElevMm);
+}
+
+void UOpenGridWeatherSubsystem::AddWindShelterBoxCm(const FVector& CenterLocationCm, const FVector2D& HalfExtentCm, float Shelter01)
+{
+    rs::WindShelterZone Z;
+    Z.center_x_m = static_cast<double>(CenterLocationCm.X) * 0.01;
+    Z.center_y_m = -static_cast<double>(CenterLocationCm.Y) * 0.01;
+    Z.half_x_m = FMath::Max(1.0, static_cast<double>(HalfExtentCm.X) * 0.01);
+    Z.half_y_m = FMath::Max(1.0, static_cast<double>(HalfExtentCm.Y) * 0.01);
+    Z.shelter_0_to_1 = FMath::Clamp(static_cast<double>(Shelter01), 0.0, 1.0);
+    Weather_.add_wind_shelter_zone(Z);
+}
+
+FOpenGridWeatherStrategy UOpenGridWeatherSubsystem::EvaluatePitStrategyCm(const FVector& WorldLocationCm, float DryLapTimeS, int32 MountedCompound) const
+{
+    const double Xm = static_cast<double>(WorldLocationCm.X) * 0.01;
+    const double Ym = -static_cast<double>(WorldLocationCm.Y) * 0.01;
+    const rs::RecommendedTyreCompound M = static_cast<rs::RecommendedTyreCompound>(FMath::Clamp(MountedCompound, 0, 2));
+    const rs::WeatherStrategyAdvice A = Weather_.evaluate_pit_strategy(Xm, Ym, static_cast<double>(DryLapTimeS), M);
+
+    FOpenGridWeatherStrategy Out;
+    Out.CurrentBestCompound = static_cast<int32>(A.current_best);
+    Out.Forecast15MinBestCompound = static_cast<int32>(A.forecast_15m_best);
+    Out.CurrentWaterMm = static_cast<float>(A.current_water_mm);
+    Out.PredictedWater15MinMm = static_cast<float>(A.predicted_water_15m_mm);
+    Out.SlickLapDeltaS = static_cast<float>(A.slick_lap_delta_s);
+    Out.InterLapDeltaS = static_cast<float>(A.inter_lap_delta_s);
+    Out.WetLapDeltaS = static_cast<float>(A.wet_lap_delta_s);
+    Out.CrossoverEtaS = static_cast<float>(A.crossover_eta_s);
+    Out.bBoxNow = A.box_now;
+    return Out;
 }
 
 void UOpenGridWeatherSubsystem::ClearTrackGeometry()
@@ -128,6 +160,10 @@ FOpenGridWeatherSample UOpenGridWeatherSubsystem::SampleAtLocationCm(const FVect
     Out.SolarIrradianceWm2 = static_cast<float>(S.solar_irradiance_w_m2);
     Out.AmbientAirC = static_cast<float>(S.ambient_air_c);
     Out.TrackSurfaceC = static_cast<float>(S.track_surface_c);
+    Out.TrackSubsurfaceC = static_cast<float>(S.track_subsurface_c);
+    Out.bDewCondensing = S.dew_condensing;
+    Out.Ice01 = static_cast<float>(S.ice_0_to_1);
+    Out.WindShelter01 = static_cast<float>(S.wind_shelter_0_to_1);
     Out.DewPointC = static_cast<float>(S.dew_point_c);
     Out.Humidity01 = static_cast<float>(S.humidity_0_to_1);
     Out.BarometricKpa = static_cast<float>(S.barometric_kpa);
@@ -166,6 +202,8 @@ FOpenGridWheelWeatherSample UOpenGridWeatherSubsystem::SampleWheelAtLocationCm(c
     Out.DryingLineFactor = static_cast<float>(W.drying_line_factor);
     Out.SurfaceMuMult = static_cast<float>(W.surface_mu_mult);
     Out.StaticShade01 = static_cast<float>(W.static_shade_0_to_1);
+    Out.Ice01 = static_cast<float>(W.ice_0_to_1);
+    Out.Mud01 = static_cast<float>(W.mud_0_to_1);
     Out.SprayGeneration01 = static_cast<float>(W.spray_generation_0_to_1);
     Out.bOnPaintedKerb = W.on_painted_kerb;
     return Out;

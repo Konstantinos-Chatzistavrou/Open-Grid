@@ -126,9 +126,38 @@ struct TrackWeatherStation {
     double banking_rad = 0.0;         // road lateral cross-slope (+ = right edge higher, water drains left)
     double crown_m = 0.035;           // parabolic center crown height (m; sheds water toward both gutters)
     double shade_0_to_1 = 0.0;        // static sun occlusion (0 = open sky, 1 = under bridge / grandstand / dense trees)
+    double wind_shelter_0_to_1 = 0.0; // 3D wind shadow (0 = exposed airfield, 1 = behind grandstand / canyon wall / tunnel)
     double ideal_offset_m = 0.0;      // racing line lateral offset from centerline (+ = left, m)
     double initial_rubber = 0.55;     // pre-session rubber saturation along the ideal racing line (0..1)
     double drain_rate = 1.0;          // edge storm-drain efficiency multiplier (0.2 = poor drainage puddle zone, 1.5 = fast)
+};
+
+// 3D Wind Shadow / Canyon / Grandstand / Building Shelter Volume for open-world or circuit crosswind shear.
+struct WindShelterZone {
+    double center_x_m = 0.0;
+    double center_y_m = 0.0;
+    double half_x_m = 25.0;
+    double half_y_m = 25.0;
+    double shelter_0_to_1 = 0.85;     // 0 = open, 1 = full blockage (creates sharp crosswind shear on exit!)
+};
+
+// F1 / IMSA Pit-Wall Race Engineer Weather Strategy & Tyre Compound Crossover Prediction.
+enum class RecommendedTyreCompound : int {
+    Slick = 0,
+    Intermediate = 1,
+    FullWet = 2
+};
+
+struct WeatherStrategyAdvice {
+    RecommendedTyreCompound current_best = RecommendedTyreCompound::Slick;
+    RecommendedTyreCompound forecast_15m_best = RecommendedTyreCompound::Slick;
+    double current_water_mm = 0.0;
+    double predicted_water_15m_mm = 0.0;
+    double slick_lap_delta_s = 0.0;   // predicted lap time penalty vs dry slick baseline (s)
+    double inter_lap_delta_s = 0.0;   // predicted lap time penalty vs dry slick baseline (s)
+    double wet_lap_delta_s = 0.0;     // predicted lap time penalty vs dry slick baseline (s)
+    double crossover_eta_s = -1.0;    // seconds until optimal compound switches (-1 = no change imminent in 30 min)
+    bool box_now = false;             // true when current compound is no longer optimal or crossover is < 1 lap away
 };
 
 struct WeatherConfig {
@@ -158,15 +187,19 @@ struct WeatherSample {
 
     // Thermodynamics & Atmosphere (feeds AtmosphericEnvironment)
     double ambient_air_c = 22.0;          // local air temperature (C)
-    double track_surface_c = 30.0;        // local asphalt temperature (C) from persistent thermal memory
+    double track_surface_c = 30.0;        // local top 4 mm asphalt skin temperature (C; fast cloud-shadow response)
+    double track_subsurface_c = 26.0;     // deep 50 mm asphalt thermal-mass base temperature (C; evening heat retention)
     double dew_point_c = 12.0;            // Magnus dew-point temperature (C)
     double humidity_0_to_1 = 0.50;        // local relative humidity (0..1)
     double barometric_kpa = 101.325;      // local sea-level synoptic barometric pressure (kPa)
+    bool dew_condensing = false;          // true when clear-sky cooling drops skin_c <= dew_point_c (zero-rain dawn dew!)
+    double ice_0_to_1 = 0.0;              // 0..1 black ice / surface frost fraction when wet asphalt freezes (<= 0 C)
 
     // 3D Wind & Turbulence (feeds Vehicle aero relative air velocity)
     Vec3 wind_world_mps{0.0, 0.0, 0.0};   // instantaneous 3D world wind vector incl. veering, gusts & downdrafts (m/s)
     double wind_speed_mps = 0.0;          // magnitude of horizontal wind (m/s)
     double wind_direction_deg = 245.0;    // live meteorological wind-from direction after frontal veering (deg)
+    double wind_shelter_0_to_1 = 0.0;     // local 3D wind shadow occlusion (grandstand / skyscraper / canyon wall)
     double gust_intensity_0_to_1 = 0.0;   // turbulent gust factor (0..1)
 
     // Surface Hydrology (feeds Tire hydroplaning, wet grip & UE 5.8 Wetness/Puddle MPC)
@@ -195,6 +228,8 @@ struct WeatherWheelSample {
     double drying_line_factor = 0.0;      // 0 = un-cleared wet, 1 = tyre-pumped drying groove
     double surface_mu_mult = 1.0;         // dry rubber bonus (+8%) vs wet rubber inversion (-24%) vs wet painted kerb (0.46)
     double static_shade_0_to_1 = 0.0;     // static track occlusion at this wheel (bridge/grandstand/trees)
+    double ice_0_to_1 = 0.0;              // 0..1 black ice / surface frost at this wheel (drops grip toward ~0.15x!)
+    double mud_0_to_1 = 0.0;              // 0..1 dragged-on wet mud / off-track dirt at this wheel (drops grip up to -42%)
     double spray_generation_0_to_1 = 0.0; // relative water volume atomized into spray by this wheel
     bool on_painted_kerb = false;         // true when wheel sits on painted kerb lane
 };
@@ -259,17 +294,21 @@ public:
      *  with a real laser-scanned / UE 5.8 Landscape mesh raycast bake so puddles pool in exact centimeter dips. */
     bool bind_track_heightfield(const std::vector<double>& cell_elev_mm);
 
+    /** Register a 3D wind-shadow volume (grandstand, skyscraper block, canyon wall, bridge) for crosswind exit shear. */
+    void add_wind_shelter_zone(const WindShelterZone& zone);
+    void clear_wind_shelter_zones() { wind_shelters_.clear(); }
+
     void clear_track_geometry();
     bool has_track_geometry() const { return track_stations_.size() >= 2; }
     int track_station_count() const { return static_cast<int>(track_stations_.size()); }
 
-    /** Advance storm advection, veering wind, 3D gusts, per-cell thermal balance, shallow-water drainage & spray plumes. */
+    /** Advance storm advection, veering wind, 3D gusts, 2-layer thermal balance, dew/ice, drainage & spray plumes. */
     void step(double dt);
 
     /** Sample macro + local weather, thermodynamics, 3D wind & hydrology at world position (x_m, y_m). */
     WeatherSample sample(double x_m, double y_m) const;
 
-    /** Sample sub-meter per-wheel hydrology, rubber-line wet-grip inversion, wet painted-kerb slip & local asphalt temp. */
+    /** Sample sub-meter per-wheel hydrology, rubber-line wet-grip inversion, ice, mud, wet kerb slip & local asphalt temp. */
     WeatherWheelSample sample_wheel(double x_m, double y_m,
                                     WeatherSurfaceType surface = WeatherSurfaceType::Asphalt) const;
 
@@ -277,9 +316,10 @@ public:
     void deposit_tyre_wake(double x_m, double y_m, double speed_mps, double load_n, double dt);
 
     /** Sub-meter per-tyre passage: pumps standing water (scaled by tread_evac_scale: wet > road > slick),
-     *  splashes into adjacent lateral lanes, lays rubber on dry/damp cells & injects tyre friction heat into asphalt. */
+     *  splashes laterally, lays rubber on dry/damp cells, sheds off-track mud onto asphalt & injects tyre friction heat. */
     void deposit_tyre_passage(double x_m, double y_m, double speed_mps, double load_n,
-                              double slip_power_w, double tread_evac_scale, double dt);
+                              double slip_power_w, double tread_evac_scale, double dt,
+                              double tyre_mud_0_to_1 = 0.0);
 
     /** Emit a wind-advected volumetric spray plume behind a car moving over standing water. */
     void deposit_car_spray(const Vec3& car_pos, const Vec3& car_vel, double avg_water_mm,
@@ -287,6 +327,10 @@ public:
 
     /** Evaluate driver forward line-of-sight visibility (m) through rain, fog AND downstream car spray plumes. */
     double sample_driver_visibility_m(const Vec3& eye_pos, const Vec3& look_dir) const;
+
+    /** F1 / IMSA Pit-Wall Weather Engineer: predicts optimal compound (Slick / Inter / Wet), lap-time deltas & crossover ETA. */
+    WeatherStrategyAdvice evaluate_pit_strategy(double x_m, double y_m, double lap_time_dry_s = 90.0,
+                                                RecommendedTyreCompound mounted = RecommendedTyreCompound::Slick) const;
 
     /** Apply live weather at car_pos straight into AtmosphericEnvironment & scalar road_water_mm. */
     void apply_to_atmosphere(double x_m, double y_m, AtmosphericEnvironment& atm, double& out_road_water_mm) const;
@@ -316,7 +360,10 @@ private:
         double water_mm = 0.0;
         double basin_mm = 0.0;
         double rubber = 0.0;
-        double temp_c = 25.0;
+        double mud = 0.0;
+        double ice = 0.0;
+        double temp_c = 25.0;       // top 4 mm asphalt skin
+        double base_temp_c = 24.0;  // deep 50 mm asphalt thermal-mass base
         double groove = 0.0;
         double last_sync_s = 0.0;
     };
@@ -333,7 +380,9 @@ private:
     double local_hour_ = 14.0;
     double baro_kpa_ = 101.325;
     double global_air_c_ = 22.0;
-    double global_track_c_ = 28.0;
+    double global_track_c_ = 28.0;      // global top 4 mm asphalt skin (C)
+    double global_base_c_ = 25.0;       // global deep 50 mm subsurface asphalt base (C)
+    double global_ice_ = 0.0;           // global black-ice / frost fraction (0..1)
     double global_humidity_ = 0.52;
     double wind_veer_deg_ = 0.0;       // frontal synoptic wind direction shift (deg)
     double gust_x_ = 0.0;
@@ -367,12 +416,17 @@ private:
     std::vector<double> track_water_mm_;
     std::vector<double> track_water_scratch_;
     std::vector<double> track_rubber_;
-    std::vector<double> track_temp_c_;
+    std::vector<double> track_mud_;         // dragged-on wet grass/gravel mud per cell (0..1)
+    std::vector<double> track_ice_;         // black ice / frost fraction per cell (0..1)
+    std::vector<double> track_temp_c_;      // top 4 mm asphalt skin temperature (C)
+    std::vector<double> track_base_temp_c_; // deep 50 mm asphalt base temperature (C)
     std::vector<double> track_groove_;
     std::vector<double> track_elev_mm_; // static cell elevation (mm) from z_m + banking + crown or laser-scan heightfield
+    std::vector<WindShelterZone> wind_shelters_;
 
     double next_rand_01();
     Vec3 synoptic_wind_mps() const;
+    double wind_shelter_at(double x_m, double y_m, double* out_edge_shear = nullptr) const;
     Vec3 wind_at(double x_m, double y_m, double local_rain_mm_hr) const;
     void evaluate_cells_at(double x_m, double y_m, double time_offset_s,
                            double& out_rain_mm_hr, double& out_cloud_0_1,
@@ -384,7 +438,8 @@ private:
     bool project_to_track(double x_m, double y_m, int& out_station, int& out_lane, double& out_d_m) const;
     FineCell& ensure_fine_cell(int32_t wix, int32_t wiy) const;
     void init_track_cells_from_preset(double init_water_mm);
-    static double compute_surface_mu_mult(double water_mm, double rubber, WeatherSurfaceType surface);
+    static double compute_surface_mu_mult(double water_mm, double rubber, WeatherSurfaceType surface,
+                                          double ice_0_to_1 = 0.0, double mud_0_to_1 = 0.0);
 };
 
 }  // namespace rs

@@ -495,10 +495,14 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
         inner_air_c = clamp(tg + dtg * h, -25.0, 160.0);
     }
 
-    // Off-line rubber marbles / street grit scrub off hot tyres over ~90 m of clean rolling
+    // Off-line rubber marbles / street grit scrub off hot tyres over ~90 m; wet mud sheds onto asphalt over ~38 m
     if (marble_pickup > 0.0 && v > 1.0) {
         marble_pickup *= std::exp(-(v * dt) / 90.0);
         if (marble_pickup < 1e-7) marble_pickup = 0.0;
+    }
+    if (mud_pickup > 0.0 && v > 1.0) {
+        mud_pickup *= std::exp(-(v * dt) / 38.0);
+        if (mud_pickup < 1e-7) mud_pickup = 0.0;
     }
     // Ideal gas law directly from Node 3 (Inner Air temperature) & cavity air mass
     pressure_kpa = ideal_gas_pressure_kpa(p);
@@ -716,7 +720,8 @@ double TireCondition::zone_health_grip_factor() const {
     const double flat_steady_loss = 0.032 * clamp(flat_spot_depth_mm, 0.0, 3.0);
     const double sw_dmg_loss = 0.14 * clamp(sidewall_damage, 0.0, 1.0);
     const double marble_loss = 0.08 * clamp(marble_pickup, 0.0, 1.0);
-    return clamp(1.0 - blister_loss - grain_loss - spread_loss - flat_steady_loss - sw_dmg_loss - marble_loss, 0.58, 1.0);
+    const double mud_loss = 0.30 * clamp(mud_pickup, 0.0, 1.0);
+    return clamp(1.0 - blister_loss - grain_loss - spread_loss - flat_steady_loss - sw_dmg_loss - marble_loss - mud_loss, 0.42, 1.0);
 }
 
 double TireCondition::wlf_rib_grip_factor(double rib_surface_c, const TireParams* p) const {

@@ -399,7 +399,8 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
             if (g_weather_enabled) {
                 const double evac_scale = rs::clamp(c.cfg.tire(w).tread_void_ratio / 0.28, 0.25, 2.5);
                 g_weather.deposit_tyre_passage(live_contacts[w].point.x, live_contacts[w].point.y,
-                                               v_car, c.out.wheels[w].load, slip_p, evac_scale, dt);
+                                               v_car, c.out.wheels[w].load, slip_p, evac_scale, dt,
+                                               c.out.wheels[w].condition.mud_pickup);
                 wheel_water_sum += std::max(live_contacts[w].water_depth_mm, c.vehicle->road_water_mm);
                 ++wheel_contact_count;
             }

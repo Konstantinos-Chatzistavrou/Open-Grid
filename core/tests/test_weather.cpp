@@ -419,4 +419,167 @@ RS_TEST(dynamic_weather) {
                     std::abs(uveh.atmosphere().wind_world_mps.y - 12.0) < 1e-6 &&
                     std::abs(uveh.atmosphere().barometric_offset_kpa + 2.2) < 1e-6);
     }
+
+    // 16. 2-Layer Asphalt Thermal Inertia + Zero-Rain Dawn Dew Condensation (Le Mans / N24h 4 AM effect)
+    {
+        WeatherConfig dew_cfg;
+        dew_cfg.preset = WeatherPreset::Clear;
+        dew_cfg.start_hour_local = 3.5;
+        dew_cfg.base_ambient_c = 11.0;
+        dew_cfg.base_humidity = 0.90;
+        dew_cfg.base_wind_mps = 1.8;
+        WeatherSystem dew_w(dew_cfg);
+        // Clear preset caps base humidity to 0.45; simulate humid nocturnal mist via live observation with 0 rain!
+        RealWeatherObservation night_obs;
+        night_obs.latitude_deg = 47.95; // Le Mans
+        night_obs.day_of_year = 165;
+        night_obs.local_hour = 3.5;
+        night_obs.ambient_air_c = 11.0;
+        night_obs.humidity_0_to_1 = 0.92;
+        night_obs.barometric_kpa = 101.8;
+        night_obs.wind_speed_mps = 1.5;
+        night_obs.cloud_cover_0_to_1 = 0.05;
+        night_obs.rain_mm_per_hr = 0.0;
+        dew_w.configure_from_live_observation(night_obs, 303u);
+        dew_w.bind_track_geometry(make_test_circuit(), false);
+        for (int s = 0; s < 1800; ++s) dew_w.step(1.0); // 30 min clear-sky radiative cooling before dawn
+        const WeatherSample ds = dew_w.sample(50.0, 0.0);
+        std::printf("         2-layer dawn dew: skin=%.1f C < subsurface=%.1f C | dew_pt=%.1f C | dew_water=%.3f mm (cond=%d)\n",
+                    ds.track_surface_c, ds.track_subsurface_c, ds.dew_point_c, ds.surface_water_mm, ds.dew_condensing ? 1 : 0);
+        test::check("2-layer thermal inertia: 4 mm skin cools below deep 50 mm subsurface base at night",
+                    ds.track_surface_c < ds.track_subsurface_c - 0.8);
+        test::check("zero-rain dawn dew condenses onto cold clear-sky tarmac",
+                    ds.dew_condensing && ds.surface_water_mm > 0.02);
+    }
+
+    // 17. Black Ice Formation & Catastrophic Grip Loss (winter touge / frozen dawn)
+    {
+        WeatherConfig ice_cfg = cfg;
+        ice_cfg.preset = WeatherPreset::LightRain;
+        ice_cfg.start_hour_local = 2.0;
+        ice_cfg.base_ambient_c = -3.5;
+        WeatherSystem ice_w(ice_cfg);
+        ice_w.bind_track_geometry(make_test_circuit(), false);
+        for (int s = 0; s < 300; ++s) ice_w.step(1.0);
+        const WeatherWheelSample iws = ice_w.sample_wheel(50.0, 0.0);
+        std::printf("         black ice: skin=%.1f C | ice=%.2f | mu_mult=%.3f\n",
+                    iws.track_temp_c, iws.ice_0_to_1, iws.surface_mu_mult);
+        test::check("frozen wet asphalt forms black ice and slashes grip <= 0.25x",
+                    iws.ice_0_to_1 > 0.80 && iws.surface_mu_mult <= 0.25);
+    }
+
+    // 18. Post-Storm "Green Track" Rubber Wash-Off + Off-Track Wet Mud Drag-On
+    {
+        WeatherSystem wash_w(rain_cfg);
+        wash_w.bind_track_geometry(make_test_circuit(), false);
+        const double rub_before = wash_w.sample_wheel(50.0, 0.0).rubber_0_to_1;
+        for (int s = 0; s < 1200; ++s) wash_w.step(1.0); // 20 min of heavy storm washing track
+        const double rub_after = wash_w.sample_wheel(50.0, 0.0).rubber_0_to_1;
+        std::printf("         green-track wash-off: rubber %.3f -> %.3f after heavy storm\n", rub_before, rub_after);
+        test::check("heavy rain washes off laid-down rubber (green track reset)", rub_after < rub_before - 0.25);
+
+        // Dry track + muddy tyre dragging wet dirt from grass onto apex
+        WeatherSystem mud_w(dry_cfg);
+        mud_w.bind_track_geometry(make_test_circuit(), false);
+        const double clean_mu = mud_w.sample_wheel(50.0, 3.0).surface_mu_mult;
+        for (int p = 0; p < 12; ++p) {
+            mud_w.deposit_tyre_passage(50.0, 3.0, 30.0, 4000.0, 1000.0, 1.0, 0.10, 0.85);
+        }
+        const WeatherWheelSample muddy = mud_w.sample_wheel(50.0, 3.0);
+        std::printf("         mud drag-on: clean mu=%.3f -> muddy mu=%.3f (mud=%.2f)\n",
+                    clean_mu, muddy.surface_mu_mult, muddy.mud_0_to_1);
+        test::check("dragged-on off-track mud contaminates asphalt and drops grip sharply",
+                    muddy.mud_0_to_1 > 0.50 && muddy.surface_mu_mult < clean_mu - 0.25);
+    }
+
+    // 19. 3D Wind Shadows & Grandstand / Skyscraper Exit Crosswind Shear
+    {
+        WeatherConfig wind_cfg = cfg;
+        wind_cfg.preset = WeatherPreset::Clear;
+        wind_cfg.base_wind_mps = 12.0;
+        wind_cfg.wind_direction_deg = 270.0; // strong west crosswind
+        WeatherSystem wind_w(wind_cfg);
+        WindShelterZone grandstand;
+        grandstand.center_x_m = 100.0;
+        grandstand.center_y_m = 0.0;
+        grandstand.half_x_m = 30.0;
+        grandstand.half_y_m = 20.0;
+        grandstand.shelter_0_to_1 = 0.95;
+        wind_w.add_wind_shelter_zone(grandstand);
+        const WeatherSample inside = wind_w.sample(100.0, 0.0);
+        const WeatherSample outside = wind_w.sample(160.0, 0.0);
+        std::printf("         3D wind shadow: sheltered=%.1f m/s (shelter=%.2f) vs exposed=%.1f m/s\n",
+                    inside.wind_speed_mps, inside.wind_shelter_0_to_1, outside.wind_speed_mps);
+        test::check("3D wind shelter blocks > 65% of crosswind behind grandstand/building",
+                    inside.wind_shelter_0_to_1 > 0.85 && inside.wind_speed_mps < outside.wind_speed_mps * 0.35);
+    }
+
+    // 20. Brake Rotor Water-Film Quench & Wet Brake Bite Delay -> Pad Wipe Recovery
+    {
+        CarConfig bcfg = test::car();
+        Vehicle bveh(bcfg);
+        bveh.reset_motion(42.0, 4);
+        bveh.road_water_mm = 2.4; // heavy standing water spray on straight
+        ChassisState bcs;
+        bcs.position = {0, 0, bcfg.cg_height};
+        bcs.velocity = {42.0, 0, 0};
+        auto brays = bveh.wheel_rays(bcs);
+        std::array<WheelContact, 4> bcontacts{};
+        for (int w = 0; w < 4; ++w) {
+            bcontacts[w].hit = true;
+            bcontacts[w].distance = brays[w].length - 0.05;
+            bcontacts[w].point = brays[w].origin + brays[w].direction * bcontacts[w].distance;
+            bcontacts[w].normal = {0, 0, 1};
+            bcontacts[w].surface = bcfg.surface_index("asphalt");
+            bcontacts[w].water_depth_mm = 2.4;
+        }
+        // Cruise unbraked for 4.5 s in heavy spray -> rotor coats with water film
+        DriverInput cruise_in;
+        cruise_in.gear = 4;
+        cruise_in.throttle = 0.25;
+        bveh.set_input(cruise_in);
+        VehicleOutput bout{};
+        for (int s = 0; s < 450; ++s) bout = bveh.update(bcs, bcontacts, 0.01);
+        const double film_after_straight = bout.wheels[FL].brake_water_film;
+        const double mu_initial_bite = bout.wheels[FL].brake_mu;
+
+        // Now apply firm ABS braking for 0.65 s -> pads wipe & flash-boil water film off spinning rotor!
+        bveh.assists().abs = true;
+        DriverInput brake_in;
+        brake_in.gear = 4;
+        brake_in.brake = 0.90;
+        brake_in.clutch = 1.0;
+        bveh.set_input(brake_in);
+        for (int s = 0; s < 65; ++s) bout = bveh.update(bcs, bcontacts, 0.01);
+        const double film_after_wipe = bout.wheels[FL].brake_water_film;
+        const double mu_after_wipe = bout.wheels[FL].brake_mu;
+        std::printf("         wet brake bite: coated film=%.2f (mu=%.3f) -> wiped film=%.2f (mu=%.3f)\n",
+                    film_after_straight, mu_initial_bite, film_after_wipe, mu_after_wipe);
+        test::check("wet straight coats unbraked brake rotor and causes initial wet brake bite delay",
+                    film_after_straight > 0.45 && mu_initial_bite < 0.85);
+        test::check("firm braking wipes & boils rotor water film off within ~0.65 s",
+                    film_after_wipe < 0.15 && mu_after_wipe > mu_initial_bite + 0.10);
+    }
+
+    // 21. F1 / IMSA Pit-Wall Weather Engineer & Compound Crossover Predictor
+    {
+        const WeatherStrategyAdvice dry_adv = dry_trk.evaluate_pit_strategy(50.0, 0.0, 90.0, RecommendedTyreCompound::Slick);
+        WeatherConfig inter_cfg = cfg;
+        inter_cfg.preset = WeatherPreset::LightRain;
+        WeatherSystem inter_w(inter_cfg);
+        const WeatherStrategyAdvice inter_adv = inter_w.evaluate_pit_strategy(0.0, 0.0, 90.0, RecommendedTyreCompound::Slick);
+        const WeatherStrategyAdvice storm_adv = bank_w.evaluate_pit_strategy(50.0, 0.0, 90.0, RecommendedTyreCompound::Slick);
+        WeatherSystem incoming_front(cfg); // DynamicFront starts dry, rain arrives within ~15 min
+        const WeatherStrategyAdvice front_adv = incoming_front.evaluate_pit_strategy(0.0, 0.0, 90.0, RecommendedTyreCompound::Slick);
+        std::printf("         pit-wall strategy: dry=%d | light_rain=%d (box=%d) | storm=%d | front crossover_eta=%.0f s\n",
+                    int(dry_adv.current_best), int(inter_adv.current_best), inter_adv.box_now ? 1 : 0,
+                    int(storm_adv.current_best), front_adv.crossover_eta_s);
+        test::check("pit-wall recommends Slick on dry track", dry_adv.current_best == RecommendedTyreCompound::Slick && !dry_adv.box_now);
+        test::check("pit-wall recommends Intermediate in steady light rain & calls box_now for Slick",
+                    inter_adv.current_best == RecommendedTyreCompound::Intermediate && inter_adv.box_now);
+        test::check("pit-wall recommends FullWet in heavy storm",
+                    storm_adv.current_best == RecommendedTyreCompound::FullWet && storm_adv.wet_lap_delta_s < storm_adv.slick_lap_delta_s - 10.0);
+        test::check("pit-wall predicts finite slick->inter crossover ETA for approaching DynamicFront",
+                    front_adv.crossover_eta_s > 0.0 && front_adv.crossover_eta_s <= 1800.0);
+    }
 }

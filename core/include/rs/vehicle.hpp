@@ -108,6 +108,7 @@ struct WheelOutput {
     double unsprung_vel_mps = 0;     // m/s, vertical wheel-hop velocity of the unsprung hub/wheel mass
     double brake_fluid_temp_c = 45.0;// C, caliper DOT 4 brake fluid temperature (vapor lock / spongy pedal > 260 C)
     double brake_pad_wear = 0.0;     // 0..1 progressive brake pad friction lining wear
+    double brake_water_film = 0.0;   // 0..1 standing-water spray coating on brake rotor (causes wet brake bite delay)
     double hydroplaning_lift = 0.0;  // 0..0.90 hydrodynamic water-wedge lift fraction on standing puddles
     double toe_angle = 0.0;          // rad, dynamic suspension alignment toe-in (+ = toe-in: static + bump steer + damage)
     double caster_angle = 0.0;       // rad, instantaneous dynamic steering-axis caster
@@ -318,6 +319,7 @@ private:
     bool disc_init_ = false;
     std::array<double, 4> fluid_temp_{45.0, 45.0, 45.0, 45.0}; // caliper DOT 4 brake fluid temperature, C
     std::array<double, 4> pad_wear_{};                         // 0..1 brake pad friction material wear
+    std::array<double, 4> brake_water_film_{};                 // 0..1 wet rotor spray film (wet brake bite delay)
     ChassisDynamicsConfig chassis_dyn_{};
     AtmosphericEnvironment atmosphere_{};
     std::array<double, 2> prev_axle_fy_{};

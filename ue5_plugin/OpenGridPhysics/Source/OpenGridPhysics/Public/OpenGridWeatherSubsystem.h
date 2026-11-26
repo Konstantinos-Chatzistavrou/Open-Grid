@@ -131,6 +131,10 @@ struct OPENGRIDPHYSICS_API FOpenGridTrackWeatherStation
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
     float StaticShade01 = 0.0f;
 
+    /** 3D wind shadow occlusion (0 = exposed straight, 1 = behind grandstand / canyon wall / tunnel). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    float WindShelter01 = 0.0f;
+
     /** Ideal racing line lateral offset from centerline (cm; + = right in UE axes). */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
     float IdealOffsetRightCm = 0.0f;
@@ -173,6 +177,18 @@ struct OPENGRIDPHYSICS_API FOpenGridWeatherSample
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
     float TrackSurfaceC = 28.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    float TrackSubsurfaceC = 25.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    bool bDewCondensing = false;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    float Ice01 = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    float WindShelter01 = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
     float DewPointC = 12.0f;
@@ -255,6 +271,12 @@ struct OPENGRIDPHYSICS_API FOpenGridWheelWeatherSample
     float StaticShade01 = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    float Ice01 = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    float Mud01 = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
     float SprayGeneration01 = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
@@ -278,6 +300,42 @@ struct OPENGRIDPHYSICS_API FOpenGridSprayPlume
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
     float Density01 = 0.0f;
+};
+
+/** F1 / IMSA Pit-Wall Race Engineer tyre compound crossover advice. */
+USTRUCT(BlueprintType)
+struct OPENGRIDPHYSICS_API FOpenGridWeatherStrategy
+{
+    GENERATED_BODY()
+
+    /** 0 = Slick, 1 = Intermediate, 2 = Full Wet */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    int32 CurrentBestCompound = 0;
+
+    /** 0 = Slick, 1 = Intermediate, 2 = Full Wet predicted in +15 min */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    int32 Forecast15MinBestCompound = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    float CurrentWaterMm = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    float PredictedWater15MinMm = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    float SlickLapDeltaS = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    float InterLapDeltaS = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    float WetLapDeltaS = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    float CrossoverEtaS = -1.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    bool bBoxNow = false;
 };
 
 /** Compact 16x16 weather radar reflectivity snapshot for HUD widgets / cockpit displays. */
@@ -339,6 +397,15 @@ public:
     /** Override per-cell elevation heightfield (size == StationCount * 16, values in UE cm) from laser-scanned / Landscape traces. */
     UFUNCTION(BlueprintCallable, Category="OpenGrid|Weather")
     bool BindTrackHeightfieldCm(const TArray<float>& CellElevationCm);
+
+    /** Register a 3D wind-shadow box (grandstand, skyscraper, tunnel portal) for crosswind exit shear. */
+    UFUNCTION(BlueprintCallable, Category="OpenGrid|Weather")
+    void AddWindShelterBoxCm(const FVector& CenterLocationCm, const FVector2D& HalfExtentCm, float Shelter01 = 0.85f);
+
+    /** Evaluate F1 / IMSA pit-wall compound crossover strategy (0=Slick, 1=Inter, 2=FullWet). */
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category="OpenGrid|Weather")
+    FOpenGridWeatherStrategy EvaluatePitStrategyCm(const FVector& WorldLocationCm, float DryLapTimeS = 90.0f,
+                                                   int32 MountedCompound = 0) const;
 
     /** Clear bound circuit spline and fall back to the 1.0 m toroidal open-world hydrology patch. */
     UFUNCTION(BlueprintCallable, Category="OpenGrid|Weather")

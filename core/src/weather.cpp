@@ -314,18 +314,65 @@ Vec3 WeatherSystem::synoptic_wind_mps() const {
     return {cfg_.base_wind_mps * std::sin(to_rad), cfg_.base_wind_mps * std::cos(to_rad), 0.0};
 }
 
+void WeatherSystem::add_wind_shelter_zone(const WindShelterZone& zone) {
+    wind_shelters_.push_back(zone);
+}
+
+double WeatherSystem::wind_shelter_at(double x_m, double y_m, double* out_edge_shear) const {
+    double shelter = 0.0;
+    double edge_shear = 0.0;
+    int st_i = -1, lane_j = -1;
+    double d_m = 0.0;
+    if (project_to_track(x_m, y_m, st_i, lane_j, d_m)) {
+        const double st_sh = clamp(track_stations_[st_i].st.wind_shelter_0_to_1, 0.0, 1.0);
+        shelter = std::max(shelter, st_sh);
+        // Check longitudinal neighbor shelter transition for grandstand/canyon exit shear!
+        const int n_st = static_cast<int>(track_stations_.size());
+        const int prev_i = (st_i > 0) ? (st_i - 1) : (track_closed_loop_ ? n_st - 1 : 0);
+        const int next_i = (st_i + 1 < n_st) ? (st_i + 1) : (track_closed_loop_ ? 0 : n_st - 1);
+        const double grad = std::max(std::abs(st_sh - track_stations_[prev_i].st.wind_shelter_0_to_1),
+                                     std::abs(st_sh - track_stations_[next_i].st.wind_shelter_0_to_1));
+        edge_shear = std::max(edge_shear, clamp(grad, 0.0, 1.0));
+    }
+    for (const WindShelterZone& z : wind_shelters_) {
+        const double dx = std::abs(x_m - z.center_x_m);
+        const double dy = std::abs(y_m - z.center_y_m);
+        const double hx = std::max(z.half_x_m, 1.0);
+        const double hy = std::max(z.half_y_m, 1.0);
+        const double margin = 8.0; // 8 m turbulent wake-shear transition band around building/grandstand edges
+        if (dx < hx + margin && dy < hy + margin) {
+            const double fx = 1.0 - weather_smoothstep(hx - 2.0, hx + margin, dx);
+            const double fy = 1.0 - weather_smoothstep(hy - 2.0, hy + margin, dy);
+            const double s_zone = clamp(z.shelter_0_to_1, 0.0, 1.0) * fx * fy;
+            shelter = std::max(shelter, s_zone);
+            if (s_zone > 0.08 && s_zone < 0.85) {
+                edge_shear = std::max(edge_shear, 4.0 * s_zone * (1.0 - s_zone));
+            }
+        }
+    }
+    if (out_edge_shear) *out_edge_shear = clamp(edge_shear, 0.0, 1.0);
+    return clamp(shelter, 0.0, 1.0);
+}
+
 Vec3 WeatherSystem::wind_at(double x_m, double y_m, double local_rain_mm_hr) const {
     const Vec3 w_syn = synoptic_wind_mps();
+    double edge_shear = 0.0;
+    const double shelter = wind_shelter_at(x_m, y_m, &edge_shear);
+    const double open_scale = 1.0 - 0.82 * shelter;
+
     // Spatial phase modulation so distant sectors on a circuit experience asynchronous turbulent gusts
     const double spatial_p = x_m * 0.0042 + y_m * 0.0037;
     const double c = std::cos(spatial_p);
     const double s = std::sin(spatial_p);
     const double gx = gust_x_ * (0.72 + 0.28 * c) - gust_y_ * (0.28 * s);
     const double gy = gust_y_ * (0.72 + 0.28 * c) + gust_x_ * (0.28 * s);
-    // Convective downdraft / cross-burst enhancement inside heavy storm cores
-    const double storm_scale = 1.0 + 0.35 * clamp(local_rain_mm_hr / 18.0, 0.0, 1.0);
+    // Convective downdraft / cross-burst enhancement inside heavy storm cores + grandstand/building exit eddy shear
+    const double storm_scale = 1.0 + 0.35 * clamp(local_rain_mm_hr / 18.0, 0.0, 1.0) + 0.65 * edge_shear;
+    const double shear_burst = edge_shear * cfg_.base_wind_mps * 0.38 * std::sin(gust_phase_ * 3.1 + spatial_p * 5.0);
     const double gz = gust_z_ * storm_scale - 0.65 * clamp((local_rain_mm_hr - 10.0) / 18.0, 0.0, 1.0);
-    return {w_syn.x + gx * storm_scale, w_syn.y + gy * storm_scale, gz};
+    return {w_syn.x * open_scale + gx * storm_scale * (0.35 + 0.65 * open_scale) + shear_burst,
+            w_syn.y * open_scale + gy * storm_scale * (0.35 + 0.65 * open_scale) - shear_burst * 0.7,
+            gz * (0.4 + 0.6 * open_scale)};
 }
 
 int WeatherSystem::hydro_index(double x_m, double y_m, int* out_ix, int* out_iy) const {
@@ -357,33 +404,42 @@ WeatherSystem::FineCell& WeatherSystem::ensure_fine_cell(int32_t wix, int32_t wi
         // Pool extra standing water inside local 1 m depressions when macro road is wet
         fc.water_mm = macro_w > 0.02 ? clamp(macro_w * (0.72 + 0.38 * fc.basin_mm), 0.0, 10.0) : 0.0;
         fc.rubber = 0.0;
+        fc.mud = 0.0;
+        fc.ice = (global_track_c_ <= 0.1 && fc.water_mm > 0.03) ? clamp(global_ice_, 0.0, 1.0) : 0.0;
         fc.groove = hydro_groove_[mk];
         fc.temp_c = global_track_c_;
+        fc.base_temp_c = global_base_c_;
         fc.last_sync_s = sim_time_s_;
     }
     return fc;
 }
 
-double WeatherSystem::compute_surface_mu_mult(double water_mm, double rubber, WeatherSurfaceType surface) {
+double WeatherSystem::compute_surface_mu_mult(double water_mm, double rubber, WeatherSurfaceType surface,
+                                              double ice_0_to_1, double mud_0_to_1) {
     const double r = clamp(rubber, 0.0, 1.0);
     const double w = std::max(0.0, water_mm);
+    double mu = 1.0;
     switch (surface) {
         case WeatherSurfaceType::PaintedKerb:
         case WeatherSurfaceType::PaintedLine: {
             // Paint has zero macro-texture porosity: a thin 0.03-0.18 mm film turns painted kerbs/lines ice-slick (~0.46x)
             const double slick_blend = weather_smoothstep(0.02, 0.16, w);
-            return lerp(0.96, 0.46, slick_blend);
+            mu = lerp(0.96, 0.46, slick_blend);
+            break;
         }
         case WeatherSurfaceType::Concrete: {
             const double wet_blend = weather_smoothstep(0.03, 0.20, w);
             const double dry_mu = 0.98 + 0.05 * r;
             const double wet_mu = 0.82 - 0.14 * r;
-            return clamp(lerp(dry_mu, wet_mu, wet_blend), 0.50, 1.08);
+            mu = clamp(lerp(dry_mu, wet_mu, wet_blend), 0.50, 1.08);
+            break;
         }
         case WeatherSurfaceType::Grass:
-            return lerp(1.0, 0.62, weather_smoothstep(0.03, 0.25, w));
+            mu = lerp(1.0, 0.62, weather_smoothstep(0.03, 0.25, w));
+            break;
         case WeatherSurfaceType::Gravel:
-            return lerp(1.0, 0.84, weather_smoothstep(0.05, 0.40, w));
+            mu = lerp(1.0, 0.84, weather_smoothstep(0.05, 0.40, w));
+            break;
         case WeatherSurfaceType::Asphalt:
         default: {
             // Real-world "Rain Line" physics:
@@ -393,9 +449,21 @@ double WeatherSystem::compute_surface_mu_mult(double water_mm, double rubber, We
             const double wet_inv = weather_smoothstep(0.04, 0.22, w);
             const double dry_mu = 1.0 + 0.08 * r;
             const double wet_mu = 1.0 - 0.24 * r;
-            return clamp(lerp(dry_mu, wet_mu, wet_inv), 0.65, 1.12);
+            mu = clamp(lerp(dry_mu, wet_mu, wet_inv), 0.65, 1.12);
+            break;
         }
     }
+    // Dragged-on wet mud / off-track dirt drops asphalt grip up to -42% until washed/scrubbed clean
+    const double mud = clamp(mud_0_to_1, 0.0, 1.0);
+    if (mud > 0.005) {
+        mu = lerp(mu, std::min(mu, 0.54), mud);
+    }
+    // Black ice / frozen standing water drops surface friction catastrophically toward ~0.15x!
+    const double ice = clamp(ice_0_to_1, 0.0, 1.0);
+    if (ice > 0.005) {
+        mu = lerp(mu, 0.15, ice);
+    }
+    return clamp(mu, 0.14, 1.15);
 }
 
 void WeatherSystem::spawn_cell(int slot, bool initial_scatter) {
@@ -525,7 +593,10 @@ void WeatherSystem::init_track_cells_from_preset(double init_water_mm) {
     track_water_mm_.assign(total, 0.0);
     track_water_scratch_.assign(total, 0.0);
     track_rubber_.assign(total, 0.0);
+    track_mud_.assign(total, 0.0);
+    track_ice_.assign(total, 0.0);
     track_temp_c_.assign(total, global_track_c_);
+    track_base_temp_c_.assign(total, global_base_c_);
     track_groove_.assign(total, 0.0);
     track_elev_mm_.assign(total, 0.0);
 
@@ -555,12 +626,16 @@ void WeatherSystem::init_track_cells_from_preset(double init_water_mm) {
                              : clamp(st.initial_rubber * std::exp(-(dist_ideal * dist_ideal) / (1.8 * 1.8)), 0.0, 1.0);
             track_rubber_[idx] = rub;
 
-            // Shaded stations start cooler than sunlit stations!
+            // Shaded stations start cooler than sunlit stations (both 4 mm skin & 50 mm subsurface base)
             track_temp_c_[idx] = clamp(global_track_c_ - 6.5 * clamp(st.shade_0_to_1, 0.0, 1.0), -18.0, 72.0);
+            track_base_temp_c_[idx] = clamp(global_base_c_ - 3.5 * clamp(st.shade_0_to_1, 0.0, 1.0), -18.0, 62.0);
             // Initial standing water pools deeper in low spots & poor-drainage zones
             if (init_water_mm > 0.0) {
                 const double low_bias = clamp(1.0 + 0.25 * micro_dip_mm - 0.15 * (crown_z_m / std::max(st.crown_m, 0.01)), 0.6, 1.8);
                 track_water_mm_[idx] = clamp(init_water_mm * low_bias, 0.0, 10.0);
+                if (track_temp_c_[idx] <= 0.0 && track_water_mm_[idx] > 0.04) {
+                    track_ice_[idx] = clamp(-track_temp_c_[idx] / 3.0, 0.2, 1.0);
+                }
             }
         }
     }
@@ -631,6 +706,8 @@ void WeatherSystem::configure(const WeatherConfig& cfg) {
     global_air_c_ = cfg.base_ambient_c;
     const double solar_lift = (init_water_mm > 0.2 ? 0.005 : 0.018) * solar_w;
     global_track_c_ = clamp(global_air_c_ + solar_lift - (r0 > 0.5 ? 2.5 : 0.0), -15.0, 68.0);
+    global_base_c_ = clamp(global_air_c_ + 0.55 * solar_lift, -15.0, 58.0);
+    global_ice_ = (global_track_c_ <= 0.0 && init_water_mm > 0.04) ? clamp(-global_track_c_ / 3.0, 0.2, 1.0) : 0.0;
 
     if (has_track_geometry()) {
         init_track_cells_from_preset(init_water_mm);
@@ -696,7 +773,10 @@ void WeatherSystem::clear_track_geometry() {
     track_water_mm_.clear();
     track_water_scratch_.clear();
     track_rubber_.clear();
+    track_mud_.clear();
+    track_ice_.clear();
     track_temp_c_.clear();
+    track_base_temp_c_.clear();
     track_groove_.clear();
     track_elev_mm_.clear();
 }
@@ -887,17 +967,48 @@ void WeatherSystem::step(double dt) {
     const double v_wind = std::hypot(w_syn.x + gust_x_, w_syn.y + gust_y_);
     const double h_conv = 12.0 + 3.8 * v_wind;
     const double dew_c = weather_magnus_dew_point_c(global_air_c_, global_humidity_);
-    constexpr double kAsphaltHeatCap = 22000.0;
+    // 2-Layer Asphalt Slab Thermal Model (top 4 mm wearing skin + deep 50 mm thermal-mass base)
+    constexpr double kSkinHeatCap = 9500.0;     // J/(m^2 K) fast-responding top 4 mm asphalt skin
+    constexpr double kBaseHeatCap = 85000.0;    // J/(m^2 K) deep 50 mm subsurface thermal reservoir
+    constexpr double kSkinBaseG   = 14.0;       // W/(m^2 K) skin <-> subsurface conduction (k_asphalt ~ 1.0 W/mK over ~7 cm)
+    constexpr double kBaseSoilG   = 6.0;        // W/(m^2 K) subsurface <-> deep earth baseline
+
+    auto step_two_layer_thermal = [&](double& skin_c, double& base_c, double& water_mm, double& ice_f,
+                                      double solar_abs_w, double cloud_0_1, double shade_0_1, double rain_mm_hr) {
+        const double q_sun = 0.86 * solar_abs_w;
+        const double q_conv = h_conv * (skin_c - global_air_c_);
+        const double q_rad = (1.0 - 0.75 * cloud_0_1) * (1.0 - 0.65 * shade_0_1) * 85.0;
+        const double q_rain = rain_mm_hr * 14.0 * std::max(0.0, skin_c - dew_c);
+        const double q_evap = (water_mm > 0.04) ? (145.0 * (1.0 - global_humidity_) * (1.0 + 0.15 * v_wind)) : 0.0;
+        const double q_sb = kSkinBaseG * (skin_c - base_c);
+        const double q_soil = kBaseSoilG * (base_c - cfg_.base_ambient_c);
+        const double d_skin = (q_sun - q_conv - q_rad - q_rain - q_evap - q_sb) * (scaled_dt / kSkinHeatCap);
+        const double d_base = (q_sb - q_soil) * (scaled_dt / kBaseHeatCap);
+        skin_c = clamp(skin_c + d_skin, -18.0, 72.0);
+        base_c = clamp(base_c + d_base, -18.0, 62.0);
+
+        // Zero-rain dawn dew condensation when clear-sky radiative cooling drops skin_c <= dew_point_c
+        if (rain_mm_hr < 0.05 && skin_c <= dew_c && water_mm < 0.18) {
+            const double dew_add = 0.00018 * (dew_c - skin_c + 0.35) * global_humidity_ * scaled_dt;
+            water_mm = std::min(0.18, water_mm + dew_add);
+        }
+        // Black ice / surface frost formation when wet asphalt drops <= 0.2 C (and melt when > 0.4 C)
+        if (skin_c <= 0.2 && water_mm > 0.03) {
+            const double freeze_rate = (0.0035 + 0.0025 * std::max(0.0, -skin_c)) * scaled_dt;
+            ice_f = clamp(ice_f + freeze_rate, 0.0, 1.0);
+        } else if (skin_c > 0.4 && ice_f > 0.0) {
+            const double melt_rate = (0.0045 + 0.0030 * (skin_c - 0.4)) * scaled_dt;
+            ice_f = std::max(0.0, ice_f - melt_rate);
+        } else if (water_mm <= 0.015) {
+            ice_f = std::max(0.0, ice_f - 0.01 * scaled_dt);
+        }
+    };
 
     {
-        const double q_sun_abs = 0.86 * solar_w_m2;
-        const double q_conv = h_conv * (global_track_c_ - global_air_c_);
-        const double q_rad = (1.0 - 0.75 * center_cloud) * 65.0;
-        const double q_rain = center_rain * 14.0 * std::max(0.0, global_track_c_ - dew_c);
-        const double center_water = hydro_water_mm_[hydro_index(0.0, 0.0)];
-        const double q_evap = (center_water > 0.05) ? (140.0 * (1.0 - global_humidity_) * (1.0 + 0.15 * v_wind)) : 0.0;
-        global_track_c_ = clamp(global_track_c_ + (q_sun_abs - q_conv - q_rad - q_rain - q_evap) * (scaled_dt / kAsphaltHeatCap),
-                                -18.0, 72.0);
+        double center_water = hydro_water_mm_[hydro_index(0.0, 0.0)];
+        step_two_layer_thermal(global_track_c_, global_base_c_, center_water, global_ice_,
+                               solar_w_m2, center_cloud, 0.0, center_rain);
+        hydro_water_mm_[hydro_index(0.0, 0.0)] = center_water;
     }
 
     // 6. Layer 1: Macro 32x32 Domain Surface Hydrology
@@ -971,14 +1082,16 @@ void WeatherSystem::step(double dt) {
         if (r_f > 0.8) {
             fc.groove = std::max(0.0, fc.groove - 0.03 * r_f * (scaled_dt / 60.0));
         }
-        // Persistent cell asphalt temperature
-        const double q_sun_f = 0.86 * solar_clear_w * (1.0 - 0.78 * cl_f * cl_f);
-        const double q_conv_f = h_conv * (fc.temp_c - global_air_c_);
-        const double q_rain_f = r_f * 14.0 * std::max(0.0, fc.temp_c - dew_c);
-        const double q_evap_f = (fc.water_mm > 0.05) ? (140.0 * (1.0 - global_humidity_) * (1.0 + 0.15 * v_wind)) : 0.0;
-        const double q_rad_f = (1.0 - 0.75 * cl_f) * 65.0;
-        fc.temp_c = clamp(fc.temp_c + (q_sun_f - q_conv_f - q_rad_f - q_rain_f - q_evap_f) * (scaled_dt / kAsphaltHeatCap),
-                          -18.0, 72.0);
+        // Heavy rain washes off rubber over ~25-45 min ("green track reset") and washes dragged-on mud off asphalt
+        if (r_f > 3.5) {
+            fc.rubber = std::max(0.0, fc.rubber - 0.000035 * (r_f - 3.0) * scaled_dt);
+        }
+        if (r_f > 1.0 && fc.mud > 0.0) {
+            fc.mud = std::max(0.0, fc.mud - 0.0018 * r_f * scaled_dt);
+        }
+        // Persistent 2-layer cell asphalt temperature + dawn dew condensation + black ice
+        step_two_layer_thermal(fc.temp_c, fc.base_temp_c, fc.water_mm, fc.ice,
+                               solar_clear_w * (1.0 - 0.78 * cl_f * cl_f), cl_f, 0.0, r_f);
         fc.last_sync_s = sim_time_s_;
     }
 
@@ -1000,22 +1113,25 @@ void WeatherSystem::step(double dt) {
             for (int j = 0; j < kTrackLanes; ++j) {
                 const std::size_t idx = i * static_cast<std::size_t>(kTrackLanes) + static_cast<std::size_t>(j);
                 double& tc = track_temp_c_[idx];
-                const double w_cur = track_water_mm_[idx];
+                double& tb = track_base_temp_c_[idx];
+                double w_cur = track_water_mm_[idx];
 
-                // Persistent thermal integration (shaded corners stay cold & wet much longer than sunlit straights!)
-                const double q_sun_t = 0.86 * solar_st;
-                const double q_conv_t = h_conv * (tc - global_air_c_);
-                const double q_rad_t = (1.0 - 0.75 * cl_st) * (1.0 - 0.65 * shade) * 65.0;
-                const double q_rain_t = r_st * 14.0 * std::max(0.0, tc - dew_c);
-                const double q_evap_t = (w_cur > 0.04) ? (145.0 * (1.0 - global_humidity_) * (1.0 + 0.15 * v_wind)) : 0.0;
-                tc = clamp(tc + (q_sun_t - q_conv_t - q_rad_t - q_rain_t - q_evap_t) * (scaled_dt / kAsphaltHeatCap),
-                           -18.0, 72.0);
+                // Persistent 2-layer skin + deep-base thermal integration + zero-rain dawn dew + black ice!
+                step_two_layer_thermal(tc, tb, w_cur, track_ice_[idx], solar_st, cl_st, shade, r_st);
 
-                // Local Penman evaporation driven by THIS cell's temperature & shade
+                // Post-storm "green track" wash-off (heavy rain washes rubber off tarmac over ~25-45 min & clears mud)
+                if (r_st > 3.5) {
+                    track_rubber_[idx] = std::max(0.0, track_rubber_[idx] - 0.000035 * (r_st - 3.0) * scaled_dt);
+                }
+                if (r_st > 1.0 && track_mud_[idx] > 0.0) {
+                    track_mud_[idx] = std::max(0.0, track_mud_[idx] - 0.0018 * r_st * scaled_dt);
+                }
+
+                // Local Penman evaporation driven by THIS cell's skin temperature & shade (paused while frozen/dew)
                 const double cell_vpd = std::max(0.0, weather_sat_vapor_kpa(tc) - global_humidity_ * weather_sat_vapor_kpa(global_air_c_));
                 const double evap_rate = (0.00022 * cell_vpd * (1.0 + 0.18 * v_wind) + 2.8e-7 * solar_st)
                                        * clamp((tc + 5.0) / 25.0, 0.15, 2.8);
-                const double evap_mm = (r_st < 0.25) ? evap_rate * scaled_dt : 0.0;
+                const double evap_mm = (r_st < 0.25 && tc > dew_c && track_ice_[idx] < 0.5) ? evap_rate * scaled_dt : 0.0;
                 if (r_st > 0.8) {
                     track_groove_[idx] = std::max(0.0, track_groove_[idx] - 0.03 * r_st * (scaled_dt / 60.0));
                 }
@@ -1128,11 +1244,13 @@ void WeatherSystem::deposit_tyre_wake(double x_m, double y_m, double speed_mps, 
 }
 
 void WeatherSystem::deposit_tyre_passage(double x_m, double y_m, double speed_mps, double load_n,
-                                         double slip_power_w, double tread_evac_scale, double dt) {
+                                         double slip_power_w, double tread_evac_scale, double dt,
+                                         double tyre_mud_0_to_1) {
     if (dt <= 0.0 || load_n <= 100.0) return;
     const double v = std::abs(speed_mps);
     if (v < 3.0) return;
     const double evac_mult = clamp(tread_evac_scale, 0.25, 2.8);
+    const double mud_in = clamp(tyre_mud_0_to_1, 0.0, 1.0);
 
     // 1. Sub-meter curvilinear track surface strip (if on bound track)
     int st_i = -1, lane_j = -1;
@@ -1154,15 +1272,24 @@ void WeatherSystem::deposit_tyre_passage(double x_m, double y_m, double speed_mp
                 track_water_mm_[idx + 1] = std::min(12.0, track_water_mm_[idx + 1] + splash);
             }
         }
+        // Off-track mud drag-on: muddy tyres shed slippery dirt onto the apex; clean tyres scrub existing mud off!
+        if (mud_in > 0.05) {
+            track_mud_[idx] = clamp(track_mud_[idx] + mud_in * clamp(v / 25.0, 0.3, 1.8) * dt * 1.8, 0.0, 1.0);
+        } else if (track_mud_[idx] > 0.0) {
+            track_mud_[idx] = std::max(0.0, track_mud_[idx] - clamp(v / 35.0, 0.2, 1.5) * dt * 0.22);
+        }
         // Deposit rubber onto asphalt lanes when dry/damp (water_mm < 0.18 mm)
         if (lane_j > 0 && lane_j + 1 < kTrackLanes && track_water_mm_[idx] < 0.18) {
             const double dry_f = clamp((0.18 - track_water_mm_[idx]) / 0.18, 0.0, 1.0);
             const double rub_add = (0.0012 * (v / 35.0) + 1.8e-7 * std::max(0.0, slip_power_w)) * dry_f * dt;
             track_rubber_[idx] = clamp(track_rubber_[idx] + rub_add, 0.0, 1.0);
         }
-        // Tyre friction & rolling hysteresis warms the local track cell!
+        // Tyre friction & rolling hysteresis warms the 4 mm asphalt skin (and helps thaw black ice!)
         const double heat_w = std::max(0.0, slip_power_w) * 0.35 + 0.006 * load_n * v;
-        track_temp_c_[idx] = clamp(track_temp_c_[idx] + (heat_w * dt) / 22000.0, -18.0, 72.0);
+        track_temp_c_[idx] = clamp(track_temp_c_[idx] + (heat_w * dt) / 9500.0, -18.0, 72.0);
+        if (track_ice_[idx] > 0.0) {
+            track_ice_[idx] = std::max(0.0, track_ice_[idx] - (heat_w * dt) / 45000.0);
+        }
     }
 
     // 2. 1.0 m toroidal fine world patch (open-world sub-meter tyre tracks!)
@@ -1174,18 +1301,24 @@ void WeatherSystem::deposit_tyre_passage(double x_m, double y_m, double speed_mp
         const double moved = fc.water_mm * pump;
         fc.water_mm = std::max(0.0, fc.water_mm - moved);
         fc.groove = clamp(fc.groove + pump * 0.90, 0.0, 1.0);
-        // Lateral splash to neighboring 1 m cells
         const double splash = 0.22 * moved;
         FineCell& f_l = ensure_fine_cell(wix, wiy + 1);
         FineCell& f_r = ensure_fine_cell(wix, wiy - 1);
         f_l.water_mm = std::min(10.0, f_l.water_mm + splash);
         f_r.water_mm = std::min(10.0, f_r.water_mm + splash);
     }
+    if (mud_in > 0.05) {
+        fc.mud = clamp(fc.mud + mud_in * clamp(v / 25.0, 0.3, 1.8) * dt * 1.6, 0.0, 1.0);
+    } else if (fc.mud > 0.0) {
+        fc.mud = std::max(0.0, fc.mud - clamp(v / 35.0, 0.2, 1.5) * dt * 0.20);
+    }
     if (fc.water_mm < 0.18) {
         const double dry_f = clamp((0.18 - fc.water_mm) / 0.18, 0.0, 1.0);
         fc.rubber = clamp(fc.rubber + (0.0010 * (v / 35.0) + 1.5e-7 * std::max(0.0, slip_power_w)) * dry_f * dt, 0.0, 1.0);
     }
-    fc.temp_c = clamp(fc.temp_c + ((std::max(0.0, slip_power_w) * 0.30 + 0.005 * load_n * v) * dt) / 22000.0, -18.0, 72.0);
+    const double fine_heat = std::max(0.0, slip_power_w) * 0.30 + 0.005 * load_n * v;
+    fc.temp_c = clamp(fc.temp_c + (fine_heat * dt) / 9500.0, -18.0, 72.0);
+    if (fc.ice > 0.0) fc.ice = std::max(0.0, fc.ice - (fine_heat * dt) / 45000.0);
 
     // 3. Macro 32x32 domain grid wake update (area-weighted so one tyre does not drain an entire 250 m city block)
     int ix = 0, iy = 0;
@@ -1282,8 +1415,10 @@ WeatherWheelSample WeatherSystem::sample_wheel(double x_m, double y_m, WeatherSu
         ws.rubber_0_to_1 = track_rubber_[idx];
         ws.drying_line_factor = track_groove_[idx];
         ws.static_shade_0_to_1 = clamp(track_stations_[st_i].st.shade_0_to_1, 0.0, 1.0);
+        ws.ice_0_to_1 = track_ice_[idx];
+        ws.mud_0_to_1 = track_mud_[idx];
         ws.on_painted_kerb = (eff_surface == WeatherSurfaceType::PaintedKerb);
-        ws.surface_mu_mult = compute_surface_mu_mult(ws.water_depth_mm, ws.rubber_0_to_1, eff_surface);
+        ws.surface_mu_mult = compute_surface_mu_mult(ws.water_depth_mm, ws.rubber_0_to_1, eff_surface, ws.ice_0_to_1, ws.mud_0_to_1);
         ws.spray_generation_0_to_1 = clamp(ws.water_depth_mm / 2.0, 0.0, 1.0);
         return ws;
     }
@@ -1301,8 +1436,10 @@ WeatherWheelSample WeatherSystem::sample_wheel(double x_m, double y_m, WeatherSu
     ws.track_temp_c = fc.temp_c;
     ws.rubber_0_to_1 = fc.rubber;
     ws.drying_line_factor = fc.groove;
+    ws.ice_0_to_1 = fc.ice;
+    ws.mud_0_to_1 = fc.mud;
     ws.on_painted_kerb = (surface == WeatherSurfaceType::PaintedKerb);
-    ws.surface_mu_mult = compute_surface_mu_mult(ws.water_depth_mm, ws.rubber_0_to_1, surface);
+    ws.surface_mu_mult = compute_surface_mu_mult(ws.water_depth_mm, ws.rubber_0_to_1, surface, ws.ice_0_to_1, ws.mud_0_to_1);
     ws.spray_generation_0_to_1 = clamp(ws.water_depth_mm / 2.0, 0.0, 1.0);
     return ws;
 }
@@ -1323,13 +1460,14 @@ WeatherSample WeatherSystem::sample(double x_m, double y_m) const {
     s.dew_point_c = weather_magnus_dew_point_c(s.ambient_air_c, s.humidity_0_to_1);
     s.barometric_kpa = clamp(baro_kpa_ - 0.35 * p_drop, 94.0, 105.0);
 
-    // Instantaneous 3D wind + veering + spatially varying gusts + storm downdrafts
+    // Instantaneous 3D wind + veering + 3D wind shadows + spatially varying gusts + storm downdrafts
+    s.wind_shelter_0_to_1 = wind_shelter_at(x_m, y_m);
     s.wind_world_mps = wind_at(x_m, y_m, s.rain_mm_per_hr);
     s.wind_speed_mps = std::hypot(s.wind_world_mps.x, s.wind_world_mps.y);
     s.wind_direction_deg = live_wind_direction_deg();
     s.gust_intensity_0_to_1 = clamp(std::hypot(gust_x_, gust_y_) / std::max(cfg_.base_wind_mps * 0.45, 1.0), 0.0, 1.0);
 
-    // Surface hydrology & persistent asphalt temperature (prefer bound sub-meter track strip, else macro + shadow)
+    // Surface hydrology & 2-layer persistent asphalt temperature (prefer bound sub-meter track strip, else macro)
     int st_i = -1, lane_j = -1;
     double d_m = 0.0;
     if (project_to_track(x_m, y_m, st_i, lane_j, d_m)) {
@@ -1341,17 +1479,22 @@ WeatherSample WeatherSystem::sample(double x_m, double y_m) const {
         s.rubber_0_to_1 = track_rubber_[idx];
         s.wetness_0_to_1 = clamp(total_w / 1.15, 0.0, 1.0);
         s.track_surface_c = track_temp_c_[idx];
+        s.track_subsurface_c = track_base_temp_c_[idx];
+        s.ice_0_to_1 = track_ice_[idx];
     } else {
         const double shadow_cool = -5.5 * s.cloud_shadow_0_to_1 * sin_e;
         const double rain_quench = -3.0 * clamp(s.rain_mm_per_hr / 12.0, 0.0, 1.0);
         s.track_surface_c = clamp(global_track_c_ + shadow_cool + rain_quench, -18.0, 72.0);
+        s.track_subsurface_c = global_base_c_;
         const int k = hydro_index(x_m, y_m);
         const double total_w = hydro_water_mm_[k];
         s.surface_water_mm = std::max(0.0, total_w - cfg_.asphalt_porosity_mm * 0.5);
         s.puddle_depth_mm = std::max(0.0, total_w - 0.85);
         s.drying_line_factor = hydro_groove_[k];
         s.wetness_0_to_1 = clamp(total_w / 1.15, 0.0, 1.0);
+        s.ice_0_to_1 = global_ice_;
     }
+    s.dew_condensing = (s.rain_mm_per_hr < 0.05 && s.track_surface_c <= s.dew_point_c);
 
     // Optical visibility, fog density & road spray intensity
     const double rain_ext = 1.0 + 0.45 * s.rain_mm_per_hr + 0.08 * s.rain_mm_per_hr * s.rain_mm_per_hr;
@@ -1403,8 +1546,63 @@ void WeatherSystem::apply_to_vehicle(const Vec3& car_pos, std::array<WheelContac
         const WeatherWheelSample ws = sample_wheel(c.point.x, c.point.y, surf);
         c.water_depth_mm = std::max(c.water_depth_mm, ws.water_depth_mm);
         c.track_temp_c = ws.track_temp_c;
-        c.surface_mu_mult = clamp(c.surface_mu_mult * ws.surface_mu_mult, 0.40, 1.25);
+        c.surface_mu_mult = clamp(c.surface_mu_mult * ws.surface_mu_mult, 0.14, 1.25);
     }
+}
+
+WeatherStrategyAdvice WeatherSystem::evaluate_pit_strategy(double x_m, double y_m, double lap_time_dry_s,
+                                                           RecommendedTyreCompound mounted) const {
+    WeatherStrategyAdvice adv;
+    const WeatherSample now = sample(x_m, y_m);
+    const double dry_lap = std::max(lap_time_dry_s, 30.0);
+    adv.current_water_mm = now.surface_water_mm;
+
+    // Predict lap-time delta vs dry slick baseline for Slick, Intermediate, and Full-Wet at a given water depth (mm)
+    auto lap_deltas = [&](double water_mm, double& d_slick, double& d_inter, double& d_wet) {
+        const double w = std::max(0.0, water_mm);
+        // Slick: fastest when dry (<0.28 mm), falls off a cliff above 0.5 mm (aquaplaning)
+        d_slick = (w < 0.15) ? (dry_lap * 0.04 * (w / 0.15))
+                             : (dry_lap * (0.04 + 0.19 * (w - 0.15) + 0.08 * (w - 0.15) * (w - 0.15)));
+        // Inter: ~3.5% slower than slick on bone-dry (block squirm/overheat), optimal across 0.30..1.55 mm
+        d_inter = dry_lap * (0.035 + 0.055 * std::max(0.0, w - 0.25) + 0.045 * std::pow(std::max(0.0, w - 1.35), 2.0));
+        // Full Wet: ~7.5% slower than slick on dry (severe squirm), supreme above ~1.6 mm standing water
+        d_wet   = dry_lap * (0.078 + 0.032 * std::max(0.0, w - 0.40));
+    };
+    auto pick_best = [&](double water_mm) -> RecommendedTyreCompound {
+        double ds = 0, di = 0, dw = 0;
+        lap_deltas(water_mm, ds, di, dw);
+        if (ds <= di && ds <= dw) return RecommendedTyreCompound::Slick;
+        return (di <= dw) ? RecommendedTyreCompound::Intermediate : RecommendedTyreCompound::FullWet;
+    };
+
+    lap_deltas(now.surface_water_mm, adv.slick_lap_delta_s, adv.inter_lap_delta_s, adv.wet_lap_delta_s);
+    adv.current_best = pick_best(now.surface_water_mm);
+
+    // Forward-integrate expected standing water depth along upstream storm advection over next 30 minutes (30 x 60 s steps)
+    const double vpd_kpa = std::max(0.0, weather_sat_vapor_kpa(now.track_surface_c) - now.humidity_0_to_1 * weather_sat_vapor_kpa(now.ambient_air_c));
+    const double evap_mm_s = 0.00020 * vpd_kpa * (1.0 + 0.18 * now.wind_speed_mps) + 2.2e-7 * now.solar_irradiance_w_m2;
+    double w_sim = now.surface_water_mm;
+    adv.predicted_water_15m_mm = w_sim;
+    adv.crossover_eta_s = -1.0;
+
+    for (int m = 1; m <= 30; ++m) {
+        const double t_off = m * 60.0;
+        double r_m = 0.0, cl_m = 0.0;
+        evaluate_cells_at(x_m, y_m, t_off, r_m, cl_m);
+        const double rain_add = r_m * (60.0 / 3600.0);
+        const double drain = std::max(0.0, w_sim - 0.35) * 0.055;
+        const double evap = (r_m < 0.25) ? (evap_mm_s * (1.0 - 0.55 * cl_m) * 60.0) : 0.0;
+        w_sim = clamp(w_sim + rain_add - drain - evap, 0.0, 6.0);
+        if (m == 15) adv.predicted_water_15m_mm = w_sim;
+        const RecommendedTyreCompound best_m = pick_best(w_sim);
+        if (adv.crossover_eta_s < 0.0 && best_m != mounted) {
+            adv.crossover_eta_s = t_off;
+        }
+    }
+    adv.forecast_15m_best = pick_best(adv.predicted_water_15m_mm);
+    adv.box_now = (adv.current_best != mounted)
+               || (adv.crossover_eta_s >= 0.0 && adv.crossover_eta_s <= dry_lap * 1.15);
+    return adv;
 }
 
 WeatherRadarGrid WeatherSystem::sample_radar(double center_x_m, double center_y_m, double range_m) const {
