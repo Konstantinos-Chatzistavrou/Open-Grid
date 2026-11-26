@@ -15,6 +15,7 @@ import { KitSky, kitHdriOn } from './fx/kitHdri';
 import { kitMaterialsOn, setKitMaterialsEnabled } from './fx/kitMaterials';
 import { ForzaVfxController, type ForzaVfxFrameInput } from './fx/forzaVfx';
 import { Garage } from './scene/garage';
+import { GarageVisitors } from './scene/garageVisitors';
 import { createNavScreen } from './scene/navScreen';
 import { SHOW_PRESETS, ShowroomPost } from './showroomPost';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -52,7 +53,7 @@ import { Minimap, type Blip } from './minimap';
 import { LOAD_TIPS, Loader, steadyFrames } from './loading';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { RemoteCars } from './net';
-import { Party, cleanCode, type Progress } from './party';
+import { Party, cleanCode, type GarageEventNetMsg, type GarageStateNetMsg, type Progress } from './party';
 import { Menu, rank, type Gfx, type Screen, type Standing } from './menu';
 import { applyMods, customOf, loadSelection, modsOf, paintOf, saveSelection, type CatalogCar, type Mode } from './garage';
 import { cleanCustom } from './custom-data';
@@ -1093,6 +1094,15 @@ async function main() {
    */
   let inGarage = false;
   const IDENT_Q = new THREE.Quaternion();
+  const garageVisitors = new GarageVisitors();
+  let garageWalkSendAt = 0;
+  const syncGarageVisitorsList = () => {
+    if (!party || !inGarage) { garageVisitors.clear(); return; }
+    for (const m of party.members) {
+      if (m.id === party.selfId) continue;
+      garageVisitors.ensure(m.id, m.name, m.skin);
+    }
+  };
   const setGarage = (on: boolean, recapture = true) => {
     if (!garage || on === inGarage) return;
     inGarage = on;
@@ -1100,6 +1110,8 @@ async function main() {
       visual.model.position.set(0, 0, 0);
       garage.holder.add(visual.model);
       garage.holder.position.set(0, -visual.groundY, 0);
+      garageVisitors.attachTo(garage.scene);
+      syncGarageVisitorsList();
       // Entering the garage washes the car back to showroom gloss (unless pinned by ?wear=).
       if (wearOverride === null) {
         resetPaintWear(paintWear);
@@ -1482,6 +1494,7 @@ async function main() {
       visual.setPaint(paintOf(sel, catalog), sel.finish);
       applyLook();
       party?.updateMe(meForParty());
+      broadcastGarageState(swap ? `Switched to ${carLabel}` : `Updated paint (${sel.finish})`);
       if (swap) {
         await steadyFrames(3, 68, 2200);
         loader.text('Ready!', 100);
@@ -1501,7 +1514,13 @@ async function main() {
     screen: (sc: Screen) => {
       if (sc === 'garage') { orbit.dist = 6.6; orbit.el = 0.17; }   // whole car in frame, just above the belt line
       if (sc === 'title' || sc === 'garage' || sc === 'modes' || sc === 'lobby') setState(sc);
-      if (sc === 'garage') preloadGarageCars();
+      if (sc === 'garage') {
+        preloadGarageCars();
+        if (!menu.visitingGarage) broadcastGarageState(`Opened Garage`);
+        syncGarageVisitorsList();
+      } else if (party && party.liveGarage?.hostId === party.selfId) {
+        party.sendGarageState(null);
+      }
     },
     // garage camera presets are relative to the car: 0 = in front, pi/2 = the driver's (left) side, pi = behind
     cam: (az, el, dist) => {
@@ -1535,7 +1554,7 @@ async function main() {
     partyMe: () => party?.updateMe(meForParty()),
     spectate: () => enterSpectate(),
     assists: () => { toToggles(assistSet, input.assists); saveAssists(assistSet); },
-    look: () => { applyLook(); party?.updateMe(meForParty()); pushLook(); },
+    look: () => { applyLook(); party?.updateMe(meForParty()); pushLook(); broadcastGarageState('Customized body / wheels / lighting'); },
     // the bank/pay choice: spend reputation to clear the wanted level before the next race
     layLow: () => { if (sp.kind !== 'sp' || sp.xp < 300) return; sp.penalty(300); heat.clear(); renderHeat(); menu.heat = 0; menu.render(); },
     // driving camera chosen in Settings: chase / far / cinematic / hood / bumper (C cycles)
@@ -1600,20 +1619,62 @@ async function main() {
     garageIgnition: () => {
       syncAudioEngine();
       menu.garageEngineOn = audio.toggleGarageIgnition();
+      if (!menu.visitingGarage) {
+        party?.sendGarageEvent({ kind: 'ignition', fromName: sel.name, engineOn: menu.garageEngineOn });
+        broadcastGarageState(menu.garageEngineOn ? 'Started engine ignition' : 'Shut off engine');
+      }
       menu.render();
     },
     garageRevHold: (held) => {
       if (held) syncAudioEngine();
       menu.garageEngineOn = audio.setGarageRev(held);
+      if (!menu.visitingGarage) party?.sendGarageEvent({ kind: held ? 'rev_start' : 'rev_stop', fromName: sel.name });
     },
     garageRev: () => {
       syncAudioEngine();
       audio.pulseGarageRev();
       menu.garageEngineOn = audio.garageEngineOn;
+      if (!menu.visitingGarage) party?.sendGarageEvent({ kind: 'rev', fromName: sel.name });
     },
     garageWalk: (on) => {
       garageWalk.active = on;
       if (on) { garageWalk.pos.set(2.4, 1.55, 3.6); garageWalk.yaw = -2.45; }
+    },
+    garageInvite: () => {
+      const shareNow = (p: Party) => {
+        broadcastGarageState('Opened Live Co-Op Garage');
+        syncGarageVisitorsList();
+        const url = p.garageLink;
+        navigator.clipboard?.writeText(url).catch(() => {});
+        hud.toast('👥 LIVE GARAGE LINK COPIED', `Code ${p.code} · Friends can watch you mod & rev live!`);
+        menu.render();
+      };
+      if (party) { shareNow(party); return; }
+      if (menu.partyBusy) return;
+      menu.partyBusy = true;
+      hud.toast('👥 OPENING LIVE GARAGE…', 'Creating peer-to-peer garage room');
+      Party.create(meForParty())
+        .then((p) => { attachParty(p, true); shareNow(p); })
+        .catch((e: Error) => { hud.toast('GARAGE INVITE FAILED', e.message); })
+        .finally(() => { menu.partyBusy = false; menu.render(); });
+    },
+    garageVisitJoin: () => {
+      const gState = party?.liveGarage;
+      if (!gState || gState.hostId === party?.selfId) return;
+      menu.visitingGarage = gState;
+      menu.garageFeed = [`🔧 Joined ${gState.hostName}'s Live Garage`];
+      menu.garageHideUi = false;
+      menu.show('garage');
+      void applyVisitorGarageState(gState);
+    },
+    garageVisitLeave: () => { leaveVisitedGarage(); },
+    garageEmote: (text) => {
+      if (!party || !text) return;
+      party.sendGarageEvent({ kind: 'emote', fromName: sel.name, text });
+      menu.garageFeed.push(`💬 You: ${text}`);
+      if (menu.garageFeed.length > 12) menu.garageFeed.shift();
+      hud.toast('💬 REACTION SENT', text);
+      menu.render();
     },
     nrChanged: () => {
       saveNightRunners(nr);
@@ -1621,6 +1682,8 @@ async function main() {
       visual.setStance(st.camberFront, st.camberRear);
       syncAudioEngine();
       if (carKey() !== builtKey) { rebuildPlayer(); spawn(); syncPose(); }
+      const eng = engineOf(nr, sel.car);
+      broadcastGarageState(`Tuned stance / engine (${ENGINE_SWAPS[eng.swap]?.label ?? eng.swap})`);
     },
     buyAuction: (lotId) => {
       const lot = AUCTION_LOTS.find((x) => x.id === lotId);
@@ -2095,33 +2158,124 @@ async function main() {
   (g.__game as Record<string, unknown>).spotter = spotter;
   menu.spotterOn = spotter.enabled;
   (g.__game as Record<string, unknown>).penalties = penalties;
+  let pendingGarageInvite = false;
   {
-    const inv = cleanCode(params.get('party') ?? '');
-    if (inv.length >= 4) menu.invite = inv;
+    const gInv = cleanCode(params.get('garage') ?? '');
+    const pInv = cleanCode(params.get('party') ?? '');
+    if (gInv.length >= 4) { menu.invite = gInv; menu.inviteKind = 'garage'; pendingGarageInvite = true; }
+    else if (pInv.length >= 4) { menu.invite = pInv; menu.inviteKind = 'party'; }
+  }
+
+  /** Build a serializable snapshot of our current Garage build to stream live to visiting friends. */
+  function buildGarageState(changeNote?: string): GarageStateNetMsg {
+    const st = stanceOf(nr, sel.car);
+    const eng = engineOf(nr, sel.car);
+    return {
+      hostId: party?.selfId ?? '',
+      hostName: sel.name,
+      car: sel.car,
+      paint: paintOf(sel, catalog),
+      finish: sel.finish,
+      look: cleanCustom(customOf(sel)),
+      camberFront: st.camberFront,
+      camberRear: st.camberRear,
+      swap: eng.swap,
+      turbo: eng.turbo,
+      manifold: eng.manifold,
+      engineOn: audio.garageEngineOn,
+      skin: sel.skin,
+      changeNote,
+    };
+  }
+  function broadcastGarageState(changeNote?: string) {
+    if (!party || menu.screen !== 'garage' || menu.visitingGarage) return;
+    party.sendGarageState(buildGarageState(changeNote));
+  }
+
+  /** Display a friend's live garage car, paint, bodykit, stance & exhaust voice without touching our own saved `sel`. */
+  const applyVisitorGarageState = (gs: GarageStateNetMsg) => (visualQueue = visualQueue.then(async () => {
+    if (!menu.visitingGarage) return;
+    const path = visualPathOf(gs.car);
+    const needModel = path !== visualPath;
+    if (needModel) {
+      const cfg = path === DEFAULT_VISUAL ? defaultCfg : await fetchVisualCfg(path);
+      const next = await CarVisual.load(cfg, visual.headlights);
+      probe?.attach(next.model, probeIntensity);
+      const wasInGarage = inGarage;
+      setGarage(false, false);
+      scene.remove(visual.root);
+      damage.dispose();
+      visualPath = path; visualCfg = cfg; visual = next; shape = shapeOf(cfg);
+      syncForzaWheelRadii();
+      fitAuthored(next, path);
+      drawEarly(visual.model);
+      carSwapped = true;
+      visual.renderDt = capInterval ? capInterval / 1000 : 1 / 60;
+      syncHeadlights();
+      scene.add(visual.root);
+      damage = new DamageVisuals(visual, visualCfg, pw, scene);
+      wireDamage();
+      headShadows = visual.headlights.filter((s) => s.castShadow).map((s) => s.shadow);
+      for (const sh of headShadows) sh.autoUpdate = false;
+      visual.update(pos, quat, car.out);
+      setGarage(wasInGarage);
+    }
+    visual.setPlate(gs.hostName);
+    visual.setPaint(gs.paint, gs.finish as never);
+    visual.custom.apply(cleanCustom(gs.look), gs.paint);
+    visual.driver.setSkin(skinOf(gs.skin));
+    visual.setStance(gs.camberFront, gs.camberRear);
+    const sw = ENGINE_SWAPS[gs.swap as keyof typeof ENGINE_SWAPS];
+    audio.setCarProfile(gs.car, sw?.voice, gs.turbo !== 'stock');
+    if (gs.changeNote) {
+      const line = `🔧 ${gs.hostName}: ${gs.changeNote}`;
+      if (menu.garageFeed[menu.garageFeed.length - 1] !== line) {
+        menu.garageFeed.push(line);
+        if (menu.garageFeed.length > 12) menu.garageFeed.shift();
+      }
+      hud.toast(`🔧 ${gs.hostName.toUpperCase()}`, gs.changeNote);
+    }
+    if (menu.screen === 'garage') menu.render();
+  }).catch((e) => console.error('visitor garage swap failed', e)));
+
+  function leaveVisitedGarage() {
+    if (!menu.visitingGarage) return;
+    menu.visitingGarage = null;
+    menu.garageFeed = [];
+    garageWalk.active = false;
+    menu.garageWalkActive = false;
+    audio.stopGarageEngine();
+    menu.garageEngineOn = false;
+    void showCar();
+    syncAudioEngine();
+    menu.show(party ? 'lobby' : 'title');
   }
 
   /** Party session: the leader started (load now), everyone is in (go), back to the lobby, others' cars and progress. */
   let partyGo = false, loadingSession = false;
-  function attachParty(p: Party) {
+  function attachParty(p: Party, stayInGarage = false) {
     party = p;
     menu.party = p;
     presenceBeat();   // friends see the party at once
     menu.partyNote = '';
     menu.invite = '';
-    if (params.has('party')) history.replaceState(null, '', location.pathname + location.search.replace(/[?&]party=[^&]*/, '').replace(/^&/, '?'));
+    if (params.has('party') || params.has('garage')) {
+      history.replaceState(null, '', location.pathname + location.search.replace(/[?&](party|garage)=[^&]*/g, '').replace(/^&/, '?'));
+    }
     if (p.isHost) p.setMode(p.mode, p.laps, sel.realism, sel.copMode);   // the leader's own rules setting is the party default
     p.hooks = {
       changed: () => {
         if (remote) { remote.names = new Map(p.members.map((m) => [m.id, m.name])); remote.looks = new Map(p.members.map((m) => [m.id, { skin: m.skin, look: m.look }])); remote.refreshTags(); }
-        if (menu.screen === 'lobby' || menu.screen === 'modes') menu.render();
+        if (inGarage) syncGarageVisitorsList();
+        if (menu.screen === 'lobby' || menu.screen === 'modes' || menu.screen === 'garage') menu.render();
         setExtra();
       },
-      start: () => { partyGo = false; void startSession('online'); },
+      start: () => { if (menu.visitingGarage) leaveVisitedGarage(); partyGo = false; void startSession('online'); },
       go: () => { if (loadingSession) partyGo = true; else if (state === 'busy') void beginRace(); },
       lobby: () => { if (driving() || state === 'busy') quitSession('lobby'); else if (menu.screen === 'lobby') menu.render(); },
       pose: (id, ps, paint) => { if (remote && (driving() || state === 'busy')) remote.receive(id, ps, paint); },
       progress: (id, gp) => { remoteProg.set(id, gp); if (state === 'results') menu.updateResults(standings()); },
-      left: (id) => { remote?.remove(id); remoteProg.delete(id); if (state === 'spectate') specRetarget(); },
+      left: (id) => { remote?.remove(id); remoteProg.delete(id); garageVisitors.remove(id); if (state === 'spectate') specRetarget(); },
       gone: (id) => { remote?.remove(id); if (state === 'spectate') specRetarget(); },
       breach: (spec: BreachSpec) => { if (driving()) nyc?.breaches.open(spec); },
       pole: (x, y, vx, vz) => {
@@ -2137,21 +2291,86 @@ async function main() {
         wagers.onNetWager(id, name, w, p.selfId);
       },
       zoneScore: (_id, z) => { zones.receiveNetScore(z); },
+      garageState: (_fromId, gState) => {
+        if (!gState) {
+          if (menu.visitingGarage) {
+            hud.toast('🔧 GARAGE CLOSED', `${menu.visitingGarage.hostName} left their garage`);
+            leaveVisitedGarage();
+          } else if (menu.screen === 'lobby') menu.render();
+          return;
+        }
+        if (pendingGarageInvite && gState.hostId !== p.selfId) {
+          pendingGarageInvite = false;
+          menu.visitingGarage = gState;
+          menu.garageFeed = [`🔧 Joined ${gState.hostName}'s Live Garage`];
+          menu.garageHideUi = false;
+          menu.show('garage');
+          void applyVisitorGarageState(gState);
+          return;
+        }
+        if (menu.visitingGarage && menu.visitingGarage.hostId === gState.hostId) {
+          menu.visitingGarage = gState;
+          void applyVisitorGarageState(gState);
+        } else if (menu.screen === 'lobby') {
+          menu.render();
+        }
+      },
+      garageEvent: (fromId, e: GarageEventNetMsg) => {
+        if (e.kind === 'emote' && e.text) {
+          garageVisitors.react(fromId, e.text, performance.now());
+          hud.toast(`💬 ${e.fromName}`, e.text);
+          if (menu.visitingGarage) {
+            menu.garageFeed.push(`💬 ${e.fromName}: ${e.text}`);
+            if (menu.garageFeed.length > 12) menu.garageFeed.shift();
+            menu.render();
+          }
+          return;
+        }
+        if (!menu.visitingGarage) return;
+        audio.unlock();
+        if (e.kind === 'rev') {
+          audio.pulseGarageRev();
+          hud.toast(`🔥 ${e.fromName}`, 'REVVED THE ENGINE!');
+        } else if (e.kind === 'rev_start') {
+          audio.setGarageRev(true);
+        } else if (e.kind === 'rev_stop') {
+          audio.setGarageRev(false);
+        } else if (e.kind === 'ignition') {
+          if (e.engineOn) audio.toggleGarageIgnition();
+          else audio.stopGarageEngine();
+          hud.toast(`🔑 ${e.fromName}`, e.engineOn ? 'STARTED ENGINE' : 'ENGINE OFF');
+        }
+      },
+      garageWalk: (fromId, w) => {
+        if (inGarage) garageVisitors.setWalk(fromId, w.x, w.z, w.yaw, w.name, w.skin);
+      },
       remoteVoice: (id, stream) => { voice.attachRemoteStream(id, stream); },
       remoteVoiceGone: (id) => { voice.detachRemoteStream(id); },
       closed: (reason) => detachParty(reason),
     };
     if (voice.enabled && voice.localStream) p.setVoiceStream(voice.localStream);
-    menu.show('lobby');
+    if (!stayInGarage) {
+      if (pendingGarageInvite && p.liveGarage && p.liveGarage.hostId !== p.selfId) {
+        pendingGarageInvite = false;
+        menu.visitingGarage = p.liveGarage;
+        menu.garageFeed = [`🔧 Joined ${p.liveGarage.hostName}'s Live Garage`];
+        menu.show('garage');
+        void applyVisitorGarageState(p.liveGarage);
+      } else {
+        menu.show('lobby');
+      }
+    }
     setExtra();
   }
   function detachParty(reason: string) {
+    if (menu.visitingGarage) leaveVisitedGarage();
+    garageVisitors.clear();
     party = null;
     menu.party = null;
     presenceBeat();
     menu.partyNote = reason;
     if (driving() || state === 'busy') quitSession('lobby');
-    else if (menu.screen === 'lobby') menu.render();
+    else if (menu.screen === 'lobby' || menu.screen === 'garage') menu.render();
     else if (reason) menu.show('lobby');
     setExtra();
   }
@@ -3679,6 +3898,7 @@ async function main() {
     if (inGarage) {
       visual.custom.sync(garage!.holder.position, IDENT_Q);   // livery mask: the model sits on the turntable, not at the body
       if (garage!.dirtyEnv) { garage!.captureEnv(); probe?.fromCube(garage!.cube.texture); }
+      garageVisitors.update(frame, now);
     }
     if (!driving() || state === 'busy') {
       if (inGarage && garageWalk.active) {
@@ -3690,6 +3910,10 @@ async function main() {
         garageWalk.pos.z = Math.max(-7.5, Math.min(7.5, garageWalk.pos.z + Math.cos(garageWalk.yaw) * mf * frame * 3.0));
         camera.position.copy(garageWalk.pos);
         camera.lookAt(0, 0.72, 0);
+        if (party && now - garageWalkSendAt > 85) {
+          garageWalkSendAt = now;
+          party.sendGarageWalk({ x: garageWalk.pos.x, z: garageWalk.pos.z, yaw: garageWalk.yaw, name: sel.name, skin: sel.skin });
+        }
       } else {
         placeShowroom(frame, pos);
       }

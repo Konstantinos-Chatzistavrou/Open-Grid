@@ -58,6 +58,41 @@ export interface ZoneScoreNetMsg {
   name: string;
 }
 
+/** Live Co-Op Garage state broadcast by the host whenever they modify their car. */
+export interface GarageStateNetMsg {
+  hostId: string;
+  hostName: string;
+  car: string;
+  paint: string;
+  finish: string;
+  look: Custom;
+  camberFront: number;
+  camberRear: number;
+  swap: string;
+  turbo: string;
+  manifold: string;
+  engineOn: boolean;
+  skin?: string;
+  changeNote?: string;
+}
+
+/** Live Co-Op Garage real-time event (engine rev, ignition toggle, reaction emote, or leaving garage). */
+export interface GarageEventNetMsg {
+  kind: 'rev' | 'rev_start' | 'rev_stop' | 'ignition' | 'emote' | 'leave';
+  fromName: string;
+  text?: string;
+  engineOn?: boolean;
+}
+
+/** Live walking position of a friend hanging out inside the garage. */
+export interface GarageWalkNetMsg {
+  x: number;
+  z: number;
+  yaw: number;
+  name: string;
+  skin?: string;
+}
+
 type Msg =
   | { t: 'hello'; name: string; car: string; paint: number; skin?: string; look?: Custom; city?: string }
   | { t: 'lobby'; members: Member[]; mode: PartyMode; laps: number; realism: boolean; copMode: boolean; phase: Phase }
@@ -73,6 +108,9 @@ type Msg =
   | { t: 'flash'; id?: string }
   | { t: 'wager'; id?: string; w: WagerNetMsg }
   | { t: 'zone'; id?: string; z: ZoneScoreNetMsg }
+  | { t: 'gstate'; id?: string; g: GarageStateNetMsg | null }
+  | { t: 'gevent'; id?: string; e: GarageEventNetMsg }
+  | { t: 'gwalk'; id?: string; w: GarageWalkNetMsg }
   | { t: 'bye'; reason: string };
 
 export interface PartyHooks {
@@ -99,6 +137,12 @@ export interface PartyHooks {
   wager?(fromId: string, w: WagerNetMsg): void;
   /** speed trap / drift zone score posted by another player in Free Roam */
   zoneScore?(fromId: string, z: ZoneScoreNetMsg): void;
+  /** live Co-Op Garage build state updated by the host (or null when host closed garage) */
+  garageState?(fromId: string, g: GarageStateNetMsg | null): void;
+  /** live Co-Op Garage event (rev, ignition, reaction emote) */
+  garageEvent?(fromId: string, e: GarageEventNetMsg): void;
+  /** live walking position of a friend hanging out in the garage */
+  garageWalk?(fromId: string, w: GarageWalkNetMsg): void;
   /** incoming WebRTC peer voice stream (0-cost P2P walkie-talkie / Car Meet proximity voice) */
   remoteVoice?(peerId: string, stream: MediaStream): void;
   /** remote peer closed their voice stream */
@@ -116,9 +160,9 @@ export function newCode() {
   return s;
 }
 export const cleanCode = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
-export const inviteLink = (code: string) => {
+export const inviteLink = (code: string, kind: 'party' | 'garage' = 'party') => {
   const peer = new URLSearchParams(location.search).get('peer');   // own broker: friends must use the same one
-  return `${location.origin}${location.pathname}?party=${code}${peer ? `&peer=${encodeURIComponent(peer)}` : ''}`;
+  return `${location.origin}${location.pathname}?${kind}=${code}${peer ? `&peer=${encodeURIComponent(peer)}` : ''}`;
 };
 
 function peerOptions(): PeerOptions {
@@ -152,6 +196,8 @@ export class Party {
   /** race events only: toggle tactical physics police pursuit ON/OFF (always OFF in Free Roam) */
   copMode = true;
   phase: Phase = 'lobby';
+  /** Current live Co-Op Garage session active in this party (if any member is hosting their garage). */
+  liveGarage: GarageStateNetMsg | null = null;
   hooks: PartyHooks = noop;
   private conns = new Map<string, DataConnection>();   // leader: every member's connection; member: the leader's
   private voiceCalls = new Map<string, MediaConnection>();
@@ -221,6 +267,7 @@ export class Party {
   get selfId() { return this.peer.id; }
   get host() { return this.members.find((m) => m.host); }
   get link() { return inviteLink(this.code); }
+  get garageLink() { return inviteLink(this.code, 'garage'); }
 
   /** New party with us as leader. Optional `preferredCode` hosts a deterministic Official Split / public room code. */
   static create(me: Me, preferredCode?: string): Promise<Party> {
@@ -301,6 +348,11 @@ export class Party {
     if (!this.conns.delete(id)) return;
     const vc = this.voiceCalls.get(id);
     if (vc) { try { vc.close(); } catch { /* gone */ } this.voiceCalls.delete(id); this.hooks.remoteVoiceGone?.(id); }
+    if (this.liveGarage?.hostId === id) {
+      this.liveGarage = null;
+      this.broadcast({ t: 'gstate', id, g: null });
+      this.hooks.garageState?.(id, null);
+    }
     this.members = this.members.filter((m) => m.id !== id);
     this.loaded.delete(id);
     this.hooks.left(id);
@@ -422,6 +474,28 @@ export class Party {
     else this.sendHost(m);
   }
 
+  /** Broadcast live Co-Op Garage build state (or null when leaving Garage) so friends see modifications in real time. */
+  sendGarageState(g: GarageStateNetMsg | null) {
+    this.liveGarage = g;
+    const m: Msg = { t: 'gstate', g };
+    if (this.isHost) this.broadcast({ ...m, id: this.selfId });
+    else this.sendHost(m);
+  }
+
+  /** Broadcast a real-time Co-Op Garage event (rev, ignition, reaction emote). */
+  sendGarageEvent(e: GarageEventNetMsg) {
+    const m: Msg = { t: 'gevent', e };
+    if (this.isHost) this.broadcast({ ...m, id: this.selfId });
+    else this.sendHost(m);
+  }
+
+  /** Broadcast our walking position inside the Co-Op Garage so friends see our 3D driver avatar move around the car. */
+  sendGarageWalk(w: GarageWalkNetMsg) {
+    const m: Msg = { t: 'gwalk', w };
+    if (this.isHost) this.broadcast({ ...m, id: this.selfId });
+    else this.sendHost(m);
+  }
+
   /** We left the session (lobby, menu): the others take our car off the road. */
   sendGone() {
     if (this.isHost) this.broadcast({ t: 'gone', id: this.selfId });
@@ -460,6 +534,7 @@ export class Party {
           mem.look = cleanCustom(m.look);
           mem.city = typeof m.city === 'string' ? m.city.replace(/[^a-z]/g, '').slice(0, 16) : undefined;
           this.pushLobby();
+          if (this.liveGarage && c.open) c.send({ t: 'gstate', id: this.liveGarage.hostId, g: this.liveGarage } satisfies Msg);
           break;
         }
         case 'loaded': {
@@ -513,6 +588,24 @@ export class Party {
           this.broadcast({ t: 'zone', id: from, z: m.z }, from);
           this.hooks.zoneScore?.(from, m.z);
           break;
+        case 'gstate': {
+          if (!this.conns.has(from)) return;
+          const g = m.g ? { ...m.g, hostId: from, hostName: cleanName(m.g.hostName), look: cleanCustom(m.g.look) } : null;
+          this.liveGarage = g;
+          this.broadcast({ t: 'gstate', id: from, g }, from);
+          this.hooks.garageState?.(from, g);
+          break;
+        }
+        case 'gevent':
+          if (!this.conns.has(from) || !m.e || typeof m.e.kind !== 'string') return;
+          this.broadcast({ t: 'gevent', id: from, e: m.e }, from);
+          this.hooks.garageEvent?.(from, m.e);
+          break;
+        case 'gwalk':
+          if (!this.conns.has(from) || !m.w || !finite(m.w as unknown as Record<string, unknown>, ['x', 'z', 'yaw'])) return;
+          this.broadcast({ t: 'gwalk', id: from, w: m.w }, from);
+          this.hooks.garageWalk?.(from, m.w);
+          break;
       }
       return;
     }
@@ -540,6 +633,14 @@ export class Party {
       case 'flash': if (m.id && m.id !== this.selfId) this.hooks.flash?.(m.id); break;
       case 'wager': if (m.id && m.id !== this.selfId && m.w) this.hooks.wager?.(m.id, m.w); break;
       case 'zone': if (m.id && m.id !== this.selfId && m.z) this.hooks.zoneScore?.(m.id, m.z); break;
+      case 'gstate': {
+        const g = m.g ? { ...m.g, hostName: cleanName(m.g.hostName), look: cleanCustom(m.g.look) } : null;
+        this.liveGarage = g;
+        if (m.id && m.id !== this.selfId) this.hooks.garageState?.(m.id, g);
+        break;
+      }
+      case 'gevent': if (m.id && m.id !== this.selfId && m.e) this.hooks.garageEvent?.(m.id, m.e); break;
+      case 'gwalk': if (m.id && m.id !== this.selfId && m.w) this.hooks.garageWalk?.(m.id, m.w); break;
       case 'bye': this.end(m.reason); break;
     }
   }

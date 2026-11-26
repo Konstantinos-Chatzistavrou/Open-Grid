@@ -9,7 +9,7 @@ import { PLATE_MAX, USERNAME_MAX, USERNAME_MIN, usernameError } from './username
 import { FINISHES, LOOK_PRESETS, MODS, MOD_KEYS, SWATCHES, applyLookPreset, applyMods, bodyEffect, bodyHint, customOf, kitEffect, kitHint, modsOf, paintOf, partEffect, rimHint, saveSelection, statsOf, wingHint,
   type CatalogCar, type Finish, type Mode, type ModKey, type Selection } from './garage';
 import { formatLap } from './hud';
-import { FREE_ROAM_MAX_PLAYERS, RACE_MAX_PLAYERS, cleanCode, type Party, type PartyMode } from './party';
+import { FREE_ROAM_MAX_PLAYERS, RACE_MAX_PLAYERS, cleanCode, type GarageStateNetMsg, type Party, type PartyMode } from './party';
 import type { ControlsUi } from './controls-menu';
 import { PRESET_INFO, applyPreset, assistsOffCount, matchPreset, type AssistSettings, type BrakingAssistLevel, type Preset, type SteeringAssistLevel } from './assists';
 import { fmt, fmtXp, type Career, type MpCareer, type SpCareer } from './career';
@@ -138,6 +138,10 @@ export interface MenuHooks {
   garageRev?(): void;
   garageRevHold?(held: boolean): void;
   garageWalk?(on: boolean): void;
+  garageInvite?(): void;
+  garageVisitJoin?(): void;
+  garageVisitLeave?(): void;
+  garageEmote?(text: string): void;
   nrChanged?(): void;
   buyAuction?(lotId: string): void;
   prestigeReset?(): void;
@@ -197,6 +201,9 @@ export class Menu {
   partyNote = '';
   partyBusy = false;
   invite = '';
+  inviteKind: 'party' | 'garage' = 'party';
+  visitingGarage: GarageStateNetMsg | null = null;
+  garageFeed: string[] = [];
   private joinCode = '';
   private lastResults: ResultData | null = null;
   /** the Controls screen (main sets it up: it needs the input and force-feedback objects) */
@@ -295,7 +302,7 @@ export class Menu {
   /** Persistent scroll positions (vertical + horizontal) across re-renders until the menu screen itself is closed. */
   private scrollMem = new Map<string, { top: number; left: number }>();
   /** True when the Garage right/bottom customization drawer is visible (so camera frames car cleanly on the left/upper stage). */
-  get garageDrawerOpen(): boolean { return this.screen === 'garage' && this.garagePillar !== 'rides' && !this.garageHideUi; }
+  get garageDrawerOpen(): boolean { return this.screen === 'garage' && !this.visitingGarage && this.garagePillar !== 'rides' && !this.garageHideUi; }
   /** the option under the pointer: the live panel previews its effect without applying it */
   private hover: { k: string; v: string | number } | null = null;
 
@@ -447,8 +454,8 @@ export class Menu {
   private title() {
     const curCar = this.car();
     const dis = this.tuning ? 'disabled' : '';
-    const invite = this.invite && !this.party ? `<div class="invite"><span>🏁 You're invited to party <b>${esc(this.invite)}</b></span>
-        <button class="primary" data-act="invite" ${dis}>Join Party</button><button class="small" data-act="noinvite" aria-label="Dismiss">✕</button></div>` : '';
+    const invite = this.invite && !this.party ? `<div class="invite"><span>${this.inviteKind === 'garage' ? '🔧' : '🏁'} You're invited to ${this.inviteKind === 'garage' ? "a friend's Live Garage" : 'party'} <b>${esc(this.invite)}</b></span>
+        <button class="primary" data-act="invite" ${dis}>${this.inviteKind === 'garage' ? 'Join Live Garage' : 'Join Party'}</button><button class="small" data-act="noinvite" aria-label="Dismiss">✕</button></div>` : '';
     const last = this.sp.last ?? this.mp.last;
     const earned = last && (last.xp || last.cr) ? `<div class="earned">+${fmtXp(last.xp)}${last.cr ? ` · +${fmt(last.cr)}` : ''} <span class="dim">${esc(last.reason)}</span>${last.levelUp ? ` <b class="lvup">LEVEL ${last.levelUp}</b>` : ''}</div>` : '';
     if (this.identity.needsPick && !this.tuning) return this.pickName();
@@ -729,6 +736,50 @@ export class Menu {
   }
 
   private garage() {
+    const camNow = GARAGE_CAMS[this.garageCamIdx % GARAGE_CAMS.length];
+    if (this.visitingGarage) {
+      const vg = this.visitingGarage;
+      const vCar = this.cars.find((c) => c.id === vg.car);
+      const vBr = brandOfCar(vg.car);
+      const vSwap = ENGINE_SWAPS[vg.swap as SwapId]?.label ?? stockEngineOfCar(vg.car).label;
+      const vTurbo = TURBOS[vg.turbo as TurboId]?.label ?? 'Stock';
+      const watchers = Math.max(1, (this.party?.members.length ?? 2) - 1);
+      const feedHtml = this.garageFeed.slice(-4).reverse().map((line) => `<div class="dim small-note">${esc(line)}</div>`).join('');
+      return `<div class="nfs-garage ${this.garageHideUi ? 'ui-hidden' : ''}" data-pillar="rides">
+        <header class="g-topbar">
+          <div class="g-top-left">
+            <button data-act="g-visit-leave" class="back-btn">← Leave Garage</button>
+            <div class="g-id">
+              ${brandBadgeSvg(vg.car, 30)}
+              <div>
+                <div class="g-id-sub">🔧 LIVE CO-OP GARAGE · ${esc(vg.hostName.toUpperCase())} · ${watchers} WATCHING</div>
+                <div class="g-id-name">${esc(vCar?.name ?? vg.car)} <i>${esc(vBr.name)} · ${esc(vSwap)} · ${esc(vTurbo)}</i></div>
+              </div>
+            </div>
+          </div>
+          <div class="g-top-actions">
+            <button class="chip g-eye-btn" data-act="g-hide-ui" title="Hide UI &amp; inspect full-screen">👁<span class="lbl"> View</span></button>
+            <button class="chip" data-act="g-cam-cycle" title="Cycle showroom camera angle">📷<span class="lbl"> ${camNow.label}</span></button>
+            <button class="chip ${this.garageWalkActive ? 'on' : ''}" data-act="g-walk" title="Walk around your friend's car (WASD)">🚶<span class="lbl"> Walk</span></button>
+            <button class="chip ${this.voiceOn ? 'on' : ''}" data-act="voice-toggle" title="Toggle WebRTC Voice Chat ([Z] PTT / Open Mic)">🎙<span class="lbl"> ${this.voiceOn ? 'Live' : 'Voice'}</span></button>
+          </div>
+        </header>
+        <section class="g-rides-dock panel" style="padding:10px 14px">
+          <div class="g-rides-bar" style="flex-wrap:wrap;gap:8px">
+            <div class="chips">
+              <span class="pill gold">👀 WATCHING ${esc(vg.hostName.toUpperCase())} BUILD LIVE</span>
+              <button class="chip" data-act="g-emote" data-v="🔥 Fire Build!">🔥 Fire!</button>
+              <button class="chip" data-act="g-emote" data-v="🔊 Rev It!">🔊 Rev It!</button>
+              <button class="chip" data-act="g-emote" data-v="👏 Super Clean!">👏 Clean!</button>
+              <button class="chip" data-act="g-emote" data-v="💎 Mint Spec!">💎 Mint!</button>
+            </div>
+            <div class="dim small-note">${this.garageWalkActive ? 'WASD to walk around the car · Mouse drag to look' : 'Drag to orbit · Scroll to zoom · Live updates as host modifies parts'}</div>
+          </div>
+          ${feedHtml ? `<div style="margin-top:6px;display:flex;flex-direction:column;gap:2px">${feedHtml}</div>` : ''}
+        </section>
+        <button class="chip primary g-show-ui-fab" data-act="g-hide-ui" aria-label="Show Garage UI">👁 Show UI</button>
+      </div>`;
+    }
     const sel = this.sel;
     const w = this.career;
     const ownedList = this.cars.filter((c) => w.owns(c.id));
@@ -824,10 +875,13 @@ export class Menu {
         <div class="g-rides-strip">${cards}</div>
       </section>`;
 
-    const camNow = GARAGE_CAMS[this.garageCamIdx % GARAGE_CAMS.length];
     const cond = conditionOf(this.maint, sel.car);
     const rep = repairCostOf(cond, this.maint.insured);
     const dmgPill = rep.pct > 0 ? `<button class="chip on" data-act="repair-car">🔧 Repair (${this.sp.testingMode ? 'FREE' : `${rep.xp} XP`})</button>` : '';
+    const friendsWatching = this.party ? Math.max(0, this.party.members.length - 1) : 0;
+    const coopBtn = this.party
+      ? `<button class="chip on" data-act="g-invite" title="Copy Live Garage invite link (${esc(this.party.code)}) so friends can watch you mod this car">👥 ${esc(this.party.code)}${friendsWatching ? ` · ${friendsWatching}` : ''}</button><button class="chip ${this.voiceOn ? 'on' : ''}" data-act="voice-toggle" title="Garage Voice Chat ([Z] PTT / Open Mic)">🎙</button>`
+      : `<button class="chip" data-act="g-invite" title="Invite friends into your 3D garage to watch you customize &amp; rev your car live">👥<span class="lbl"> Invite</span></button>`;
 
     return `<div class="nfs-garage ${this.garageHideUi ? 'ui-hidden' : ''}" data-pillar="${pillar}">
       <header class="g-topbar">
@@ -844,6 +898,7 @@ export class Menu {
         <nav class="g-pillars">${pillarBar}</nav>
         <div class="g-top-actions">
           ${dmgPill}
+          ${coopBtn}
           <button class="chip g-eye-btn" data-act="g-hide-ui" title="Hide UI &amp; inspect car full-screen">👁<span class="lbl"> View</span></button>
           <button id="g-ign-btn" class="chip ${this.garageEngineOn ? 'on' : ''}" data-act="g-ignition" title="Toggle engine ignition ON / OFF">🔑<span class="lbl"> ${this.garageEngineOn ? 'Stop' : 'Start'}</span></button>
           <button class="chip" data-act="g-dyno" title="Put the car on the dyno: run it, hear it, measure power and top speed">📈<span class="lbl"> Dyno</span></button>
@@ -1357,6 +1412,10 @@ export class Menu {
       <div class="lobby-head"><button data-act="modes" class="back-btn">← Game Modes</button><div><div class="kicker">MULTIPLAYER · ${p.members.length}/${maxSlots}</div><h2>Party <span class="code">${esc(p.code)}</span></h2></div></div>
       <div class="invite-box"><span class="dim">INVITE</span><input id="plink" type="text" readonly value="${esc(p.link)}" />
         <button class="small" data-act="pcopy">Copy link</button>${share}</div>
+      ${p.liveGarage && p.liveGarage.hostId !== p.selfId ? `<div class="opts" style="margin:8px 0;padding:8px 10px;border:1px solid #ff6b3d66;border-radius:10px;background:#ff6b3d18;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span>🔧 <b>${esc(p.liveGarage.hostName)}</b> is customizing their <b>${esc(carName(p.liveGarage.car))}</b> live in the Garage!</span>
+        <button class="small primary" data-act="g-visit-join">👀 Join Live Garage</button>
+      </div>` : ''}
       ${nameRow}
       <h3>Drivers <span class="pill gold">+${Math.round((PARTY_BONUS_MUL - 1) * 100)}% PARTY BONUS</span></h3><div class="members">${members}${empty}</div>
       <div class="opts"><span class="dim">VOICE CHAT</span><button class="chip ${this.voiceOn ? 'on' : ''}" data-act="voice-toggle">🎙 ${esc(this.voiceStatus)}</button><button class="chip ${this.voiceMode === 'ptt' ? 'on' : ''}" data-act="voice-mode" data-v="ptt">[Z] Walkie-Talkie PTT</button><button class="chip ${this.voiceMode === 'open' ? 'on' : ''}" data-act="voice-mode" data-v="open">Open Mic</button></div>
@@ -1709,6 +1768,10 @@ export class Menu {
       case 'g-dyno': this.hooks.garageDyno?.(); break;
       case 'g-rev': this.hooks.garageRev?.(); break;
       case 'g-walk': this.garageWalkActive = !this.garageWalkActive; this.hooks.garageWalk?.(this.garageWalkActive); this.render(); break;
+      case 'g-invite': this.hooks.garageInvite?.(); break;
+      case 'g-visit-join': this.hooks.garageVisitJoin?.(); break;
+      case 'g-visit-leave': this.hooks.garageVisitLeave?.(); break;
+      case 'g-emote': this.hooks.garageEmote?.(v); break;
       case 'nr-walk': this.nr.walkableGarage = v === '1'; if (!this.nr.walkableGarage) this.garageWalkActive = false; this.hooks.nrChanged?.(); this.render(); break;
       case 'nr-stance': {
         const st = stanceOf(this.nr, sel.car);
