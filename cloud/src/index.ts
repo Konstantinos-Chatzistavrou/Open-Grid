@@ -358,6 +358,27 @@ async function route(req: Request, env: Env): Promise<Response> {
     return json({ track, car: car || 'all', weather, entries: rows.results });
   }
 
+  // ---- Hosted Private Leagues Directory (public read-only listing) ----
+  if (path === '/v1/leagues' && req.method === 'GET') {
+    const rows = await env.DB.prepare(
+      `SELECT l.id, l.name, l.join_code AS code, l.join_code, l.owner, l.config_json, l.max_drivers, l.created,
+              CASE WHEN l.password_hash IS NOT NULL THEN 1 ELSE 0 END AS is_private,
+              (SELECT COUNT(*) FROM league_members x WHERE x.league_id = l.id) AS member_count
+       FROM leagues l ORDER BY l.created DESC LIMIT 50`,
+    ).all();
+    const leagues = (rows.results as Record<string, unknown>[]).map((r) => {
+      let cfg: Record<string, unknown> = {};
+      try { cfg = JSON.parse(String(r.config_json ?? '{}')); } catch { /* default */ }
+      return {
+        ...r,
+        description: String(cfg.description ?? 'Custom OpenGrid League'),
+        series_rules: `${cfg.laps ?? 5}L · ${cfg.bop !== false ? 'BoP' : 'Open'} · ${cfg.realism !== false ? 'Realism' : 'Respawns'}`,
+        bop_enabled: cfg.bop !== false ? 1 : 0,
+      };
+    });
+    return json({ leagues });
+  }
+
   // ---- Authenticated Account Routes ----
   const acct = await accountOf(req, env);
   if (!acct) return json({ error: 'sign in again (unknown account)' }, 401);
@@ -425,27 +446,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     return json({ url: authUrl });
   }
 
-  // ---- Hosted Private Leagues (Custom Rules, BoP, Passwords & Community Stewards) ----
-  if (path === '/v1/leagues' && req.method === 'GET') {
-    const rows = await env.DB.prepare(
-      `SELECT l.id, l.name, l.join_code AS code, l.join_code, l.owner, l.config_json, l.max_drivers, l.created,
-              CASE WHEN l.password_hash IS NOT NULL THEN 1 ELSE 0 END AS is_private,
-              (SELECT COUNT(*) FROM league_members x WHERE x.league_id = l.id) AS member_count
-       FROM leagues l ORDER BY l.created DESC LIMIT 50`,
-    ).all();
-    const leagues = (rows.results as Record<string, unknown>[]).map((r) => {
-      let cfg: Record<string, unknown> = {};
-      try { cfg = JSON.parse(String(r.config_json ?? '{}')); } catch { /* default */ }
-      return {
-        ...r,
-        description: String(cfg.description ?? 'Custom OpenGrid League'),
-        series_rules: `${cfg.laps ?? 5}L · ${cfg.bop !== false ? 'BoP' : 'Open'} · ${cfg.realism !== false ? 'Realism' : 'Respawns'}`,
-        bop_enabled: cfg.bop !== false ? 1 : 0,
-      };
-    });
-    return json({ leagues });
-  }
-
+  // ---- Hosted Private Leagues (Create & Join — requires active Online Pass) ----
   if (path === '/v1/leagues' && req.method === 'POST') {
     const subErr = requireActiveSub(acct);
     if (subErr) return subErr;
