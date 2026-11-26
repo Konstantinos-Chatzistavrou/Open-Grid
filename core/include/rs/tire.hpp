@@ -92,6 +92,7 @@ struct TireForces {
     double contact_patch_length_m = 0;  // instantaneous contact patch length 2a (m), sensitive to load & inflation pressure
     double adhesion_ratio = 1.0;        // fraction of contact patch load in brush adhesion zone (1 = grip, 0 = full slide)
     double kerb_load_ratio = 0.0;       // 0..1 share of vertical load carried by raised kerb cells in the 4x4 patch
+    double cold_micro_step_chatter = 0.0; // -1..+1 deterministic cold-tyre glass-transition stick-slip micro-step oscillation
 };
 
 // MF-Swift-style Broadband Transient Tire-Road NVH & Cavity Resonance Acoustic Source (for UE5 MetaSounds).
@@ -117,7 +118,11 @@ struct TireCondition {
     double flash_c = 80.0;        // micro-asperity WLF flash temperature, C (~8 ms response time)
     double pressure_kpa = 0.0;    // gauge, directly from ideal gas law on inner_air_c (0 until the first update)
     double contact_patch_length_m = 0.19; // latest contact patch length 2a (m)
-    double wear = 0.0;            // 0 = new, 1 = worn out
+    double wear = 0.0;            // 0 = new, 1 = worn out (mean of inner/middle/outer ribs)
+    double wear_inner = 0.0;      // 0..1 independent inner-shoulder tread wear (accelerates under excessive negative camber)
+    double wear_middle = 0.0;     // 0..1 independent center-rib tread wear (accelerates under over-inflation crowning)
+    double wear_outer = 0.0;      // 0..1 independent outer-shoulder tread wear (accelerates under hard lateral cornering)
+    bool corded = false;          // true once any tread rib wears through to canvas carcass plies (>= 98.5% wear)
     double inner_c = 80.0;        // Inner shoulder tread surface temperature (C) — heated by negative camber on straights
     double middle_c = 80.0;       // Center rib tread surface temperature (C) — heated more at high inflation pressure
     double outer_c = 80.0;        // Outer shoulder tread surface temperature (C) — heated heavily by cornering roll onto outer edge
@@ -155,8 +160,14 @@ struct TireCondition {
     // while keeping continuous 3-node ODE integration pure during simulation).
     double last_carcass_c_ = 80.0;
     double last_inner_air_c_ = 53.0;
+    double last_wear_ = 0.0;
 
     double carcass_c() const { return temperature_c; }
+    double max_rib_wear() const { return std::max({wear_inner, wear_middle, wear_outer}); }
+    /** 0..1 glass-transition coldness index (0 inside/above thermal window, rises toward 1 on stone-cold slicks). */
+    double cold_glassiness(const TireParams* p = nullptr) const;
+    /** Pacejka post-peak shape multiplier (>1 sharpens cold glassy or overheated/blistered breakaway; 1.0 when optimal). */
+    double post_peak_shape_scale(const TireParams* p = nullptr) const;
     void set_environment_celsius(double air_c, double track_c) { ambient_air_c = air_c; track_surface_c = track_c; }
     /** Ideal gas law gauge pressure (kPa) from inner_air_c and air_mass_ratio (puncture deflation). */
     double ideal_gas_pressure_kpa(const TireParams* p = nullptr) const;
@@ -208,6 +219,7 @@ struct TireOperating {
     double gamma_rate_rads = 0.0;             // camber rate d(gamma)/dt (rad/s) for gyroscopic belt precession torque QTZ1
     double rolling_speed_mps = 0.0;           // wheel longitudinal rolling speed V_x (m/s)
     double yaw_rate_rads = 0.0;               // wheel yaw rate about contact normal (+ = CCW/left, rad/s) for patch spin
+    double wheel_angle_rad = 0.0;             // wheel cumulative rotation angle (rad) for deterministic cold stick-slip phase
     const TireCondition* condition = nullptr; // optional pointer to 3-node thermal + 3-rib I/M/O + WLF flash state
     const ContactPatchProfile* patch = nullptr; // optional 4x4 road height / kerb / per-cell mu / partial-contact map
     ContactPatchOutput* patch_out = nullptr;  // optional diagnostic output populated by the 4x4 grid solver

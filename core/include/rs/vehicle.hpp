@@ -123,6 +123,8 @@ struct WheelOutput {
     double carcass_hysteresis_w = 0.0; // W, viscoelastic flexing power dissipated in the 24-node flexible carcass ring
     double adhesion_ratio = 1.0;     // 0..1 brush contact-patch adhesion share (1 = stuck, drops < 0.7 before peak slip -> LMU scrub cue)
     double pneumatic_trail_m = 0.0;  // m, instantaneous contact-patch pneumatic trail (collapses pre-peak before F_y saturation)
+    double susp_vel_mps = 0.0;       // m/s, instantaneous suspension compression velocity (+ = bump, - = rebound) for MoTeC histograms
+    double cold_micro_step_chatter = 0.0; // -1..+1 cold-tyre glass-transition stick-slip micro-step chatter
 };
 
 // Chassis torsional stiffness (frame twist between front & rear strut towers), Active Torque-Vectoring E-Diff (AYC),

@@ -53,16 +53,18 @@ struct Options {
     std::string out_base = "/tmp/opengrid_motec";
 #endif
     double skill = 0.95;
+    double rate_hz = 60.0;
 };
 
 void print_usage(const char* prog) {
     std::printf(
-        "Usage: %s [--car <path>] [--track <path>] [--laps <N>] [--out <basepath>] [--skill <0.5..1.0>]\n"
+        "Usage: %s [--car <path>] [--track <path>] [--laps <N>] [--out <basepath>] [--skill <0.5..1.0>] [--rate <10..400>]\n"
         "  --car   Car JSON (default: data/cars/tornado_gt3.json)\n"
         "  --track Route JSON (data/tracks/*.json) or TUMFTM CSV (default: BrandsHatch.csv or nyc_route.json)\n"
         "  --laps  Number of timed laps (default: 2)\n"
         "  --out   Output base path without extension (writes .ld and .ldx)\n"
-        "  --skill AI skill multiplier 0.50..1.00 (default: 0.95)\n",
+        "  --skill AI skill multiplier 0.50..1.00 (default: 0.95)\n"
+        "  --rate  MoTeC .ld log rate in Hz, 10..400 (default: 60; use 200 for pro damper histograms)\n",
         prog);
 }
 
@@ -90,6 +92,8 @@ Options parse_args(int argc, char** argv) {
             opt.out_base = need_value("--out");
         } else if (arg == "--skill") {
             opt.skill = rs::clamp(std::stod(need_value("--skill")), 0.50, 1.00);
+        } else if (arg == "--rate") {
+            opt.rate_hz = rs::clamp(std::stod(need_value("--rate")), 10.0, 400.0);
         } else {
             throw std::runtime_error("unknown argument: " + arg);
         }
@@ -317,7 +321,7 @@ int main(int argc, char** argv) {
         meta.vehicle = cfg.name;
         meta.venue = venue_name;
         meta.event = "OpenGrid MoTeC Showcase";
-        meta.sample_rate_hz = 60.0;
+        meta.sample_rate_hz = opt.rate_hz;
         rs::MotecLogger logger(meta);
 
         SessionStats st;
@@ -423,7 +427,7 @@ int main(int argc, char** argv) {
         const double min_corner_kmh = std::isfinite(st.min_corner_speed_kmh) ? st.min_corner_speed_kmh : 0.0;
 
         std::printf("================================================================================\n");
-        std::printf("OpenGrid MoTeC i2 Pro Telemetry Showcase (400 Hz Physics -> 60 Hz .ld/.ldx)\n");
+        std::printf("OpenGrid MoTeC i2 Pro Telemetry Showcase (400 Hz Physics -> %.0f Hz .ld/.ldx)\n", opt.rate_hz);
         std::printf("================================================================================\n");
         std::printf("  Vehicle           : %s (%s)\n", cfg.name.c_str(), opt.car_path.c_str());
         std::printf("  Circuit           : %s (%.3f km) [%s]\n",
@@ -470,9 +474,9 @@ int main(int argc, char** argv) {
                     st.peak_col_ffb_nm, st.peak_rack_ffb_nm);
         std::printf("--------------------------------------------------------------------------------\n");
         std::printf("  MOTEC I2 PRO OUTPUT\n");
-        std::printf("    Binary log (.ld): %s  (%.1f KB, %zu samples @ 60 Hz, %zu channels)\n",
+        std::printf("    Binary log (.ld): %s  (%.1f KB, %zu samples @ %.0f Hz, %zu channels)\n",
                     ld_path.c_str(), static_cast<double>(ld_bytes) / 1024.0,
-                    logger.sample_count(), rs::MotecLogger::kChannelCount);
+                    logger.sample_count(), meta.sample_rate_hz, rs::MotecLogger::kChannelCount);
         std::printf("    Beacons   (.ldx): %s  (%zu bytes, %zu lap beacons)\n",
                     ldx_path.c_str(), ldx_bytes, logger.lap_beacons().size());
         std::printf("================================================================================\n");

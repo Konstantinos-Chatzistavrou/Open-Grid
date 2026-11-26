@@ -47,6 +47,7 @@ struct TelemetrySample {
     double handbrake = 0.0;  // 0..1
     double steer = 0.0;      // -1..+1
 
+    Vec3 position_world{};   // m, world CG position (GPS / MoTeC i2 Pro track map)
     Vec3 velocity_world{};   // m/s, world frame
     Vec3 velocity_body{};    // m/s, the car's frame (X forward, Y left, Z up): what the Forza / SimHub packet carries
     Vec3 angular_vel_body{};
@@ -58,12 +59,14 @@ struct TelemetrySample {
 
     // Per-wheel arrays: FL, FR, RL, RR
     std::array<double, 4> susp_travel_m{};       // m
+    std::array<double, 4> susp_vel_mps{};        // m/s (+ bump, - rebound) for MoTeC damper histograms
     std::array<double, 4> susp_norm{};           // 0..1
     std::array<double, 4> wheel_camber_rad{};    // rad, dynamic tyre inclination / camber
     std::array<double, 4> wheel_toe_rad{};       // rad, dynamic suspension alignment toe-in (+ = toe-in)
     double roll_centre_front_m = 0.0;            // m, dynamic front axle roll-centre height
     double roll_centre_rear_m = 0.0;             // m, dynamic rear axle roll-centre height
     std::array<double, 4> wheel_omega_rads{};    // rad/s
+    std::array<double, 4> wheel_speed_mps{};     // m/s, wheel peripheral rolling speed (omega * R)
     std::array<double, 4> tire_slip_ratio{};     // kappa
     std::array<double, 4> tire_slip_angle{};     // rad
     std::array<double, 4> tire_temp_c{75, 75, 75, 75};
@@ -72,8 +75,20 @@ struct TelemetrySample {
     std::array<double, 4> tire_temp_outer_c{75, 75, 75, 75};
     std::array<double, 4> tire_carcass_temp_c{80, 80, 80, 80};
     std::array<double, 4> tire_inner_air_temp_c{53, 53, 53, 53};
+    std::array<double, 4> tire_flash_temp_c{80, 80, 80, 80};
     std::array<double, 4> tire_pressure_kpa{220, 220, 220, 220};
     std::array<double, 4> tire_patch_length_m{0.19, 0.19, 0.19, 0.19};
+    std::array<double, 4> tire_wear{};
+    std::array<double, 4> tire_wear_inner{};
+    std::array<double, 4> tire_wear_middle{};
+    std::array<double, 4> tire_wear_outer{};
+    std::array<double, 4> tire_blistering{};
+    std::array<double, 4> tire_graining{};
+    std::array<double, 4> tire_adhesion_ratio{1, 1, 1, 1};
+    std::array<double, 4> tire_fx_n{};
+    std::array<double, 4> tire_fy_n{};
+    std::array<double, 4> tire_mz_nm{};
+    std::array<double, 4> cold_micro_step_chatter{};
     std::array<double, 4> flat_spot_depth_mm{};
     std::array<double, 4> brake_temp_c{220, 220, 220, 220};
     std::array<double, 4> wheel_load_n{};
@@ -93,6 +108,25 @@ struct TelemetrySample {
     double gear_whine_hz = 0.0;
     double turbo_surge = 0.0;
     double slipstream_drag_scale = 1.0;
+    double dirty_air_front_scale = 1.0;
+    double wake_turbulence = 0.0;
+    double front_ride_height_m = 0.11;
+    double rear_ride_height_m = 0.125;
+    double aero_df_front_n = 0.0;
+    double aero_df_rear_n = 0.0;
+    double aero_drag_n = 0.0;
+    double aero_balance_front = 0.45;
+    double chassis_twist_deg = 0.0;
+    double steer_col_torque_nm = 0.0;
+    double steer_rack_torque_nm = 0.0;
+    double steer_assist_torque_nm = 0.0;
+    double front_adhesion_ratio = 1.0;
+    double effective_brake_bias_front = 0.62;
+    double hybrid_soc = 0.80;
+    double hybrid_deploy_kw = 0.0;
+    double hybrid_regen_kw = 0.0;
+    bool abs_active = false;
+    bool tc_active = false;
 };
 
 /// Build a TelemetrySample directly from rs::VehicleOutput + ChassisState + DriverInput.
@@ -143,11 +177,12 @@ private:
 /// The log has a FIXED time base: every channel is written at meta.sample_rate_hz (60 Hz by default). record() is meant to be
 /// called once per game frame at whatever rate the game runs, and resamples to that time base by TelemetrySample::time_s:
 /// frames that arrive faster than the log rate are skipped, slower ones are zero-order held, so the exported time axis is
-/// right at any (even varying) frame rate. Only the 18 exported channels are stored (as float32), and the log stops growing
-/// after kMaxSeconds, so it can stay on for a whole session.
+/// right at any (even varying) frame rate. All kChannelCount race-engineer channels are stored as float32 (GPS track map,
+/// Corr Dist, damper velocities, 12-zone I/M/O + carcass/air/flash tyre thermals, 3-rib wear, aero platform, brakes/BMIG,
+/// Hybrid MGU-K, and Direct-Drive FFB), and the log stops growing after kMaxSeconds so it can stay on for a whole session.
 class MotecLogger {
 public:
-    static constexpr std::size_t kChannelCount = 18;   // channels in the .ld file
+    static constexpr std::size_t kChannelCount = 112;  // pro race-engineer channels in the .ld file
     static constexpr double kMaxSeconds = 3600.0;      // a log never holds more than this much time
     static constexpr double kMaxHoldSeconds = 0.5;     // a longer gap (pause, hitch) is not back-filled with held rows
 

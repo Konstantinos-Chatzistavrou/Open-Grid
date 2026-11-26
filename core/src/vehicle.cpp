@@ -118,6 +118,8 @@ void Vehicle::soak_tyre(int w, double temp_c, double wear) {
     c.last_carcass_c_ = c.temperature_c;
     c.last_inner_air_c_ = c.inner_air_c;
     c.wear = clamp(wear, 0.0, 1.0);
+    c.wear_inner = c.wear_middle = c.wear_outer = c.last_wear_ = c.wear;
+    c.corded = (c.wear >= 0.985);
     c.pressure_kpa = c.ideal_gas_pressure_kpa(&cfg_.tire(w));
 }
 
@@ -1161,7 +1163,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     // for any step size).
     const int n_sub = std::max(1, (int)std::ceil(dt / max_substep - 1e-9));
     const double h = dt / n_sub;
-    std::array<double, 4> fx_sum{}, fy_sum{}, mx_sum{}, mz_sum{}, kerb_ratio_sum{}, adhesion_sum{}, trail_sum{};
+    std::array<double, 4> fx_sum{}, fy_sum{}, mx_sum{}, mz_sum{}, kerb_ratio_sum{}, adhesion_sum{}, trail_sum{}, chatter_sum{};
     DrivetrainInput din{input_.throttle, input_.clutch, input_.brake, input_.handbrake, input_.gear,
                         damage_.engine_power};
     din.brake_power_scale = damage_.brakes;
@@ -1447,6 +1449,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             op.gamma_rate_rads = k.gamma_rate;
             op.rolling_speed_mps = k.vx;
             op.yaw_rate_rads = yaw_rate;
+            op.wheel_angle_rad = wheel_angle_[w];
             op.condition = &tire_condition_[w];
             op.patch = contacts[w].patch_profile.has_height_map ? &contacts[w].patch_profile : nullptr;
             TireForces f = magic_formula(tp, kappa_[w], tan_alpha_[w], k.load, k.mu, k.gamma, op);
@@ -1458,6 +1461,7 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             kerb_ratio_sum[w] += f.kerb_load_ratio;
             adhesion_sum[w] += f.adhesion_ratio;
             trail_sum[w] += f.pneumatic_trail;
+            chatter_sum[w] += f.cold_micro_step_chatter;
             double slip_power = std::abs(f.fx * v_sx) + std::abs(f.fy * k.vy);
             wheel_angle_[w] += drivetrain_.wheel_omega[w] * h;
             if (tire_zones_enabled) {
@@ -1626,6 +1630,8 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         wo.brake_water_film = brake_water_film_[w];
         wo.adhesion_ratio = touching[w] ? clamp(adhesion_sum[w] / n_sub, 0.0, 1.0) : 1.0;
         wo.pneumatic_trail_m = touching[w] ? (trail_sum[w] / n_sub) : 0.0;
+        wo.susp_vel_mps = touching[w] ? comp_rate[w] : 0.0;
+        wo.cold_micro_step_chatter = touching[w] ? clamp(chatter_sum[w] / n_sub, -1.0, 1.0) : 0.0;
         if (!touching[w]) continue;
         const Kin& k = kin[w];
         double fx = fx_sum[w] / n_sub, fy = fy_sum[w] / n_sub, mx = mx_sum[w] / n_sub, mz = mz_sum[w] / n_sub;

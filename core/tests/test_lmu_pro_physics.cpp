@@ -469,4 +469,73 @@ RS_TEST(lmu_pro_physics) {
         test::check("AsyncVehicleBridge pushes every 400 Hz physics tick into lock-free Direct-Drive FFB ring",
                     drained == 8 && std::abs(last_norm) > 0.01f);
     }
+
+    // 17. Cold-tyre glass-transition micro-steps, deeper cold-slick drop, out-lap skin-over-core decoupling,
+    //     3-rib independent camber wear & cord-through delamination/puncture
+    {
+        CarConfig cfg = load_car_config(test::data_path("cars/tornado_gt3.json"));
+        const TireParams& tp = cfg.tire_front;
+
+        TireCondition cold_slick, warm_slick, skin_hot_core_cold;
+        cold_slick.temperature_c = cold_slick.surface_c = cold_slick.flash_c = 25.0;
+        cold_slick.inner_c = cold_slick.middle_c = cold_slick.outer_c = 25.0;
+        warm_slick.temperature_c = warm_slick.surface_c = warm_slick.flash_c = 90.0;
+        warm_slick.inner_c = warm_slick.middle_c = warm_slick.outer_c = 90.0;
+        skin_hot_core_cold.temperature_c = 30.0;
+        skin_hot_core_cold.surface_c = skin_hot_core_cold.inner_c = skin_hot_core_cold.middle_c = skin_hot_core_cold.outer_c = 72.0;
+        skin_hot_core_cold.flash_c = 78.0;
+
+        TireCondition uniform_72 = warm_slick;
+        uniform_72.temperature_c = uniform_72.surface_c = uniform_72.inner_c = uniform_72.middle_c = uniform_72.outer_c = 72.0;
+
+        const double g_cold = cold_slick.grip_factor(&tp);
+        const double g_warm = warm_slick.grip_factor(&tp);
+        const double g_skin = skin_hot_core_cold.grip_factor(&tp);
+        const double g_unif = uniform_72.grip_factor(&tp);
+        test::check("stone-cold no-warmer slick (25 C) loses 25-33% grip vs warm (90 C)",
+                    g_cold >= 0.67 && g_cold <= 0.76 && g_warm > 0.999);
+        test::check("out-lap warm skin (72 C) over cold carcass (30 C) grips less than uniformly warmed tyre",
+                    g_skin < g_unif - 0.08);
+        test::check("cold slick exhibits steeper glass-transition post-peak breakaway shape than warm slick",
+                    cold_slick.cold_glassiness(&tp) > 0.8 && cold_slick.post_peak_shape_scale(&tp) > warm_slick.post_peak_shape_scale(&tp) + 0.08);
+
+        // Deterministic stick-slip micro-steps across wheel rotation on cold slick vs zero chatter on warm slick
+        double max_cold_chatter = 0.0, min_cold_chatter = 0.0, max_warm_chatter = 0.0;
+        for (int i = 0; i < 40; ++i) {
+            TireOperating op;
+            op.enable_mf62_hybrid = true;
+            op.rolling_speed_mps = 35.0;
+            op.slip_speed = 4.5;
+            op.wheel_angle_rad = i * 0.04;
+            op.condition = &cold_slick;
+            const TireForces fc = magic_formula(tp, 0.0, 0.16, 4500.0, g_cold, -0.04, op);
+            max_cold_chatter = std::max(max_cold_chatter, fc.cold_micro_step_chatter);
+            min_cold_chatter = std::min(min_cold_chatter, fc.cold_micro_step_chatter);
+            op.condition = &warm_slick;
+            const TireForces fw = magic_formula(tp, 0.0, 0.16, 4500.0, g_warm, -0.04, op);
+            max_warm_chatter = std::max(max_warm_chatter, std::abs(fw.cold_micro_step_chatter));
+        }
+        test::check("cold slick generates bidirectional stick-slip micro-steps near/past limit while warm slick has zero chatter",
+                    max_cold_chatter > 0.35 && min_cold_chatter < -0.35 && max_warm_chatter < 1e-9);
+
+        // 3-rib independent camber wear & cord-through delamination/puncture
+        TireCondition camber_tyre = warm_slick;
+        camber_tyre.pressure_kpa = tp.p_nominal_kpa;
+        // Heavy negative camber (-4.5 deg top-inward on left wheel -> gamma = +0.0785 rad when side_sign = -1? top_inward = side_sign * gamma -> gamma = -0.0785 for side_sign = -1!)
+        for (int i = 0; i < 200; ++i) {
+            camber_tyre.update_zones(18000.0, 4200.0, 50.0, -0.0785, 0.0, -1.0, 150.0, i * 0.2, 0.1, &tp);
+        }
+        test::check("heavy negative camber wears inner tread rib substantially faster than outer rib",
+                    camber_tyre.wear_inner > camber_tyre.wear_outer * 1.45 && camber_tyre.wear_inner > 0.01);
+
+        // Push inner rib to cord exposure (>= 98.5%) and verify corded flag + delamination puncture leak
+        camber_tyre.wear_inner = 0.99;
+        camber_tyre.wear_middle = 0.55;
+        camber_tyre.wear_outer = 0.45;
+        camber_tyre.wear = (camber_tyre.wear_inner + camber_tyre.wear_middle + camber_tyre.wear_outer) / 3.0;
+        camber_tyre.last_wear_ = camber_tyre.wear;
+        camber_tyre.update_zones(12000.0, 4000.0, 45.0, -0.05, 0.0, -1.0, 135.0, 1.0, 0.25, &tp);
+        test::check("wearing a single rib through to cords sets corded=true and opens progressive delamination puncture leak",
+                    camber_tyre.corded && camber_tyre.puncture_leak_rate >= 0.05 && camber_tyre.grip_factor(&tp) < 0.78);
+    }
 }

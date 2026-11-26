@@ -95,8 +95,21 @@ RS_TEST(telemetry) {
     std::uint32_t first_chan = read_u32(ld.data(), 0x08);
     std::uint32_t data_ptr = read_u32(ld.data(), 0x0C);
     test::check("MoTeC first channel pointer valid", first_chan == 1762);
-    test::check("MoTeC channel count 18 * 120 floats", ld.size() == data_ptr + 18 * 120 * 4);
+    test::check("MoTeC channel count kChannelCount (112) * 120 floats",
+                MotecLogger::kChannelCount == 112 && ld.size() == data_ptr + MotecLogger::kChannelCount * 120 * 4);
     test::check("MoTeC first sample Ground Speed km/h", std::fabs(read_f32(ld.data(), data_ptr) - 72.0f) < 0.1f);
+    // Verify key pro race-engineer channels exist in .ld channel headers (GPS map, Corr Dist, Damper Vel, I/M/O, Ride Height, FFB)
+    const std::string ld_headers(reinterpret_cast<const char*>(ld.data() + first_chan), data_ptr - first_chan);
+    test::check("MoTeC .ld includes GPS Track Map, Corr Dist, Damper Vel, 12-zone I/M/O, Aero RH, BMIG, Hybrid & DD FFB",
+                ld_headers.find("Corr Dist") != std::string::npos
+                && ld_headers.find("World Pos X") != std::string::npos
+                && ld_headers.find("Damper Vel FL") != std::string::npos
+                && ld_headers.find("Tire Temp FL I") != std::string::npos
+                && ld_headers.find("Tire Flash FL") != std::string::npos
+                && ld_headers.find("Ride Height Front") != std::string::npos
+                && ld_headers.find("Brake Bias Front") != std::string::npos
+                && ld_headers.find("Hybrid Deploy") != std::string::npos
+                && ld_headers.find("Steer Col Torque") != std::string::npos);
     test::check("MoTeC .ldx contains Lap 1 beacon", ldx.find("Name=\"Lap 1\"") != std::string::npos);
 
     // 4. Physical audio (exhaust_primary_hz, gear_whine_hz, turbo_surge) & surface excitation verification

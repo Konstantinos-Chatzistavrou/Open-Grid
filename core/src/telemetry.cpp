@@ -111,6 +111,7 @@ TelemetrySample make_telemetry_sample(
     s.handbrake = input.handbrake;
     s.steer = input.steer;
 
+    s.position_world = chassis.position;
     s.velocity_world = chassis.velocity;
     s.velocity_body = chassis.orientation.inv_rotate(chassis.velocity);
     s.angular_vel_body = chassis.orientation.inv_rotate(chassis.angular_velocity);
@@ -126,13 +127,16 @@ TelemetrySample make_telemetry_sample(
 
     for (std::size_t i = 0; i < 4; ++i) {
         const auto& w = out.wheels[i];
+        const auto& tp = cfg.tire(static_cast<int>(i));
         s.susp_travel_m[i] = w.compression;
+        s.susp_vel_mps[i] = w.susp_vel_mps;
         const auto& ax = cfg.axle(static_cast<int>(i));
         const double max_travel = ax.max_compression > 1e-4 ? ax.max_compression : 0.12;
         s.susp_norm[i] = std::clamp(w.compression / max_travel, 0.0, 1.0);
         s.wheel_camber_rad[i] = w.camber;
         s.wheel_toe_rad[i] = w.toe_angle;
         s.wheel_omega_rads[i] = w.angular_velocity;
+        s.wheel_speed_mps[i] = w.angular_velocity * tp.radius;
         s.tire_slip_ratio[i] = w.slip_ratio;
         s.tire_slip_angle[i] = w.slip_angle;
         s.tire_temp_c[i] = w.condition.surface_c > 0.0 ? w.condition.surface_c : w.condition.temperature_c;
@@ -141,8 +145,20 @@ TelemetrySample make_telemetry_sample(
         s.tire_temp_outer_c[i] = w.condition.outer_c;
         s.tire_carcass_temp_c[i] = w.condition.temperature_c;
         s.tire_inner_air_temp_c[i] = w.condition.inner_air_c;
+        s.tire_flash_temp_c[i] = w.condition.flash_c;
         s.tire_pressure_kpa[i] = w.condition.pressure_kpa;
         s.tire_patch_length_m[i] = w.condition.contact_patch_length_m;
+        s.tire_wear[i] = w.condition.wear;
+        s.tire_wear_inner[i] = w.condition.wear_inner;
+        s.tire_wear_middle[i] = w.condition.wear_middle;
+        s.tire_wear_outer[i] = w.condition.wear_outer;
+        s.tire_blistering[i] = w.condition.blistering;
+        s.tire_graining[i] = w.condition.graining;
+        s.tire_adhesion_ratio[i] = w.adhesion_ratio;
+        s.tire_fx_n[i] = w.fx;
+        s.tire_fy_n[i] = w.fy;
+        s.tire_mz_nm[i] = w.mz;
+        s.cold_micro_step_chatter[i] = w.cold_micro_step_chatter;
         s.flat_spot_depth_mm[i] = w.condition.flat_spot_depth_mm;
         s.brake_temp_c[i] = w.brake_temp_c;
         s.wheel_load_n[i] = w.load;
@@ -165,6 +181,26 @@ TelemetrySample make_telemetry_sample(
     s.gear_whine_hz = out.gear_whine_hz;
     s.turbo_surge = out.turbo_surge;
     s.slipstream_drag_scale = out.slipstream_drag_scale;
+    s.dirty_air_front_scale = out.dirty_air_downforce_scale;
+    s.wake_turbulence = out.wake_turbulence;
+    s.front_ride_height_m = out.front_ride_height_m;
+    s.rear_ride_height_m = out.rear_ride_height_m;
+    s.aero_df_front_n = out.aero_downforce_front_n;
+    s.aero_df_rear_n = out.aero_downforce_rear_n;
+    s.aero_drag_n = out.aero_drag_n;
+    s.aero_balance_front = out.aero_balance_front;
+    s.chassis_twist_deg = out.chassis_twist_deg;
+    s.steer_col_torque_nm = out.steering_column_torque_nm;
+    s.steer_rack_torque_nm = out.steer_torque;
+    s.steer_assist_torque_nm = out.steering_assist_torque_nm;
+    s.front_adhesion_ratio = out.front_adhesion_ratio;
+    s.effective_brake_bias_front = out.effective_brake_bias_front;
+    s.hybrid_soc = out.hybrid_soc;
+    s.hybrid_deploy_kw = out.hybrid_deploy_kw;
+    s.hybrid_regen_kw = out.hybrid_regen_kw;
+    s.abs_active = out.assists.abs_active[0] || out.assists.abs_active[1]
+                || out.assists.abs_active[2] || out.assists.abs_active[3];
+    s.tc_active = out.assists.tc_cut > 0.02;
     return s;
 }
 
@@ -324,7 +360,11 @@ bool UdpTelemetrySender::send(const TelemetrySample& sample) {
 
 namespace {
 
-// The 18 channels of the .ld file, in file order. record() stores their values (float32) instead of whole TelemetrySamples.
+// The 112 pro race-engineer channels of the native MoTeC i2 Pro .ld file, in file order.
+// Channel 0 stays Ground Speed (km/h); includes Corr Dist & GPS track map (World Pos X/Y/Z),
+// 4-corner damper velocities (histograms), 12-zone I/M/O + carcass/air/flash tyre thermals,
+// pressures/slip/load/camber/wear/adhesion/flat-spots, brakes/BMIG, aero platform & dirty air,
+// Hybrid MGU-K/SoC, and Direct-Drive steering column & rack FFB torques.
 struct ChanDef {
     const char* name;
     const char* short_name;
@@ -332,24 +372,129 @@ struct ChanDef {
     float (*extract)(const TelemetrySample&);
 };
 const ChanDef kChannels[] = {
+    // ---- 1. Core kinematics, distance & GPS track map (16)
     {"Ground Speed", "Speed", "km/h", [](const TelemetrySample& s) { return static_cast<float>(std::fabs(s.speed_ms) * 3.6); }},
+    {"Corr Dist", "Dist", "m", [](const TelemetrySample& s) { return static_cast<float>(s.distance_m); }},
+    {"World Pos X", "PosX", "m", [](const TelemetrySample& s) { return static_cast<float>(s.position_world.x); }},
+    {"World Pos Y", "PosY", "m", [](const TelemetrySample& s) { return static_cast<float>(s.position_world.y); }},
+    {"World Pos Z", "PosZ", "m", [](const TelemetrySample& s) { return static_cast<float>(s.position_world.z); }},
     {"Engine RPM", "RPM", "rpm", [](const TelemetrySample& s) { return static_cast<float>(s.engine_rpm); }},
+    {"Engine Torque", "EngTrq", "Nm", [](const TelemetrySample& s) { return static_cast<float>(s.torque_nm); }},
+    {"Engine Power", "EngPwr", "kW", [](const TelemetrySample& s) { return static_cast<float>(s.power_w * 0.001); }},
     {"Throttle Pos", "Thr", "%", [](const TelemetrySample& s) { return static_cast<float>(s.throttle * 100.0); }},
     {"Brake Pos", "Brk", "%", [](const TelemetrySample& s) { return static_cast<float>(s.brake * 100.0); }},
+    {"Clutch Pos", "Clt", "%", [](const TelemetrySample& s) { return static_cast<float>(s.clutch * 100.0); }},
     {"Steering Angle", "Steer", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.steer * 360.0); }},
     {"Gear", "Gear", "", [](const TelemetrySample& s) { return static_cast<float>(s.gear - 1); }},
     {"G Force Lat", "GLat", "G", [](const TelemetrySample& s) { return static_cast<float>(s.accel_body_mps2.y / kG); }},
     {"G Force Long", "GLong", "G", [](const TelemetrySample& s) { return static_cast<float>(s.accel_body_mps2.x / kG); }},
+    {"G Force Vert", "GVert", "G", [](const TelemetrySample& s) { return static_cast<float>(s.accel_body_mps2.z / kG); }},
+
+    // ---- 2. Chassis attitude, rates & Direct-Drive FFB (11)
+    {"Sideslip Angle", "Slip", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.sideslip_rad * kRadToDeg); }},
+    {"Yaw Rate", "YawR", "deg/s", [](const TelemetrySample& s) { return static_cast<float>(s.angular_vel_body.z * kRadToDeg); }},
+    {"Pitch Angle", "Pitch", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.pitch_rad * kRadToDeg); }},
+    {"Roll Angle", "Roll", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.roll_rad * kRadToDeg); }},
+    {"Pitch Rate", "PitchR", "deg/s", [](const TelemetrySample& s) { return static_cast<float>(s.angular_vel_body.y * kRadToDeg); }},
+    {"Roll Rate", "RollR", "deg/s", [](const TelemetrySample& s) { return static_cast<float>(s.angular_vel_body.x * kRadToDeg); }},
+    {"Steer Col Torque", "FFBCol", "Nm", [](const TelemetrySample& s) { return static_cast<float>(s.steer_col_torque_nm); }},
+    {"Steer Rack Torque", "FFBRck", "Nm", [](const TelemetrySample& s) { return static_cast<float>(s.steer_rack_torque_nm); }},
+    {"Steer Assist Torque", "FFBAst", "Nm", [](const TelemetrySample& s) { return static_cast<float>(s.steer_assist_torque_nm); }},
+    {"Front Adhesion Ratio", "FrAdh", "", [](const TelemetrySample& s) { return static_cast<float>(s.front_adhesion_ratio); }},
+    {"Chassis Twist", "Twist", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.chassis_twist_deg); }},
+
+    // ---- 3. Suspension travel & damper velocity histograms (8)
     {"Susp Pos FL", "SuspFL", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.susp_travel_m[0] * 1000.0); }},
     {"Susp Pos FR", "SuspFR", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.susp_travel_m[1] * 1000.0); }},
     {"Susp Pos RL", "SuspRL", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.susp_travel_m[2] * 1000.0); }},
     {"Susp Pos RR", "SuspRR", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.susp_travel_m[3] * 1000.0); }},
-    {"Tire Temp FL", "TTmpFL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_c[0]); }},
-    {"Tire Temp FR", "TTmpFR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_c[1]); }},
-    {"Tire Temp RL", "TTmpRL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_c[2]); }},
-    {"Tire Temp RR", "TTmpRR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_c[3]); }},
-    {"Sideslip Angle", "Slip", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.sideslip_rad * kRadToDeg); }},
-    {"Yaw Rate", "YawR", "deg/s", [](const TelemetrySample& s) { return static_cast<float>(s.angular_vel_body.z * kRadToDeg); }},
+    {"Damper Vel FL", "DmpVFL", "mm/s", [](const TelemetrySample& s) { return static_cast<float>(s.susp_vel_mps[0] * 1000.0); }},
+    {"Damper Vel FR", "DmpVFR", "mm/s", [](const TelemetrySample& s) { return static_cast<float>(s.susp_vel_mps[1] * 1000.0); }},
+    {"Damper Vel RL", "DmpVRL", "mm/s", [](const TelemetrySample& s) { return static_cast<float>(s.susp_vel_mps[2] * 1000.0); }},
+    {"Damper Vel RR", "DmpVRR", "mm/s", [](const TelemetrySample& s) { return static_cast<float>(s.susp_vel_mps[3] * 1000.0); }},
+
+    // ---- 4. Tyre thermals: 12-zone I/M/O + carcass + inner air + WLF flash (24)
+    {"Tire Temp FL I", "TFL_I", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_inner_c[0]); }},
+    {"Tire Temp FL M", "TFL_M", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_middle_c[0]); }},
+    {"Tire Temp FL O", "TFL_O", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_outer_c[0]); }},
+    {"Tire Temp FR I", "TFR_I", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_inner_c[1]); }},
+    {"Tire Temp FR M", "TFR_M", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_middle_c[1]); }},
+    {"Tire Temp FR O", "TFR_O", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_outer_c[1]); }},
+    {"Tire Temp RL I", "TRL_I", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_inner_c[2]); }},
+    {"Tire Temp RL M", "TRL_M", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_middle_c[2]); }},
+    {"Tire Temp RL O", "TRL_O", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_outer_c[2]); }},
+    {"Tire Temp RR I", "TRR_I", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_inner_c[3]); }},
+    {"Tire Temp RR M", "TRR_M", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_middle_c[3]); }},
+    {"Tire Temp RR O", "TRR_O", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_temp_outer_c[3]); }},
+    {"Tire Carcass FL", "TCrcFL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_carcass_temp_c[0]); }},
+    {"Tire Carcass FR", "TCrcFR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_carcass_temp_c[1]); }},
+    {"Tire Carcass RL", "TCrcRL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_carcass_temp_c[2]); }},
+    {"Tire Carcass RR", "TCrcRR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_carcass_temp_c[3]); }},
+    {"Tire Air Temp FL", "TAirFL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_inner_air_temp_c[0]); }},
+    {"Tire Air Temp FR", "TAirFR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_inner_air_temp_c[1]); }},
+    {"Tire Air Temp RL", "TAirRL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_inner_air_temp_c[2]); }},
+    {"Tire Air Temp RR", "TAirRR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_inner_air_temp_c[3]); }},
+    {"Tire Flash FL", "TFlhFL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_flash_temp_c[0]); }},
+    {"Tire Flash FR", "TFlhFR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_flash_temp_c[1]); }},
+    {"Tire Flash RL", "TFlhRL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_flash_temp_c[2]); }},
+    {"Tire Flash RR", "TFlhRR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.tire_flash_temp_c[3]); }},
+
+    // ---- 5. Tyre pressure, slip, load, camber, wear, brush adhesion & flat spots (32)
+    {"Tire Press FL", "TPrsFL", "kPa", [](const TelemetrySample& s) { return static_cast<float>(s.tire_pressure_kpa[0]); }},
+    {"Tire Press FR", "TPrsFR", "kPa", [](const TelemetrySample& s) { return static_cast<float>(s.tire_pressure_kpa[1]); }},
+    {"Tire Press RL", "TPrsRL", "kPa", [](const TelemetrySample& s) { return static_cast<float>(s.tire_pressure_kpa[2]); }},
+    {"Tire Press RR", "TPrsRR", "kPa", [](const TelemetrySample& s) { return static_cast<float>(s.tire_pressure_kpa[3]); }},
+    {"Tire Slip Angle FL", "TSlpFL", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.tire_slip_angle[0] * kRadToDeg); }},
+    {"Tire Slip Angle FR", "TSlpFR", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.tire_slip_angle[1] * kRadToDeg); }},
+    {"Tire Slip Angle RL", "TSlpRL", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.tire_slip_angle[2] * kRadToDeg); }},
+    {"Tire Slip Angle RR", "TSlpRR", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.tire_slip_angle[3] * kRadToDeg); }},
+    {"Tire Slip Ratio FL", "TSlrFL", "%", [](const TelemetrySample& s) { return static_cast<float>(s.tire_slip_ratio[0] * 100.0); }},
+    {"Tire Slip Ratio FR", "TSlrFR", "%", [](const TelemetrySample& s) { return static_cast<float>(s.tire_slip_ratio[1] * 100.0); }},
+    {"Tire Slip Ratio RL", "TSlrRL", "%", [](const TelemetrySample& s) { return static_cast<float>(s.tire_slip_ratio[2] * 100.0); }},
+    {"Tire Slip Ratio RR", "TSlrRR", "%", [](const TelemetrySample& s) { return static_cast<float>(s.tire_slip_ratio[3] * 100.0); }},
+    {"Tire Load FL", "TFzFL", "N", [](const TelemetrySample& s) { return static_cast<float>(s.wheel_load_n[0]); }},
+    {"Tire Load FR", "TFzFR", "N", [](const TelemetrySample& s) { return static_cast<float>(s.wheel_load_n[1]); }},
+    {"Tire Load RL", "TFzRL", "N", [](const TelemetrySample& s) { return static_cast<float>(s.wheel_load_n[2]); }},
+    {"Tire Load RR", "TFzRR", "N", [](const TelemetrySample& s) { return static_cast<float>(s.wheel_load_n[3]); }},
+    {"Tire Camber FL", "TCmbFL", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.wheel_camber_rad[0] * kRadToDeg); }},
+    {"Tire Camber FR", "TCmbFR", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.wheel_camber_rad[1] * kRadToDeg); }},
+    {"Tire Camber RL", "TCmbRL", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.wheel_camber_rad[2] * kRadToDeg); }},
+    {"Tire Camber RR", "TCmbRR", "deg", [](const TelemetrySample& s) { return static_cast<float>(s.wheel_camber_rad[3] * kRadToDeg); }},
+    {"Tire Wear FL", "TWerFL", "%", [](const TelemetrySample& s) { return static_cast<float>(s.tire_wear[0] * 100.0); }},
+    {"Tire Wear FR", "TWerFR", "%", [](const TelemetrySample& s) { return static_cast<float>(s.tire_wear[1] * 100.0); }},
+    {"Tire Wear RL", "TWerRL", "%", [](const TelemetrySample& s) { return static_cast<float>(s.tire_wear[2] * 100.0); }},
+    {"Tire Wear RR", "TWerRR", "%", [](const TelemetrySample& s) { return static_cast<float>(s.tire_wear[3] * 100.0); }},
+    {"Tire Adhesion FL", "TAdhFL", "", [](const TelemetrySample& s) { return static_cast<float>(s.tire_adhesion_ratio[0]); }},
+    {"Tire Adhesion FR", "TAdhFR", "", [](const TelemetrySample& s) { return static_cast<float>(s.tire_adhesion_ratio[1]); }},
+    {"Tire Adhesion RL", "TAdhRL", "", [](const TelemetrySample& s) { return static_cast<float>(s.tire_adhesion_ratio[2]); }},
+    {"Tire Adhesion RR", "TAdhRR", "", [](const TelemetrySample& s) { return static_cast<float>(s.tire_adhesion_ratio[3]); }},
+    {"Tire Flat Spot FL", "TFltFL", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.flat_spot_depth_mm[0]); }},
+    {"Tire Flat Spot FR", "TFltFR", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.flat_spot_depth_mm[1]); }},
+    {"Tire Flat Spot RL", "TFltRL", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.flat_spot_depth_mm[2]); }},
+    {"Tire Flat Spot RR", "TFltRR", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.flat_spot_depth_mm[3]); }},
+
+    // ---- 6. Brakes/BMIG, aero platform, slipstream/wake, hybrid ERS & powertrain (21)
+    {"Brake Temp FL", "BTmpFL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.brake_temp_c[0]); }},
+    {"Brake Temp FR", "BTmpFR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.brake_temp_c[1]); }},
+    {"Brake Temp RL", "BTmpRL", "C", [](const TelemetrySample& s) { return static_cast<float>(s.brake_temp_c[2]); }},
+    {"Brake Temp RR", "BTmpRR", "C", [](const TelemetrySample& s) { return static_cast<float>(s.brake_temp_c[3]); }},
+    {"Brake Bias Front", "BrkBis", "%", [](const TelemetrySample& s) { return static_cast<float>(s.effective_brake_bias_front * 100.0); }},
+    {"ABS Active", "ABS", "", [](const TelemetrySample& s) { return s.abs_active ? 1.0f : 0.0f; }},
+    {"TC Active", "TC", "", [](const TelemetrySample& s) { return s.tc_active ? 1.0f : 0.0f; }},
+    {"Ride Height Front", "RH_F", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.front_ride_height_m * 1000.0); }},
+    {"Ride Height Rear", "RH_R", "mm", [](const TelemetrySample& s) { return static_cast<float>(s.rear_ride_height_m * 1000.0); }},
+    {"Aero DF Front", "DF_F", "N", [](const TelemetrySample& s) { return static_cast<float>(s.aero_df_front_n); }},
+    {"Aero DF Rear", "DF_R", "N", [](const TelemetrySample& s) { return static_cast<float>(s.aero_df_rear_n); }},
+    {"Aero Drag", "Drag", "N", [](const TelemetrySample& s) { return static_cast<float>(s.aero_drag_n); }},
+    {"Aero Balance Front", "AeroBl", "%", [](const TelemetrySample& s) { return static_cast<float>(s.aero_balance_front * 100.0); }},
+    {"Slipstream Drag", "Draft", "", [](const TelemetrySample& s) { return static_cast<float>(s.slipstream_drag_scale); }},
+    {"Dirty Air Front", "DrtAir", "", [](const TelemetrySample& s) { return static_cast<float>(s.dirty_air_front_scale); }},
+    {"Wake Turbulence", "WakeTb", "", [](const TelemetrySample& s) { return static_cast<float>(s.wake_turbulence); }},
+    {"Hybrid SoC", "HybSoC", "%", [](const TelemetrySample& s) { return static_cast<float>(s.hybrid_soc * 100.0); }},
+    {"Hybrid Deploy", "HybDep", "kW", [](const TelemetrySample& s) { return static_cast<float>(s.hybrid_deploy_kw); }},
+    {"Hybrid Regen", "HybReg", "kW", [](const TelemetrySample& s) { return static_cast<float>(s.hybrid_regen_kw); }},
+    {"Fuel Remaining", "Fuel", "L", [](const TelemetrySample& s) { return static_cast<float>(s.fuel_liters); }},
+    {"Boost Pressure", "Boost", "bar", [](const TelemetrySample& s) { return static_cast<float>(s.boost_bar); }},
 };
 constexpr std::size_t kNumChans = sizeof(kChannels) / sizeof(kChannels[0]);
 static_assert(kNumChans == MotecLogger::kChannelCount, "MotecLogger::kChannelCount must match the channel table");

@@ -209,6 +209,25 @@ inline CellForceUnit eval_cell_mf_unit(const TireParams& p, const PatchMFPrecomp
     return out;
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
+void apply_cold_micro_steps(const TireParams& p, const TireOperating& op, TireForces& out) {
+    if (!op.condition) return;
+    const double glassy = op.condition->cold_glassiness(&p);
+    const double v_roll = std::abs(op.rolling_speed_mps);
+    if (glassy <= 0.05 || out.adhesion_ratio >= 0.88 || v_roll <= 2.0) return;
+    const double slip_env = clamp((0.88 - out.adhesion_ratio) / 0.45, 0.0, 1.0)
+                          * clamp((v_roll - 2.0) / 8.0, 0.0, 1.0);
+    const double phase = op.wheel_angle_rad * 26.0 + op.slip_speed * 3.1;
+    const double wave = 0.65 * std::sin(phase) + 0.35 * std::sin(2.13 * phase + 0.8);
+    const double chatter = clamp(glassy * slip_env * wave, -1.0, 1.0);
+    out.cold_micro_step_chatter = chatter;
+    out.fy *= (1.0 + 0.095 * chatter);
+    out.fx *= (1.0 + 0.055 * chatter);
+    out.mz *= (1.0 + 0.16 * chatter);
+}
+
 }  // namespace
 
 double contact_patch_half_length(const TireParams& p, double fz, double dpi) {
@@ -337,6 +356,11 @@ double TireCondition::sidewall_height_m(const TireParams* p) const {
 void TireCondition::repair_structural(const TireParams* p) {
     carcass = CarcassRing{};
     wear = 0.0;
+    wear_inner = 0.0;
+    wear_middle = 0.0;
+    wear_outer = 0.0;
+    last_wear_ = 0.0;
+    corded = false;
     flat_spot_depth_mm = 0.0;
     flat_spot_phase_rad = 0.0;
     flat_spot_load_delta_n = 0.0;
@@ -520,6 +544,9 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
 
     // Wear: tread abrasion in proportion to friction work (Reye 1860; Schallamach & Turner), accelerated when
     // rubber overheats past the compound ceiling or tears during cold graining.
+    if (std::abs(wear - last_wear_) > 1e-6) {
+        wear_inner = wear_middle = wear_outer = clamp(wear, 0.0, 1.0);
+    }
     if (slip_power_w > 0.0) {
         static const TireParams kDefaultTyre{};
         const TireParams* tp = p ? p : &kDefaultTyre;
@@ -529,8 +556,12 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
                                     ? lerp(1.0, tp->dry_overheat_wear_mult, clamp((0.20 - road_water_mm) / 0.20, 0.0, 1.0))
                                     : 1.0;
         const double thermal_wear_mult = (1.0 + 1.8 * clamp(over_c / 40.0, 0.0, 1.5) + 0.8 * clamp(graining, 0.0, 1.0)) * dry_wear_boost;
-        wear = clamp(wear + (slip_power_w + q_dry_squirm) * dt * 1e-6 * tp->wear_per_mj * thermal_wear_mult, 0.0, 1.0);
+        const double dw = (slip_power_w + q_dry_squirm) * dt * 1e-6 * tp->wear_per_mj * thermal_wear_mult;
+        wear = clamp(wear + dw, 0.0, 1.0);
+        wear_inner = wear_middle = wear_outer = wear;
     }
+    corded = (max_rib_wear() >= 0.985);
+    last_wear_ = wear;
     // Keep 3-zone surface temperatures synchronized toward surface_c when update() is called directly
     if (imo_spread_c() < 1e-9) {
         inner_c = middle_c = outer_c = surface_c;
@@ -568,9 +599,17 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
         carcass_hysteresis_w = clamp(0.5 * (lateral_force_n * lateral_force_n / k_lat_est) * f_rot * 1.15, 0.0, 4500.0);
     }
 
+    if (std::abs(wear - last_wear_) > 1e-6) {
+        wear_inner = wear_middle = wear_outer = clamp(wear, 0.0, 1.0);
+    }
+    const double wi0 = wear_inner, wm0 = wear_middle, wo0 = wear_outer;
     const double flash_before = flash_c;   // the zone pass below does the flash step from the rib surfaces
     update(slip_power_w, load_n, speed_mps, dt, p);
     flash_c = flash_before;
+    // Restore pre-step 3-rib wear so update_zones() distributes tread abrasion asymmetrically across I/M/O ribs
+    wear_inner = wi0;
+    wear_middle = wm0;
+    wear_outer = wo0;
 
     inner_c = z_in0;
     middle_c = z_mid0;
@@ -643,6 +682,34 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
         outer_c = clamp(to + dto * h, -15.0, 260.0);
     }
     surface_c = (inner_c + middle_c + outer_c) / 3.0;
+
+    // Independent 3-rib (Inner / Middle / Outer) tread wear: excessive negative camber cords inner shoulder first,
+    // over-inflation wears center rib, hard cornering wears outer shoulder, and driving on exposed cords (>= 98.5%)
+    // triggers progressive carcass delamination & puncture air leak.
+    if (slip_power_w > 0.0) {
+        static const TireParams kDefaultTyre{};
+        const TireParams* tp = p ? p : &kDefaultTyre;
+        const double t_hi = tp->temp_optimal_c + tp->temp_window_c;
+        const double dry_wear_boost = (tp->dry_overheat_wear_mult > 1.01 && road_water_mm < 0.20)
+                                    ? lerp(1.0, tp->dry_overheat_wear_mult, clamp((0.20 - road_water_mm) / 0.20, 0.0, 1.0))
+                                    : 1.0;
+        const double grain_boost = 0.8 * clamp(graining, 0.0, 1.0);
+        const double base_dw = (slip_power_w + q_dry_squirm) * dt * 1e-6 * tp->wear_per_mj * dry_wear_boost;
+        auto rib_mult = [&](double t_rib) {
+            const double over_c = std::max(0.0, t_rib - t_hi);
+            return 1.0 + 1.8 * clamp(over_c / 40.0, 0.0, 1.5) + grain_boost;
+        };
+        wear_inner  = clamp(wear_inner  + base_dw * w_in  * rib_mult(inner_c),  0.0, 1.0);
+        wear_middle = clamp(wear_middle + base_dw * w_mid * rib_mult(middle_c), 0.0, 1.0);
+        wear_outer  = clamp(wear_outer  + base_dw * w_out * rib_mult(outer_c),  0.0, 1.0);
+        wear = (wear_inner + wear_middle + wear_outer) / 3.0;
+    }
+    corded = (max_rib_wear() >= 0.985);
+    last_wear_ = wear;
+    if (corded && load_n > 1200.0 && v > 12.0 && slip_power_w > 1200.0) {
+        sidewall_damage = clamp(sidewall_damage + 0.08 * dt, 0.0, 1.0);
+        puncture_leak_rate = std::max(puncture_leak_rate, 0.06);
+    }
 
     // WLF Micro-Asperity Flash Temperature (~8 ms thermal relaxation time constant):
     // Spikes +20..+50 C in milliseconds at the onset of high-power sliding and cools back to surface_c in ~15 ms.
@@ -1110,6 +1177,29 @@ void TireCondition::step_rigid_ring_belt(double fx_n, double fy_n, double radius
     step_carcass_ring(fx_n, fy_n, fz_nom, 0.0, 0.0, radius_m, dt, p, nullptr);
 }
 
+double TireCondition::cold_glassiness(const TireParams* p) const {
+    // Glass-transition coldness index (0..1): 0 across warm and cool operating tyres (>= t_lo - 15 C),
+    // rises sharply on genuinely cold no-warmer race slicks (< 60 C, peaking at 20-35 C out-lap pit exit)
+    // where rubber approaches Tg and breaks away abruptly with stick-slip micro-steps.
+    const double t_opt = p ? p->temp_optimal_c : 90.0;
+    const double w = p ? p->temp_window_c : 25.0;
+    const double t_glass_start = t_opt - w - 15.0;
+    const double t_blend = 0.60 * temperature_c + 0.40 * surface_c;
+    if (t_blend >= t_glass_start) return 0.0;
+    const double compound_gain = (t_opt >= 80.0) ? 1.0 : ((t_opt >= 65.0) ? 0.60 : 0.30);
+    return clamp(compound_gain * (t_glass_start - t_blend) / 35.0, 0.0, 1.0);
+}
+
+double TireCondition::post_peak_shape_scale(const TireParams* p) const {
+    // Temperature- & damage-dependent Pacejka post-peak curve shape (1.0 when warm & optimal so fitted PAC2002 curves
+    // stay exact; >1.0 narrows peak slip angle & sharpens breakaway ONLY when rubber is cold/glassy below Tg or
+    // physically delaminating from sustained carcass blistering — hot non-blistered rubber softens progressively via
+    // thermal_stiffness_factor() and grease roll-off rather than snapping like glass).
+    const double glassy = cold_glassiness(p);
+    const double blister_u = clamp((blistering - 0.15) / 0.85, 0.0, 1.0);
+    return clamp(1.0 + 0.14 * glassy + 0.06 * blister_u, 1.0, 1.18);
+}
+
 double TireCondition::thermal_stiffness_factor(const TireParams* p) const {
     // MF-Swift-style T&V (Temperature & Velocity) Stiffness Coupling:
     // Cold rubber (< 55 C) has a higher glassy storage shear modulus G' (+11% higher cornering/slip stiffness slope at small
@@ -1154,19 +1244,51 @@ double TireCondition::grip_factor(const TireParams* p) const {
     // immediately; bulk viscoelastic hysteresis tracks the carcass). Overheated tread surface becomes greasy
     // immediately above T_opt + window via a smooth C1 curve until it cools back into the window.
     const double t_opt = p ? p->temp_optimal_c : 90.0, w = p ? p->temp_window_c : 25.0;
-    const double t = 0.55 * temperature_c + 0.45 * surface_c;
+    const double t_lo = t_opt - w;
+    const double t_hi = t_opt + w;
+    const bool is_slick = (t_opt >= 80.0);
+    // Out-lap surface-vs-core decoupling (C1-smooth): flashing the outer 2 mm skin warm over a genuinely cold bulk
+    // carcass (< t_lo - 22 C, i.e. < 53 C on a GT3 slick) provides temporary bite but still lacks bulk viscoelastic
+    // compliance until the core heats up.
+    const double cold_core_u = is_slick ? clamp((t_lo - 22.0 - temperature_c) / 20.0, 0.0, 1.0) : 0.0;
+    const double hot_skin_u  = is_slick ? clamp((surface_c - temperature_c - 12.0) / 25.0, 0.0, 1.0) : 0.0;
+    const double decouple = cold_core_u * hot_skin_u;
+    const double t = (decouple > 0.0)
+                   ? ((0.55 + 0.12 * decouple) * temperature_c + (0.45 - 0.12 * decouple) * surface_c)
+                   : (0.55 * temperature_c + 0.45 * surface_c);
     double temp_grip = 1.0;
-    if (t < t_opt - w) { double d = (t_opt - w - t) / 60.0; temp_grip = std::max(0.85, 1.0 - 0.14 * d * d - 0.02 * d); }
-    else if (t > t_opt + w) { double d = (t - t_opt - w) / 50.0; temp_grip = std::max(0.80, 1.0 - 0.16 * d * d); }
+    if (t < t_lo) {
+        const double d = (t_lo - t) / 60.0;
+        if (is_slick) {
+            // Smooth across cool running tyres (45-75 C), then progressive glass-transition Tg drop below 45 C
+            // so stone-cold no-warmer pit-exit slicks (20-38 C) lose ~25-32% grip (matching LMU / iRacing out-laps).
+            const double d_glass = std::max(0.0, (t_lo - 30.0 - t) / 25.0);
+            temp_grip = (d_glass > 0.0)
+                      ? std::max(0.68, 1.0 - 0.14 * d * d - 0.02 * d - 0.28 * d_glass * d_glass)
+                      : std::max(0.85, 1.0 - 0.14 * d * d - 0.02 * d);
+        } else {
+            temp_grip = std::max(0.85, 1.0 - 0.14 * d * d - 0.02 * d);
+        }
+    } else if (t > t_hi) {
+        const double d = (t - t_hi) / 50.0;
+        temp_grip = std::max(0.80, 1.0 - 0.16 * d * d);
+    }
+    const double skin_shear = 1.0 - 0.06 * decouple;
     // Immediate surface overheating greasiness (smooth C1 rational roll-off above t_opt + w)
-    const double ds = std::max(0.0, surface_c - (t_opt + w));
+    const double ds = std::max(0.0, surface_c - t_hi);
     const double grease = 1.0 - 0.18 * (ds * ds) / (ds * ds + 38.0 * 38.0);
-    // Progressive tread wear + late-stint wear cliff past 70% wear (slicks drop off sharply near carcass plies)
+    // Progressive tread wear + late-stint wear cliff past 70% wear + 3-rib shoulder cording penalty
     const double wear_base = p ? p->wear_grip_loss : 0.15;
     const double wear_cliff = p ? p->wear_cliff_loss : 0.02;
-    const double cliff_u = clamp((wear - 0.70) / 0.30, 0.0, 1.0);
-    const double wear_grip = clamp(1.0 - wear_base * wear * wear - wear_cliff * cliff_u * cliff_u, 0.62, 1.0);
-    return temp_grip * grease * wear_grip * zone_health_grip_factor() * sidewall_rollover_grip_factor();
+    const double worst_rib = (std::abs(wear - last_wear_) > 1e-6) ? clamp(wear, 0.0, 1.0) : max_rib_wear();
+    const double eff_wear = (worst_rib > wear + 1e-6) ? clamp(0.55 * wear + 0.45 * worst_rib, 0.0, 1.0) : wear;
+    const double cliff_u = clamp((eff_wear - 0.70) / 0.30, 0.0, 1.0);
+    const bool is_corded = corded || (worst_rib >= 0.985 && wear_cliff >= 0.06);
+    const double wear_grip = is_corded
+                           ? clamp((1.0 - wear_base * wear * wear - wear_cliff * cliff_u * cliff_u) * 0.84, 0.48, 1.0)
+                           : clamp(1.0 - wear_base * wear * wear - wear_cliff * cliff_u * cliff_u, 0.62, 1.0);
+    const double base_grip = temp_grip * grease * wear_grip * zone_health_grip_factor() * sidewall_rollover_grip_factor();
+    return (decouple > 0.0) ? (base_grip * skin_shear) : base_grip;
 }
 
 double effective_rolling_radius(const TireParams& p, double fz) {
@@ -1331,8 +1453,18 @@ double mf_aligning_torque(const TireParams& p, double kappa, double alpha, doubl
     return -trail * fy_no_svyk + mzr + s * fx;
 }
 
-TireForces evaluate_contact_patch_grid(const TireParams& p, double kappa, double tan_alpha, double fz,
-                                       double mu_scale, double gamma, const TireOperating& op) {
+namespace detail {
+#if defined(__GNUC__) || defined(__clang__)
+#define RS_TIRE_NOINLINE __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define RS_TIRE_NOINLINE __declspec(noinline)
+#else
+#define RS_TIRE_NOINLINE
+#endif
+
+RS_TIRE_NOINLINE
+TireForces evaluate_contact_patch_grid_base(const TireParams& p, double kappa, double tan_alpha, double fz,
+                                            double mu_scale, double gamma, const TireOperating& op) {
     // 4x4 Multi-Point Contact Patch Brush-Magic Hybrid Solver:
     //   - Pacejka, "Tire and Vehicle Dynamics" (3rd ed.), Ch. 3 (Brush Model adhesion/sliding zones, Winkler foundation)
     //   - Dugoff, Fancher & Segel (1970) combined-slip friction-ellipse saturation
@@ -1689,8 +1821,9 @@ TireForces evaluate_contact_patch_grid(const TireParams& p, double kappa, double
     return out;
 }
 
-TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, double fz, double mu_scale, double gamma,
-                         const TireOperating& op) {
+RS_TIRE_NOINLINE
+TireForces magic_formula_base(const TireParams& p, double kappa, double tan_alpha, double fz, double mu_scale, double gamma,
+                              const TireOperating& op) {
     TireForces out;
     if (fz <= 0) return out;
 
@@ -1705,7 +1838,7 @@ TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, do
                             || patch_yaw_slip >= 0.004 || has_rib_spread;
 
     if (op.enable_contact_patch_grid && needs_grid) {
-        return evaluate_contact_patch_grid(p, kappa, tan_alpha, fz, mu_scale, gamma, op);
+        return evaluate_contact_patch_grid_base(p, kappa, tan_alpha, fz, mu_scale, gamma, op);
     }
 
     // Exact flat-road analytical fast-path (when road height & mu are uniform across the 4x4 patch,
@@ -1799,6 +1932,40 @@ TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, do
         }
     }
     return out;
+}
+#undef RS_TIRE_NOINLINE
+}  // namespace detail
+
+TireForces evaluate_contact_patch_grid(const TireParams& p, double kappa, double tan_alpha, double fz,
+                                       double mu_scale, double gamma, const TireOperating& op) {
+    if (op.enable_mf62_hybrid && op.condition) {
+        const double sh = op.condition->post_peak_shape_scale(&p);
+        if (sh != 1.0) {
+            TireParams p_sh = p;
+            p_sh.cx = clamp(p.cx * (1.0 + 0.5 * (sh - 1.0)), 1.0, 2.35);
+            p_sh.cy = clamp(p.cy * sh, 1.0, 2.35);
+            TireForces out = detail::evaluate_contact_patch_grid_base(p_sh, kappa, tan_alpha, fz, mu_scale, gamma, op);
+            apply_cold_micro_steps(p_sh, op, out);
+            return out;
+        }
+    }
+    return detail::evaluate_contact_patch_grid_base(p, kappa, tan_alpha, fz, mu_scale, gamma, op);
+}
+
+TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, double fz, double mu_scale, double gamma,
+                         const TireOperating& op) {
+    if (op.enable_mf62_hybrid && op.condition) {
+        const double sh = op.condition->post_peak_shape_scale(&p);
+        if (sh != 1.0) {
+            TireParams p_sh = p;
+            p_sh.cx = clamp(p.cx * (1.0 + 0.5 * (sh - 1.0)), 1.0, 2.35);
+            p_sh.cy = clamp(p.cy * sh, 1.0, 2.35);
+            TireForces out = detail::magic_formula_base(p_sh, kappa, tan_alpha, fz, mu_scale, gamma, op);
+            apply_cold_micro_steps(p_sh, op, out);
+            return out;
+        }
+    }
+    return detail::magic_formula_base(p, kappa, tan_alpha, fz, mu_scale, gamma, op);
 }
 
 }  // namespace rs
