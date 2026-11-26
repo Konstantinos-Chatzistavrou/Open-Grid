@@ -11,6 +11,7 @@
 //   - Axial vectors (omega, torque):           (-x,  y, -z) * scale
 //   - Orientation quaternion (w, x, y, z):     ( w, -x,  y, -z)  (exact M * R_rs * M conjugation)
 #pragma once
+#include "rs/ffb_stream.hpp"
 #include "rs/math.hpp"
 #include "rs/street_surface.hpp"
 #include "rs/vehicle.hpp"
@@ -369,6 +370,21 @@ public:
 
         const VehicleOutput& out = runtime_.step(chassis, contacts, dt);
 
+        // Push lock-free 400 Hz Direct-Drive FFB sample directly on the physics thread (zero 60 fps quantization!)
+        ffb_sim_time_s_ += dt;
+        rt::FfbShaperConfig ffb_cfg;
+        ffb_cfg.gain = ffb_gain_.load(std::memory_order_relaxed);
+        ffb_cfg.max_wheel_torque_nm = ffb_max_nm_.load(std::memory_order_relaxed);
+        ffb_cfg.soft_clip_start = ffb_soft_clip_.load(std::memory_order_relaxed);
+        ffb_cfg.min_force_norm = ffb_min_force_.load(std::memory_order_relaxed);
+        const rt::FfbSample ffb = rt::shape_ffb_sample(out, runtime_.next_tick(), ffb_sim_time_s_, ffb_cfg);
+        if (rt::FfbSample* slot = ffb_ring_.prepare()) {
+            *slot = ffb;
+            ffb_ring_.commit();
+        }
+        latest_ffb_norm_.store(ffb.normalized, std::memory_order_relaxed);
+        latest_ffb_clip_.store(ffb.clipping, std::memory_order_relaxed);
+
         if (st.street_surface_enabled) {
             const double v_car = length(chassis.velocity);
             for (int w = 0; w < 4; ++w) {
@@ -390,6 +406,27 @@ public:
     double street_marbles_at_car() const { return last_street_marbles_.load(std::memory_order_relaxed); }
     StreetSurfaceEvolution& street_surface() { return street_evo_; }
     const StreetSurfaceEvolution& street_surface() const { return street_evo_; }
+
+    /** Configure 400 Hz Direct-Drive FFB shaper lock-free from game/UI thread. */
+    void set_ffb_config(const rt::FfbShaperConfig& c) {
+        ffb_gain_.store(c.gain, std::memory_order_relaxed);
+        ffb_max_nm_.store(c.max_wheel_torque_nm, std::memory_order_relaxed);
+        ffb_soft_clip_.store(c.soft_clip_start, std::memory_order_relaxed);
+        ffb_min_force_.store(c.min_force_norm, std::memory_order_relaxed);
+    }
+    /** Drain queued 400 Hz FFB samples lock-free on a dedicated DirectInput / HID / UE5 FFB consumer thread. */
+    template <class Fn>
+    std::size_t drain_ffb_samples(Fn&& fn) {
+        std::size_t n = 0;
+        while (const rt::FfbSample* s = ffb_ring_.front()) {
+            fn(*s);
+            ffb_ring_.pop();
+            ++n;
+        }
+        return n;
+    }
+    float latest_ffb_normalized() const { return latest_ffb_norm_.load(std::memory_order_relaxed); }
+    bool latest_ffb_clipping() const { return latest_ffb_clip_.load(std::memory_order_relaxed); }
 
     const rt::RuntimeStats& stats() const { return runtime_.stats; }
     rt::VehicleRuntime<>& runtime() { return runtime_; }
@@ -464,6 +501,15 @@ private:
     double weather_dt_accum_ = 0.0;
     std::atomic<double> last_street_rubber_{0.0};
     std::atomic<double> last_street_marbles_{0.0};
+    // Lock-free 400 Hz Direct-Drive FFB stream (physics thread -> native HID/DirectInput/UE5 FFB thread)
+    SpscRing<rt::FfbSample, 256> ffb_ring_;
+    double ffb_sim_time_s_ = 0.0;
+    std::atomic<double> ffb_gain_{1.0};
+    std::atomic<double> ffb_max_nm_{15.0};
+    std::atomic<double> ffb_soft_clip_{0.80};
+    std::atomic<double> ffb_min_force_{0.0};
+    std::atomic<float> latest_ffb_norm_{0.0f};
+    std::atomic<bool> latest_ffb_clip_{false};
 };
 
 // ---- UE 5.8 Wheel State, Telemetry, Wheel Interpolation & Crash Morph-Target Helpers ----------------------------

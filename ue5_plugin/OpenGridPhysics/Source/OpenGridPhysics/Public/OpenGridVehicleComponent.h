@@ -440,6 +440,24 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Brakes", meta=(ClampMin="0.25", ClampMax="1.0"))
     float BrakeDuctOpen = 1.0f;
 
+    // ---- 400 Hz Direct-Drive Force Feedback Shaper ------------------------------------------------------------------
+
+    /** Direct-Drive FFB gain multiplier (0..2). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|FFB", meta=(ClampMin="0.0", ClampMax="2.0"))
+    float FfbGain = 1.0f;
+
+    /** Wheelbase peak torque ceiling (N m: 5-8 entry belt/DD, 12-25 pro Simucube/Fanatec DD). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|FFB", meta=(ClampMin="2.0", ClampMax="35.0"))
+    float FfbMaxWheelTorqueNm = 15.0f;
+
+    /** C^1 tanh soft-clip knee start (0.50..0.99: linear below, smooth compression above so kerbs never flat-top). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|FFB", meta=(ClampMin="0.50", ClampMax="0.99"))
+    float FfbSoftClipStart = 0.80f;
+
+    /** Minimum force deadzone lift for belt/gear wheels (0.0 for Direct Drive). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|FFB", meta=(ClampMin="0.0", ClampMax="0.15"))
+    float FfbMinForce = 0.0f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Assists")
     bool bAbs = true;
 
@@ -696,6 +714,13 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float PowerSteeringGain = 0.0f;
 
+    /** Latest 400 Hz shaped Direct-Drive FFB output (-1..+1) & clipping indicator. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|FFB")
+    float FfbNormalizedOutput = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|FFB")
+    bool bFfbClipping = false;
+
     /** Hydraulic torque converter turbine/pump speed ratio SR (0 at stall .. 1.0 locked). */
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float TorqueConverterSlipRatio = 1.0f;
@@ -931,9 +956,12 @@ public:
     UFUNCTION(BlueprintCallable, Category="OpenGrid|Config")
     bool PreloadCarSpec() { return EnsureCarLoaded(); }
 
-    /** Native C++ accessors for sibling UE5 components (e.g., UOpenGridAudioComponent). */
+    /** Native C++ accessors for sibling UE5 components (e.g., UOpenGridAudioComponent & 400 Hz HID/DirectInput FFB threads). */
     const rs::CarConfig& GetCarConfig() const { return Config_; }
     const rs::VehicleOutput& GetLastVehicleOutput() const { return LastRecord_.out; }
+    template <class Fn>
+    std::size_t DrainFfb400Hz(Fn&& FnCallback) { return Bridge_.IsValid() ? Bridge_->drain_ffb_samples(FnCallback) : 0; }
+    float GetLatestFfbNormalized400Hz() const { return Bridge_.IsValid() ? Bridge_->latest_ffb_normalized() : 0.0f; }
 
 private:
     void CreateVehicle();

@@ -89,7 +89,11 @@
         0.542,
         0.621
       ]
-    }
+    },
+    "heave_spring_rate_n_per_m": 85000,
+    "heave_gap_m": 0.01,
+    "heave_damper_bump_ns_per_m": 3400,
+    "heave_damper_rebound_ns_per_m": 5000
   },
   "rear_axle": {
     "track_m": 1.6,
@@ -164,7 +168,11 @@
         0.537,
         0.628
       ]
-    }
+    },
+    "heave_spring_rate_n_per_m": 95000,
+    "heave_gap_m": 0.01,
+    "heave_damper_bump_ns_per_m": 3570,
+    "heave_damper_rebound_ns_per_m": 5250
   },
   "tire_front": {
     "compound": "semi_slick",
@@ -398,7 +406,9 @@
   },
   "brakes": {
     "max_total_torque_nm": 7800,
-    "bias_front": 0.66
+    "bias_front": 0.66,
+    "migration_front": 0.02,
+    "disc_type": "carbon_ceramic"
   },
   "engine": {
     "cylinders": 6,

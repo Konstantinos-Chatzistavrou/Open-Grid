@@ -89,7 +89,11 @@
         0.579,
         0.629
       ]
-    }
+    },
+    "heave_spring_rate_n_per_m": 95000,
+    "heave_gap_m": 0.01,
+    "heave_damper_bump_ns_per_m": 3800,
+    "heave_damper_rebound_ns_per_m": 5600
   },
   "rear_axle": {
     "track_m": 1.664,
@@ -164,7 +168,11 @@
         0.565,
         0.649
       ]
-    }
+    },
+    "heave_spring_rate_n_per_m": 105000,
+    "heave_gap_m": 0.01,
+    "heave_damper_bump_ns_per_m": 3990,
+    "heave_damper_rebound_ns_per_m": 5880
   },
   "tire_front": {
     "compound": "road",

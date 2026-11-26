@@ -89,7 +89,11 @@
         0.542,
         0.621
       ]
-    }
+    },
+    "heave_spring_rate_n_per_m": 80000,
+    "heave_gap_m": 0.01,
+    "heave_damper_bump_ns_per_m": 3200,
+    "heave_damper_rebound_ns_per_m": 4800
   },
   "rear_axle": {
     "track_m": 1.6,
@@ -164,7 +168,11 @@
         0.537,
         0.628
       ]
-    }
+    },
+    "heave_spring_rate_n_per_m": 90000,
+    "heave_gap_m": 0.01,
+    "heave_damper_bump_ns_per_m": 3360,
+    "heave_damper_rebound_ns_per_m": 5040
   },
   "tire_front": {
     "compound": "semi_slick",
@@ -398,7 +406,9 @@
   },
   "brakes": {
     "max_total_torque_nm": 7600,
-    "bias_front": 0.64
+    "bias_front": 0.64,
+    "migration_front": 0.02,
+    "disc_type": "carbon_ceramic"
   },
   "engine": {
     "cylinders": 10,
@@ -537,7 +547,55 @@
     "downforce_area_m2": 0.7,
     "front_balance": 0.4,
     "ground_effect_per_m": 2.2,
-    "pitch_balance_per_m": 1.2
+    "pitch_balance_per_m": 1.2,
+    "static_ride_height_front_m": 0.09,
+    "static_ride_height_rear_m": 0.105,
+    "diffuser_stall_rake_m": 0.055,
+    "map_2d": {
+      "front_rh_m": [
+        0.052,
+        0.09,
+        0.128
+      ],
+      "rear_rh_m": [
+        0.061,
+        0.105,
+        0.149
+      ],
+      "cl_front": [
+        0.3192,
+        0.3206,
+        0.322,
+        0.2786,
+        0.28,
+        0.2814,
+        0.238,
+        0.2394,
+        0.2408
+      ],
+      "cl_rear": [
+        0.4536,
+        0.4179,
+        0.3822,
+        0.4557,
+        0.42,
+        0.3843,
+        0.4578,
+        0.4221,
+        0.3864
+      ],
+      "cd": [
+        0.7847,
+        0.8003,
+        0.8159,
+        0.7769,
+        0.78,
+        0.7956,
+        0.7691,
+        0.7722,
+        0.7753
+      ]
+    }
   },
   "surface_grip": {
     "asphalt": 1,

@@ -12,6 +12,7 @@
 
 #include "harness.hpp"
 #include "rs/sim.hpp"
+#include "rs/ue5_bridge.hpp"
 
 using namespace rs;
 
@@ -407,9 +408,65 @@ RS_TEST(lmu_pro_physics) {
 
         // Verify GT3 & Hypercar class specs loaded heave springs, BMIG & carbon-ceramic brakes cleanly
         const CarConfig gt3 = load_car_config(std::string(RS_DATA_DIR) + "/cars/tornado_gt3.json");
-        test::check("tornado_gt3.json loads GT3 heave springs, BMIG & carbon-ceramic brake spec",
-                    gt3.front.heave_spring_rate > 100000.0 &&
-                    gt3.brake_migration_front > 0.02 &&
-                    gt3.brake_thermal.disc_type == BrakeDiscType::CarbonCeramic);
+        const CarConfig borealis = load_car_config(std::string(RS_DATA_DIR) + "/cars/aether_borealis.json");
+        const CarConfig sp3 = load_car_config(std::string(RS_DATA_DIR) + "/cars/valenza_sp3.json");
+        test::check("GT3 & flagship hypercar/supercar JSONs load heave springs, 2D aero maps, BMIG & carbon-ceramic brakes",
+                    gt3.front.heave_spring_rate > 100000.0 && gt3.brake_migration_front > 0.02 &&
+                    gt3.brake_thermal.disc_type == BrakeDiscType::CarbonCeramic &&
+                    borealis.front.heave_spring_rate > 80000.0 && borealis.aero.map_2d.valid() &&
+                    sp3.aero.map_2d.valid() && sp3.brake_thermal.disc_type == BrakeDiscType::CarbonCeramic);
+    }
+
+    // 11. Lock-Free 400 Hz Direct-Drive FFB Shaper & AsyncVehicleBridge SPSC Stream
+    {
+        rt::FfbShaperConfig fcfg;
+        fcfg.gain = 1.0;
+        fcfg.max_wheel_torque_nm = 15.0;
+        fcfg.soft_clip_start = 0.80;
+        VehicleOutput o_lin, o_knee, o_peak;
+        o_lin.steering_column_torque_nm = 7.5;   // 50% -> strictly linear
+        o_knee.steering_column_torque_nm = 15.0; // 100% -> softly compressed < 1.0
+        o_peak.steering_column_torque_nm = 30.0; // 200% -> clipping flag set, smooth < 1.0
+        const rt::FfbSample s_lin = rt::shape_ffb_sample(o_lin, 1, 0.0025, fcfg);
+        const rt::FfbSample s_knee = rt::shape_ffb_sample(o_knee, 2, 0.0050, fcfg);
+        const rt::FfbSample s_peak = rt::shape_ffb_sample(o_peak, 3, 0.0075, fcfg);
+        test::check("Direct-Drive FFB shaper is linear below knee and C^1 soft-clips smoothly without flat-topping",
+                    std::abs(s_lin.normalized - 0.5f) < 1e-4f && !s_lin.clipping &&
+                    s_knee.normalized > 0.90f && s_knee.normalized < 0.98f &&
+                    s_peak.clipping && s_peak.normalized > s_knee.normalized && s_peak.normalized <= 1.0f);
+
+        Vehicle v_ffb(base_cfg);
+        v_ffb.chassis_dynamics().kingpin_3d_ffb_enabled = true;
+        v_ffb.chassis_dynamics().elastic_column_enabled = true;
+        Controls ctrl(v_ffb.config());
+        ue5::AsyncVehicleBridge bridge(v_ffb, ctrl);
+        ChassisState cs;
+        cs.position = {0.0, 0.0, base_cfg.cg_height};
+        cs.velocity = {35.0, 0.0, 0.0};
+        bridge.seed_rays(cs, 1);
+        bridge.fetch_rays();
+        auto& gf = bridge.ground_write_buffer();
+        gf.rays_per_wheel = 1;
+        gf.has_strips = false;
+        for (int w = 0; w < 4; ++w) {
+            gf.planes[w][0].hit = true;
+            gf.planes[w][0].point = {bridge.current_rays().rays[w][0].origin.x, bridge.current_rays().rays[w][0].origin.y, 0.0};
+            gf.planes[w][0].normal = {0.0, 0.0, 1.0};
+        }
+        bridge.publish_ground();
+        rt::VehicleCommand cmd;
+        cmd.core_controls = false;
+        cmd.direct.steer = 0.25;
+        cmd.direct.gear = 4;
+        bridge.submit_command(cmd);
+        for (int i = 0; i < 8; ++i) bridge.step(cs, 0.0025);
+        std::size_t drained = 0;
+        float last_norm = 0.0f;
+        bridge.drain_ffb_samples([&](const rt::FfbSample& s) {
+            ++drained;
+            last_norm = s.normalized;
+        });
+        test::check("AsyncVehicleBridge pushes every 400 Hz physics tick into lock-free Direct-Drive FFB ring",
+                    drained == 8 && std::abs(last_norm) > 0.01f);
     }
 }

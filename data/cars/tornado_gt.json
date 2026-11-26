@@ -398,7 +398,9 @@
   },
   "brakes": {
     "max_total_torque_nm": 7000,
-    "bias_front": 0.67
+    "bias_front": 0.67,
+    "migration_front": 0.015,
+    "disc_type": "carbon_ceramic"
   },
   "engine": {
     "cylinders": 6,
@@ -523,7 +525,55 @@
   "aero": {
     "drag_area_m2": 0.64,
     "downforce_area_m2": 0.52,
-    "front_balance": 0.41
+    "front_balance": 0.41,
+    "static_ride_height_front_m": 0.1,
+    "static_ride_height_rear_m": 0.115,
+    "diffuser_stall_rake_m": 0.06,
+    "map_2d": {
+      "front_rh_m": [
+        0.058,
+        0.1,
+        0.142
+      ],
+      "rear_rh_m": [
+        0.067,
+        0.115,
+        0.163
+      ],
+      "cl_front": [
+        0.243,
+        0.2441,
+        0.2452,
+        0.2121,
+        0.2132,
+        0.2143,
+        0.1812,
+        0.1823,
+        0.1834
+      ],
+      "cl_rear": [
+        0.3313,
+        0.3053,
+        0.2792,
+        0.3329,
+        0.3068,
+        0.2807,
+        0.3344,
+        0.3083,
+        0.2823
+      ],
+      "cd": [
+        0.6438,
+        0.6566,
+        0.6694,
+        0.6374,
+        0.64,
+        0.6528,
+        0.631,
+        0.6336,
+        0.6362
+      ]
+    }
   },
   "surface_grip": {
     "asphalt": 1,

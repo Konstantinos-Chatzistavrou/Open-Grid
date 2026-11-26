@@ -588,6 +588,14 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     Cmd.settings.engine_braking_scale = FMath::Clamp(EngineBrakingScale, 0.4f, 1.6f);
     Cmd.settings.throttle_map_gamma = FMath::Clamp(ThrottleMapGamma, 0.5f, 2.2f);
     Cmd.settings.brake_duct_open = FMath::Clamp(BrakeDuctOpen, 0.25f, 1.0f);
+    {
+        rs::rt::FfbShaperConfig FfbCfg;
+        FfbCfg.gain = FfbGain;
+        FfbCfg.max_wheel_torque_nm = FfbMaxWheelTorqueNm;
+        FfbCfg.soft_clip_start = FfbSoftClipStart;
+        FfbCfg.min_force_norm = FfbMinForce;
+        Bridge_->set_ffb_config(FfbCfg);
+    }
     UOpenGridWeatherSubsystem* WeatherSub = (bAutoSyncWorldWeather && GetWorld())
         ? GetWorld()->GetSubsystem<UOpenGridWeatherSubsystem>() : nullptr;
     if (WeatherSub)
@@ -820,6 +828,11 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
     SteeringColumnTorqueNm = static_cast<float>(Out.steering_column_torque_nm);
     SteeringAssistTorqueNm = static_cast<float>(Out.steering_assist_torque_nm);
     PowerSteeringGain = static_cast<float>(Out.power_steering_gain);
+    if (Bridge_.IsValid())
+    {
+        FfbNormalizedOutput = Bridge_->latest_ffb_normalized();
+        bFfbClipping = Bridge_->latest_ffb_clipping();
+    }
     TorqueConverterSlipRatio = static_cast<float>(Out.tc_slip_ratio);
     TorqueConverterTorqueRatio = static_cast<float>(Out.tc_torque_ratio);
     bTorqueConverterLocked = Out.tc_lockup_engaged;
