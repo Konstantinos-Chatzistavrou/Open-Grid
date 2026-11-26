@@ -13,7 +13,7 @@ import { FREE_ROAM_MAX_PLAYERS, RACE_MAX_PLAYERS, cleanCode, type Party, type Pa
 import type { ControlsUi } from './controls-menu';
 import { PRESET_INFO, applyPreset, matchPreset, type AssistSettings, type Preset } from './assists';
 import { fmt, fmtXp, type Career, type MpCareer, type SpCareer } from './career';
-import type { Cloud, Friend } from './cloud';
+import type { Cloud, Friend, OfficialSeriesEvent } from './cloud';
 import type { RankedResult } from './ranked';
 import { STARTER_CAR, levelOf } from './progression';
 import type { Loader } from './loading';
@@ -146,6 +146,9 @@ export interface MenuHooks {
   publicMatchmake?(): void;
   musicToggle?(on: boolean): void;
   audioEngineMode?(mode: 'real_samples' | 'engine_sim'): void;
+  registerOfficialSeries?(seriesId: string): void;
+  joinOfficialSplit?(eventKey: string): void;
+  refreshSchedule?(): void;
   launchAcademy?(lesson: AcademyLesson): void;
   launchCalendar?(ev: CalendarEvent): void;
   specClassToggle?(on: boolean): void;
@@ -203,6 +206,13 @@ export class Menu {
   layLowCost = -1;
   private friendDraft = '';
   private friendNote = '';
+  private authEmail = '';
+  private authPass = '';
+  private authNote = '';
+  private authBusy = false;
+  officialEvents: OfficialSeriesEvent[] = [];
+  officialSeason = '';
+  officialNote = '';
   private profileFrom: Screen = 'title';
   private friendsTimer = 0;
   /** the career the garage and shop show (single player / online) */
@@ -1165,16 +1175,57 @@ export class Menu {
     const note = this.partyNote ? `<div class="pnote ${/^(✓|Copied)/.test(this.partyNote) ? '' : 'bad'}">${esc(this.partyNote)}</div>` : '';
     const nameRow = `<div class="field"><span class="dim">YOU RACE AS</span><b class="uname">${esc(sel.name)}</b><button class="small" data-act="profile-open">Change · Friends</button></div>`;
     if (!p) {
+      const mp = this.mp.profile;
+      const lic = mp?.license ?? 'R';
+      const dr = Math.round(mp?.dr ?? 1500);
+      const drGrade = mp?.drGrade ?? 'C';
+      const sr = (mp?.sr ?? 2.5).toFixed(2);
+      const jokers = mp?.jokersLeft ?? 2;
+      const subLabel = !this.cloud.available ? 'Offline / Local'
+        : mp?.subTier === 'pro' || mp?.subTier === 'team_pro' ? '★ OpenGrid Pro (Ad-Free)'
+        : mp?.subActive ? '✓ 7-Day Free Online Trial (Ad-Free)' : 'Online Pass Expired';
+      const seriesCards = (this.officialEvents.length ? this.officialEvents : [
+        { id: 'rookie_sprint', title: 'OpenGrid Rookie GT Sprint', subtitle: 'Fixed Setup · 20m cadence · Class R+', minLicense: 'R', intervalMin: 20, maxPerSplit: 12, laps: 3, startsInSec: 600, registrants: 0, eligible: true, eventKey: '', myEntry: null },
+        { id: 'gt3_championship', title: 'OpenGrid GT3 World Championship', subtitle: 'BoP Equalized · 45m cadence · SOF Splits · Class D+', minLicense: 'D', intervalMin: 45, maxPerSplit: 16, laps: 5, startsInSec: 1800, registrants: 0, eligible: false, eventKey: '', myEntry: null },
+        { id: 'hypercar_pro', title: 'OpenGrid Hypercar Pro Series', subtitle: 'Open Setup · Full Damage · Class C+', minLicense: 'C', intervalMin: 60, maxPerSplit: 16, laps: 6, startsInSec: 2400, registrants: 0, eligible: false, eventKey: '', myEntry: null },
+        { id: 'endurance_special', title: 'OpenGrid Multiclass Endurance', subtitle: '2x Championship Pts · Team Driver Swaps · Class B+', minLicense: 'B', intervalMin: 120, maxPerSplit: 20, laps: 10, startsInSec: 3600, registrants: 0, eligible: false, eventKey: '', myEntry: null },
+      ] as OfficialSeriesEvent[]).map((ev) => {
+        const reg = ev.myEntry?.status === 'registered' || ev.myEntry?.status === 'seeded';
+        const mins = Math.max(1, Math.ceil((ev.startsInSec || 60) / 60));
+        return `<div class="scard ${reg ? 'owned' : ''}">
+          <div class="car-head"><b>${esc(ev.title)}</b><i class="car-badge">CLASS ${esc(ev.minLicense)}+ · ${ev.laps} LAPS</i></div>
+          <div class="dim small-note">${esc(ev.subtitle)}</div>
+          <div class="mini"><em>Next split: ${mins}m</em><em>${ev.registrants} registered</em><em>Max ${ev.maxPerSplit}/split</em></div>
+          <div class="chips" style="margin-top:8px">
+            ${reg && ev.eventKey
+              ? `<button class="small primary" data-act="official-join" data-v="${esc(ev.eventKey)}">▶ Enter SOF Split</button>`
+              : `<button class="small primary" data-act="official-reg" data-v="${esc(ev.id)}" ${!this.cloud.available || !ev.eligible ? 'disabled' : ''}>${ev.eligible ? '🏁 Register for Official Split' : `🔒 Needs Class ${esc(ev.minLicense)}`}</button>`}
+          </div>
+        </div>`;
+      }).join('');
       return `<div class="lobby-screen"><div class="card lobby-card">
-        <div class="lobby-head"><button data-act="modes" class="back-btn">← Game Modes</button><div><div class="kicker">MULTIPLAYER</div><h2>Party</h2></div></div>
+        <div class="lobby-head"><button data-act="modes" class="back-btn">← Game Modes</button><div><div class="kicker">OPENGRID OFFICIAL NETWORK · 100% AD-FREE</div><h2>Multiplayer</h2></div></div>
         ${nameRow}
+        <div class="opts" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
+          <span class="pill gold">LICENSE CLASS ${esc(lic)}</span>
+          <span class="pill">DR ${dr} (${esc(drGrade)})</span>
+          <span class="pill">SR ${sr} / 4.99</span>
+          <span class="pill">🛡 Jokers: ${jokers}</span>
+          <span class="pill ${mp?.subActive ? 'gold' : ''}">${esc(subLabel)}</span>
+          ${mp?.badSport ? '<span class="pill" style="border-color:#ff4757;color:#ff4757">⚠ BAD-SPORT QUARANTINE</span>' : ''}
+          ${this.cloud.available ? '<button class="small" data-act="official-refresh">↻ Refresh Splits</button>' : ''}
+        </div>
+        <h3>🏁 Official Scheduled Splits ${this.officialSeason ? `<small class="dim">Season ${esc(this.officialSeason)} · Fault-Aware 0x Victim Shield · Restorative Protests</small>` : ''}</h3>
+        <div class="shop-cars">${seriesCards}</div>
+        ${this.officialNote ? `<div class="pnote ${this.officialNote.startsWith('✓') ? '' : 'bad'}">${esc(this.officialNote)}</div>` : ''}
+        <h3 style="margin-top:16px">Private Parties &amp; P2P (Free Forever)</h3>
         <div class="lobby-cols">
-          <div class="lcol"><h3>Host</h3><p class="dim">Start a party and invite friends with a link or a 5-letter code (+${Math.round((PARTY_BONUS_MUL - 1) * 100)}% Party XP/CR Bonus).</p>
+          <div class="lcol"><h3>Host</h3><p class="dim">Start a private party and invite friends with a link or 5-letter code (+${Math.round((PARTY_BONUS_MUL - 1) * 100)}% Party XP/CR Bonus).</p>
             <button class="primary huge" data-act="pcreate" ${this.partyBusy ? 'disabled' : ''}>＋ Create Party</button></div>
-          <div class="lcol"><h3>Public Matchmaking</h3><p class="dim">Jump straight into an open public lobby with strangers — even solo or with your party.</p>
-            <button class="primary huge" data-act="pmatch" ${this.partyBusy ? 'disabled' : ''}>🌐 Quick Public Lobby</button></div>
+          <div class="lcol"><h3>Quick Ranked Match</h3><p class="dim">Auto-join the active OpenGrid Rookie Sprint split (or open public room).</p>
+            <button class="primary huge" data-act="pmatch" ${this.partyBusy ? 'disabled' : ''}>🌐 Quick Match</button></div>
           <div class="lcol"><h3>Join by Code</h3><p class="dim">Got a code from a friend? Type it here.</p>
-            <div class="joinrow"><input id="joincode" type="text" maxlength="8" value="${esc(this.joinCode)}" placeholder="CODE" spellcheck="false" autocomplete="off" />
+            <div class="joinrow"><input id="joincode" type="text" maxlength="10" value="${esc(this.joinCode)}" placeholder="CODE" spellcheck="false" autocomplete="off" />
             <button class="primary" data-act="pjoin" ${this.partyBusy ? 'disabled' : ''}>Join</button></div></div>
         </div>
         ${(() => { const ss = checkSplitScreen(); return `<div class="opts" style="margin-top:12px"><span class="dim">SPLIT-SCREEN</span><span class="pill ${ss.eligible ? 'gold' : ''}">${ss.eligible ? '✓ READY' : 'LOCKED'}</span><span class="dim small-note">${esc(ss.reason)}</span></div>`; })()}
@@ -1606,6 +1657,12 @@ export class Menu {
       case 'voice-mute': this.hooks.voiceMutePeer?.(v); this.render(); break;
       case 'voice-block': this.hooks.voiceBlockPeer?.(v); this.render(); break;
       case 'pmatch': this.hooks.publicMatchmake?.(); break;
+      case 'official-reg': this.hooks.registerOfficialSeries?.(v); break;
+      case 'official-join': this.hooks.joinOfficialSplit?.(v); break;
+      case 'official-refresh': this.hooks.refreshSchedule?.(); break;
+      case 'auth-register': void this.submitAuth('register'); break;
+      case 'auth-login': void this.submitAuth('login'); break;
+      case 'auth-logout': void this.submitLogout(); break;
       case 'music': this.musicOn = v === '1'; this.hooks.musicToggle?.(this.musicOn); this.render(); break;
       case 'audio-engine': {
         const m = v === 'engine_sim' ? 'engine_sim' : 'real_samples';
@@ -1671,7 +1728,7 @@ export class Menu {
       }
       case 'modes': this.show('modes'); break;
       case 'quit-modes': this.lastResults = null; this.hooks.quit('modes'); break;
-      case 'lobby': this.partyNote = ''; this.setCareer('mp'); this.show('lobby'); break;
+      case 'lobby': this.partyNote = ''; this.setCareer('mp'); this.show('lobby'); this.hooks.refreshSchedule?.(); break;
       case 'gfx': this.gfx = v as Gfx; this.hooks.gfx(this.gfx); this.render(); break;
       case 'car': sel.car = v; this.save(); this.render(); this.hooks.preview(); break;
       case 'paint': sel.paint[sel.car] = v; this.save(); this.render(); this.hooks.preview(); break;
@@ -1816,15 +1873,50 @@ export class Menu {
     if (action === 'add' && this.friendNote.startsWith('✓')) this.friendDraft = '';
     this.render();
   }
+  private async submitAuth(kind: 'register' | 'login') {
+    if (this.authBusy || !this.cloud.available) return;
+    this.authBusy = true;
+    this.authNote = kind === 'register' ? 'Saving account…' : 'Signing in…';
+    this.render();
+    try {
+      const p = kind === 'register'
+        ? await this.cloud.registerEmail(this.authEmail, this.authPass, this.identity.claimed ? undefined : (this.unameDraft ?? this.sel.name))
+        : await this.cloud.loginEmail(this.authEmail, this.authPass);
+      this.mp.profile = p;
+      if (p.username) { this.sel.name = p.username; this.save(); }
+      this.authPass = '';
+      this.authNote = kind === 'register' ? `✓ Account saved for ${p.email ?? this.authEmail} — works across Web & UE 5.8!` : `✓ Welcome back, ${p.name}!`;
+      void this.mp.refresh();
+      void this.identity.sync(p);
+    } catch (e) {
+      this.authNote = (e as Error).message || 'Authentication failed.';
+    } finally {
+      this.authBusy = false;
+      this.render();
+    }
+  }
+
+  private async submitLogout() {
+    if (this.authBusy) return;
+    this.authBusy = true;
+    await this.cloud.logout();
+    this.mp.profile = null;
+    this.authPass = '';
+    this.authNote = 'Signed out on this device.';
+    this.authBusy = false;
+    this.render();
+  }
+
   private profile() {
     const id = this.identity, f = id.friends, online = this.cloud.available;
+    const mp = this.mp.profile;
     const draft = this.unameDraft ?? this.sel.name;
     const status = !online ? 'Saved on this device. The online service is not set up for this build, so the name cannot be reserved yet.'
       : id.claimed ? '✓ Reserved for you on the online service.' : id.note || 'Not confirmed by the online service yet.';
     const seen = (x: Friend) => (typeof x.seenAgo === 'number' ? `Offline · last seen ${agoText(x.seenAgo + Math.max(0, Date.now() - id.friendsAt))}` : 'Offline');
     const friend = (x: Friend) => `<div class="member">
         <span class="avatar"><i class="dot ${x.online ? 'on' : ''}"></i></span>
-        <div class="mtext"><div class="mname"><b>${esc(x.username)}</b><span class="pill">Lv ${x.level}</span></div>
+        <div class="mtext"><div class="mname"><b>${esc(x.username)}</b><span class="pill">Lv ${x.level}</span>${x.license ? `<span class="pill gold">${esc(x.license)} · DR ${x.dr ?? 1500}</span>` : ''}</div>
         <span class="dim">${x.online ? (x.party ? `Online · in party ${esc(x.party)}` : 'Online') : seen(x)}</span></div>
         ${x.party && !this.party ? `<button class="small primary" data-act="friend-join" data-v="${esc(x.party)}">Join</button>` : ''}
         <button class="small" data-act="friend-remove" data-v="${esc(x.username)}" title="Remove friend">✕</button>
@@ -1833,6 +1925,19 @@ export class Menu {
         <button class="small primary" data-act="friend-accept" data-v="${esc(u)}">Accept</button><button class="small" data-act="friend-remove" data-v="${esc(u)}">Decline</button></div>`).join('');
     const outgoing = f.outgoing.map((u) => `<div class="member"><div class="mtext"><div class="mname"><b>${esc(u)}</b></div><span class="dim">request sent</span></div>
         <button class="small" data-act="friend-remove" data-v="${esc(u)}">Cancel</button></div>`).join('');
+    const authBlock = !online ? '<div class="dim note">Email login activates automatically once connected to the OpenGrid cloud backend.</div>'
+      : mp?.email ? `<div class="opts" style="flex-wrap:wrap;gap:8px">
+          <span class="pill gold">✓ SIGNED IN · ${esc(mp.email)}</span>
+          <span class="pill">CLASS ${esc(mp.license ?? 'R')} · DR ${Math.round(mp.dr ?? 1500)} · SR ${(mp.sr ?? 2.5).toFixed(2)}</span>
+          <button class="small" data-act="auth-logout" ${this.authBusy ? 'disabled' : ''}>Sign Out</button>
+        </div>`
+      : `<p class="dim small-note">Save your career, cars, Driver Rating, License &amp; Online Pass across browsers and UE 5.8 (PBKDF2-SHA256 secured, upgrades your current guest account with zero progress lost).</p>
+        <div class="joinrow" style="flex-wrap:wrap;gap:6px">
+          <input id="auth-email" type="email" value="${esc(this.authEmail)}" placeholder="Email address" autocomplete="email" />
+          <input id="auth-pass" type="password" value="${esc(this.authPass)}" placeholder="Password (8+ chars)" autocomplete="current-password" />
+          <button class="primary" data-act="auth-register" ${this.authBusy ? 'disabled' : ''}>Save / Sign Up</button>
+          <button class="small" data-act="auth-login" ${this.authBusy ? 'disabled' : ''}>Log In</button>
+        </div>`;
     const friendsBlock = !online ? `<div class="dim note">${esc(id.friendsNote || 'Friends need the online service, which is not set up for this build.')}</div>` : `
       <div class="joinrow"><input id="fadd" type="text" maxlength="${USERNAME_MAX}" value="${esc(this.friendDraft)}" placeholder="Add a friend by username" spellcheck="false" autocomplete="off" autocapitalize="off" />
         <button class="primary" data-act="friend-add" ${id.claimed ? '' : 'disabled'}>Add</button></div>
@@ -1843,7 +1948,10 @@ export class Menu {
       <div class="members">${f.friends.map(friend).join('') || '<div class="dim note">No friends yet. Share your username, or add theirs above.</div>'}</div>
       ${outgoing ? `<h3>Sent</h3><div class="members">${outgoing}</div>` : ''}`;
     return `<div class="lobby-screen"><div class="card lobby-card profile-card">
-      <div class="lobby-head"><button data-act="profile-back" class="back-btn">← Back</button><div><div class="kicker">PROFILE</div><h2>${esc(this.sel.name)}</h2></div></div>
+      <div class="lobby-head"><button data-act="profile-back" class="back-btn">← Back</button><div><div class="kicker">OPENGRID DRIVER PROFILE</div><h2>${esc(this.sel.name)}</h2></div></div>
+      <h3>🔐 OpenGrid Account Login</h3>
+      ${authBlock}
+      ${this.authNote ? `<div class="pnote ${this.authNote.startsWith('✓') ? '' : 'bad'}">${esc(this.authNote)}</div>` : ''}
       <h3>Username</h3>
       <p class="dim">Friends add you by it; it shows on the race leaderboard, over your car and on your number plate (up to ${PLATE_MAX} characters).
         ${online ? 'You can change it once every 30 days.' : ''}</p>
@@ -1866,6 +1974,8 @@ export class Menu {
     if (t.id === 'joincode') { const c = cleanCode(t.value); if (c !== t.value) t.value = c; this.joinCode = c; }
     if (t.id === 'uname') { this.unameDraft = t.value; void this.liveCheck(t.value); }
     if (t.id === 'fadd') this.friendDraft = t.value;
+    if (t.id === 'auth-email') this.authEmail = t.value;
+    if (t.id === 'auth-pass') this.authPass = t.value;
     if (t.type === 'range') this.ctl?.slide(t);
   }
   private change(e: Event) {

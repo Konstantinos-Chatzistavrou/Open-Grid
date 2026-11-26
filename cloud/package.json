@@ -11,7 +11,8 @@
     "deploy": "wrangler deploy",
     "test": "node test/sim.mjs",
     "test:social": "node test/social.mjs",
-    "test:pace": "node test/pace.mjs"
+    "test:pace": "node test/pace.mjs",
+    "test:competitive": "node test/competitive.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261125.1",

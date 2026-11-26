@@ -1638,11 +1638,56 @@ async function main() {
       void voice.enable().then((ok) => { menu.voiceOn = ok; menu.voiceStatus = voice.status; menu.render(); });
     },
     voiceMode: (m) => { voice.setMode(m); menu.voiceMode = m; menu.voiceStatus = voice.status; menu.render(); },
+    refreshSchedule: () => {
+      if (!cloud.available) return;
+      void cloud.schedule().then((s) => {
+        menu.officialSeason = s.season;
+        menu.officialEvents = s.events;
+        if (menu.screen === 'lobby') menu.render();
+      }).catch((e: Error) => { menu.officialNote = e.message; if (menu.screen === 'lobby') menu.render(); });
+    },
+    registerOfficialSeries: (seriesId) => {
+      if (!cloud.available) return;
+      menu.officialNote = 'Registering for official SOF split…';
+      menu.render();
+      void cloud.registerSeries(seriesId, sel.car).then(async (res) => {
+        menu.officialNote = `✓ Registered (${res.registrants} drivers). Click "Enter SOF Split" to launch!`;
+        const s = await cloud.schedule();
+        menu.officialSeason = s.season;
+        menu.officialEvents = s.events;
+        menu.render();
+      }).catch((e: Error) => { menu.officialNote = e.message; menu.render(); });
+    },
+    joinOfficialSplit: (eventKey) => {
+      if (!cloud.available || menu.partyBusy) return;
+      menu.partyBusy = true;
+      menu.partyNote = 'Seeding balanced SOF splits…';
+      menu.render();
+      void cloud.seedSeries(eventKey).then((res) => {
+        const sp = res.mySplit;
+        if (!sp) throw new Error('No split assignment yet — register first.');
+        menu.partyNote = `✓ Assigned to ${sp.badSportSplit ? 'Bad-Sport Split' : `Split ${sp.splitNo}`} (SOF ${sp.sof}, ${sp.drivers} drivers) · Room ${sp.partyCode}`;
+        return Party.join(sp.partyCode, meForParty()).then(attachParty, () => Party.create(meForParty(), sp.partyCode).then(attachParty));
+      }).catch((e: Error) => { menu.partyNote = e.message; })
+        .finally(() => { menu.partyBusy = false; if (menu.screen === 'lobby') menu.render(); });
+    },
     publicMatchmake: () => {
       if (menu.partyBusy) return;
+      if (cloud.available) {
+        menu.partyBusy = true; menu.partyNote = 'Matching into OpenGrid Rookie GT Sprint split…'; menu.render();
+        void cloud.registerSeries('rookie_sprint', sel.car)
+          .then((r) => cloud.seedSeries(r.eventKey))
+          .then((res) => {
+            const code = res.mySplit?.partyCode ?? `PUB${String(new Date().getUTCHours()).padStart(2, '0')}`;
+            return Party.join(code, meForParty()).then(attachParty, () => Party.create(meForParty(), code).then(attachParty));
+          })
+          .catch((e: Error) => { menu.partyNote = e.message; })
+          .finally(() => { menu.partyBusy = false; if (menu.screen === 'lobby') menu.render(); });
+        return;
+      }
       const pubCode = `PUB${String(new Date().getUTCHours()).padStart(2, '0')}`;
       menu.partyBusy = true; menu.partyNote = `Matching into public lobby ${pubCode}…`; menu.render();
-      Party.join(pubCode, meForParty()).then(attachParty, () => Party.create(meForParty()).then(attachParty))
+      Party.join(pubCode, meForParty()).then(attachParty, () => Party.create(meForParty(), pubCode).then(attachParty))
         .catch((e: Error) => { menu.partyNote = e.message; })
         .finally(() => { menu.partyBusy = false; if (menu.screen === 'lobby') menu.render(); });
     },

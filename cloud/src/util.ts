@@ -1,11 +1,15 @@
 // Helpers shared by the API and the race room.
+import { driverGradeOf, isSubscriptionActive, type LicenseClass, type SubTier } from './ratings';
+
 export interface Env {
   DB: D1Database;
   ROOMS: DurableObjectNamespace;
   /** secret salt for network hashes (wrangler secret put IP_SALT) */
   IP_SALT?: string;
-  /** replay checker key (wrangler secret put VERIFIER_KEY) */
+  /** replay checker & steward key (wrangler secret put VERIFIER_KEY) */
   VERIFIER_KEY?: string;
+  /** HMAC-SHA256 webhook secret for Stripe/Paddle subscription updates (wrangler secret put BILLING_SECRET) */
+  BILLING_SECRET?: string;
   ALLOWED_ORIGINS?: string;
   /** local tests only (.dev.vars): honour the x-test-ip header to simulate players on different networks */
   ALLOW_TEST_IP?: string;
@@ -17,6 +21,12 @@ export interface AccountRow {
   username: string | null; username_at: number | null; seen: number | null; party: string | null;
   looks: string;
   save_version?: number; save_prefs?: string; avatar_gear?: string;
+  email?: string | null; password_hash?: string | null; password_salt?: string | null; email_verified?: number;
+  sub_tier?: string; sub_expires_at?: number; billing_customer_id?: string | null;
+  dr?: number; dr_rd?: number; sr?: number; license?: string; mpr_races?: number;
+  rolling_cpi?: number; bad_sport?: number; clean_streak?: number; jokers_left?: number;
+  starts?: number; wins?: number; podiums?: number; poles?: number;
+  total_incidents?: number; total_corners?: number;
 }
 
 export const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -25,7 +35,7 @@ export function cors(r: Response, env: Env) {
   if (r.status === 101) return r;   // WebSocket upgrade: headers are immutable
   const h = new Headers(r.headers);
   h.set('access-control-allow-origin', env.ALLOWED_ORIGINS === '*' || !env.ALLOWED_ORIGINS ? '*' : env.ALLOWED_ORIGINS.split(',')[0]);
-  h.set('access-control-allow-headers', 'content-type, authorization');
+  h.set('access-control-allow-headers', 'content-type, authorization, x-opengrid-signature');
   h.set('access-control-allow-methods', 'GET, POST, OPTIONS');
   return new Response(r.body, { status: r.status, headers: h });
 }
@@ -65,17 +75,46 @@ export async function accountOf(req: Request, env: Env): Promise<AccountRow | nu
   return row;
 }
 
-export const profileOf = (a: AccountRow) => ({
-  id: a.id, name: a.username ?? a.name, username: a.username, usernameAt: a.username_at, xp: a.xp, credits: a.credits,
-  cars: JSON.parse(a.cars) as string[], mods: JSON.parse(a.mods), skins: JSON.parse(a.skins) as string[],
-  looks: JSON.parse(a.looks ?? '{}') as Record<string, unknown>,
-  saveVersion: a.save_version ?? 1,
-  prefs: JSON.parse(a.save_prefs ?? '{}') as Record<string, unknown>,
-  avatarGear: JSON.parse(a.avatar_gear ?? '{}') as Record<string, unknown>,
-  clean: a.clean, strikes: a.strikes, banned: !!a.banned, created: a.created,
-});
+export const profileOf = (a: AccountRow) => {
+  const dr = Math.round((a.dr ?? 1500) * 10) / 10;
+  const sr = Math.round((a.sr ?? 2.5) * 100) / 100;
+  const subTier = (a.sub_tier ?? 'trial') as SubTier;
+  const subExpiresAt = a.sub_expires_at ?? 0;
+  return {
+    id: a.id, name: a.username ?? a.name, username: a.username, usernameAt: a.username_at, xp: a.xp, credits: a.credits,
+    email: a.email ?? null, hasPassword: !!a.password_hash,
+    cars: JSON.parse(a.cars) as string[], mods: JSON.parse(a.mods), skins: JSON.parse(a.skins) as string[],
+    looks: JSON.parse(a.looks ?? '{}') as Record<string, unknown>,
+    saveVersion: a.save_version ?? 1,
+    prefs: JSON.parse(a.save_prefs ?? '{}') as Record<string, unknown>,
+    avatarGear: JSON.parse(a.avatar_gear ?? '{}') as Record<string, unknown>,
+    clean: a.clean, strikes: a.strikes, banned: !!a.banned, created: a.created,
+    // Competitive OpenGrid Network profile (iRacing / LMU / RaceRoom parity+)
+    subTier,
+    subExpiresAt,
+    subActive: isSubscriptionActive(subTier, subExpiresAt),
+    dr,
+    drRd: Math.round((a.dr_rd ?? 180) * 10) / 10,
+    drGrade: driverGradeOf(dr),
+    sr,
+    license: (a.license ?? 'R') as LicenseClass,
+    mprRaces: a.mpr_races ?? 0,
+    rollingCpi: Math.round((a.rolling_cpi ?? 25) * 100) / 100,
+    badSport: !!(a.bad_sport ?? 0),
+    cleanStreak: a.clean_streak ?? 0,
+    jokersLeft: a.jokers_left ?? 2,
+    stats: {
+      starts: a.starts ?? 0,
+      wins: a.wins ?? 0,
+      podiums: a.podiums ?? 0,
+      poles: a.poles ?? 0,
+      incidents: a.total_incidents ?? 0,
+      corners: a.total_corners ?? 0,
+    },
+  };
+};
 
-/** A confirmed cheat: a strike; three bar the account from ranked races. */
+/** A confirmed cheat or severe steward verdict: a strike; three bar the account from ranked races. */
 export async function strike(env: Env, account: string) {
   await env.DB.prepare('UPDATE accounts SET strikes = strikes + 1, banned = CASE WHEN strikes + 1 >= 3 THEN 1 ELSE banned END WHERE id = ?').bind(account).run();
 }

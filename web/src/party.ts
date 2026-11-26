@@ -170,12 +170,13 @@ export class Party {
   get host() { return this.members.find((m) => m.host); }
   get link() { return inviteLink(this.code); }
 
-  /** New party with us as leader. Rejects if the broker can't be reached. */
-  static create(me: Me): Promise<Party> {
+  /** New party with us as leader. Optional `preferredCode` hosts a deterministic Official Split / public room code. */
+  static create(me: Me, preferredCode?: string): Promise<Party> {
+    const fixed = preferredCode ? cleanCode(preferredCode) : '';
     return new Promise((resolve, reject) => {
       let tries = 0;
       const attempt = () => {
-        const code = newCode();
+        const code = tries === 0 && fixed.length >= 4 ? fixed : newCode();
         const peer = new Peer(PREFIX + code, peerOptions());
         const fail = (e: unknown) => {
           const type = (e as { type?: string }).type;
