@@ -9,7 +9,7 @@ jobs:
   verify-replays:
     name: C++20 Deterministic Replay & Anti-Bot Verification
     runs-on: ubuntu-latest
-    if: ${{ secrets.VERIFIER_KEY != '' && vars.OPENGRID_CLOUD_URL != '' }}
+    if: ${{ vars.OPENGRID_CLOUD_URL != '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
