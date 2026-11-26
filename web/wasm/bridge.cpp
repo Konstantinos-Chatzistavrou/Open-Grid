@@ -68,7 +68,7 @@ struct Car {
     std::array<rs::WheelRay, 4> rays;
     std::array<rs::WheelContactPatchRays, 4> patch_rays;
     std::array<double, 4> spin{};
-    std::vector<double> buf = std::vector<double>(448, 0.0);
+    std::vector<double> buf = std::vector<double>(480, 0.0);
     std::unique_ptr<rs::DynoRoad> dyno_road;     // garage dyno (rs/dyno.hpp): set between rs_dyno_begin / rs_dyno_end
     std::unique_ptr<rs::DynoMeter> dyno_meter;
     rs::InstrumentCluster cluster;               // dashboard needles (rs/cluster.hpp)
@@ -118,6 +118,20 @@ EMSCRIPTEN_KEEPALIVE int rs_create(const char* json) {
         // Same set as the Unreal plugin (UOpenGridVehicleComponent::ApplyFeatureFlagsLocked): keep them identical.
         c->vehicle->engine_systems().wear_enabled = true;
         c->vehicle->engine_systems().fuel_consumption_enabled = true;
+        // Infer realistic default chassis material from torsional stiffness (carbon tub / aluminum supercar / HSS / steel)
+        {
+            rs::StructuralSpec spec;
+            const double k_ch = c->cfg.torsional_stiffness_nm_per_deg;
+            if (k_ch >= 42000.0) {
+                spec.material = rs::ChassisMaterial::CarbonMonocoque;
+                spec.race_suspension = true;
+            } else if (k_ch >= 32000.0) {
+                spec.material = rs::ChassisMaterial::AluminumSpaceframe;
+            } else if (k_ch >= 26000.0) {
+                spec.material = rs::ChassisMaterial::HighStrengthSteel;
+            }
+            c->vehicle->damage_model().set_structural_spec(spec);
+        }
         c->controls = std::make_unique<rs::Controls>(c->vehicle->config());
         c->buf[92] = -99;                                  // no H-pattern shifter until the page says so
         c->cluster.configure(c->cfg.engine.redline_rpm, 320.0);
@@ -265,6 +279,17 @@ EMSCRIPTEN_KEEPALIVE void rs_set_atmosphere(int id, double air_c, double track_c
 EMSCRIPTEN_KEEPALIVE void rs_set_turbo_stage(int id, int stage) {
     Car& c = *g_cars[id];
     c.vehicle->engine_systems().turbo_stage = std::max(0, std::min(3, stage));
+}
+
+// Configure chassis material & aftermarket structural reinforcements (0=Steel, 1=HSS, 2=Aluminum, 3=CarbonMonocoque).
+EMSCRIPTEN_KEEPALIVE void rs_set_structural_spec(int id, int material, int carbon_panels, int roll_cage, int race_susp) {
+    Car& c = *g_cars[id];
+    rs::StructuralSpec spec = c.vehicle->damage_model().structural_spec();
+    spec.material = static_cast<rs::ChassisMaterial>(std::max(0, std::min(3, material)));
+    spec.carbon_body_panels = (carbon_panels != 0);
+    spec.roll_cage = (roll_cage != 0);
+    spec.race_suspension = (race_susp != 0);
+    c.vehicle->damage_model().set_structural_spec(spec);
 }
 
 // IN  buf[0..12]: chassis state, three world, origin = CG:
@@ -694,6 +719,21 @@ EMSCRIPTEN_KEEPALIVE void rs_damage(int id) {
     b[23] = d.brakes;
     b[24] = d.brakes_failed ? 1 : 0;
     b[25] = c.vehicle->damage_model().severity();
+    // Extended material-aware destruction, localized 8-node paint scratches & multi-fluid leak telemetry [446..471]
+    double* ext = c.buf.data() + 446;
+    for (int i = 0; i < 8; ++i) ext[i] = d.paint_scratch[i];
+    for (int i = 0; i < 4; ++i) ext[8 + i] = d.shatter[i];
+    for (int i = 0; i < 4; ++i) ext[12 + i] = d.wheel_detached[i] ? 1.0 : 0.0;
+    ext[16] = d.coolant_leak;
+    ext[17] = d.coolant_drip_lps;
+    ext[18] = d.oil_leak;
+    ext[19] = d.oil_drip_lps;
+    ext[20] = d.fuel_leak;
+    ext[21] = d.fuel_drip_lps;
+    ext[22] = d.coolant_level;
+    ext[23] = d.oil_level;
+    ext[24] = d.scratch_events;
+    ext[25] = static_cast<double>(static_cast<int>(d.chassis_material));
 }
 
 EMSCRIPTEN_KEEPALIVE void rs_repair(int id) {

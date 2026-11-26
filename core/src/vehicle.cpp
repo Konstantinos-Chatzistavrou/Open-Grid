@@ -243,9 +243,12 @@ std::array<WheelRay, 4> Vehicle::wheel_rays(const ChassisState& s) const {
     const Vec3 body_fwd = s.orientation.rotate({1, 0, 0});
     for (int w = 0; w < 4; ++w) {
         const WheelGeom& g = cfg_.wheels[w];
+        // Detached wheel drops the corner onto the bare brake rotor / knuckle (~48% of tyre radius, ~16 cm).
+        const bool off = damage_enabled && damage_model_.wheel_off(w);
+        const double r_eff = cfg_.tire(w).radius * (off ? 0.48 : 1.0);
         rays[w].origin = s.position + s.orientation.rotate({g.x, g.y, g.mount_z});
         rays[w].direction = down;
-        rays[w].length = cfg_.axle(w).spring_rest_length + cfg_.tire(w).radius;
+        rays[w].length = cfg_.axle(w).spring_rest_length + r_eff;
         rays[w].forward = body_fwd;
     }
     return rays;
@@ -256,7 +259,8 @@ std::array<WheelContactPatchRays, 4> Vehicle::wheel_contact_patch_rays(const Cha
     const Vec3 down = s.orientation.rotate({0, 0, -1});
     for (int w = 0; w < 4; ++w) {
         const WheelGeom& g = cfg_.wheels[w];
-        const double r = cfg_.tire(w).radius;
+        const bool off = damage_enabled && damage_model_.wheel_off(w);
+        const double r = cfg_.tire(w).radius * (off ? 0.48 : 1.0);
         const double len = cfg_.axle(w).spring_rest_length + r;
         const Vec3 mount = s.position + s.orientation.rotate({g.x, g.y, g.mount_z});
         const double st = steer_angle(w);
@@ -362,7 +366,8 @@ std::array<WheelFootprint16Rays, 4> Vehicle::wheel_footprint_16_rays(const Chass
     static constexpr double kLatOffsetsM[3] = {-0.095, 0.0, 0.095}; // ~245-285 mm tread width across 3 ribs
     for (int w = 0; w < 4; ++w) {
         const WheelGeom& g = cfg_.wheels[w];
-        const double r = cfg_.tire(w).radius;
+        const bool off = damage_enabled && damage_model_.wheel_off(w);
+        const double r = cfg_.tire(w).radius * (off ? 0.48 : 1.0);
         const double len = cfg_.axle(w).spring_rest_length + r;
         const Vec3 mount = s.position + s.orientation.rotate({g.x, g.y, g.mount_z});
         const double st = steer_angle(w);
@@ -570,6 +575,9 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         damage_.engine_power = dm.engine_power_factor();
         damage_.aero_drag = dm.drag_factor();
         damage_.radiator_cooling = dm.radiator_cooling_factor();
+        damage_.oil_cooling = dm.oil_cooling_factor();
+        damage_.oil_starvation_wear_rate = dm.oil_starvation_wear_rate();
+        damage_.fuel_leak_lps = dm.fuel_leak_lps();
         for (int w = 0; w < 4; ++w) {
             damage_.suspension_stiffness[w] = dm.suspension_factor(w);
             damage_.toe[w] = dm.toe_offset(w);
@@ -577,7 +585,13 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
             damage_.caster[w] = dm.caster_offset(w);
             damage_.bearing_drag_nm[w] = dm.wheel_bearing_drag_nm(w);
             damage_.grip[w] = dm.grip_factor(w);
+            damage_.wheel_detached[w] = dm.wheel_off(w);
         }
+    } else {
+        damage_.oil_cooling = 1.0;
+        damage_.oil_starvation_wear_rate = 0.0;
+        damage_.fuel_leak_lps = 0.0;
+        damage_.wheel_detached = {false, false, false, false};
     }
     out.damage = damage_model_.report();
     const Vec3 up = s.orientation.rotate({0, 0, 1});
@@ -950,6 +964,9 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
     din.starter_crank = input_.starter;
     din.airspeed_mps = std::abs(out.speed);
     din.radiator_cooling_scale = damage_.radiator_cooling;
+    din.oil_cooling_scale = damage_.oil_cooling;
+    din.oil_starvation_wear_rate = damage_.oil_starvation_wear_rate;
+    din.fuel_leak_lps = damage_.fuel_leak_lps;
     din.bearing_drag_nm = damage_.bearing_drag_nm;
     din.atmosphere_enabled = atmosphere_.enabled;
     din.ambient_air_c = atmosphere_.ambient_air_c;
@@ -1186,6 +1203,23 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
                 continue;
             }
             const Kin& k = kin[w];
+            // Detached wheel: NO tyre rubber on the road — zero drive traction, zero tyre cornering, zero tyre braking!
+            // Replaced by bare brake rotor / control-arm Coulomb metal-on-asphalt scraping friction opposing ground velocity.
+            if (damage_enabled && damage_.wheel_detached[w]) {
+                kappa_[w] = 0.0;
+                tan_alpha_[w] = 0.0;
+                const double v_scrape = std::hypot(k.vx, k.vy);
+                const double mu_scrape = damage_model_.hub_scrape_mu() * clamp(cfg_.grip_for_surface(contacts[w].surface), 0.35, 1.15);
+                const double s_reg = clamp(v_scrape / 0.35, 0.0, 1.0);
+                const double f_mag = mu_scrape * k.load * s_reg;
+                if (v_scrape > 1e-5) {
+                    fx_sum[w] += -f_mag * (k.vx / v_scrape);
+                    fy_sum[w] += -f_mag * (k.vy / v_scrape);
+                }
+                tyre_t[w] = 0.0; // sheared hub/halfshaft transmits zero drive torque to asphalt
+                roll_t[w] = 0.0;
+                continue;
+            }
             double v_sx = drivetrain_.wheel_omega[w] * k.re - k.vx;
             kappa_[w] = (kappa_[w] + h * v_sx / k.sigma_x) / (1.0 + h * std::abs(k.vx) / k.sigma_x);
             tan_alpha_[w] = (tan_alpha_[w] + h * (-k.vy) / k.sigma_y) / (1.0 + h * std::abs(k.vx) / k.sigma_y);
@@ -1377,15 +1411,25 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         }
         // Low-speed damping (below ~2 m/s): the relaxation-length model acts like an undamped
         // spring at standstill; real tyres have internal damping. Blends out with speed.
+        // Detached wheels have NO tyre contact patch, so never let spinning axle stubs push the car at low speed!
         double speed = std::hypot(k.vx, k.vy);
         double blend = clamp(1.0 - speed / 2.0, 0.0, 1.0);
         if (blend > 0) {
-            double c = 2.0 * k.load;   // N per (m/s)
-            fx += blend * c * (drivetrain_.wheel_omega[w] * k.re - k.vx);
-            fy += blend * c * (-k.vy);
-            double fmax = std::max(tp.mu_x, tp.mu_y) * k.mu * k.load;   // never exceed friction
-            double fm = std::hypot(fx, fy);
-            if (fm > fmax) { fx *= fmax / fm; fy *= fmax / fm; }
+            if (damage_enabled && damage_.wheel_detached[w]) {
+                const double fmax = damage_model_.hub_scrape_mu() * k.load;
+                const double c = 1.5 * k.load;
+                fx += blend * c * (-k.vx);
+                fy += blend * c * (-k.vy);
+                const double fm = std::hypot(fx, fy);
+                if (fm > fmax && fm > 1e-6) { fx *= fmax / fm; fy *= fmax / fm; }
+            } else {
+                double c = 2.0 * k.load;   // N per (m/s)
+                fx += blend * c * (drivetrain_.wheel_omega[w] * k.re - k.vx);
+                fy += blend * c * (-k.vy);
+                double fmax = std::max(tp.mu_x, tp.mu_y) * k.mu * k.load;   // never exceed friction
+                double fm = std::hypot(fx, fy);
+                if (fm > fmax) { fx *= fmax / fm; fy *= fmax / fm; }
+            }
         }
         wo.contact = true;
         wo.load = k.load;
@@ -1396,7 +1440,9 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         wo.mz = mz;
         wo.contact_point = k.point;
         wo.force_world = k.fwd * fx + k.lat * fy;
-        wo.grip_limit = std::max(tp.mu_x, tp.mu_y) * k.mu * k.load;
+        wo.grip_limit = (damage_enabled && damage_.wheel_detached[w])
+                      ? (damage_model_.hub_scrape_mu() * k.load)
+                      : (std::max(tp.mu_x, tp.mu_y) * k.mu * k.load);
         double kerb_ratio = kerb_ratio_sum[w] / n_sub;
         if (contacts[w].surface >= 0 && contacts[w].surface < static_cast<int>(cfg_.surface_grip.size())
             && cfg_.surface_grip[contacts[w].surface].first == "kerb"
@@ -1416,7 +1462,10 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const double base_rumble = 0.05 * clamp(v_roll / 50.0, 0.0, 1.0);
         const double flat_excite = clamp(std::abs(tire_condition_[w].flat_spot_load_delta_n) / 1800.0
                                          + tire_condition_[w].rim_strike_force_n / 4000.0, 0.0, 0.85);
-        wo.surface_excitation = clamp(vert_excite + kerb_excite + surf_rough + base_rumble + flat_excite, 0.0, 1.0);
+        const double hub_scrape_excite = (damage_enabled && damage_.wheel_detached[w] && v_roll > 0.5)
+                                       ? clamp(0.65 + 0.35 * clamp(v_roll / 15.0, 0.0, 1.0), 0.0, 1.0)
+                                       : 0.0;
+        wo.surface_excitation = clamp(vert_excite + kerb_excite + surf_rough + base_rumble + flat_excite + hub_scrape_excite, 0.0, 1.0);
         wo.sidewall_rollover = tire_condition_[w].sidewall_rollover;
         wo.sidewall_damage = tire_condition_[w].sidewall_damage;
         wo.rim_strike_force_n = tire_condition_[w].rim_strike_force_n;

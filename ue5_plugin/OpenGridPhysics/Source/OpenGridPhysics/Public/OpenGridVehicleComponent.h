@@ -219,6 +219,15 @@ enum class EOpenGridInputDevice : uint8
     Wheel = 2,
 };
 
+UENUM(BlueprintType)
+enum class EOpenGridChassisMaterial : uint8
+{
+    MildSteel = 0,
+    HighStrengthSteel = 1,
+    AluminumSpaceframe = 2,
+    CarbonMonocoque = 3,
+};
+
 UCLASS(ClassGroup=(OpenGrid), meta=(BlueprintSpawnableComponent))
 class OPENGRIDPHYSICS_API UOpenGridVehicleComponent : public UActorComponent
 {
@@ -656,6 +665,56 @@ public:
     /** 8 crush nodes (0..1) for morph targets: FL, FrontCentre, FR, Left, Right, RL, RearCentre, RR. */
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
     TArray<float> CrushNodeWeights;
+
+    /** 8 localized clearcoat/paint scratch intensities (0..1) for UE5 Material Parameter Collections (light scrapes never dent). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    TArray<float> PaintScratchWeights;
+
+    /** 4 brittle composite delamination / carbon-fiber shatter intensities (0..1: Front, Rear, Left, Right). */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    TArray<float> ZoneShatterWeights;
+
+    /** Per-wheel detachment flags (FL, FR, RL, RR): detached wheels drop onto bare rotor and transmit zero drive. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
+    TArray<bool> WheelDetached;
+
+    /** Chassis structural material archetype & aftermarket reinforcement tuning (scales dent yield, cabin strength & wheel shear). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Damage")
+    EOpenGridChassisMaterial ChassisMaterial = EOpenGridChassisMaterial::MildSteel;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Damage")
+    bool bCarbonBodyPanels = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Damage")
+    bool bRollCage = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Damage")
+    bool bRaceSuspension = false;
+
+    /** Multi-fluid leak telemetry for UE5 Niagara fluid drip/puddle emitters & road-slick decals. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage|Fluids")
+    float CoolantLeak01 = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage|Fluids")
+    float CoolantLevel01 = 1.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage|Fluids")
+    float CoolantDripLps = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage|Fluids")
+    float OilLeak01 = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage|Fluids")
+    float OilLevel01 = 1.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage|Fluids")
+    float OilDripLps = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage|Fluids")
+    float FuelLeak01 = 0.0f;
+
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage|Fluids")
+    float FuelDripLps = 0.0f;
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Damage")
     bool bHoodUnlatched = false;

@@ -213,10 +213,20 @@ export class DamageVisuals {
   private flames = new Particles(64, { additive: true, gravity: 2.2, grow: -0.35, drag: 1.4, style: 'fire', heat: 1.05 });
   private flameCore = new Particles(28, { additive: true, gravity: 1.6, grow: -0.6, drag: 1.8, style: 'fire', heat: 1.45 });
   private embers = new Particles(60, { additive: true, gravity: 1.1, grow: -0.3, drag: 0.7, style: 'ember' });
+  // Multi-fluid leak droplets (coolant cyan-green, dark glossy engine oil, pale amber petrol) & brittle carbon shards.
+  // Dormant (visible = false, 0 CPU/GPU cost) whenever the car is intact!
+  private coolantDrips = new Particles(48, { additive: false, gravity: -9.8, grow: 0.25, drag: 0.65 });
+  private oilDrips = new Particles(48, { additive: false, gravity: -9.8, grow: 0.35, drag: 0.85 });
+  private fuelDrips = new Particles(48, { additive: false, gravity: -9.8, grow: 0.20, drag: 0.70 });
+  private carbonShards = new Particles(48, { additive: false, gravity: -12.0, grow: -0.25, drag: 0.55 });
   // Created up front at intensity 0: adding a light mid-race recompiles every lit material.
   private fireLight = new THREE.PointLight(0xff6a1c, 0, 10, 2);
   private fireAcc = 0;
   private emberAcc = 0;
+  private coolantAcc = 0;
+  private oilAcc = 0;
+  private fuelAcc = 0;
+  private shatterShown = [0, 0, 0, 0];
   private flicker = 0;        // s of headlight flicker left (> 0 = flickering)
   private flickerHold = 0;    // s until the next flicker level
   private smokeAcc = 0;
@@ -286,12 +296,22 @@ export class DamageVisuals {
     this.fireLight.position.set(...this.smokeAt).sub(car.cg);
     car.root.add(this.fireLight);
     this.embers.color.setRGB(5, 1.7, 0.3);
-    scene.add(this.smoke.sprite, this.sparks.sprite, this.flames.sprite, this.flameCore.sprite, this.embers.sprite);
+    this.coolantDrips.color.setRGB(0.18, 1.35, 0.72); // bright ethylene-glycol green/cyan coolant
+    this.oilDrips.color.setRGB(0.05, 0.04, 0.03);     // dark viscous engine oil
+    this.fuelDrips.color.setRGB(0.95, 0.76, 0.28);    // pale amber petrol
+    this.carbonShards.color.setRGB(0.09, 0.10, 0.11); // matte charcoal carbon-fiber splinters
+    scene.add(
+      this.smoke.sprite, this.sparks.sprite, this.flames.sprite, this.flameCore.sprite, this.embers.sprite,
+      this.coolantDrips.sprite, this.oilDrips.sprite, this.fuelDrips.sprite, this.carbonShards.sprite,
+    );
   }
 
   /** Garage car swap: take this car's sprites and fire light out of the scene (the model itself is dropped by the caller). */
   dispose() {
-    this.scene.remove(this.smoke.sprite, this.sparks.sprite, this.flames.sprite, this.flameCore.sprite, this.embers.sprite);
+    this.scene.remove(
+      this.smoke.sprite, this.sparks.sprite, this.flames.sprite, this.flameCore.sprite, this.embers.sprite,
+      this.coolantDrips.sprite, this.oilDrips.sprite, this.fuelDrips.sprite, this.carbonShards.sprite,
+    );
     this.car.root.remove(this.fireLight);
     for (const d of this.detached.values()) {
       if (d.body.isValid()) this.pw.world.removeRigidBody(d.body);
@@ -308,15 +328,22 @@ export class DamageVisuals {
     this.flames.update(dt);
     this.flameCore.update(dt);
     this.embers.update(dt);
+    this.coolantDrips.update(dt);
+    this.oilDrips.update(dt);
+    this.fuelDrips.update(dt);
+    this.carbonShards.update(dt);
     this.updateDebris(dt);
     this.updateFlicker(dt);
-    if (this.dmg && (this.dmg.engine > 0.25 || this.dmg.totaled || this.dmg.smoulder > 0)) this.emitSmoke(dt);
+    if (this.dmg && (this.dmg.engine > 0.25 || this.dmg.totaled || this.dmg.smoulder > 0 || this.dmg.coolantLeak > 0.2)) this.emitSmoke(dt);
+    if (this.dmg && (this.dmg.coolantDripLps > 0.002 || this.dmg.oilDripLps > 0.002 || this.dmg.fuelDripLps > 0.002)) this.emitFluidLeaks(dt);
     this.updateFire(dt);
     if (this.wheelsOff.length) this.hubSparks(dt);
     this.t += dt;
     if (this.t < 0.05) return;
     this.t = 0;
     const d = (this.dmg = damage());
+    // ---- localized 8-node clearcoat / paint scratches (visualized even on light brushes with zero denting!)
+    if (d.paintScratch) this.car.custom.setScratches(d.paintScratch);
     // ---- whole-zone crumple follows the core's crush depth (eased so it folds in over ~0.15 s, never springs back)
     for (let z = 0; z < 4; z++) this.crushShown[z] = Math.max(this.crushShown[z], this.crushShown[z] + (d.crush[z] * 0.55 - this.crushShown[z]) * 0.35);
     this.dents.setCrush(this.crushShown[0], this.crushShown[1], this.crushShown[2], this.crushShown[3]);
@@ -330,6 +357,17 @@ export class DamageVisuals {
       const p = new THREE.Vector3(...d.lastPoint).add(this.car.cg);   // car local (CG) -> model space
       // dent radius grows with the zone's total crush (same rule as the old CPU path)
       this.dents.add(p, INWARD[z], delta * 0.65, THREE.MathUtils.clamp(0.5 + 1.1 * d.crush[z], 0.5, 1.6));
+    }
+    // ---- brittle carbon-fiber / composite delamination shatter shards on severe impacts
+    if (d.shatter && d.shatter[z] > this.shatterShown[z] + 0.02) {
+      const ds = d.shatter[z] - this.shatterShown[z];
+      this.shatterShown[z] = d.shatter[z];
+      const wp = this.sP.set(...d.lastPoint).applyMatrix4(this.car.root.matrixWorld);
+      const count = Math.min(24, 6 + Math.round(ds * 32));
+      for (let i = 0; i < count; i++) {
+        this.sV.set((Math.random() - 0.5) * 6, 1.2 + Math.random() * 4.5, (Math.random() - 0.5) * 6).addScaledVector(this.car.velocity, 0.4);
+        this.carbonShards.emit(wp, this.sV, 0.45 + Math.random() * 0.55, 0.045 + Math.random() * 0.05);
+      }
     }
     // ---- break-offs
     for (const [name, [zone]] of Object.entries(this.cfg.detachable)) {
@@ -411,6 +449,50 @@ export class DamageVisuals {
       } else {
         v.set((Math.random() - 0.5) * 0.5, 0.7 + Math.random() * 0.7, (Math.random() - 0.5) * 0.5);
         this.smoke.emit(p, v, 2.0 + Math.random() * 0.8, 0.40 + Math.random() * 0.30);
+      }
+    }
+  }
+
+  /** Visualized multi-fluid leaks: cyan-green radiator coolant, dark engine oil sump drips, and amber rear fuel drips. */
+  private emitFluidLeaks(dt: number) {
+    const d = this.dmg!;
+    const v = this.sV, p = this.sP;
+    const carVel = this.car.velocity;
+    const e = this.smokeAt;
+    // 1. Coolant (front radiator under nose)
+    if (d.coolantDripLps > 0.002) {
+      this.coolantAcc += dt * (6 + 42 * d.coolantLeak);
+      this.sOrigin.set(e[0], Math.max(0.18, e[1] - 0.42), e[2] + 0.35).sub(this.car.cg).applyMatrix4(this.car.root.matrixWorld);
+      while (this.coolantAcc >= 1) {
+        this.coolantAcc -= 1;
+        p.set((Math.random() - 0.5) * 0.36, (Math.random() - 0.5) * 0.06, (Math.random() - 0.5) * 0.18).add(this.sOrigin);
+        v.copy(carVel).multiplyScalar(0.35);
+        v.x += (Math.random() - 0.5) * 0.9; v.y -= 0.4 + Math.random() * 0.8; v.z += (Math.random() - 0.5) * 0.9;
+        this.coolantDrips.emit(p, v, 0.45 + Math.random() * 0.35, 0.06 + Math.random() * 0.04);
+      }
+    }
+    // 2. Engine Oil (dark glossy drips from engine oil pan)
+    if (d.oilDripLps > 0.002) {
+      this.oilAcc += dt * (5 + 34 * d.oilLeak);
+      this.sOrigin.set(e[0], Math.max(0.14, e[1] - 0.48), e[2] - 0.15).sub(this.car.cg).applyMatrix4(this.car.root.matrixWorld);
+      while (this.oilAcc >= 1) {
+        this.oilAcc -= 1;
+        p.set((Math.random() - 0.5) * 0.28, (Math.random() - 0.5) * 0.04, (Math.random() - 0.5) * 0.25).add(this.sOrigin);
+        v.copy(carVel).multiplyScalar(0.28);
+        v.x += (Math.random() - 0.5) * 0.6; v.y -= 0.3 + Math.random() * 0.6; v.z += (Math.random() - 0.5) * 0.6;
+        this.oilDrips.emit(p, v, 0.55 + Math.random() * 0.45, 0.075 + Math.random() * 0.05);
+      }
+    }
+    // 3. Fuel (pale amber petrol dripping from rear fuel tank)
+    if (d.fuelDripLps > 0.002) {
+      this.fuelAcc += dt * (6 + 38 * d.fuelLeak);
+      this.sOrigin.set(0, 0.24, -1.35).sub(this.car.cg).applyMatrix4(this.car.root.matrixWorld);
+      while (this.fuelAcc >= 1) {
+        this.fuelAcc -= 1;
+        p.set((Math.random() - 0.5) * 0.32, (Math.random() - 0.5) * 0.05, (Math.random() - 0.5) * 0.22).add(this.sOrigin);
+        v.copy(carVel).multiplyScalar(0.30);
+        v.x += (Math.random() - 0.5) * 0.7; v.y -= 0.35 + Math.random() * 0.65; v.z += (Math.random() - 0.5) * 0.7;
+        this.fuelDrips.emit(p, v, 0.45 + Math.random() * 0.35, 0.055 + Math.random() * 0.035);
       }
     }
   }
@@ -641,6 +723,13 @@ export class DamageVisuals {
     this.flames.clear();
     this.flameCore.clear();
     this.embers.clear();
+    this.coolantDrips.clear();
+    this.oilDrips.clear();
+    this.fuelDrips.clear();
+    this.carbonShards.clear();
+    this.coolantAcc = this.oilAcc = this.fuelAcc = 0;
+    this.shatterShown = [0, 0, 0, 0];
+    this.car.custom.setScratches([0, 0, 0, 0, 0, 0, 0, 0]);
     fireGlow.value.setRGB(0, 0, 0);
     this.flicker = 0;
     this.fireLight.intensity = 0;
@@ -648,7 +737,10 @@ export class DamageVisuals {
 
   /** Force particle sprites visible (1 degenerate instance) during shader warm-up, then hide until emitted. */
   warmup(on: boolean) {
-    for (const p of [this.smoke, this.sparks, this.flames, this.flameCore, this.embers]) {
+    for (const p of [
+      this.smoke, this.sparks, this.flames, this.flameCore, this.embers,
+      this.coolantDrips, this.oilDrips, this.fuelDrips, this.carbonShards,
+    ]) {
       p.sprite.count = 1;
       p.sprite.visible = on;
     }

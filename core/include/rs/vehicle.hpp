@@ -220,8 +220,12 @@ struct DamageState {
     std::array<double, 4> camber{};            // rad, bent wishbone/strut camber offset
     std::array<double, 4> caster{};            // rad, bent front caster offset (asymmetric steering pull)
     std::array<double, 4> bearing_drag_nm{};   // N m, damaged hub bearing rolling drag
-    double radiator_cooling = 1.0;             // 1.0 intact .. 0.25 punctured front radiator/intercooler
-    std::array<double, 4> grip{1, 1, 1, 1};    // tyre grip multiplier
+    double radiator_cooling = 1.0;             // 1.0 intact .. 0.15 punctured front radiator / drained coolant
+    double oil_cooling = 1.0;                  // 1.0 intact .. 0.20 punctured oil sump / low oil level
+    double oil_starvation_wear_rate = 0.0;     // extra engine_health wear/s when engine oil drains below 35%
+    double fuel_leak_lps = 0.0;                // L/s fuel tank puncture drain rate
+    std::array<double, 4> grip{1, 1, 1, 1};    // tyre grip multiplier (0.0 when wheel is detached)
+    std::array<bool, 4> wheel_detached{false, false, false, false}; // true once corner has lost its wheel/tyre
     double brakes = 1.0;                       // brake effectiveness (fade / failure), all brakes
 };
 

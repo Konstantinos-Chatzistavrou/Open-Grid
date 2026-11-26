@@ -135,6 +135,119 @@ RS_TEST(damage) {
     test::check_range("bent wheel makes the car pull (mildly)", std::abs(yaw_drift[1]), 1, 15, "deg");
 }
 
+// ---------------------------------------------------------------- material-aware destruction, wheel-off realism, fluids, paint scratches & net sync
+RS_TEST(destruction_realism_materials_fluids_scratches) {
+    CarConfig cfg = test::car();
+    std::array<Vec3, 4> wp;
+    for (int w = 0; w < 4; ++w) wp[w] = {cfg.wheels[w].x, cfg.wheels[w].y, 0};
+
+    // 1. Race-calibrated wheel durability: a 55 km/h glancing wheel hit bends alignment WITHOUT ripping the wheel off;
+    //    a violent 105 km/h direct wheel strike shears the hub cleanly off.
+    {
+        DamageModel m(cfg.mass, wp);
+        m.add_contact(1, {cfg.wheels[FL].x, cfg.wheels[FL].y + 0.15, 0}, cfg.mass * (55.0 / 3.6), 0.0, 1.0 / 240.0);
+        test::check("55 km/h wheel hit bends alignment without detaching wheel",
+                    !m.wheel_off(FL) && m.report().wheel[FL] > 0.08 && m.report().wheel[FL] < 0.65 && std::abs(m.toe_offset(FL)) > 0.005);
+
+        m.add_contact(2, {cfg.wheels[FL].x, cfg.wheels[FL].y, 0}, cfg.mass * (105.0 / 3.6), 1.0, 1.0 / 240.0);
+        test::check("105 km/h direct hub hit shears wheel off", m.wheel_off(FL) && m.report().wheel_detached[FL] && m.grip_factor(FL) == 0.0);
+    }
+
+    // 2. Detached-wheel physics: a car with ALL 4 wheels detached CANNOT accelerate at all (no phantom tyres!),
+    //    and a rolling car with detached wheels drops onto bare rotors and drags heavily to a stop.
+    {
+        auto s = test::make_sim(cfg);
+        s->settle(0.5);
+        for (int w = 0; w < 4; ++w) {
+            s->vehicle.add_contact(20 + w, {cfg.wheels[w].x, cfg.wheels[w].y, 0}, cfg.mass * (115.0 / 3.6));
+        }
+        const DamageReport& r = s->vehicle.damage_model().report();
+        test::check("all 4 wheels sheared off", r.wheel_detached[FL] && r.wheel_detached[FR] && r.wheel_detached[RL] && r.wheel_detached[RR]);
+        DriverInput full_gas;
+        full_gas.gear = 2; // 1st gear
+        full_gas.throttle = 1.0;
+        full_gas.auto_clutch = true;
+        for (int i = 0; i < 4 * 240; ++i) s->step(full_gas);
+        std::printf("         4 wheels off, 4 s full throttle: %.2f km/h\n", s->last.speed * 3.6);
+        test::check_range("car with no wheels cannot accelerate", std::abs(s->last.speed * 3.6), 0.0, 0.5, "km/h");
+
+        // Rolling at 30 m/s (108 km/h) with 4 wheels off: steel-on-asphalt hub scraping slows it rapidly even at full gas!
+        s->reset({}, 0, 30.0, 4);
+        for (int i = 0; i < 3 * 240; ++i) s->step(full_gas);
+        std::printf("         4 wheels off, rolling 108 km/h -> after 3 s scraping: %.1f km/h\n", s->last.speed * 3.6);
+        test::check("bare rotors scrape rapidly to much lower speed even under full throttle", s->last.speed * 3.6 < 72.0);
+    }
+
+    // 3. Material-aware realism: CarbonMonocoque + RollCage + RaceSuspension resists crush, cabin intrusion & wheel shear
+    //    far better than MildSteel on identical severe crashes, and shows brittle composite shatter above yield.
+    {
+        DamageModel steel(cfg.mass, wp);
+        StructuralSpec carbon_spec;
+        carbon_spec.material = ChassisMaterial::CarbonMonocoque;
+        carbon_spec.carbon_body_panels = true;
+        carbon_spec.roll_cage = true;
+        carbon_spec.race_suspension = true;
+        DamageModel carbon(cfg.mass, wp, DamageParams{}, carbon_spec);
+
+        // 75 km/h front impact + 115 km/h side impact
+        steel.add_contact(1, {2.2, 0.0, 0}, cfg.mass * (75.0 / 3.6), 0.0, 1.0 / 240.0);
+        carbon.add_contact(1, {2.2, 0.0, 0}, cfg.mass * (75.0 / 3.6), 0.0, 1.0 / 240.0);
+        test::check("carbon tub crushes far less than mild steel at 75 km/h",
+                    carbon.report().crush[ZoneFront] < 0.65 * steel.report().crush[ZoneFront]);
+        test::check("carbon composite shows brittle delamination/shatter above yield",
+                    carbon.report().shatter[ZoneFront] > 0.02 && steel.report().shatter[ZoneFront] == 0.0);
+
+        steel.add_contact(2, {0.0, 0.95, 0}, cfg.mass * (115.0 / 3.6), 1.0, 1.0 / 240.0);
+        carbon.add_contact(2, {0.0, 0.95, 0}, cfg.mass * (115.0 / 3.6), 1.0, 1.0 / 240.0);
+        test::check("mild steel totaled by 115 km/h side hit; carbon monocoque + roll cage survives",
+                    steel.report().totaled && !carbon.report().totaled);
+    }
+
+    // 4. Glancing paint-only scratches: 1.8 g right-side brush paints localized scratches on NodeRightFlank with ZERO crush.
+    {
+        DamageModel m(cfg.mass, wp);
+        const double j_light = 1.8 * cfg.mass * kGravity * (1.0 / 240.0);
+        for (int i = 0; i < 6; ++i) m.add_contact(99, {0.1, -0.92, 0}, j_light, i / 240.0, 1.0 / 240.0);
+        const DamageReport& r = m.report();
+        test::check("light 1.8 g side brush scratches ONLY right flank with zero body crush",
+                    r.paint_scratch[NodeRightFlank] > 0.08 && r.paint_scratch[NodeLeftFlank] == 0.0 &&
+                    r.crush[ZoneRight] == 0.0 && r.total_energy_kj == 0.0 && r.scratch_events >= 6);
+    }
+
+    // 5. Multi-fluid leaks: front hit leaks coolant + oil (draining coolant/oil & heating engine); rear hit leaks fuel (draining tank).
+    {
+        auto s = test::make_sim(cfg);
+        s->vehicle.engine_systems().wear_enabled = true;
+        s->settle(0.5);
+        const double fuel_before = s->vehicle.engine_systems().fuel_liters;
+        s->vehicle.add_contact(1, {2.2, 0.0, 0}, cfg.mass * (115.0 / 3.6));
+        s->vehicle.add_contact(2, {-2.2, 0.0, 0}, cfg.mass * (85.0 / 3.6));
+        DriverInput idle;
+        idle.gear = 1;
+        for (int i = 0; i < 10 * 240; ++i) s->step(idle);
+        const DamageReport& r = s->vehicle.damage_model().report();
+        const double fuel_after = s->vehicle.engine_systems().fuel_liters;
+        std::printf("         fluids after 10 s: coolant_lvl %.2f, oil_lvl %.2f, fuel %.2f -> %.2f L\n",
+                    r.coolant_level, r.oil_level, fuel_before, fuel_after);
+        test::check("front hit triggers coolant & oil leaks and drains levels",
+                    r.coolant_leak > 0.3 && r.coolant_level < 0.92 && r.oil_leak > 0.2 && r.oil_level < 0.95);
+        test::check("rear tank puncture drains fuel tank physically",
+                    r.fuel_leak > 0.2 && fuel_after < fuel_before - 0.5);
+
+        // 6. Compact 36-byte NetDamageSnapshot round-trip for 60-70 player free-roam lobbies
+        const NetDamageSnapshot snap = s->vehicle.damage_model().pack_net_snapshot();
+        test::check("NetDamageSnapshot stays compact (36 bytes)", sizeof(snap) == 36);
+        DamageModel remote(cfg.mass, wp);
+        remote.apply_net_snapshot(snap);
+        test::check("NetDamageSnapshot reproduces crush, scratches, leaks & wheels within 1-byte quantization",
+                    std::abs(remote.report().node_norm[NodeFrontCenter] - r.node_norm[NodeFrontCenter]) < 0.01 &&
+                    std::abs(remote.report().coolant_leak - r.coolant_leak) < 0.01 &&
+                    std::abs(remote.report().oil_leak - r.oil_leak) < 0.01 &&
+                    std::abs(remote.report().fuel_leak - r.fuel_leak) < 0.01 &&
+                    std::abs(remote.report().paint_scratch[NodeFrontCenter] - r.paint_scratch[NodeFrontCenter]) < 0.01);
+    }
+}
+
 // ---------------------------------------------------------------- route
 RS_TEST(route) {
     Route r = block_route(200, 120, 12, 3.5);

@@ -617,20 +617,23 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
             nos_mult = 1.26;
         }
 
-        // ---- Engine Oil Thermodynamics (scaled by Radiator Puncture Factor) & Mechanical Health / Misfires
+        // ---- Engine Oil Thermodynamics (scaled by Radiator & Oil Pan Puncture) & Mechanical Health / Misfires
         const double rpm_frac = clamp(rpm / std::max(e.redline_rpm, 1000.0), 0.0, 1.2);
+        const double oil_heat_mult = 1.0 + 0.85 * (1.0 - clamp(in.oil_cooling_scale, 0.20, 1.0));
         const double heat_load = (14.0 * rpm_frac * rpm_frac * (0.3 + 0.7 * thr))
                                * (1.0 + 0.35 * std::max(0.0, systems.boost_bar))
-                               * (nos_mult > 1.0 ? 1.45 : 1.0);
+                               * (nos_mult > 1.0 ? 1.45 : 1.0)
+                               * oil_heat_mult;
         const double oil_eq_c = env.enabled ? (82.0 + 0.45 * (env.ambient_air_c - 25.0)) : 82.0;
         const double cooling = (0.16 + 0.008 * std::max(0.0, in.airspeed_mps))
-                             * clamp(in.radiator_cooling_scale, 0.15, 1.0)
+                             * clamp(in.radiator_cooling_scale * in.oil_cooling_scale, 0.12, 1.0)
                              * (systems.oil_temp_c - oil_eq_c);
         systems.oil_temp_c = clamp(systems.oil_temp_c + h * (heat_load - cooling) * 0.12, 20.0, 165.0);
 
-        if (systems.wear_enabled && (systems.oil_temp_c > 128.0 || rpm > e.redline_rpm * 0.985)) {
+        if (systems.wear_enabled && (systems.oil_temp_c > 128.0 || rpm > e.redline_rpm * 0.985 || in.oil_starvation_wear_rate > 0.0)) {
             const double abuse = (systems.oil_temp_c > 128.0 ? (systems.oil_temp_c - 128.0) * 0.00015 : 0.0)
-                               + (rpm > e.redline_rpm * 0.985 ? 0.00025 : 0.0);
+                               + (rpm > e.redline_rpm * 0.985 ? 0.00025 : 0.0)
+                               + std::max(0.0, in.oil_starvation_wear_rate);
             systems.engine_health = clamp(systems.engine_health - h * abuse, 0.15, 1.0);
         }
 
@@ -651,11 +654,15 @@ void Drivetrain::step(const DrivetrainInput& in, const std::array<double, 4>& ty
         t_engine = thr * engine_torque_full(rpm) * in.engine_power_scale * turbo_mult * nos_mult * health_mult
                    - (1 - thr) * (e.friction_const + e.friction_linear * engine_omega);
 
-        // ---- BSFC Fuel Consumption (~250 g/kWh under load + idle flow)
-        if (systems.fuel_consumption_enabled && systems.fuel_liters > 0.0) {
-            const double pos_power_kw = std::max(0.0, t_engine * engine_omega) / 1000.0;
-            const double fuel_kg_per_s = 0.00022 + pos_power_kw * (0.255 / 3600.0) * (1.0 + 0.18 * std::max(0.0, systems.boost_bar));
-            systems.fuel_liters = std::max(0.0, systems.fuel_liters - (fuel_kg_per_s / 0.745) * h);
+        // ---- BSFC Fuel Consumption (~250 g/kWh under load + idle flow) + Physical Fuel Tank Leak Drain
+        if (systems.fuel_liters > 0.0) {
+            double drain_l = std::max(0.0, in.fuel_leak_lps) * h;
+            if (systems.fuel_consumption_enabled) {
+                const double pos_power_kw = std::max(0.0, t_engine * engine_omega) / 1000.0;
+                const double fuel_kg_per_s = 0.00022 + pos_power_kw * (0.255 / 3600.0) * (1.0 + 0.18 * std::max(0.0, systems.boost_bar));
+                drain_l += (fuel_kg_per_s / 0.745) * h;
+            }
+            systems.fuel_liters = std::max(0.0, systems.fuel_liters - drain_l);
         }
     }
 

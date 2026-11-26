@@ -20,7 +20,10 @@ struct DrivetrainInput {
     bool nos_active = false;                         // N2O nitrous solenoid open
     bool starter_crank = false;                      // physical starter motor cranking
     double airspeed_mps = 0.0;                       // vehicle forward speed for oil/intercooler radiator cooling
-    double radiator_cooling_scale = 1.0;             // 1.0 intact .. 0.25 punctured by front-zone crash damage
+    double radiator_cooling_scale = 1.0;             // 1.0 intact .. 0.15 punctured by front-zone crash damage / drained coolant
+    double oil_cooling_scale = 1.0;                  // 1.0 intact .. 0.20 punctured oil pan / drained engine oil
+    double oil_starvation_wear_rate = 0.0;           // extra engine_health degradation/s when oil sump runs dry
+    double fuel_leak_lps = 0.0;                      // L/s fuel tank puncture drain rate
     std::array<double, 4> bearing_drag_nm{};         // parasitic hub bearing drag from wheel impact damage, N m
     double ambient_air_c = 25.0;                     // live ambient air temperature (C)
     double altitude_m = 0.0;                         // elevation above sea level (m)

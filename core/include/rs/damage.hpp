@@ -50,6 +50,43 @@ namespace rs {
 
 enum DamageZone { ZoneFront = 0, ZoneRear = 1, ZoneLeft = 2, ZoneRight = 3 };
 
+// Chassis & body structural material archetypes for material-aware crash deformation.
+enum class ChassisMaterial : int {
+    MildSteel = 0,          // Classic/street steel unibody: ductile crumple, progressive denting
+    HighStrengthSteel = 1,  // Modern sports/rally reinforced steel: stiffer panels & cabin
+    AluminumSpaceframe = 2, // Supercar aluminum spaceframe: higher stiffness, lighter, tears at high energy
+    CarbonMonocoque = 3     // Carbon-fiber tub / composite race shell: high elastic yield, brittle delamination/shatter above limit
+};
+
+// Material & aftermarket structural tuning reinforcements (100% deterministic & UE 5.8 transferable).
+struct StructuralSpec {
+    ChassisMaterial material = ChassisMaterial::MildSteel;
+    bool carbon_body_panels = false;  // Tuned carbon-fiber hood/fenders/bumpers (+55% stiffness, higher dent threshold, brittle shatter)
+    bool roll_cage = false;           // FIA/street welded roll cage (+85% cabin survival strength, +35% structural integrity)
+    bool race_suspension = false;     // Forged billet uprights / chromoly wishbones (+65% wheel shear resistance, less alignment bend)
+    double paint_hardness = 1.0;      // 1.0 standard clearcoat, 1.35+ ceramic/PPF coating (resists light scratches)
+};
+
+// Compact 36-byte fixed network snapshot for 60-70 player free-roam lobby replication (hybrid rigid-body authority).
+// Server simulates deterministic rigid-body + low-dimensional DamageModel; clients unpack this to drive local GPU/morph visuals.
+struct NetDamageSnapshot {
+    std::array<std::uint8_t, 8> crush_nodes{};    // 8 perimeter crush weights quantized 0..255
+    std::array<std::uint8_t, 8> paint_scratch{};  // 8 perimeter paint scratch intensities quantized 0..255
+    std::array<std::uint8_t, 4> wheel_damage{};   // 4 wheel structural damage quantized 0..255
+    std::array<std::uint8_t, 4> shatter{};        // 4 zone brittle composite shatter quantized 0..255
+    std::uint8_t coolant_leak = 0;                // 0..255
+    std::uint8_t oil_leak = 0;                    // 0..255
+    std::uint8_t fuel_leak = 0;                   // 0..255
+    std::uint8_t engine_damage = 0;               // 0..255
+    std::uint8_t smoulder = 0;                    // 0..255
+    std::uint8_t fire = 0;                        // 0..255
+    std::uint8_t brakes_eff = 255;                // 0..255
+    std::uint8_t flags = 0;                       // bits 0-1: material, 2: carbon_panels, 3: roll_cage, 4: race_susp, 5: totaled, 6: brakes_failed
+    std::uint16_t detach_mask = 0;                // bits 0-3: wheels FL..RR, 4: hood, 5: trunk, 6: front_bumper, 7: rear_bumper
+    std::uint16_t impact_seq = 0;                 // monotonically increments on impacts / scratch events
+};
+static_assert(sizeof(NetDamageSnapshot) == 36, "NetDamageSnapshot must stay compact (36 bytes) for 70-player lobbies");
+
 // 8-Node Perimeter Structural Crush Grid for Unreal Engine 5 Skeletal Mesh Morph Targets.
 enum CrushNode : int {
     NodeFLCorner = 0,
@@ -63,14 +100,15 @@ enum CrushNode : int {
 };
 
 struct DamageParams {
-    // ---- panels (visible crush)
+    // ---- panels (visible crush & paint scratches)
     double stiffness_front_rear = 1.0e6;   // N/m (crash-test calibrated, see above)
     double stiffness_side = 0.35e6;        // N/m
     double front_max = 0.65;               // m of front crush for "zone fully crushed"
     double side_max = 0.40;                // m of side crush for "zone fully crushed"
     double rear_max = 0.70;                // m of rear crush for "zone fully crushed"
-    double min_impulse = 600.0;            // N s ignored per event (~1.5 km/h dv)
-    double min_force_g = 3.0;              // per-tick contact force below this is not a crash
+    double min_impulse = 600.0;            // N s ignored for panel denting (~1.5 km/h dv)
+    double min_force_g = 3.0;              // per-tick contact force below this does not dent panels
+    double scratch_force_g = 1.05;         // glancing contacts >= 1.05 g scuff clearcoat/paint without denting (0.8 g push = clean)
     // ---- structure (energies in kJ per tonne = J/kg)
     double heavy_dv_lo = 9.0;              // m/s: an event below this speed change does no structural damage
     double heavy_dv_hi = 18.0;             // m/s: above this all further energy is structural
@@ -78,16 +116,17 @@ struct DamageParams {
     double engine_full = 600.0;            // ...at which it is wrecked
     double engine_other_share = 0.25;      // share of rear / side structural energy that reaches the engine
     double cabin_total = 300.0;            // structural energy into one side: car totaled (cabin intrusion)
-    double wheel_dv_lo = 5.0;              // m/s, wheel band (suspension arms bend before the shell does)
-    double wheel_dv_hi = 11.0;
-    double wheel_energy = 75.0;            // wheel-band energy into one wheel that tears it off
+    double wheel_dv_lo = 8.5;              // m/s (~31 km/h): glancing hits never snap hubs; hard hits bend alignment first
+    double wheel_dv_hi = 17.5;             // m/s (~63 km/h)
+    double wheel_energy = 165.0;           // wheel-band energy (kJ/t) into one wheel that shears it off (2.2x tougher for racing!)
     double wheel_radius_m = 0.7;           // impacts this close (plan view) to a wheel hit it directly
-    double wheel_zone_share = 0.15;        // share of a zone's structural energy carried by each of its wheels
-    double wheel_off = 0.95;               // wheel damage from which the wheel is gone
-    double wheel_off_grip = 0.35;          // grip left at that corner (hub and disc on the road)
-    double max_toe_deg = 1.5;              // bent steering arm at a destroyed wheel
+    double wheel_zone_share = 0.28;        // share of a zone's structural energy carried by each of its wheels (135 km/h wall shears front)
+    double wheel_off = 0.95;               // wheel damage from which the wheel is detached
+    double wheel_off_grip = 0.0;           // zero tyre grip when wheel is gone (replaced by steel-on-asphalt hub scraping drag)
+    double hub_scrape_mu = 0.42;           // Coulomb scraping friction coefficient of bare rotor/control-arm on asphalt
+    double max_toe_deg = 2.2;              // bent steering arm at a heavily damaged wheel
     double totaled_engine = 0.9;           // engine damage at which the car is totaled
-    double limp_power = 0.25;              // engine power floor: the car can ALWAYS drive on
+    double limp_power = 0.25;              // engine power floor: intact driven wheels can limp home
     double severity = 1200.0;              // total structural energy that counts as "wrecked" (s = 1)
     // ---- overheating, fire, brakes
     double overheat_severity = 0.5;        // cooling system gone: steam
@@ -103,13 +142,14 @@ struct DamageReport {
     std::array<double, 4> crush{};     // m of crush per zone (front, rear, left, right)
     std::array<double, 4> zone{};      // 0..1 = crush relative to "fully crushed" for that zone
     std::array<double, 4> wheel{};     // 0..1 per wheel (FL, FR, RL, RR)
+    std::array<bool, 4> wheel_detached{}; // true once that wheel has sheared off the hub
     double engine = 0;                 // 0..1
-    double total_energy_kj = 0;        // every crash, scrapes included
+    double total_energy_kj = 0;        // every crash that dented panels (light paint-only scrapes excluded)
     double structural_kj_per_t = 0;    // the part that reached the structure (see TWO LAYERS)
     double last_impact_kj = 0;         // size of the most recent crash event so far
     Vec3 last_impact_point;            // body frame
     int last_zone = 0;
-    int impacts = 0;                   // crash events that caused damage
+    int impacts = 0;                   // crash events that caused dent/structural damage
     bool totaled = false;
     std::string totaled_reason;        // "engine", "cabin", "wheels", "structure"
     double smoulder = 0;               // 0..1 steam from a cooked engine (overheating); at 1 a wreck ignites
@@ -119,19 +159,41 @@ struct DamageReport {
     // ---- 8-Node Perimeter Structural Crush Grid (UE5 Skeletal Mesh Morph Targets)
     std::array<double, 8> node_crush_m{};  // m of deformation at each of the 8 perimeter morph-target nodes
     std::array<double, 8> node_norm{};     // 0..1 normalized deformation per node for UE5 Morph Target weights
+    // ---- Glancing Paint Scratch & Clearcoat Scuff Layer (zero geometry denting on light brushes)
+    std::array<double, 8> paint_scratch{}; // 0..1 localized clearcoat/paint scuffing per perimeter node
+    Vec3 last_scratch_point{};             // body frame position of most recent paint scrape
+    int last_scratch_node = 0;             // perimeter node [0..7] of most recent paint scrape
+    double last_scratch_intensity = 0.0;   // 0..1 strength of most recent scrape
+    int scratch_events = 0;                // monotonically increments on any paint scrape
+    // ---- Material-Aware Brittle Composite Delamination / Shatter (CarbonFiber / Aluminum)
+    std::array<double, 4> shatter{};       // 0..1 composite shatter/splintering severity per zone
+    ChassisMaterial chassis_material = ChassisMaterial::MildSteel;
+    bool carbon_body_panels = false;
+    bool roll_cage = false;
+    bool race_suspension = false;
     // ---- Detachable Panel & Latch Failure States (UE5 Chaos breakable constraints)
     bool hood_unlatched = false;           // triggers when node_norm[NodeFrontCenter] > 0.32 or front corner > 0.45
     bool trunk_unlatched = false;          // triggers when node_norm[NodeRearCenter] > 0.35
     bool front_bumper_detached = false;    // triggers when front zone > 0.62
     bool rear_bumper_detached = false;     // triggers when rear zone > 0.65
-    // ---- Radiator / Intercooler Puncture State
-    double radiator_leak = 0.0;            // 0..1, scales with front-center and front-corner crush above 0.25
+    // ---- Multi-Fluid Leak Physics (Coolant, Engine Oil, Fuel)
+    double radiator_leak = 0.0;            // 0..1 alias of coolant_leak (kept for backward compatibility)
+    double coolant_leak = 0.0;             // 0..1 radiator/hose puncture severity
+    double coolant_level = 1.0;            // 1..0 remaining coolant volume fraction (8.0 L system)
+    double coolant_drip_lps = 0.0;         // L/s live coolant drip rate for VFX & decals
+    double oil_leak = 0.0;                 // 0..1 engine oil sump/line puncture severity
+    double oil_level = 1.0;                // 1..0 remaining engine oil fraction (5.5 L sump; < 0.35 -> oil starvation!)
+    double oil_drip_lps = 0.0;             // L/s live oil drip rate for VFX & road slicks
+    double fuel_leak = 0.0;                // 0..1 rear fuel tank/line puncture severity
+    double fuel_drip_lps = 0.0;            // L/s live fuel drain rate (drains Drivetrain fuel_liters & raises fire risk!)
 };
 
 class DamageModel {
 public:
-    DamageModel(double mass, std::array<Vec3, 4> wheel_positions_body, DamageParams p = {})
-        : mass_(mass), wheels_(wheel_positions_body), p_(p) {}
+    DamageModel(double mass, std::array<Vec3, 4> wheel_positions_body, DamageParams p = {}, StructuralSpec spec = {})
+        : mass_(mass), wheels_(wheel_positions_body), p_(p), spec_(spec) {
+        sync_spec_to_report();
+    }
 
     // One contact for one physics tick. point in the BODY frame, impulse in N s, object_id
     // identifies the other object, time = simulation time, dt = tick length.
@@ -139,42 +201,72 @@ public:
 
     const DamageReport& report() const { return r_; }
     const DamageParams& params() const { return p_; }
+    const StructuralSpec& structural_spec() const { return spec_; }
+    void set_structural_spec(const StructuralSpec& spec) {
+        spec_ = spec;
+        sync_spec_to_report();
+    }
+
     void repair() {
         r_ = DamageReport{};
+        sync_spec_to_report();
         events_.clear();
         zone_energy_ = {};
         zone_heavy_ = {};
         node_energy_ = {};
         brake_wear_ = 0;
+        impact_seq_ = 0;
     }
-    // Time-driven effects (fire, brake fade). Call once per physics tick.
+    // Time-driven effects (fire, brake fade, fluid draining). Call once per physics tick.
     void update(double dt);
     double severity() const;                    // 0..1, see OVERHEATING, FIRE, BRAKES above
+
+    // Compact 36-byte network replication for 60-70 player free-roam lobbies (hybrid rigid-body authority).
+    NetDamageSnapshot pack_net_snapshot() const;
+    void apply_net_snapshot(const NetDamageSnapshot& snap);
 
     // Physical consequences (fed into Vehicle each tick):
     double engine_power_factor() const;         // 1 .. 0.3 from engine damage, never below limp_power
     double drag_factor() const;                 // 1 .. 1.3 (crumpled body, open panels)
     double suspension_factor(int wheel) const;  // 1 .. 0.6 spring stiffness
     bool wheel_off(int wheel) const { return r_.wheel[wheel] >= p_.wheel_off; }
+    double hub_scrape_mu() const { return p_.hub_scrape_mu; }
     double toe_offset(int wheel) const;         // rad, bent steering/suspension arm
     double camber_offset(int wheel) const;      // rad, bent wishbone/strut knocking wheel into positive camber
     double caster_offset(int wheel) const;      // rad, front impact knocking caster back (asymmetric steering pull)
     double wheel_bearing_drag_nm(int wheel) const; // N m, damaged hub bearing parasitic rolling drag
-    double radiator_cooling_factor() const;     // 1.0 intact down to 0.25 when radiator_leak == 1.0
-    double grip_factor(int wheel) const;        // 1 .. 0.9 (misaligned tyre); wheel_off_grip once the wheel is gone
+    double radiator_cooling_factor() const;     // 1.0 intact down to 0.15 when coolant drains out
+    double oil_cooling_factor() const;          // 1.0 intact down to 0.25 when oil sump drains
+    double oil_starvation_wear_rate() const;    // extra engine_health wear/s when oil_level < 0.35
+    double fuel_leak_lps() const { return r_.fuel_drip_lps; }
+    double grip_factor(int wheel) const;        // 1 .. 0.9 (misaligned tyre); 0.0 once the wheel is gone
     double brake_factor() const { return r_.brakes; }   // 1 .. 0 (fade, then failure)
 
 private:
+    struct MaterialFactors {
+        double panel_stiffness = 1.0;
+        double dent_impulse = 1.0;
+        double structural = 1.0;
+        double cabin = 1.0;
+        double wheel_strength = 1.0;
+        double alignment_bend = 1.0;
+        double brittle_shatter = 0.0;
+    };
+    MaterialFactors material_factors() const;
+    void sync_spec_to_report();
+
     struct Event { double j_acc = 0, last_time = -1; };
     double mass_;
     std::array<Vec3, 4> wheels_;
     DamageParams p_;
+    StructuralSpec spec_;
     DamageReport r_;
     std::array<double, 4> zone_energy_{};   // J absorbed per zone (panels)
     std::array<double, 4> zone_heavy_{};    // J/kg of structural energy per zone
     std::array<double, 8> node_energy_{};   // J absorbed per 8-node perimeter crush grid cell
     std::map<std::uint64_t, Event> events_;
     double brake_wear_ = 0;                 // 0..1, 1 = brakes failed
+    std::uint16_t impact_seq_ = 0;
 };
 
 }  // namespace rs

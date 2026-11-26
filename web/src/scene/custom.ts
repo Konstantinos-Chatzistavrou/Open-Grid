@@ -101,6 +101,13 @@ export class CarCustomizer {
     }
   }
   getWear() { return { wear: this.wear, scuff: this.scuff, wakeSpray: this.wakeSpray }; }
+  /** Update the 8 localized perimeter clearcoat/paint scratch intensities (0..1: FL, FC, FR, L, R, RL, RC, RR). */
+  setScratches(nodes: readonly number[]) {
+    const lu = this.paint?.userData.livery as LiveryUniforms | undefined;
+    if (!lu) return;
+    lu.scratchA.value.set(nodes[0] ?? 0, nodes[1] ?? 0, nodes[2] ?? 0, nodes[3] ?? 0);
+    lu.scratchB.value.set(nodes[4] ?? 0, nodes[5] ?? 0, nodes[6] ?? 0, nodes[7] ?? 0);
+  }
   /** paint clone for imported parts: double-sided, so an inverted-winding export can never read as a black hole */
   private extraMat?: THREE.Material;
   /** widebody kits: the car's own body swells around the arches (parts/widebody.ts), no added flare part */

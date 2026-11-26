@@ -54,6 +54,9 @@ UOpenGridVehicleComponent::UOpenGridVehicleComponent()
     PrimaryComponentTick.TickGroup = TG_PrePhysics;   // inputs and traces are ready before physics runs
     ZoneDamage.Init(0.0f, 4);
     CrushNodeWeights.Init(0.0f, 8);
+    PaintScratchWeights.Init(0.0f, 8);
+    ZoneShatterWeights.Init(0.0f, 4);
+    WheelDetached.Init(false, 4);
     WheelStates.Init(FOpenGridWheelState{}, 4);
     WheelCentresWorld.Init(FVector::ZeroVector, 4);
     WheelSteerRad.Init(0.0f, 4);
@@ -566,6 +569,10 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     Cmd.settings.street_road_class = FMath::Clamp(UrbanRoadClass, 0, 3);
     Cmd.settings.rain_mm_per_hr = FMath::Max(0.0f, RainRateMmPerHr);
     Cmd.settings.road_water_mm = FMath::Max(0.0f, RoadWaterMm);
+    Cmd.settings.chassis_material = static_cast<int32>(ChassisMaterial);
+    Cmd.settings.carbon_body_panels = bCarbonBodyPanels;
+    Cmd.settings.roll_cage = bRollCage;
+    Cmd.settings.race_suspension = bRaceSuspension;
     UOpenGridWeatherSubsystem* WeatherSub = (bAutoSyncWorldWeather && GetWorld())
         ? GetWorld()->GetSubsystem<UOpenGridWeatherSubsystem>() : nullptr;
     if (WeatherSub)
@@ -838,7 +845,29 @@ void UOpenGridVehicleComponent::PublishOutputs(const rs::VehicleOutput& Out, con
     for (int32 i = 0; i < 4; ++i) ZoneDamage[i] = static_cast<float>(Out.damage.zone[i]);
 
     if (CrushNodeWeights.Num() != 8) CrushNodeWeights.SetNumZeroed(8);
-    for (int32 i = 0; i < 8; ++i) CrushNodeWeights[i] = static_cast<float>(Out.damage.node_norm[i]);
+    if (PaintScratchWeights.Num() != 8) PaintScratchWeights.SetNumZeroed(8);
+    for (int32 i = 0; i < 8; ++i)
+    {
+        CrushNodeWeights[i] = static_cast<float>(Out.damage.node_norm[i]);
+        PaintScratchWeights[i] = static_cast<float>(Out.damage.paint_scratch[i]);
+    }
+
+    if (ZoneShatterWeights.Num() != 4) ZoneShatterWeights.SetNumZeroed(4);
+    if (WheelDetached.Num() != 4) WheelDetached.Init(false, 4);
+    for (int32 i = 0; i < 4; ++i)
+    {
+        ZoneShatterWeights[i] = static_cast<float>(Out.damage.shatter[i]);
+        WheelDetached[i] = Out.damage.wheel_detached[i];
+    }
+
+    CoolantLeak01 = static_cast<float>(Out.damage.coolant_leak);
+    CoolantLevel01 = static_cast<float>(Out.damage.coolant_level);
+    CoolantDripLps = static_cast<float>(Out.damage.coolant_drip_lps);
+    OilLeak01 = static_cast<float>(Out.damage.oil_leak);
+    OilLevel01 = static_cast<float>(Out.damage.oil_level);
+    OilDripLps = static_cast<float>(Out.damage.oil_drip_lps);
+    FuelLeak01 = static_cast<float>(Out.damage.fuel_leak);
+    FuelDripLps = static_cast<float>(Out.damage.fuel_drip_lps);
 
     const rs::ue5::UeCrushMorphWeights Morph = rs::ue5::compute_crush_morph_weights(Out.damage);
     CrushMorphWeights.crush_front = Morph.crush_front;

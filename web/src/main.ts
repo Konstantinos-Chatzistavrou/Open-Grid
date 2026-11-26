@@ -465,9 +465,21 @@ async function main() {
     audio.setCarProfile(sel.car, sw.voice, !specClass && eng.turbo !== 'stock');
     audio.setExhaustStage(exhaustStageOf());
   };
+  const syncStructuralSpec = (c: CoreCar) => {
+    const m = modsOf(sel);
+    const cu = customOf(sel);
+    const phys = physics[sel.car] as { torsional_stiffness_nm_per_deg?: number } | undefined;
+    const kCh = phys?.torsional_stiffness_nm_per_deg ?? 0;
+    const mat = kCh >= 42000 ? 3 : kCh >= 32000 ? 2 : kCh >= 26000 ? 1 : 0;
+    const carbonPanels = m.weight >= 2 || cu.aero === 'carbon' || (typeof cu.hood === 'string' && cu.hood.includes('carbon'));
+    const rollCage = m.weight >= 3 || kCh >= 42000;
+    const raceSusp = m.tyres >= 2 || m.weight >= 3 || kCh >= 42000;
+    c.setStructuralSpec(mat, carbonPanels, rollCage, raceSusp);
+  };
   let builtKey = carKey();
   let core = new CoreCar(coreJson());
   core.setTurboStage(turboStageOf());
+  syncStructuralSpec(core);
   // Optional SharedArrayBuffer + Atomics Web Worker physics prototype (?physworker=1, default OFF).
   const physWorkerRate = Math.max(60, Math.min(1000, Math.round(num('physrate', 400))));
   const physWorker = params.get('physworker') === '1'
@@ -2119,6 +2131,7 @@ async function main() {
     const cj = coreJson();
     core = new CoreCar(cj);
     core.setTurboStage(turboStageOf());
+    syncStructuralSpec(core);
     physWorker?.swapCar(cj);
     car = new CarBody(pw, core, shape, visual.cg);
     car.usePatchRays = !(isTouch || potato);

@@ -15,10 +15,12 @@ import {
   mix,
   normalWorld,
   positionWorld,
+  sin,
   smoothstep,
   texture,
   uniform,
   vec2,
+  vec3,
   vec4,
   wgslFn,
 } from 'three/tsl';
@@ -94,6 +96,9 @@ export interface CarPaintWgslUniforms {
   wear: THREE.UniformNode<'float', number>;
   scuff: THREE.UniformNode<'float', number>;
   wakeSpray: THREE.UniformNode<'float', number>;
+  /** 8-node localized clearcoat/paint scratches (maps 1:1 to UE5 MPC): A=(FL,FC,FR,L), B=(R,RL,RC,RR) */
+  scratchA: THREE.UniformNode<'vec4', THREE.Vector4>;
+  scratchB: THREE.UniformNode<'vec4', THREE.Vector4>;
 }
 
 /**
@@ -115,6 +120,8 @@ export function installDualLayerCarPaint(paint: THREE.MeshPhysicalNodeMaterial):
     wear: uniform(0),
     scuff: uniform(0),
     wakeSpray: uniform(0),
+    scratchA: uniform(new THREE.Vector4(0, 0, 0, 0)),
+    scratchB: uniform(new THREE.Vector4(0, 0, 0, 0)),
   };
 
   const pLocal = u.inv.mul(vec4(positionWorld, 1)).xyz;
@@ -158,7 +165,34 @@ export function installDualLayerCarPaint(paint: THREE.MeshPhysicalNodeMaterial):
 
   const basePaint = mix(materialColor, rgb(u.color), liveryMask);
 
-  paint.colorNode = evalDualLayerPaintColorWgsl({
+  // Localized 8-node clearcoat & basecoat paint scratches (FL, FrontCenter, FR, Left, Right, RL, RearCenter, RR).
+  // Renders crisp horizontal scrape striations exposing metallic primer/scuffed clearcoat ONLY on the grazed panel!
+  const localScratch = Fn(() => {
+    const p = pLocal;
+    const wFront = smoothstep(0.55, 1.35, p.z);
+    const wRear = float(1).sub(smoothstep(-1.35, -0.55, p.z));
+    const wMidZ = float(1).sub(wFront).sub(wRear).clamp(0, 1);
+    const wLeft = smoothstep(0.25, 0.72, p.x);
+    const wRight = float(1).sub(smoothstep(-0.72, -0.25, p.x));
+    const wCenterX = float(1).sub(wLeft).sub(wRight).clamp(0, 1);
+    const nodeAmt = wFront.mul(wLeft).mul(u.scratchA.x)
+      .add(wFront.mul(wCenterX).mul(u.scratchA.y))
+      .add(wFront.mul(wRight).mul(u.scratchA.z))
+      .add(wMidZ.mul(wLeft).mul(u.scratchA.w))
+      .add(wMidZ.mul(wRight).mul(u.scratchB.x))
+      .add(wRear.mul(wLeft).mul(u.scratchB.y))
+      .add(wRear.mul(wCenterX).mul(u.scratchB.z))
+      .add(wRear.mul(wRight).mul(u.scratchB.w))
+      .clamp(0, 1);
+    // Fine horizontal scrape grooves along body length + subtle vertical height modulation (bumpers/doors)
+    const grooveA = sin(p.y.mul(95.0).add(p.z.mul(6.5))).mul(0.5).add(0.5);
+    const grooveB = sin(p.y.mul(210.0).sub(p.x.mul(14.0))).mul(0.5).add(0.5);
+    const streakPattern = smoothstep(0.32, 0.88, grooveA.mul(0.6).add(grooveB.mul(0.4)).mul(texSide.z.mul(0.55).add(0.45)));
+    const sideFacing = float(1).sub(smoothstep(0.55, 0.92, abs(nLocal.y)));
+    return nodeAmt.mul(streakPattern).mul(sideFacing.mul(0.85).add(0.15)).clamp(0, 1);
+  })();
+
+  const dualPaint = evalDualLayerPaintColorWgsl({
     baseColor: basePaint,
     pLocal,
     nWorld: normalWorld,
@@ -169,13 +203,17 @@ export function installDualLayerCarPaint(paint: THREE.MeshPhysicalNodeMaterial):
     dirtMask,
   }) as unknown as THREE.Node<'vec3'>;
 
-  paint.roughnessNode = mix(materialRoughness, float(0.88), dirtMask.x.max(dirtMask.z.mul(0.35))).clamp(0.04, 0.96);
-  paint.metalnessNode = materialMetalness.mul(float(1).sub(dirtMask.x.mul(0.92))).clamp(0, 1);
-  paint.clearcoatNode = materialClearcoat.mul(float(1).sub(dirtMask.x.mul(0.94))).clamp(0, 1);
+  // Exposed silver-grey primer / scratched clearcoat streaks where glancing contacts grazed the body
+  const primerRgb = vec3(0.58, 0.60, 0.63);
+  paint.colorNode = mix(dualPaint, primerRgb, localScratch.mul(0.78));
+
+  paint.roughnessNode = mix(materialRoughness, float(0.88), dirtMask.x.max(dirtMask.z.mul(0.35)).max(localScratch.mul(0.82))).clamp(0.04, 0.96);
+  paint.metalnessNode = materialMetalness.mul(float(1).sub(dirtMask.x.mul(0.92))).max(localScratch.mul(0.35)).clamp(0, 1);
+  paint.clearcoatNode = materialClearcoat.mul(float(1).sub(dirtMask.x.mul(0.94))).mul(float(1).sub(localScratch.mul(0.95))).clamp(0, 1);
   paint.clearcoatRoughnessNode = mix(
     materialClearcoatRoughness,
-    float(0.46),
-    dirtMask.x.mul(0.85).add(dirtMask.z.mul(0.4)).clamp(0, 1),
+    float(0.52),
+    dirtMask.x.mul(0.85).add(dirtMask.z.mul(0.4)).add(localScratch.mul(0.9)).clamp(0, 1),
   ).clamp(0.01, 0.65);
 
   const hLow = pLocal.y.sub(u.bottom).div(u.top.sub(u.bottom).max(0.25));

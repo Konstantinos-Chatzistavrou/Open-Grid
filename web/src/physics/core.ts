@@ -33,6 +33,7 @@ interface RsModule {
   _rs_cluster_sweep(id: number): void;
   _rs_incandescence(tempC: number, emissivity: number): number;
   _rs_set_turbo_stage(id: number, stage: number): void;
+  _rs_set_structural_spec(id: number, material: number, carbonPanels: number, rollCage: number, raceSusp: number): void;
   _rs_rays(id: number): void;
   _rs_rays_patch(id: number): void;
   _rs_step(id: number, dt: number): void;
@@ -141,7 +142,7 @@ export class CoreCar {
   get buf(): Float64Array {
     const m = mod!;
     if (!this._buf || this._buf.buffer !== m.HEAPF64.buffer) {
-      this._buf = new Float64Array(m.HEAPF64.buffer, this._ptr, 448);
+      this._buf = new Float64Array(m.HEAPF64.buffer, this._ptr, 480);
       this._raysBuf = this._buf.subarray(16, 40);
       this._raysPatchBuf = this._buf.subarray(280, 352);
     }
@@ -168,6 +169,17 @@ export class CoreCar {
     mod!._rs_set_turbo_stage(this.id, Math.max(0, Math.min(3, Math.round(stage))));
   }
 
+  /** Structural material & aftermarket reinforcements (0=Steel, 1=HSS, 2=Aluminum, 3=CarbonMonocoque). */
+  setStructuralSpec(material: number, carbonPanels = false, rollCage = false, raceSusp = false) {
+    mod!._rs_set_structural_spec(
+      this.id,
+      Math.max(0, Math.min(3, Math.round(material))),
+      carbonPanels ? 1 : 0,
+      rollCage ? 1 : 0,
+      raceSusp ? 1 : 0,
+    );
+  }
+
   /** Crash input for the current tick: point in three world, impulse N s, other object id. */
   contact(p: { x: number; y: number; z: number }, impulse: number, other: number) {
     mod!._rs_contact(this.id, p.x, p.y, p.z, impulse, other);
@@ -183,6 +195,14 @@ export class CoreCar {
       crush: a(200), zone: a(204), wheel: a(208), engine: b[212], lastKj: b[213],
       lastPoint: [b[214], b[215], b[216]], lastZone: b[217], impacts: b[218], totaled: b[219] > 0.5, totalKj: b[220],
       smoulder: b[221], fire: b[222], brakes: b[223], brakesFailed: b[224] > 0.5, severity: b[225],
+      paintScratch: [b[446], b[447], b[448], b[449], b[450], b[451], b[452], b[453]],
+      shatter: [b[454], b[455], b[456], b[457]],
+      wheelDetached: [b[458] > 0.5, b[459] > 0.5, b[460] > 0.5, b[461] > 0.5],
+      coolantLeak: b[462], coolantDripLps: b[463],
+      oilLeak: b[464], oilDripLps: b[465],
+      fuelLeak: b[466], fuelDripLps: b[467],
+      coolantLevel: b[468], oilLevel: b[469],
+      scratchEvents: b[470], chassisMaterial: b[471],
     };
   }
 
@@ -281,6 +301,13 @@ export interface Damage {
   lastPoint: [number, number, number]; lastZone: number; impacts: number; totaled: boolean; totalKj: number;
   /** engine bay: smoke phase 0..1, then fire 0..1 (grows); brakes: effectiveness 1..0, failed = none at all */
   smoulder: number; fire: number; brakes: number; brakesFailed: boolean; severity: number;
+  /** 8-node localized clearcoat/paint scratches (FL, FC, FR, L, R, RL, RC, RR), brittle composite shatter, fluid leaks */
+  paintScratch: number[]; shatter: number[]; wheelDetached: boolean[];
+  coolantLeak: number; coolantDripLps: number;
+  oilLeak: number; oilDripLps: number;
+  fuelLeak: number; fuelDripLps: number;
+  coolantLevel: number; oilLevel: number;
+  scratchEvents: number; chassisMaterial: number;
 }
 
 // Output offsets (bridge.cpp, rs_step)

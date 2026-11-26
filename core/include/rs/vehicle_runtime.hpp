@@ -49,6 +49,11 @@ struct VehicleSettings {
     double road_water_mm = 0.0;
     Vec3 wind_world_mps{0.0, 0.0, 0.0};
     double barometric_offset_kpa = 0.0;
+    // Material-aware chassis & structural tuning reinforcement (0=MildSteel, 1=HSS, 2=Aluminum, 3=CarbonMonocoque)
+    int chassis_material = 0;
+    bool carbon_body_panels = false;
+    bool roll_cage = false;
+    bool race_suspension = false;
 };
 
 /** Game / render thread -> physics thread. Levels (axes, settings) replace the previous command's; edges add up. */
@@ -292,6 +297,12 @@ private:
         // while the street surface was on, or the water above 0, ignored the command that ended the rain and left the
         // road wet for good.)
         vehicle_->road_water_mm = std::max(0.0, s.road_water_mm);
+        StructuralSpec spec = vehicle_->damage_model().structural_spec();
+        spec.material = static_cast<ChassisMaterial>(std::max(0, std::min(3, s.chassis_material)));
+        spec.carbon_body_panels = s.carbon_body_panels;
+        spec.roll_cage = s.roll_cage;
+        spec.race_suspension = s.race_suspension;
+        vehicle_->damage_model().set_structural_spec(spec);
     }
 
     Vehicle* vehicle_;
