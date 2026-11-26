@@ -127,6 +127,7 @@ struct TireCondition {
     double graining = 0.0;        // 0..1 surface tearing from high lateral slip while core is cold (< 60 C)
     double ambient_air_c = 30.0;  // Ambient air temperature (C) for convective tread & rim cooling
     double track_surface_c = 30.0;// Asphalt road surface temperature (C) for conductive contact-patch heat transfer
+    double road_water_mm = 0.0;   // Standing water film depth under this wheel (mm): water-splash cooling vs dry wet-tyre overheat
     std::array<double, 3> rib_contact_shares{1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0}; // 16-point 3D geometric load shares (Inner, Middle, Outer)
 
     // Deformable 24-node flexible-ring carcass belt & sidewall/rim/bead state

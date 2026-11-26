@@ -9,28 +9,33 @@ namespace rs {
 // 1. Hydroplaning (Aquaplaning Water-Wedge Physics)
 // -----------------------------------------------------------------------------
 HydroplaningState compute_hydroplaning(double speed_mps, double pressure_kpa, double tire_wear_0_to_1,
-                                       double water_depth_mm) {
+                                       double water_depth_mm, double tread_depth_new_mm,
+                                       double tread_void_ratio) {
     HydroplaningState st{};
     double hw = std::max(0.0, water_depth_mm);
     double wear = clamp(tire_wear_0_to_1, 0.0, 1.0);
-    double tread_mm = lerp(7.5, 1.2, wear);
+    double tread_new = clamp(tread_depth_new_mm, 0.2, 12.0);
+    double tread_min = std::min(1.2, tread_new * 0.25);
+    double tread_mm = lerp(tread_new, tread_min, wear);
+    // Void ratio factor: 1.0 exactly at calibrated road-tyre void (0.28); drops for slicks, boosts for full wets.
+    double void_scale = clamp(0.65 + 0.35 * (clamp(tread_void_ratio, 0.0, 0.60) / 0.28), 0.55, 1.38);
 
     st.water_depth_mm = hw;
     st.remaining_tread_mm = tread_mm;
 
-    // Horne's NASA hydroplaning equation adapted for tread depth & water film thickness:
-    // v_hydro = 3.45 * sqrt(max(p_kPa, 80.0)) * (0.62 + 0.38 * tread_mm / 7.5)
-    //         * (2.0 / max(h_w - 0.35 * tread_mm, 0.4))^0.22
+    // Horne's NASA hydroplaning equation adapted for tread depth, void ratio & water film thickness:
+    // v_hydro = 3.45 * sqrt(max(p_kPa, 80.0)) * (0.62 + 0.38 * tread_mm / 7.5) * void_scale
+    //         * (2.0 / max(h_w - 0.35 * tread_mm * void_scale, 0.4))^0.22
     double p_eff = std::max(pressure_kpa, 80.0);
-    double tread_factor = 0.62 + 0.38 * (tread_mm / 7.5);
-    double film_excess_mm = std::max(hw - 0.35 * tread_mm, 0.4);
+    double tread_factor = (0.62 + 0.38 * (tread_mm / 7.5)) * void_scale;
+    double film_excess_mm = std::max(hw - 0.35 * tread_mm * void_scale, 0.4);
     double film_factor = std::pow(2.0 / film_excess_mm, 0.22);
 
     st.onset_speed_mps = 3.45 * std::sqrt(p_eff) * tread_factor * film_factor;
 
     // Evacuation threshold: if standing water is thinner than a shallow film that sipes clear without building
     // hydrodynamic pressure, or speed is below onset_speed_mps, no water-wedge lift occurs.
-    double evacuation_limit_mm = 0.22 * tread_mm;
+    double evacuation_limit_mm = 0.22 * tread_mm * void_scale;
     double abs_speed = std::abs(speed_mps);
     if (hw <= evacuation_limit_mm || abs_speed <= st.onset_speed_mps) {
         st.wedge_lift_fraction = 0.0;
@@ -38,7 +43,7 @@ HydroplaningState compute_hydroplaning(double speed_mps, double pressure_kpa, do
         // Hydrodynamic stagnation pressure rises with (v^2 - v_onset^2) / v_onset^2 and depth excess
         double v_onset_sq = std::max(st.onset_speed_mps * st.onset_speed_mps, 1.0);
         double q_excess = (abs_speed * abs_speed - v_onset_sq) / v_onset_sq;
-        double depth_boost = clamp(0.75 + 0.25 * (hw / std::max(0.35 * tread_mm, 0.5)), 0.75, 1.65);
+        double depth_boost = clamp(0.75 + 0.25 * (hw / std::max(0.35 * tread_mm * void_scale, 0.5)), 0.75, 1.65);
         double lift = 0.90 * (1.0 - std::exp(-1.45 * q_excess * depth_boost));
         st.wedge_lift_fraction = clamp(lift, 0.0, 0.90);
     }
@@ -48,21 +53,28 @@ HydroplaningState compute_hydroplaning(double speed_mps, double pressure_kpa, do
     return st;
 }
 
-double wet_grip_factor(double speed_mps, double pressure_kpa, double tire_wear_0_to_1, double water_depth_mm) {
+double wet_grip_factor(double speed_mps, double pressure_kpa, double tire_wear_0_to_1, double water_depth_mm,
+                       double tread_depth_new_mm, double tread_void_ratio, double wet_chemical_grip) {
     const double h = std::max(0.0, water_depth_mm);
     if (h <= 0.0) return 1.0;
     const double v = std::abs(speed_mps), vk = v * 3.6;
+    const double void_r = clamp(tread_void_ratio, 0.0, 0.60);
+    const double void_scale = clamp(0.65 + 0.35 * (void_r / 0.28), 0.55, 1.38);
     // Damp -> wet transition (inverse-S in depth), critical depth vs speed fitted to Beautru's 0.34 / 0.31 / 0.15 mm
-    // at 20 / 40 / 60 km/h. A treaded tyre loses ~5 % here (sipes clear thin films; smooth test rubber loses 30-60 %).
+    // at 20 / 40 / 60 km/h. A siped road/wet tyre loses ~5 % here; zero-void smooth slick rubber loses ~25 %.
     const double h_crit = 0.10 + 0.24 / (1.0 + std::exp((vk - 50.0) / 5.0));
-    const double film = 1.0 - 0.05 / (1.0 + std::exp(-(h - h_crit) / (0.15 * h_crit)));
-    // Drainage: the same tread / pressure / film terms as the Horne onset speed, plus the remaining tread depth and
+    const double damp_drop = 0.05 + 0.22 * clamp((0.28 - void_r) / 0.28, 0.0, 1.0);
+    const double film = 1.0 - damp_drop / (1.0 + std::exp(-(h - h_crit) / (0.15 * h_crit)));
+    // Drainage: the same tread / pressure / film terms as the Horne onset speed, plus remaining tread depth and
     // a log law in water depth (Veith: depth matters at >= 96 km/h, not below 50 km/h).
-    const HydroplaningState hp = compute_hydroplaning(v, pressure_kpa, tire_wear_0_to_1, h);
-    const double tread = hp.remaining_tread_mm;
-    const double v_d = 0.74 * hp.onset_speed_mps * std::pow(tread / 7.5, 0.2)
+    const HydroplaningState hp = compute_hydroplaning(v, pressure_kpa, tire_wear_0_to_1, h, tread_depth_new_mm, void_r);
+    const double tread = std::max(hp.remaining_tread_mm, 0.15);
+    const double v_d = 0.74 * hp.onset_speed_mps * std::pow(tread / 7.5, 0.2) * (0.72 + 0.28 * void_scale)
                      / (1.0 + 0.5 * std::log(std::max(h, 0.12) / 1.0));
-    return film / (1.0 + (v / v_d) * (v / v_d));
+    // Compound low-temperature wet chemistry (1.0 for calibrated road; 0.72 slick, 1.12 inter, 1.24 full wet)
+    const double wet_blend = clamp((h - 0.03) / 0.25, 0.0, 1.0);
+    const double chem = lerp(1.0, clamp(wet_chemical_grip, 0.55, 1.35), wet_blend);
+    return clamp((film * chem) / (1.0 + (v / v_d) * (v / v_d)), 0.05, 1.0);
 }
 
 // -----------------------------------------------------------------------------

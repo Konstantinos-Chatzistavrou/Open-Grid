@@ -315,8 +315,8 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     rs::WeatherSample weather_here{};
     if (!c.dyno_road && g_weather_enabled) {
         weather_here = g_weather.sample(c.cs.position.x, c.cs.position.y);
-        g_weather.apply_to_atmosphere(c.cs.position.x, c.cs.position.y,
-                                      c.vehicle->atmosphere(), c.vehicle->road_water_mm);
+        g_weather.apply_to_vehicle(c.cs.position, live_contacts,
+                                   c.vehicle->atmosphere(), c.vehicle->road_water_mm, &c.cfg);
         c.rain_mm_per_hr = weather_here.rain_mm_per_hr;
     }
     if (!c.dyno_road && c.street_evo_enabled) {
@@ -351,18 +351,30 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
 
     c.out = c.vehicle->update(c.cs, live_contacts, dt);
 
-    if (!c.dyno_road && c.street_evo_enabled) {
+    if (!c.dyno_road && (c.street_evo_enabled || g_weather_enabled)) {
         const double v_car = rs::length(c.cs.velocity);
+        double wheel_water_sum = 0.0;
+        int wheel_contact_count = 0;
         for (int w = 0; w < 4; ++w) {
-            if (!live_contacts[w].hit || live_contacts[w].surface != asphalt_idx || !c.out.wheels[w].contact) continue;
+            if (!live_contacts[w].hit || !c.out.wheels[w].contact) continue;
             const double slip_p = std::abs(c.out.wheels[w].fx * c.out.wheels[w].slip_ratio * std::max(v_car, 1.0))
                                 + std::abs(c.out.wheels[w].fy * std::sin(c.out.wheels[w].slip_angle) * std::max(v_car, 1.0));
-            c.street_evo.deposit_wheel_world(live_contacts[w].point.x, live_contacts[w].point.y,
-                                             slip_p, v_car, c.out.wheels[w].load, dt);
-            if (g_weather_enabled) {
-                g_weather.deposit_tyre_wake(live_contacts[w].point.x, live_contacts[w].point.y,
-                                            v_car, c.out.wheels[w].load, dt);
+            if (c.street_evo_enabled && live_contacts[w].surface == asphalt_idx) {
+                c.street_evo.deposit_wheel_world(live_contacts[w].point.x, live_contacts[w].point.y,
+                                                 slip_p, v_car, c.out.wheels[w].load, dt);
             }
+            if (g_weather_enabled) {
+                const double evac_scale = rs::clamp(c.cfg.tire(w).tread_void_ratio / 0.28, 0.25, 2.5);
+                g_weather.deposit_tyre_passage(live_contacts[w].point.x, live_contacts[w].point.y,
+                                               v_car, c.out.wheels[w].load, slip_p, evac_scale, dt);
+                wheel_water_sum += std::max(live_contacts[w].water_depth_mm, c.vehicle->road_water_mm);
+                ++wheel_contact_count;
+            }
+        }
+        if (g_weather_enabled && wheel_contact_count > 0) {
+            const double avg_w = wheel_water_sum / wheel_contact_count;
+            const double diffuser_down_n = 0.5 * c.out.air_density_kg_m3 * c.cfg.aero.lift_area * v_car * v_car;
+            g_weather.deposit_car_spray(c.cs.position, c.cs.velocity, avg_w, diffuser_down_n, dt);
         }
         if (asphalt_hits > 0) {
             c.last_street_rubber = rubber_sum / asphalt_hits;
@@ -518,7 +530,9 @@ void step_with_contacts(Car& c, const std::array<rs::WheelContact, 4>& contacts,
     b[438] = weather_here.barometric_kpa;
     b[439] = weather_here.wind_speed_mps;
     b[440] = weather_here.puddle_depth_mm;
-    b[441] = weather_here.visibility_m;
+    const rs::Vec3 driver_eye = c.cs.position + rs::Vec3{0.0, 0.0, 1.05};
+    const rs::Vec3 driver_fwd = c.cs.orientation.rotate({1.0, 0.0, 0.0});
+    b[441] = g_weather_enabled ? g_weather.sample_driver_visibility_m(driver_eye, driver_fwd) : weather_here.visibility_m;
     b[442] = weather_here.solar_irradiance_w_m2;
     b[443] = weather_here.lightning_flash_0_to_1;
     b[444] = weather_here.wetness_0_to_1;

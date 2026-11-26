@@ -33,6 +33,7 @@ std::array<Vec3, 4> wheel_points(const CarConfig& c) {
 void carry_ground_data(WheelContact& out, const WheelContact& surface_hit, const WheelContact& centre_hit) {
     out.surface_mu_mult = surface_hit.surface_mu_mult;
     out.marble_density = surface_hit.marble_density;
+    out.track_temp_c = surface_hit.track_temp_c;
     const ContactPatchProfile& src = centre_hit.patch_profile;
     ContactPatchProfile& dst = out.patch_profile;
     bool uneven = false;
@@ -817,22 +818,29 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         const double rch = axle_rch[a];
         const double geo = prev_axle_fy_[a] * rch / ax.track;
         k.load = std::max(0.0, k.load + (left_wheel ? -geo : geo) + 0.5 * axle_jack_heave[a]);
-        // Per-wheel Hydroplaning (Aquaplaning Water-Wedge Lift): asymmetric standing puddles lift only the submerged wheels
+        // Per-wheel Hydroplaning (Aquaplaning Water-Wedge Lift) & Compound-Aware Wet Grip:
+        // Asymmetric standing puddles lift and drag only the submerged wheels!
         const double water_mm = std::max(c.water_depth_mm, road_water_mm);
         double wet_mu = 1.0;
         if (water_mm > 0.0) {
             const double p_kpa = tire_condition_[w].pressure_kpa > 0.0 ? tire_condition_[w].pressure_kpa : tp.p_nominal_kpa;
-            wet_mu = wet_grip_factor(std::hypot(k.vx, k.vy), p_kpa, tire_condition_[w].wear, water_mm);
+            wet_mu = wet_grip_factor(std::hypot(k.vx, k.vy), p_kpa, tire_condition_[w].wear, water_mm,
+                                     tp.tread_depth_new_mm, tp.tread_void_ratio, tp.wet_chemical_grip);
         }
         if (water_mm > 0.05) {
             const double p_kpa = tire_condition_[w].pressure_kpa > 0.0 ? tire_condition_[w].pressure_kpa : tp.p_nominal_kpa;
-            const HydroplaningState hydro = compute_hydroplaning(std::hypot(k.vx, k.vy), p_kpa, tire_condition_[w].wear, water_mm);
+            const HydroplaningState hydro = compute_hydroplaning(std::hypot(k.vx, k.vy), p_kpa, tire_condition_[w].wear, water_mm,
+                                                                 tp.tread_depth_new_mm, tp.tread_void_ratio);
             out.wheels[w].hydroplaning_lift = hydro.wedge_lift_fraction;
             k.load *= hydro.effective_load_scale;
             k.ffb_hydro_scale = hydro.ffb_aligning_torque_scale;
         }
-        if (atmosphere_.enabled) {
-            tire_condition_[w].set_environment_celsius(atmosphere_.ambient_air_c, atmosphere_.track_surface_c);
+        tire_condition_[w].road_water_mm = water_mm;
+        if (atmosphere_.enabled || c.track_temp_c > -100.0) {
+            const double air_c = atmosphere_.enabled ? atmosphere_.ambient_air_c : tire_condition_[w].ambient_air_c;
+            const double trk_c = c.track_temp_c > -100.0 ? c.track_temp_c
+                               : (atmosphere_.enabled ? atmosphere_.track_surface_c : tire_condition_[w].track_surface_c);
+            tire_condition_[w].set_environment_celsius(air_c, trk_c);
         }
         tire_condition_[w].rib_contact_shares = c.rib_contact_shares;
         tire_condition_[w].enveloping_slope_tan = c.enveloping_slope_tan;
@@ -1380,6 +1388,22 @@ VehicleOutput Vehicle::update(const ChassisState& s, const std::array<WheelConta
         // longitudinal tyre force at the contact patch; lateral tyre force at the dynamic
         // roll-centre height (handles the roll-moment geometric transfer without double-counting);
         // residual self-aligning torque Mz acts about the contact normal.
+        // Per-wheel hydrodynamic standing-water displacement drag (puddle drag):
+        // When a wheel ploughs through standing water > 1.2 mm, displaced water mass creates a strong
+        // longitudinal drag force F_splash = 0.5 * rho_water * Cd * width * h_excess * v^2.
+        // Hitting a puddle with only right-side wheels creates an authentic asymmetric yaw tug + steering jerk!
+        const double w_depth_mm = std::max(contacts[w].water_depth_mm, road_water_mm);
+        if (w_depth_mm > 1.2 && std::abs(k.vx) > 2.0) {
+            const double h_m = (w_depth_mm - 1.2) * 0.001;
+            const double f_puddle = 0.5 * 1000.0 * 0.55 * tp.section_width_m * h_m * k.vx * k.vx;
+            const double drag_fx = -sign(k.vx) * std::min(f_puddle, 0.65 * std::max(susp_force[w], 1500.0));
+            fx += drag_fx;
+            if (w < 2 && cfg_.axle(w).max_steer_deg > 0) {
+                const double scrub = std::abs(wheel_kin[w].scrub_radius_m) > 1e-4 ? wheel_kin[w].scrub_radius_m : 0.018;
+                const double side_sign = (w == FL) ? 1.0 : -1.0;
+                out.steer_torque += side_sign * drag_fx * scrub;
+            }
+        }
         Vec3 f_susp = up * (susp_force[w] + 0.5 * axle_jack_heave[a]);
         Vec3 f_long = k.fwd * fx;
         Vec3 f_lat = k.lat * fy;

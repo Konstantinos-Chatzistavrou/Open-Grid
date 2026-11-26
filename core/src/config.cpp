@@ -20,15 +20,28 @@ void apply_compound(TireParams& t, const std::string& c, const std::string& ctx)
         t.temp_optimal_c = 50; t.temp_window_c = 40; t.start_c = 45;
         t.wear_per_mj = 1.0 / 150.0; t.wear_grip_loss = 0.15; t.wear_cliff_loss = 0.02;
         t.hysteresis_loss_factor = 0.65; t.tread_cooling_scale = 1.00;
+        t.tread_depth_new_mm = 7.5; t.tread_void_ratio = 0.28; t.wet_chemical_grip = 1.00; t.dry_overheat_wear_mult = 1.0;
     } else if (c == "semi_slick") {
         t.temp_optimal_c = 75; t.temp_window_c = 25; t.start_c = 70;
         t.wear_per_mj = 1.0 / 80.0; t.wear_grip_loss = 0.17; t.wear_cliff_loss = 0.08;
         t.hysteresis_loss_factor = 0.70; t.tread_cooling_scale = 1.00;
+        t.tread_depth_new_mm = 4.5; t.tread_void_ratio = 0.16; t.wet_chemical_grip = 0.86; t.dry_overheat_wear_mult = 1.0;
     } else if (c == "slick") {
         t.temp_optimal_c = 90; t.temp_window_c = 15; t.start_c = 85;
         t.wear_per_mj = 1.0 / 22.0; t.wear_grip_loss = 0.18; t.wear_cliff_loss = 0.14;
         t.hysteresis_loss_factor = 1.65; t.tread_cooling_scale = 0.94;
-    } else throw std::runtime_error("car config: '" + ctx + ".compound' must be road, semi_slick or slick (got '" + c + "')");
+        t.tread_depth_new_mm = 0.5; t.tread_void_ratio = 0.02; t.wet_chemical_grip = 0.72; t.dry_overheat_wear_mult = 1.0;
+    } else if (c == "intermediate") {
+        t.temp_optimal_c = 55; t.temp_window_c = 20; t.start_c = 45;
+        t.wear_per_mj = 1.0 / 48.0; t.wear_grip_loss = 0.16; t.wear_cliff_loss = 0.08;
+        t.hysteresis_loss_factor = 1.05; t.tread_cooling_scale = 1.08;
+        t.tread_depth_new_mm = 6.2; t.tread_void_ratio = 0.34; t.wet_chemical_grip = 1.12; t.dry_overheat_wear_mult = 2.0;
+    } else if (c == "wet") {
+        t.temp_optimal_c = 42; t.temp_window_c = 16; t.start_c = 36;
+        t.wear_per_mj = 1.0 / 32.0; t.wear_grip_loss = 0.18; t.wear_cliff_loss = 0.12;
+        t.hysteresis_loss_factor = 1.30; t.tread_cooling_scale = 1.15;
+        t.tread_depth_new_mm = 8.8; t.tread_void_ratio = 0.45; t.wet_chemical_grip = 1.24; t.dry_overheat_wear_mult = 3.2;
+    } else throw std::runtime_error("car config: '" + ctx + ".compound' must be road, semi_slick, slick, intermediate or wet (got '" + c + "')");
 }
 
 using nlohmann::json;
@@ -148,6 +161,10 @@ TireParams parse_tire(const json& j, const std::string& ctx) {
     t.wear_cliff_loss = num_or(j, "wear_cliff_loss", t.wear_cliff_loss);
     t.hysteresis_loss_factor = num_or(j, "hysteresis_loss_factor", t.hysteresis_loss_factor);
     t.tread_cooling_scale = num_or(j, "tread_cooling_scale", t.tread_cooling_scale);
+    t.tread_depth_new_mm = num_or(j, "tread_depth_new_mm", t.tread_depth_new_mm);
+    t.tread_void_ratio = num_or(j, "tread_void_ratio", t.tread_void_ratio);
+    t.wet_chemical_grip = num_or(j, "wet_chemical_grip", t.wet_chemical_grip);
+    t.dry_overheat_wear_mult = num_or(j, "dry_overheat_wear_mult", t.dry_overheat_wear_mult);
     const json& lo = j.at("longitudinal");
     t.cx = num(lo, "C", ctx + ".longitudinal");
     t.mu_x = num(lo, "mu", ctx + ".longitudinal");

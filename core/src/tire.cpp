@@ -442,6 +442,14 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
     // Solid-to-solid conductive heat transfer between loaded contact patch and asphalt road surface
     const double g_road = (std::abs(Ttrack - Tair) > 1e-4 && load_n > 50.0)
                         ? 38.0 * clamp(load_n / 4000.0, 0.0, 1.6) : 0.0;
+    // Standing-water splash & evaporative tread cooling (lets wet/inter drivers cool hot tyres in puddles on straights!)
+    const double g_water = (road_water_mm > 0.04 && v > 1.0)
+                         ? clamp(road_water_mm / 1.4, 0.0, 2.2) * (42.0 + 5.2 * v) : 0.0;
+    // Dry-track tall-tread-block squirm heating for grooved intermediate/full-wet compounds when road dries out
+    const double dry_squirm_mult = (p && p->dry_overheat_wear_mult > 1.01)
+                                 ? (p->dry_overheat_wear_mult - 1.0) * clamp((0.20 - road_water_mm) / 0.20, 0.0, 1.0)
+                                 : 0.0;
+    const double q_dry_squirm = dry_squirm_mult * 0.018 * std::max(0.0, load_n) * v;
     const double ha = std::max(5.0, ha_total - g_road * 0.45);
     // Sidewall: carcass -> sidewall rubber -> air film, toward ambient air (pure energy balance, no set-point pull).
     const double G_film_sw = kSidewallAreaRatio * ha_total;
@@ -479,7 +487,7 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
         // Radiant / convective heat soak from hot racing brake rotor (> 180 C) inside wheel barrel into inner cavity air & bead/carcass
         const double q_brake = (brake_disc_temp_c > std::max(180.0, tg + 40.0))
                              ? clamp(1.85 * (brake_disc_temp_c - 180.0), 0.0, 1100.0) : 0.0;
-        const double dts = (slip_power_w - q_sc - ha * (ts - Tair) - g_road * (ts - Ttrack)) / Cs;
+        const double dts = (slip_power_w + q_dry_squirm - q_sc - ha * (ts - Tair) - (g_road + g_water) * (ts - Ttrack)) / Cs;
         const double dtc = (q_sc + hyst + 0.45 * q_brake - q_cg - G_sw * (tc - Tair)) / Cc;
         const double dtg = (q_cg + 0.55 * q_brake - G_rim * (tg - Tair)) / Cg;
         surface_c = clamp(ts + dts * h, -15.0, 260.0);
@@ -509,8 +517,11 @@ void TireCondition::update(double slip_power_w, double load_n, double speed_mps,
         const TireParams* tp = p ? p : &kDefaultTyre;
         const double t_hi = tp->temp_optimal_c + tp->temp_window_c;
         const double over_c = std::max(0.0, surface_c - t_hi);
-        const double thermal_wear_mult = 1.0 + 1.8 * clamp(over_c / 40.0, 0.0, 1.5) + 0.8 * clamp(graining, 0.0, 1.0);
-        wear = clamp(wear + slip_power_w * dt * 1e-6 * tp->wear_per_mj * thermal_wear_mult, 0.0, 1.0);
+        const double dry_wear_boost = (tp->dry_overheat_wear_mult > 1.01 && road_water_mm < 0.20)
+                                    ? lerp(1.0, tp->dry_overheat_wear_mult, clamp((0.20 - road_water_mm) / 0.20, 0.0, 1.0))
+                                    : 1.0;
+        const double thermal_wear_mult = (1.0 + 1.8 * clamp(over_c / 40.0, 0.0, 1.5) + 0.8 * clamp(graining, 0.0, 1.0)) * dry_wear_boost;
+        wear = clamp(wear + (slip_power_w + q_dry_squirm) * dt * 1e-6 * tp->wear_per_mj * thermal_wear_mult, 0.0, 1.0);
     }
     // Keep 3-zone surface temperatures synchronized toward surface_c when update() is called directly
     if (imo_spread_c() < 1e-9) {
@@ -597,11 +608,17 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
     const double ha_total = (20.0 + 2.5 * v) * cool_scale;
     const double g_road = (std::abs(Ttrack - Tair) > 1e-4 && load_n > 50.0)
                         ? 38.0 * clamp(load_n / 4000.0, 0.0, 1.6) : 0.0;
+    const double g_water = (road_water_mm > 0.04 && v > 1.0)
+                         ? clamp(road_water_mm / 1.4, 0.0, 2.2) * (42.0 + 5.2 * v) : 0.0;
+    const double dry_squirm_mult = (p && p->dry_overheat_wear_mult > 1.01)
+                                 ? (p->dry_overheat_wear_mult - 1.0) * clamp((0.20 - road_water_mm) / 0.20, 0.0, 1.0)
+                                 : 0.0;
+    const double q_dry_squirm = dry_squirm_mult * 0.018 * std::max(0.0, load_n) * v;
     const double ha = std::max(5.0, ha_total - g_road * 0.45);
-    const double q_asym = std::max(0.0, slip_power_w) + 0.018 * std::max(0.0, load_n) * v;
-    const double q_in = slip_power_w + (w_in - 1.0) * q_asym;
-    const double q_mid = slip_power_w + (w_mid - 1.0) * q_asym;
-    const double q_out = slip_power_w + (w_out - 1.0) * q_asym;
+    const double q_asym = std::max(0.0, slip_power_w) + q_dry_squirm + 0.018 * std::max(0.0, load_n) * v;
+    const double q_in = slip_power_w + q_dry_squirm + (w_in - 1.0) * q_asym;
+    const double q_mid = slip_power_w + q_dry_squirm + (w_mid - 1.0) * q_asym;
+    const double q_out = slip_power_w + q_dry_squirm + (w_out - 1.0) * q_asym;
 
     const int n = std::max(1, (int)std::ceil(dt / 0.05));
     const double h = dt / n;
@@ -610,9 +627,9 @@ void TireCondition::update_zones(double slip_power_w, double load_n, double spee
         const double tc = tc_before + (temperature_c - tc_before) * frac;
         const double ts = ts_before + (surface_c - ts_before) * frac;
         const double ti = inner_c, tm = middle_c, to = outer_c;
-        const double dti = (q_in - G * (ti - tc) - ha * (ti - Tair) - g_road * w_in * (ti - Ttrack) - G_zone * (ti - ts)) / Cs;
-        const double dtm = (q_mid - G * (tm - tc) - ha * (tm - Tair) - g_road * w_mid * (tm - Ttrack) - G_zone * (tm - ts)) / Cs;
-        const double dto = (q_out - G * (to - tc) - ha * (to - Tair) - g_road * w_out * (to - Ttrack) - G_zone * (to - ts)) / Cs;
+        const double dti = (q_in - G * (ti - tc) - ha * (ti - Tair) - (g_road * w_in + g_water) * (ti - Ttrack) - G_zone * (ti - ts)) / Cs;
+        const double dtm = (q_mid - G * (tm - tc) - ha * (tm - Tair) - (g_road * w_mid + g_water) * (tm - Ttrack) - G_zone * (tm - ts)) / Cs;
+        const double dto = (q_out - G * (to - tc) - ha * (to - Tair) - (g_road * w_out + g_water) * (to - Ttrack) - G_zone * (to - ts)) / Cs;
         inner_c = clamp(ti + dti * h, -15.0, 260.0);
         middle_c = clamp(tm + dtm * h, -15.0, 260.0);
         outer_c = clamp(to + dto * h, -15.0, 260.0);

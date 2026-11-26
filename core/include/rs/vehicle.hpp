@@ -83,6 +83,7 @@ struct WheelContact {
     ContactPatchProfile patch_profile{}; // optional 4x4 multi-point road height / kerb / partial-contact profile
     double surface_mu_mult = 1.0;        // dynamic street surface grip multiplier (rubbered dry > 1, wet rubber/marbles < 1)
     double marble_density = 0.0;         // 0..1 off-line rubber marbles & street dust/grit density at this wheel
+    double track_temp_c = -999.0;        // optional per-wheel local asphalt temperature (C; <= -100 uses atmosphere_.track_surface_c)
 };
 
 struct WheelOutput {

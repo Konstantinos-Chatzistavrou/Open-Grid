@@ -88,6 +88,11 @@ struct TireParams {
     double wear_cliff_loss = 0.02;    // extra late-stint wear cliff drop past 70% tread wear (slicks drop off sharply)
     double hysteresis_loss_factor = 1.0; // compound viscoelastic loss tangent scale (road ~0.65, semi_slick ~0.78, slick ~1.85)
     double tread_cooling_scale = 1.0;    // convective cooling factor: grooved road tread = 1.0, smooth zero-void slick ~ 0.66
+    // Wet-weather tread evacuation & compound chemistry (defaults match calibrated road tyre: 7.5 mm tread, 28% void)
+    double tread_depth_new_mm = 7.5;     // mm, fresh tread groove depth (slick 0.5, semi_slick 4.5, road 7.5, inter 6.2, wet 8.8)
+    double tread_void_ratio = 0.28;      // 0..0.55 groove void area fraction (slick 0.02, semi_slick 0.16, road 0.28, inter 0.34, wet 0.45)
+    double wet_chemical_grip = 1.0;      // compound low-temp wet adhesion factor (slick 0.72, road 1.0, inter 1.12, full wet 1.24)
+    double dry_overheat_wear_mult = 1.0; // dry-tarmac block-squirm heating & wear multiplier for grooved wet/inter compounds (wet 3.2)
     // PAC2002 / MF 6.2 / MF-Swift-style physical carcass, belt & non-linear rolling radius parameters
     // (defaults from measured Audi 245/40 R18 PAC2002 lab dataset, data/tires/audi_245_40R18_pac2002.tir):
     double vertical_damping = 2000.0; // N s/m, radial tire carcass damping (VERTICAL_DAMPING)
