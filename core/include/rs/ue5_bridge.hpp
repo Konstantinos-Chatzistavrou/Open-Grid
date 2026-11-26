@@ -92,7 +92,9 @@ inline Quat quat_from_ue(const UeQuat& q) {
 //   no hit when: nothing was cached, the ray runs parallel to / away from the plane, the plane lies above the mount by
 //   more than `above_tolerance`, or beyond the ray's length (wheel in the air).
 inline WheelContact intersect_ground_plane(const WheelRay& ray, bool cached_hit, const Vec3& plane_point,
-                                           const Vec3& plane_normal, int surface, double above_tolerance = 0.05) {
+                                           const Vec3& plane_normal, int surface, double above_tolerance = 0.05,
+                                           double water_depth_mm = 0.0, double surface_mu_mult = 1.0,
+                                           double track_temp_c = -999.0) {
     WheelContact c;
     if (!cached_hit) return c;
     const double denom = dot(ray.direction, plane_normal);
@@ -105,6 +107,9 @@ inline WheelContact intersect_ground_plane(const WheelRay& ray, bool cached_hit,
     c.point = ray.origin + ray.direction * t;
     c.normal = plane_normal;
     c.surface = surface;
+    c.water_depth_mm = water_depth_mm;
+    c.surface_mu_mult = surface_mu_mult;
+    c.track_temp_c = track_temp_c;
     return c;
 }
 
@@ -119,6 +124,9 @@ struct GroundSample {
     Vec3 point;            // core space (m)
     Vec3 normal{0, 0, 1};
     int surface = 0;
+    double water_depth_mm = 0.0;    // per-wheel standing water from UOpenGridWeatherSubsystem (mm)
+    double surface_mu_mult = 1.0;   // per-wheel dry-rubber / wet-line inversion / wet-kerb grip multiplier
+    double track_temp_c = -999.0;   // per-wheel persistent shaded/sunlit asphalt temperature (C; <= -100 = global)
 };
 
 struct GroundStrip {
@@ -162,7 +170,8 @@ struct GroundStrip {
         const int i1 = std::min(count - 1, i0 + 1);
         for (int i : {i0, i1}) {
             const GroundSample& g = at(lane, i);
-            const WheelContact c = intersect_ground_plane(ray, g.hit, g.point, g.normal, g.surface);
+            const WheelContact c = intersect_ground_plane(ray, g.hit, g.point, g.normal, g.surface, 0.05,
+                                                          g.water_depth_mm, g.surface_mu_mult, g.track_temp_c);
             if (c.hit && (!out.hit || c.distance < out.distance)) out = c;
         }
         return true;   // inside the strip: no hit means the wheel is in the air there
@@ -414,7 +423,8 @@ private:
                     if (g.strips[w].lookup(rf.rays[w][j], from_strip)) return from_strip;
                 }
                 const GroundSample& s = g.planes[w][j];
-                return intersect_ground_plane(rf.rays[w][j], s.hit, s.point, s.normal, s.surface);
+                return intersect_ground_plane(rf.rays[w][j], s.hit, s.point, s.normal, s.surface, 0.05,
+                                              s.water_depth_mm, s.surface_mu_mult, s.track_temp_c);
             };
             if (per_wheel == 16) {
                 std::array<WheelContact, 16> sub{};

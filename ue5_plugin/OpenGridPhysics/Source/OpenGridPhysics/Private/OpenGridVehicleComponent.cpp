@@ -1,5 +1,6 @@
 // Apache-2.0 — OpenGrid Unreal Engine 5 UActorComponent implementation. See the header for the stepping model.
 #include "OpenGridVehicleComponent.h"
+#include "OpenGridWeatherSubsystem.h"
 
 #include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
@@ -355,6 +356,18 @@ void UOpenGridVehicleComponent::TraceGround(const std::array<std::array<rs::Whee
 {
     UWorld* World = GetWorld();
     if (!World) return;
+    const UOpenGridWeatherSubsystem* WeatherSub = bAutoSyncWorldWeather ? World->GetSubsystem<UOpenGridWeatherSubsystem>() : nullptr;
+    auto SurfaceToWeather = [&](int32 SurfIdx) -> rs::WeatherSurfaceType {
+        if (SurfIdx >= 0 && SurfIdx < static_cast<int32>(Config_.surface_grip.size()))
+        {
+            const std::string& Name = Config_.surface_grip[SurfIdx].first;
+            if (Name == "kerb" || Name == "curb" || Name == "paint") return rs::WeatherSurfaceType::PaintedKerb;
+            if (Name == "concrete" || Name == "pavement") return rs::WeatherSurfaceType::Concrete;
+            if (Name == "grass") return rs::WeatherSurfaceType::Grass;
+            if (Name == "gravel" || Name == "dirt") return rs::WeatherSurfaceType::Gravel;
+        }
+        return rs::WeatherSurfaceType::Asphalt;
+    };
     FCollisionQueryParams Params(SCENE_QUERY_STAT(OpenGridWheelTrace), false, GetOwner());
     Params.bReturnPhysicalMaterial = true;
     for (int32 w = 0; w < 4; ++w)
@@ -374,6 +387,13 @@ void UOpenGridVehicleComponent::TraceGround(const std::array<std::array<rs::Whee
                 G.point = rs::ue5::pos_from_ue(ToUe(Hit.ImpactPoint));
                 G.normal = rs::normalized(rs::ue5::dir_from_ue(ToUe(Hit.ImpactNormal)));
                 G.surface = SurfaceFromPhysicalMaterial(Hit.PhysMaterial.Get());
+                if (WeatherSub)
+                {
+                    const rs::WeatherWheelSample WS = WeatherSub->CoreWeather().sample_wheel(G.point.x, G.point.y, SurfaceToWeather(G.surface));
+                    G.water_depth_mm = WS.water_depth_mm;
+                    G.surface_mu_mult = WS.surface_mu_mult;
+                    G.track_temp_c = WS.track_temp_c;
+                }
             }
         }
     }
@@ -385,6 +405,18 @@ int32 UOpenGridVehicleComponent::TraceGroundStrips(UPrimitiveComponent* Body, fl
 {
     UWorld* World = GetWorld();
     if (!World) return 0;
+    const UOpenGridWeatherSubsystem* WeatherSub = bAutoSyncWorldWeather ? World->GetSubsystem<UOpenGridWeatherSubsystem>() : nullptr;
+    auto SurfaceToWeather = [&](int32 SurfIdx) -> rs::WeatherSurfaceType {
+        if (SurfIdx >= 0 && SurfIdx < static_cast<int32>(Config_.surface_grip.size()))
+        {
+            const std::string& Name = Config_.surface_grip[SurfIdx].first;
+            if (Name == "kerb" || Name == "curb" || Name == "paint") return rs::WeatherSurfaceType::PaintedKerb;
+            if (Name == "concrete" || Name == "pavement") return rs::WeatherSurfaceType::Concrete;
+            if (Name == "grass") return rs::WeatherSurfaceType::Grass;
+            if (Name == "gravel" || Name == "dirt") return rs::WeatherSurfaceType::Gravel;
+        }
+        return rs::WeatherSurfaceType::Asphalt;
+    };
     FCollisionQueryParams Params(SCENE_QUERY_STAT(OpenGridGroundStrip), false, GetOwner());
     Params.bReturnPhysicalMaterial = true;
 
@@ -442,6 +474,13 @@ int32 UOpenGridVehicleComponent::TraceGroundStrips(UPrimitiveComponent* Body, fl
                     G.point = rs::ue5::pos_from_ue(ToUe(Hit.ImpactPoint));
                     G.normal = rs::normalized(rs::ue5::dir_from_ue(ToUe(Hit.ImpactNormal)));
                     G.surface = SurfaceFromPhysicalMaterial(Hit.PhysMaterial.Get());
+                    if (WeatherSub)
+                    {
+                        const rs::WeatherWheelSample WS = WeatherSub->CoreWeather().sample_wheel(G.point.x, G.point.y, SurfaceToWeather(G.surface));
+                        G.water_depth_mm = WS.water_depth_mm;
+                        G.surface_mu_mult = WS.surface_mu_mult;
+                        G.track_temp_c = WS.track_temp_c;
+                    }
                 }
             }
         }
@@ -527,6 +566,26 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
     Cmd.settings.street_road_class = FMath::Clamp(UrbanRoadClass, 0, 3);
     Cmd.settings.rain_mm_per_hr = FMath::Max(0.0f, RainRateMmPerHr);
     Cmd.settings.road_water_mm = FMath::Max(0.0f, RoadWaterMm);
+    UOpenGridWeatherSubsystem* WeatherSub = (bAutoSyncWorldWeather && GetWorld())
+        ? GetWorld()->GetSubsystem<UOpenGridWeatherSubsystem>() : nullptr;
+    if (WeatherSub)
+    {
+        const rs::Vec3 CarCorePos = rs::ue5::pos_from_ue(ToUe(Body->GetComponentLocation()));
+        const rs::WeatherSample WS = WeatherSub->CoreWeather().sample(CarCorePos.x, CarCorePos.y);
+        Cmd.settings.ambient_air_c = WS.ambient_air_c;
+        Cmd.settings.track_surface_c = WS.track_surface_c;
+        Cmd.settings.humidity = WS.humidity_0_to_1;
+        Cmd.settings.rain_mm_per_hr = WS.rain_mm_per_hr;
+        Cmd.settings.wind_world_mps = WS.wind_world_mps;
+        Cmd.settings.barometric_offset_kpa = WS.barometric_kpa - 101.325;
+        // Per-wheel GroundSamples carry exact sub-meter water_depth_mm so asymmetric puddles lift/drag only submerged wheels.
+        Cmd.settings.road_water_mm = 0.0;
+        AmbientAirCelsius = static_cast<float>(WS.ambient_air_c);
+        TrackSurfaceCelsius = static_cast<float>(WS.track_surface_c);
+        RelativeHumidity = static_cast<float>(WS.humidity_0_to_1);
+        RainRateMmPerHr = static_cast<float>(WS.rain_mm_per_hr);
+        RoadWaterMm = static_cast<float>(WS.surface_water_mm);
+    }
     if (Bridge_->submit_command(Cmd))
     {
         bShiftUpRequested_ = bShiftDownRequested_ = bRepairRequested_ = false;
@@ -608,6 +667,33 @@ void UOpenGridVehicleComponent::TickComponent(float DeltaTime, ELevelTick TickTy
         FMath::DegreesToRadians(Body->GetPhysicsAngularVelocityInDegrees()));
 
     ElapsedTimeS_ += DeltaTime;
+    if (WeatherSub)
+    {
+        const double VCar = rs::length(RenderChassis.velocity);
+        double WaterSum = 0.0;
+        int32 ContactCount = 0;
+        for (int32 w = 0; w < 4; ++w)
+        {
+            const rs::WheelOutput& WO = LastRecord_.out.wheels[w];
+            if (!WO.contact) continue;
+            const double SlipP = std::abs(WO.fx * WO.slip_ratio * std::max(VCar, 1.0))
+                               + std::abs(WO.fy * std::sin(WO.slip_angle) * std::max(VCar, 1.0));
+            const double EvacScale = rs::clamp(Config_.tire(w).tread_void_ratio / 0.28, 0.25, 2.5);
+            WeatherSub->CoreWeather().deposit_tyre_passage(WO.contact_point.x, WO.contact_point.y,
+                                                           VCar, WO.load, SlipP, EvacScale, static_cast<double>(DeltaTime));
+            WaterSum += WO.condition.road_water_mm;
+            ++ContactCount;
+        }
+        if (ContactCount > 0)
+        {
+            const double AvgW = WaterSum / ContactCount;
+            const double DiffuserDownN = 0.5 * LastRecord_.out.air_density_kg_m3 * Config_.aero.lift_area * VCar * VCar;
+            WeatherSub->CoreWeather().deposit_car_spray(RenderChassis.position, RenderChassis.velocity, AvgW, DiffuserDownN, static_cast<double>(DeltaTime));
+        }
+        const rs::Vec3 EyePos = RenderChassis.position + rs::Vec3{0.0, 0.0, 1.05};
+        const rs::Vec3 FwdDir = RenderChassis.orientation.rotate({1.0, 0.0, 0.0});
+        DriverVisibilityMeters = static_cast<float>(WeatherSub->CoreWeather().sample_driver_visibility_m(EyePos, FwdDir));
+    }
     PublishOutputs(LastRecord_.out, LastRecord_.spin, &RenderChassis);
     // Burnt fuel makes the car lighter: refresh the body every 0.25 kg (game thread; rare, so cheap).
     if (bApplyMassFromSpec && LastRecord_.out.mass_kg > 0.0 && FMath::Abs(LastRecord_.out.mass_kg - AppliedMassKg_) > 0.25)

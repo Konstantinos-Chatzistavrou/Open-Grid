@@ -51,6 +51,55 @@ enum class WeatherSurfaceType : int {
     Gravel = 5          // Gravel trap / loose shoulder
 };
 
+// Real-world city & circuit meteorological climatology regions (NOAA / WMO 30-year seasonal normals).
+enum class ClimateRegion : int {
+    NewYorkMidtown = 0,     // 40.75 N, -73.99 W — Atlantic humid subtropical, coastal fronts
+    SpaArdennes = 1,        // 50.43 N,   5.97 E — Ardennes microclimate: sudden showers & cool damp valleys
+    NurburgringEifel = 2,   // 50.33 N,   6.95 E — Eifel mountains: rapid frontal shifts, fog & mountain mist
+    SilverstoneUK = 3,      // 52.07 N,  -1.02 W — British oceanic: gusty SW winds & passing squall bands
+    BrandsHatchUK = 4,      // 51.35 N,   0.26 E — Kentish Downs: variable maritime fronts & cool shade
+    MonzaItaly = 5,         // 45.62 N,   9.28 E — Po Valley / Lombardy: hot summer tarmac & alpine storms
+    SebringFlorida = 6,     // 27.45 N, -81.35 W — Central Florida: humid subtropical afternoon thunderstorms
+    TokyoWangan = 7,        // 35.65 N, 139.77 E — Tokyo Bay maritime: humid summer rain bands, crisp winter
+    LosAngelesCanyons = 8,  // 34.10 N,-118.41 W — Mediterranean dry summer, warm Santa Ana gusts, rare winter rain
+    SuzukaJapan = 9,        // 34.84 N, 136.54 E — Coastal Mie: humid maritime fronts & heavy monsoon squalls
+    LeMansFrance = 10,      // 47.95 N,   0.21 E — Loire valley: cool night dew & sudden dawn/night showers
+    AthensGreece = 11,      // 37.98 N,  23.73 E — Aegean Mediterranean: blazing dry summer tarmac, Meltemi NNE winds
+    CustomLatLon = 12       // Procedural Koppen-like climate synthesized from any (lat, lon, day_of_year)
+};
+
+struct ClimateProfile {
+    ClimateRegion region = ClimateRegion::NewYorkMidtown;
+    double latitude_deg = 40.75;
+    double longitude_deg = -73.99;
+    double jan_mean_c = 0.5;          // January daily mean temperature (C)
+    double jul_mean_c = 25.0;         // July daily mean temperature (C)
+    double diurnal_swing_c = 8.0;     // typical afternoon-to-dawn temperature range (C)
+    double mean_humidity = 0.64;      // climatological mean relative humidity (0..1)
+    double winter_rain_prob = 0.34;   // probability of active rain / passing front in winter (0..1)
+    double summer_rain_prob = 0.30;   // probability of active rain / convective storm in summer (0..1)
+    double storm_intensity_mm_hr = 12.0; // typical peak rainfall rate when raining (mm/hr)
+    double mean_wind_mps = 5.2;       // mean 10 m wind speed (m/s)
+    double prevailing_wind_deg = 250.0; // prevailing wind-from compass bearing (deg)
+    double frontal_variability = 0.55;// 0..1 likelihood of dynamic changing fronts vs steady sky
+};
+
+// Live real-world meteorological observation (ingested from Open-Meteo, NOAA, METAR, or UE5 HTTP weather API).
+struct RealWeatherObservation {
+    double latitude_deg = 40.75;
+    int day_of_year = 172;
+    double local_hour = 14.0;
+    double ambient_air_c = 22.0;          // measured 2 m air temperature (C)
+    double humidity_0_to_1 = 0.55;        // measured 2 m relative humidity (0..1)
+    double barometric_kpa = 101.325;      // measured sea-level / surface pressure (kPa; e.g. hPa * 0.1)
+    double wind_speed_mps = 4.5;          // measured 10 m wind speed (m/s)
+    double wind_direction_deg = 245.0;    // measured 10 m wind direction FROM (deg)
+    double cloud_cover_0_to_1 = 0.35;     // measured total cloud fraction (0..1)
+    double rain_mm_per_hr = 0.0;          // measured current precipitation rate (mm/hr)
+    double forecast_rain_15m_mm_hr = -1.0;// optional short-term upstream forecast (+15 min, < 0 = unknown)
+    double forecast_rain_30m_mm_hr = -1.0;// optional short-term upstream forecast (+30 min, < 0 = unknown)
+};
+
 struct StormCell {
     bool active = false;
     double x_m = 0.0;                 // world center X (m)
@@ -180,6 +229,8 @@ public:
     static constexpr int kFineRes = 48;         // 48x48 x 1.0 m toroidal fine open-world hydrology / rubber / thermal tile
     static constexpr int kTrackLanes = 16;      // 16 lateral lanes across bound track (0=L kerb, 1..14=~0.7 m asphalt, 15=R kerb)
     static constexpr int kMaxSprayPlumes = 32;  // wind-advected volumetric trailing spray plumes
+    static constexpr int kSpatialBuckets = 4096;// O(1) spatial grid hash table for 20 km+ high-res tracks
+    static constexpr double kSpatialBucketM = 25.0;
 
     WeatherSystem() { configure(WeatherConfig{}); }
     explicit WeatherSystem(const WeatherConfig& cfg) { configure(cfg); }
@@ -187,9 +238,27 @@ public:
     /** Reset and deterministically initialize frontal storm bands, solar clock, veering wind & hydrology grids. */
     void configure(const WeatherConfig& cfg);
 
+    /** Return NOAA/WMO 30-year seasonal climate normals for a real city or circuit (or synthesized CustomLatLon). */
+    static ClimateProfile climate_profile(ClimateRegion region, double custom_lat_deg = 40.75, double custom_lon_deg = -73.99);
+
+    /** Deterministically synthesize realistic weather for a real city / circuit, date, local hour & seed. */
+    void configure_for_region(ClimateRegion region, int day_of_year, double local_hour,
+                              std::uint32_t seed = 1337u, double time_scale = 1.0,
+                              double custom_lat_deg = 40.75, double custom_lon_deg = -73.99);
+
+    /** Configure live storm cells, synoptic baro, wind & initial surface wetness directly from real-world weather data
+     *  (Open-Meteo / NOAA / METAR observation). */
+    void configure_from_live_observation(const RealWeatherObservation& obs, std::uint32_t seed = 1337u,
+                                         double time_scale = 1.0);
+
     /** Bind real circuit / road spline geometry (elevation, banking, crown, static shade, ideal racing line)
-     *  to activate sub-meter curvilinear 2D shallow-water hydrology, per-cell thermal memory & rubber-line inversion. */
+     *  and build an O(1) spatial lookup grid for sub-meter curvilinear 2D shallow-water hydrology. */
     void bind_track_geometry(const std::vector<TrackWeatherStation>& stations, bool closed_loop = true);
+
+    /** Override per-cell elevation heightfield (size == track_station_count() * kTrackLanes, values in mm)
+     *  with a real laser-scanned / UE 5.8 Landscape mesh raycast bake so puddles pool in exact centimeter dips. */
+    bool bind_track_heightfield(const std::vector<double>& cell_elev_mm);
+
     void clear_track_geometry();
     bool has_track_geometry() const { return track_stations_.size() >= 2; }
     int track_station_count() const { return static_cast<int>(track_stations_.size()); }
@@ -293,12 +362,14 @@ private:
     // Layer 3: Sub-meter curvilinear track surface strip (allocated once on bind_track_geometry, zero allocs in step)
     bool track_closed_loop_ = true;
     std::vector<TrackStationPrecomp> track_stations_;
+    std::array<int32_t, kSpatialBuckets> spatial_heads_{}; // O(1) spatial hash bucket heads (-1 = empty)
+    std::vector<int32_t> spatial_next_;                    // intrusive singly-linked next station per station
     std::vector<double> track_water_mm_;
     std::vector<double> track_water_scratch_;
     std::vector<double> track_rubber_;
     std::vector<double> track_temp_c_;
     std::vector<double> track_groove_;
-    std::vector<double> track_elev_mm_; // static cell elevation (mm) from z_m + banking + crown + micro-basins
+    std::vector<double> track_elev_mm_; // static cell elevation (mm) from z_m + banking + crown or laser-scan heightfield
 
     double next_rand_01();
     Vec3 synoptic_wind_mps() const;
@@ -309,6 +380,7 @@ private:
     void compute_sun_angles(double& out_elev_deg, double& out_azim_deg) const;
     int hydro_index(double x_m, double y_m, int* out_ix = nullptr, int* out_iy = nullptr) const;
     void spawn_cell(int slot, bool initial_scatter);
+    void rebuild_spatial_index();
     bool project_to_track(double x_m, double y_m, int& out_station, int& out_lane, double& out_d_m) const;
     FineCell& ensure_fine_cell(int32_t wix, int32_t wiy) const;
     void init_track_cells_from_preset(double init_water_mm);

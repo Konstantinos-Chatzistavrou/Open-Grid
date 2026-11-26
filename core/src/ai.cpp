@@ -1,4 +1,6 @@
 #include "rs/ai.hpp"
+#include "rs/pinnacle.hpp"
+#include "rs/weather.hpp"
 #include <cmath>
 
 namespace rs {
@@ -61,7 +63,8 @@ double AIDriver::speed_profile(double s) const {
     return vprof_[lo];
 }
 
-AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, const std::vector<OtherCar>& others, double dt) {
+AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, const std::vector<OtherCar>& others, double dt,
+                          const WeatherSystem* weather) {
     AIOutput out;
     out.raw.device = InputDevice::Wheel;
     time_ += dt;
@@ -106,9 +109,73 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
     const Seen& p = seen_.front();          // what the driver has "noticed" so far
     gap_ahead = p.gap;
 
-    // ---- target speed: route profile (looking a little ahead to absorb control lag)
-    double target = std::min(speed_profile(pr.s), speed_profile(pr.s + std::max(v, 0.0) * 0.5));
+    // ---- wet-line seeking & compound-aware wet speed/braking adaptation (when Dynamic Weather is supplied)
+    driving_wet_line = false;
+    weather_speed_scale = 1.0;
+    double desired_wet_offset = 0.0;
+    if (weather != nullptr) {
+        const TireParams& tp = cfg_.tire_front;
+        const double v_eval = std::max(std::abs(v), 22.0);
+        const double s_ahead = pr.s + clamp(16.0 + 0.85 * std::max(v, 0.0), 16.0, 58.0);
+        const RouteSample rs_ahead = route_.at(s_ahead);
+        const Vec3 left_ahead = route_.left(s_ahead);
+        const double ideal_lat = p_.racing_line ? line_.lateral(s_ahead) : p_.lane_offset;
+
+        auto eval_corridor_grip = [&](double cand_lat, double& out_water_mm) {
+            const Vec3 pt = rs_ahead.p + left_ahead * cand_lat;
+            const WeatherWheelSample ws = weather->sample_wheel(pt.x, pt.y);
+            out_water_mm = ws.water_depth_mm;
+            const double w_mu = wet_grip_factor(v_eval, tp.p_nominal_kpa, 0.0, ws.water_depth_mm,
+                                                tp.tread_depth_new_mm, tp.tread_void_ratio, tp.wet_chemical_grip);
+            const double kerb_pen = ws.on_painted_kerb ? 0.55 : 1.0;
+            return ws.surface_mu_mult * w_mu * kerb_pen;
+        };
+
+        double ideal_water_mm = 0.0;
+        const double ideal_grip = eval_corridor_grip(ideal_lat, ideal_water_mm);
+        double best_grip = ideal_grip;
+        double best_lat = ideal_lat;
+
+        // When track is wet or flooded, probe off-line wet corridors (+-2.2 m, +-3.5 m) staying safely off painted kerbs
+        if (ideal_water_mm > 0.08) {
+            const double min_lat = -(rs_ahead.width_right - 1.55);
+            const double max_lat = (rs_ahead.width_left - 1.55);
+            const double probes[4] = {2.2, -2.2, 3.5, -3.5};
+            for (double dp : probes) {
+                const double cand_lat = clamp(ideal_lat + dp, min_lat, max_lat);
+                if (std::abs(cand_lat - ideal_lat) < 0.8) continue;
+                double w_mm = 0.0;
+                const double g = eval_corridor_grip(cand_lat, w_mm);
+                if (g > best_grip + 0.04) {
+                    best_grip = g;
+                    best_lat = cand_lat;
+                }
+            }
+            if (std::abs(best_lat - ideal_lat) > 0.8) {
+                desired_wet_offset = best_lat - ideal_lat;
+                driving_wet_line = true;
+            }
+        }
+        // Smooth lateral shift onto/off the wet line (~1.8 m/s) so AI never snaps the wheel abruptly
+        const double max_shift = 2.2 * std::max(dt, 0.001);
+        wet_line_offset_m += clamp(desired_wet_offset - wet_line_offset_m, -max_shift, max_shift);
+
+        // Adapt cornering & braking speed to the actual grip available on this car's mounted tyre compound!
+        const WeatherWheelSample ws_here = weather->sample_wheel(s.position.x, s.position.y);
+        const double here_mu = ws_here.surface_mu_mult
+                             * wet_grip_factor(v_eval, tp.p_nominal_kpa, 0.0, ws_here.water_depth_mm,
+                                               tp.tread_depth_new_mm, tp.tread_void_ratio, tp.wet_chemical_grip);
+        const double eff_grip = clamp(std::min(best_grip, here_mu), 0.16, 1.05);
+        weather_speed_scale = clamp(std::sqrt(eff_grip), 0.40, 1.0);
+    } else {
+        wet_line_offset_m = 0.0;
+    }
+
+    // ---- target speed: route profile (looking further ahead in wet weather for longer braking distances)
+    const double brake_look_s = (weather_speed_scale < 0.95) ? (0.5 + 0.9 * (1.0 - weather_speed_scale)) : 0.5;
+    double target = std::min(speed_profile(pr.s), speed_profile(pr.s + std::max(v, 0.0) * brake_look_s));
     if (p_.racing_line) target *= grip_scale;
+    target *= weather_speed_scale;
     braking_for_traffic = false;
     // Deceleration of the car ahead, estimated from how its PERCEIVED speed changes (low-passed).
     if (p.gap < 1e8 && prev_seen_t_ >= 0 && p.time > prev_seen_t_) {
@@ -271,7 +338,8 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
     // ---- steering: pure pursuit to a point Ld ahead on the offset centreline
     double ld = clamp(3.5 + 0.4 * std::max(v, 0.0), 5.0, 30.0);   // short at low speed: less corner cutting
     RouteSample ahead = route_.at(pr.s + ld);
-    if (p_.racing_line && !racecraft_lat) base_lat = line_.lateral(pr.s + ld);
+    if (p_.racing_line && !racecraft_lat) base_lat = line_.lateral(pr.s + ld) + wet_line_offset_m;
+    else if (!racecraft_lat) base_lat += wet_line_offset_m;
     // Leave a car's width to anyone alongside (overlapping along the road): never steer into them. Applies to every
     // AI, racing or not: the car being passed holds its side of the road.
     const double base_lat_before_neighbours = base_lat;
@@ -284,7 +352,8 @@ AIOutput AIDriver::update(const ChassisState& s, const VehicleOutput& last, cons
         else base_lat = std::max(base_lat + avoid_, op.lateral + sep) - avoid_;
     }
     // the racing line itself is what is being followed (nobody moved it): the feed-forward law below may drive it
-    const bool line_free = p_.racing_line && !racecraft_lat && avoid_ == 0.0 && std::abs(base_lat - base_lat_before_neighbours) < 1e-9;
+    const bool line_free = p_.racing_line && !racecraft_lat && avoid_ == 0.0 && std::abs(wet_line_offset_m) < 0.15
+                        && std::abs(base_lat - base_lat_before_neighbours) < 1e-9;
     double lat = clamp(base_lat + avoid_, -(ahead.width_right - 1.2), ahead.width_left - 1.2);
     active_lateral_target = lat;
     Vec3 tp = ahead.p + route_.left(pr.s + ld) * lat;

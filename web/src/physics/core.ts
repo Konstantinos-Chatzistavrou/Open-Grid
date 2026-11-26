@@ -18,6 +18,12 @@ interface RsModule {
   _rs_set_street_surface(id: number, roadClass: number, rainMmPerHr: number, enableMicro: number): void;
   _rs_weather_configure(preset: number, seed: number, localHour: number, latitudeDeg: number, dayOfYear: number,
                         timeScale: number, baseAirC: number, baseWindMps: number, windDirDeg: number): void;
+  _rs_weather_configure_region(region: number, dayOfYear: number, localHour: number, seed: number,
+                               timeScale: number, customLatDeg: number, customLonDeg: number): void;
+  _rs_weather_configure_live(latDeg: number, dayOfYear: number, localHour: number, airC: number, humidity: number,
+                             baroKpa: number, windMps: number, windDirDeg: number, cloud01: number,
+                             rainMmHr: number, forecast15m: number, forecast30m: number,
+                             seed: number, timeScale: number): void;
   _rs_weather_step(dt: number): void;
   _rs_dyno_begin(id: number): void;
   _rs_dyno_end(id: number): void;
@@ -62,6 +68,25 @@ export function configureWeather(preset: number, seed = 1337, localHour = 22.5, 
                                  dayOfYear = 172, timeScale = 4.0, baseAirC = 19.0, baseWindMps = 4.8,
                                  windDirDeg = 245.0): void {
   mod?._rs_weather_configure(preset, seed, localHour, latitudeDeg, dayOfYear, timeScale, baseAirC, baseWindMps, windDirDeg);
+}
+
+/** Configure weather from NOAA/WMO real-world climatology for a city or circuit (0=NYC .. 11=Athens, 12=CustomLatLon). */
+export function configureWeatherRegion(region: number, dayOfYear = 172, localHour = 14.0, seed = 1337,
+                                       timeScale = 4.0, customLatDeg = 40.75, customLonDeg = -73.99): void {
+  mod?._rs_weather_configure_region(region, dayOfYear, localHour, seed, timeScale, customLatDeg, customLonDeg);
+}
+
+/** Configure weather directly from a live real-world meteorological observation (Open-Meteo / NOAA / METAR). */
+export function configureWeatherLive(obs: {
+  latDeg: number; dayOfYear: number; localHour: number; airC: number; humidity: number; baroKpa: number;
+  windMps: number; windDirDeg: number; cloud01: number; rainMmHr: number;
+  forecast15m?: number; forecast30m?: number; seed?: number; timeScale?: number;
+}): void {
+  mod?._rs_weather_configure_live(
+    obs.latDeg, obs.dayOfYear, obs.localHour, obs.airC, obs.humidity, obs.baroKpa,
+    obs.windMps, obs.windDirDeg, obs.cloud01, obs.rainMmHr,
+    obs.forecast15m ?? -1, obs.forecast30m ?? -1, obs.seed ?? 1337, obs.timeScale ?? 4.0,
+  );
 }
 
 /** Advance OpenGrid Dynamic Weather storm advection, solar-thermal asphalt, wind gusts & 2D hydrology by dt (s). */

@@ -45,7 +45,251 @@ double weather_fine_basin_mm(int32_t wix, int32_t wiy, std::uint32_t seed) {
     return clamp((blend - 0.42) * 3.8, 0.0, 2.2);
 }
 
+int weather_spatial_bucket(int32_t bx, int32_t by) {
+    const std::uint32_t h = (static_cast<std::uint32_t>(bx) * 73856093u)
+                          ^ (static_cast<std::uint32_t>(by) * 19349663u);
+    return static_cast<int>(h & static_cast<std::uint32_t>(WeatherSystem::kSpatialBuckets - 1));
+}
+
 }  // namespace
+
+ClimateProfile WeatherSystem::climate_profile(ClimateRegion region, double custom_lat_deg, double custom_lon_deg) {
+    ClimateProfile p;
+    p.region = region;
+    switch (region) {
+        case ClimateRegion::NewYorkMidtown:
+            p.latitude_deg = 40.75; p.longitude_deg = -73.99;
+            p.jan_mean_c = 0.6; p.jul_mean_c = 25.0; p.diurnal_swing_c = 7.8;
+            p.mean_humidity = 0.63; p.winter_rain_prob = 0.33; p.summer_rain_prob = 0.34;
+            p.storm_intensity_mm_hr = 13.5; p.mean_wind_mps = 5.4; p.prevailing_wind_deg = 255.0; p.frontal_variability = 0.58;
+            break;
+        case ClimateRegion::SpaArdennes:
+            p.latitude_deg = 50.43; p.longitude_deg = 5.97;
+            p.jan_mean_c = 1.2; p.jul_mean_c = 17.4; p.diurnal_swing_c = 8.4;
+            p.mean_humidity = 0.80; p.winter_rain_prob = 0.56; p.summer_rain_prob = 0.48;
+            p.storm_intensity_mm_hr = 14.0; p.mean_wind_mps = 5.6; p.prevailing_wind_deg = 235.0; p.frontal_variability = 0.84;
+            break;
+        case ClimateRegion::NurburgringEifel:
+            p.latitude_deg = 50.33; p.longitude_deg = 6.95;
+            p.jan_mean_c = 0.4; p.jul_mean_c = 16.8; p.diurnal_swing_c = 8.8;
+            p.mean_humidity = 0.81; p.winter_rain_prob = 0.54; p.summer_rain_prob = 0.46;
+            p.storm_intensity_mm_hr = 13.0; p.mean_wind_mps = 5.8; p.prevailing_wind_deg = 240.0; p.frontal_variability = 0.86;
+            break;
+        case ClimateRegion::SilverstoneUK:
+            p.latitude_deg = 52.07; p.longitude_deg = -1.02;
+            p.jan_mean_c = 3.8; p.jul_mean_c = 17.5; p.diurnal_swing_c = 7.6;
+            p.mean_humidity = 0.78; p.winter_rain_prob = 0.48; p.summer_rain_prob = 0.40;
+            p.storm_intensity_mm_hr = 10.5; p.mean_wind_mps = 6.4; p.prevailing_wind_deg = 240.0; p.frontal_variability = 0.78;
+            break;
+        case ClimateRegion::BrandsHatchUK:
+            p.latitude_deg = 51.35; p.longitude_deg = 0.26;
+            p.jan_mean_c = 4.5; p.jul_mean_c = 18.2; p.diurnal_swing_c = 7.4;
+            p.mean_humidity = 0.77; p.winter_rain_prob = 0.46; p.summer_rain_prob = 0.36;
+            p.storm_intensity_mm_hr = 10.0; p.mean_wind_mps = 5.8; p.prevailing_wind_deg = 235.0; p.frontal_variability = 0.74;
+            break;
+        case ClimateRegion::MonzaItaly:
+            p.latitude_deg = 45.62; p.longitude_deg = 9.28;
+            p.jan_mean_c = 2.8; p.jul_mean_c = 24.4; p.diurnal_swing_c = 10.2;
+            p.mean_humidity = 0.69; p.winter_rain_prob = 0.28; p.summer_rain_prob = 0.31;
+            p.storm_intensity_mm_hr = 16.5; p.mean_wind_mps = 3.2; p.prevailing_wind_deg = 215.0; p.frontal_variability = 0.52;
+            break;
+        case ClimateRegion::SebringFlorida:
+            p.latitude_deg = 27.45; p.longitude_deg = -81.35;
+            p.jan_mean_c = 16.2; p.jul_mean_c = 28.4; p.diurnal_swing_c = 9.5;
+            p.mean_humidity = 0.75; p.winter_rain_prob = 0.20; p.summer_rain_prob = 0.56;
+            p.storm_intensity_mm_hr = 24.0; p.mean_wind_mps = 4.6; p.prevailing_wind_deg = 125.0; p.frontal_variability = 0.66;
+            break;
+        case ClimateRegion::TokyoWangan:
+            p.latitude_deg = 35.65; p.longitude_deg = 139.77;
+            p.jan_mean_c = 5.4; p.jul_mean_c = 25.8; p.diurnal_swing_c = 7.2;
+            p.mean_humidity = 0.67; p.winter_rain_prob = 0.20; p.summer_rain_prob = 0.44;
+            p.storm_intensity_mm_hr = 18.0; p.mean_wind_mps = 5.2; p.prevailing_wind_deg = 185.0; p.frontal_variability = 0.60;
+            break;
+        case ClimateRegion::LosAngelesCanyons:
+            p.latitude_deg = 34.10; p.longitude_deg = -118.41;
+            p.jan_mean_c = 14.0; p.jul_mean_c = 23.6; p.diurnal_swing_c = 9.8;
+            p.mean_humidity = 0.54; p.winter_rain_prob = 0.18; p.summer_rain_prob = 0.03;
+            p.storm_intensity_mm_hr = 8.5; p.mean_wind_mps = 4.2; p.prevailing_wind_deg = 265.0; p.frontal_variability = 0.22;
+            break;
+        case ClimateRegion::SuzukaJapan:
+            p.latitude_deg = 34.84; p.longitude_deg = 136.54;
+            p.jan_mean_c = 4.8; p.jul_mean_c = 26.2; p.diurnal_swing_c = 7.8;
+            p.mean_humidity = 0.72; p.winter_rain_prob = 0.24; p.summer_rain_prob = 0.48;
+            p.storm_intensity_mm_hr = 21.0; p.mean_wind_mps = 5.5; p.prevailing_wind_deg = 165.0; p.frontal_variability = 0.68;
+            break;
+        case ClimateRegion::LeMansFrance:
+            p.latitude_deg = 47.95; p.longitude_deg = 0.21;
+            p.jan_mean_c = 4.6; p.jul_mean_c = 20.1; p.diurnal_swing_c = 9.6;
+            p.mean_humidity = 0.75; p.winter_rain_prob = 0.42; p.summer_rain_prob = 0.30;
+            p.storm_intensity_mm_hr = 11.5; p.mean_wind_mps = 4.6; p.prevailing_wind_deg = 245.0; p.frontal_variability = 0.64;
+            break;
+        case ClimateRegion::AthensGreece:
+            p.latitude_deg = 37.98; p.longitude_deg = 23.73;
+            p.jan_mean_c = 9.8; p.jul_mean_c = 29.4; p.diurnal_swing_c = 9.2;
+            p.mean_humidity = 0.52; p.winter_rain_prob = 0.26; p.summer_rain_prob = 0.05;
+            p.storm_intensity_mm_hr = 11.0; p.mean_wind_mps = 5.6; p.prevailing_wind_deg = 25.0; p.frontal_variability = 0.26;
+            break;
+        case ClimateRegion::CustomLatLon:
+        default: {
+            const double lat = clamp(custom_lat_deg, -75.0, 75.0);
+            const double abs_lat = std::abs(lat);
+            p.latitude_deg = lat;
+            p.longitude_deg = clamp(custom_lon_deg, -180.0, 180.0);
+            const double mean_c = clamp(30.0 - 0.38 * abs_lat, -6.0, 29.0);
+            const double seasonal_amp = clamp(0.18 * abs_lat, 1.5, 11.5);
+            p.jan_mean_c = (lat >= 0.0) ? (mean_c - seasonal_amp) : (mean_c + seasonal_amp);
+            p.jul_mean_c = (lat >= 0.0) ? (mean_c + seasonal_amp) : (mean_c - seasonal_amp);
+            p.diurnal_swing_c = 8.5;
+            p.mean_humidity = clamp(0.76 - 0.005 * std::abs(abs_lat - 25.0), 0.45, 0.82);
+            const double belt_rain = (abs_lat < 18.0 || abs_lat > 44.0) ? 0.42 : 0.24;
+            p.winter_rain_prob = belt_rain;
+            p.summer_rain_prob = (abs_lat < 25.0) ? 0.48 : belt_rain * 0.85;
+            p.storm_intensity_mm_hr = (abs_lat < 30.0) ? 19.0 : 12.0;
+            p.mean_wind_mps = 4.8 + 0.03 * abs_lat;
+            p.prevailing_wind_deg = (abs_lat < 30.0) ? 105.0 : 250.0; // trade winds vs mid-latitude westerlies
+            p.frontal_variability = (abs_lat > 38.0) ? 0.70 : 0.42;
+            break;
+        }
+    }
+    return p;
+}
+
+void WeatherSystem::configure_for_region(ClimateRegion region, int day_of_year, double local_hour,
+                                         std::uint32_t seed, double time_scale,
+                                         double custom_lat_deg, double custom_lon_deg) {
+    const ClimateProfile cp = climate_profile(region, custom_lat_deg, custom_lon_deg);
+    const int doy = clamp(day_of_year, 1, 365);
+    // Seasonal phase: 0 in mid-January (doy ~15), 1 in mid-July (doy ~197)
+    const double season_0_1 = 0.5 - 0.5 * std::cos((2.0 * kPi / 365.0) * (doy - 15));
+    const double mean_c = lerp(cp.jan_mean_c, cp.jul_mean_c, season_0_1);
+    const double rain_prob = lerp(cp.winter_rain_prob, cp.summer_rain_prob, season_0_1);
+
+    // Deterministic seeded rolls from regional normals
+    std::uint32_t s = seed ? seed : 1337u;
+    auto roll = [&]() {
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        return static_cast<double>(s & 0x00FFFFFFu) / static_cast<double>(0x01000000u);
+    };
+    const double r_sky = roll();
+    const double r_temp = (roll() - 0.5) * 6.0;
+    const double r_wind = 0.65 + 0.75 * roll();
+    const double r_dir = (roll() - 0.5) * 55.0;
+
+    WeatherConfig cfg;
+    cfg.seed = seed ? seed : 1337u;
+    cfg.latitude_deg = cp.latitude_deg;
+    cfg.day_of_year = doy;
+    cfg.start_hour_local = local_hour;
+    cfg.time_scale = std::max(0.0, time_scale);
+    cfg.base_ambient_c = clamp(mean_c + r_temp, -12.0, 44.0);
+    cfg.base_humidity = clamp(cp.mean_humidity + (roll() - 0.5) * 0.16, 0.20, 0.96);
+    cfg.base_wind_mps = clamp(cp.mean_wind_mps * r_wind, 0.8, 22.0);
+    cfg.wind_direction_deg = std::fmod(cp.prevailing_wind_deg + r_dir + 360.0, 360.0);
+
+    // Pick realistic weather regime matching this city/circuit's seasonal rain probability & frontal variability
+    if (r_sky < rain_prob * 0.25) {
+        cfg.preset = WeatherPreset::HeavyStorm;
+    } else if (r_sky < rain_prob * 0.60) {
+        cfg.preset = WeatherPreset::LightRain;
+    } else if (r_sky < rain_prob * (0.60 + 0.55 * cp.frontal_variability)) {
+        cfg.preset = WeatherPreset::DynamicFront;
+    } else if (r_sky < rain_prob + 0.14) {
+        cfg.preset = WeatherPreset::DryingTrack;
+    } else if (r_sky < rain_prob + 0.45) {
+        cfg.preset = WeatherPreset::PartlyCloudy;
+    } else {
+        cfg.preset = WeatherPreset::Clear;
+    }
+    configure(cfg);
+}
+
+void WeatherSystem::configure_from_live_observation(const RealWeatherObservation& obs, std::uint32_t seed,
+                                                    double time_scale) {
+    WeatherConfig cfg;
+    cfg.seed = seed ? seed : 1337u;
+    cfg.latitude_deg = clamp(obs.latitude_deg, -85.0, 85.0);
+    cfg.day_of_year = clamp(obs.day_of_year, 1, 365);
+    cfg.start_hour_local = obs.local_hour;
+    cfg.time_scale = std::max(0.0, time_scale);
+    cfg.base_ambient_c = clamp(obs.ambient_air_c, -30.0, 52.0);
+    cfg.base_humidity = clamp(obs.humidity_0_to_1, 0.10, 0.99);
+    cfg.base_wind_mps = clamp(obs.wind_speed_mps, 0.2, 35.0);
+    cfg.wind_direction_deg = std::fmod(std::fmod(obs.wind_direction_deg, 360.0) + 360.0, 360.0);
+
+    const double rain = std::max(0.0, obs.rain_mm_per_hr);
+    const double f15 = obs.forecast_rain_15m_mm_hr >= 0.0 ? obs.forecast_rain_15m_mm_hr : rain;
+    const double f30 = obs.forecast_rain_30m_mm_hr >= 0.0 ? obs.forecast_rain_30m_mm_hr : f15;
+    const double cloud = clamp(obs.cloud_cover_0_to_1, 0.0, 1.0);
+
+    if (rain >= 10.0) {
+        cfg.preset = WeatherPreset::HeavyStorm;
+    } else if (rain >= 0.6) {
+        cfg.preset = WeatherPreset::LightRain;
+    } else if (f15 >= 0.8 || f30 >= 1.2) {
+        cfg.preset = WeatherPreset::DynamicFront;
+    } else if (cloud >= 0.35) {
+        cfg.preset = WeatherPreset::PartlyCloudy;
+    } else {
+        cfg.preset = WeatherPreset::Clear;
+    }
+    configure(cfg);
+
+    // Pin synoptic barometric pressure, air temp, humidity & primary cell intensity directly to the real observation!
+    global_air_c_ = cfg.base_ambient_c;
+    global_humidity_ = cfg.base_humidity;
+
+    // Anchor primary cell[0] to exact live rain/cloud and cell[1] upstream to the short-term forecast if provided
+    const Vec3 w = synoptic_wind_mps();
+    const double w_len = std::hypot(w.x, w.y);
+    const double wx = w_len > 0.2 ? (w.x / w_len) : 1.0;
+    const double wy = w_len > 0.2 ? (w.y / w_len) : 0.0;
+    const double wind_angle = std::atan2(wy, wx);
+
+    cells_[0].active = (rain > 0.05 || cloud > 0.10);
+    cells_[0].x_m = 0.0;
+    cells_[0].y_m = 0.0;
+    cells_[0].rain_radius_m = 4800.0;
+    cells_[0].cloud_radius_m = 8800.0;
+    cells_[0].band_angle_rad = wind_angle + 0.5 * kPi;
+    cells_[0].aspect_ratio = 2.4;
+    cells_[0].age_s = 900.0;
+    cells_[0].lifetime_s = 3600.0;
+    cells_[0].peak_cloud_cover = cloud;
+    const double preset_base_rain = (cfg.preset == WeatherPreset::HeavyStorm) ? 8.5
+                                  : (cfg.preset == WeatherPreset::LightRain)  ? 2.2
+                                  : 0.0;
+    cells_[0].peak_rain_mm_hr = std::max(0.0, rain - preset_base_rain);
+
+    if (obs.forecast_rain_15m_mm_hr >= 0.5 || obs.forecast_rain_30m_mm_hr >= 0.5) {
+        const double f_peak = std::max(f15, f30);
+        const double lead_s = (f15 >= f30) ? 900.0 : 1800.0;
+        const double upstream_m = std::max(1200.0, w_len * 0.55 * lead_s);
+        cells_[1].active = true;
+        cells_[1].x_m = -wx * upstream_m;
+        cells_[1].y_m = -wy * upstream_m;
+        cells_[1].rain_radius_m = 2800.0;
+        cells_[1].cloud_radius_m = 5600.0;
+        cells_[1].band_angle_rad = wind_angle + 0.5 * kPi;
+        cells_[1].aspect_ratio = 3.0;
+        cells_[1].age_s = 300.0;
+        cells_[1].lifetime_s = 4200.0;
+        cells_[1].peak_cloud_cover = clamp(0.65 + 0.30 * clamp(f_peak / 10.0, 0.0, 1.0), 0.0, 0.99);
+        cells_[1].peak_rain_mm_hr = clamp(f_peak, 0.0, 45.0);
+    }
+
+    // Offset base barometric pressure by local cell p_drop so sample(0,0).barometric_kpa matches the real gauge reading!
+    double r_chk = 0.0, c_chk = 0.0, p_drop_chk = 0.0;
+    evaluate_cells_at(0.0, 0.0, 0.0, r_chk, c_chk, &p_drop_chk);
+    baro_kpa_ = clamp(obs.barometric_kpa + 0.35 * p_drop_chk, 94.0, 105.0);
+
+    // Scale initial standing water proportionally to real observed rain rate
+    const double init_w = rain > 0.1 ? clamp(0.25 + 0.14 * rain, 0.0, 3.8) : 0.0;
+    for (int k = 0; k < kHydroRes * kHydroRes; ++k) {
+        hydro_water_mm_[k] = init_w > 0.0 ? clamp(init_w * (0.75 + 0.45 * hydro_basin_mm_[k]), 0.0, 8.0) : 0.0;
+    }
+    for (auto& fc : fine_cells_) fc = FineCell{};
+    if (has_track_geometry()) init_track_cells_from_preset(init_w);
+}
 
 double WeatherSystem::next_rand_01() {
     // Xorshift32: fast, portable, 100% deterministic across x64, ARM, MSVC, GCC, Clang & Emscripten WASM
@@ -422,10 +666,33 @@ void WeatherSystem::bind_track_geometry(const std::vector<TrackWeatherStation>& 
     }
     const double init_w = hydro_water_mm_[hydro_index(0.0, 0.0)];
     init_track_cells_from_preset(init_w);
+    rebuild_spatial_index();
+}
+
+bool WeatherSystem::bind_track_heightfield(const std::vector<double>& cell_elev_mm) {
+    const std::size_t expected = track_stations_.size() * static_cast<std::size_t>(kTrackLanes);
+    if (expected == 0 || cell_elev_mm.size() != expected) return false;
+    track_elev_mm_ = cell_elev_mm;
+    return true;
+}
+
+void WeatherSystem::rebuild_spatial_index() {
+    spatial_heads_.fill(-1);
+    const int n = static_cast<int>(track_stations_.size());
+    spatial_next_.assign(static_cast<std::size_t>(n), -1);
+    for (int i = 0; i < n; ++i) {
+        const int32_t bx = static_cast<int32_t>(std::floor(track_stations_[i].st.x_m / kSpatialBucketM));
+        const int32_t by = static_cast<int32_t>(std::floor(track_stations_[i].st.y_m / kSpatialBucketM));
+        const int b = weather_spatial_bucket(bx, by);
+        spatial_next_[i] = spatial_heads_[b];
+        spatial_heads_[b] = i;
+    }
 }
 
 void WeatherSystem::clear_track_geometry() {
     track_stations_.clear();
+    spatial_heads_.fill(-1);
+    spatial_next_.clear();
     track_water_mm_.clear();
     track_water_scratch_.clear();
     track_rubber_.clear();
@@ -438,14 +705,35 @@ bool WeatherSystem::project_to_track(double x_m, double y_m, int& out_station, i
     if (track_stations_.size() < 2) return false;
     double best_d2 = 1e18;
     int best_i = -1;
-    const int n = static_cast<int>(track_stations_.size());
-    for (int i = 0; i < n; ++i) {
-        const double dx = x_m - track_stations_[i].st.x_m;
-        const double dy = y_m - track_stations_[i].st.y_m;
-        const double d2 = dx * dx + dy * dy;
-        if (d2 < best_d2) {
-            best_d2 = d2;
-            best_i = i;
+
+    // O(1) 3x3 spatial bucket lookup (~50 m radius around query point): handles 20 km+ / 10,000-station tracks at 400 Hz!
+    const int32_t bx0 = static_cast<int32_t>(std::floor(x_m / kSpatialBucketM));
+    const int32_t by0 = static_cast<int32_t>(std::floor(y_m / kSpatialBucketM));
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            const int b = weather_spatial_bucket(bx0 + dx, by0 + dy);
+            for (int i = spatial_heads_[b]; i >= 0; i = spatial_next_[i]) {
+                const double ex = x_m - track_stations_[i].st.x_m;
+                const double ey = y_m - track_stations_[i].st.y_m;
+                const double d2 = ex * ex + ey * ey;
+                if (d2 < best_d2) {
+                    best_d2 = d2;
+                    best_i = i;
+                }
+            }
+        }
+    }
+    // Fallback for sparse stations spaced > 25 m apart
+    if (best_i < 0 && track_stations_.size() <= 512) {
+        const int n = static_cast<int>(track_stations_.size());
+        for (int i = 0; i < n; ++i) {
+            const double ex = x_m - track_stations_[i].st.x_m;
+            const double ey = y_m - track_stations_[i].st.y_m;
+            const double d2 = ex * ex + ey * ey;
+            if (d2 < best_d2) {
+                best_d2 = d2;
+                best_i = i;
+            }
         }
     }
     if (best_i < 0) return false;

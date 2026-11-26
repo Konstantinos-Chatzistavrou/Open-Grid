@@ -47,6 +47,8 @@ struct VehicleSettings {
     int street_road_class = 1;       // 0=ClassA_Highway, 1=ClassB_CityAvenue, 2=ClassC_WornStreet, 3=ClassD_BrokenCobble
     double rain_mm_per_hr = 0.0;
     double road_water_mm = 0.0;
+    Vec3 wind_world_mps{0.0, 0.0, 0.0};
+    double barometric_offset_kpa = 0.0;
 };
 
 /** Game / render thread -> physics thread. Levels (axes, settings) replace the previous command's; edges add up. */
@@ -279,6 +281,8 @@ private:
         atm.ambient_air_c = s.ambient_air_c;
         atm.track_surface_c = s.track_surface_c;
         atm.humidity_0_to_1 = s.humidity;
+        atm.wind_world_mps = s.wind_world_mps;
+        atm.barometric_offset_kpa = s.barometric_offset_kpa;
         AssistSettings& a = vehicle_->assists();
         a.abs = s.abs;
         a.tc = s.tc;

@@ -40,6 +40,40 @@ void UOpenGridWeatherSubsystem::ConfigureWeather(EOpenGridWeatherPreset Preset, 
     Weather_.configure(Cfg);
 }
 
+void UOpenGridWeatherSubsystem::ConfigureForClimateRegion(EOpenGridClimateRegion Region, int32 DayOfYear, float LocalHour,
+                                                          int32 Seed, float TimeScale,
+                                                          float CustomLatitudeDeg, float CustomLongitudeDeg)
+{
+    Weather_.configure_for_region(
+        static_cast<rs::ClimateRegion>(static_cast<int>(Region)),
+        FMath::Clamp(DayOfYear, 1, 365),
+        static_cast<double>(LocalHour),
+        static_cast<std::uint32_t>(Seed > 0 ? Seed : 1337),
+        static_cast<double>(FMath::Max(0.0f, TimeScale)),
+        static_cast<double>(CustomLatitudeDeg),
+        static_cast<double>(CustomLongitudeDeg));
+}
+
+void UOpenGridWeatherSubsystem::ApplyLiveWeatherObservation(const FOpenGridRealWeatherObservation& Observation,
+                                                            int32 Seed, float TimeScale)
+{
+    rs::RealWeatherObservation Obs;
+    Obs.latitude_deg = static_cast<double>(Observation.LatitudeDeg);
+    Obs.day_of_year = FMath::Clamp(Observation.DayOfYear, 1, 365);
+    Obs.local_hour = static_cast<double>(Observation.LocalHour);
+    Obs.ambient_air_c = static_cast<double>(Observation.AmbientAirC);
+    Obs.humidity_0_to_1 = static_cast<double>(FMath::Clamp(Observation.Humidity01, 0.05f, 1.0f));
+    Obs.barometric_kpa = static_cast<double>(Observation.BarometricKpa);
+    Obs.wind_speed_mps = static_cast<double>(FMath::Max(0.0f, Observation.WindSpeedMps));
+    Obs.wind_direction_deg = static_cast<double>(Observation.WindDirectionDeg);
+    Obs.cloud_cover_0_to_1 = static_cast<double>(FMath::Clamp(Observation.CloudCover01, 0.0f, 1.0f));
+    Obs.rain_mm_per_hr = static_cast<double>(FMath::Max(0.0f, Observation.RainMmPerHr));
+    Obs.forecast_rain_15m_mm_hr = static_cast<double>(Observation.ForecastRain15MinMmPerHr);
+    Obs.forecast_rain_30m_mm_hr = static_cast<double>(Observation.ForecastRain30MinMmPerHr);
+    Weather_.configure_from_live_observation(Obs, static_cast<std::uint32_t>(Seed > 0 ? Seed : 1337),
+                                             static_cast<double>(FMath::Max(0.0f, TimeScale)));
+}
+
 void UOpenGridWeatherSubsystem::BindTrackGeometryCm(const TArray<FOpenGridTrackWeatherStation>& Stations, bool bClosedLoop)
 {
     std::vector<rs::TrackWeatherStation> CoreStations;
@@ -61,6 +95,17 @@ void UOpenGridWeatherSubsystem::BindTrackGeometryCm(const TArray<FOpenGridTrackW
         CoreStations.push_back(C);
     }
     Weather_.bind_track_geometry(CoreStations, bClosedLoop);
+}
+
+bool UOpenGridWeatherSubsystem::BindTrackHeightfieldCm(const TArray<float>& CellElevationCm)
+{
+    std::vector<double> ElevMm;
+    ElevMm.reserve(static_cast<std::size_t>(CellElevationCm.Num()));
+    for (float Cm : CellElevationCm)
+    {
+        ElevMm.push_back(static_cast<double>(Cm) * 10.0); // 1 UE cm = 10 mm
+    }
+    return Weather_.bind_track_heightfield(ElevMm);
 }
 
 void UOpenGridWeatherSubsystem::ClearTrackGeometry()

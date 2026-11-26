@@ -26,6 +26,8 @@
 
 namespace rs {
 
+class WeatherSystem;
+
 struct OtherCar {
     Vec3 position;        // world, CG
     Vec3 velocity;        // world
@@ -51,7 +53,8 @@ struct AIOutput {
 class AIDriver {
 public:
     AIDriver(const CarConfig& cfg, const Route& route, AIParams p);
-    AIOutput update(const ChassisState& s, const VehicleOutput& last, const std::vector<OtherCar>& others, double dt);
+    AIOutput update(const ChassisState& s, const VehicleOutput& last, const std::vector<OtherCar>& others, double dt,
+                    const WeatherSystem* weather = nullptr);
 
     // telemetry
     double route_s = 0, target_speed = 0, gap_ahead = 1e9;
@@ -61,6 +64,9 @@ public:
     bool defending_inside = false;
     double pressure_level = 0.0;
     bool under_pressure_lockup = false;
+    bool driving_wet_line = false;         // true when AI shifts off slippery wet rubber onto higher-grip wet line
+    double weather_speed_scale = 1.0;      // wet-weather & tyre-compound speed / braking adaptation factor (0.35..1.0)
+    double wet_line_offset_m = 0.0;        // smoothed lateral wet-line / puddle-avoidance offset (+ = left, m)
     double active_lateral_target = 0.0;
     double grip_scale = 1.0;       // racing_line only: 0.70..1, the share of its corner speeds the driver dares, adapted to what the car does
     double speed_profile(double s) const;

@@ -4,7 +4,9 @@
 // ice slip, slick vs intermediate vs full-wet tyre physics, asymmetric puddle-drag yaw pull,
 // and wind-advected volumetric trailing spray visibility.
 #include "harness.hpp"
+#include "rs/ai.hpp"
 #include "rs/pinnacle.hpp"
+#include "rs/ue5_bridge.hpp"
 #include "rs/weather.hpp"
 #include <cmath>
 #include <cstdio>
@@ -241,4 +243,180 @@ RS_TEST(dynamic_weather) {
     test::check("radar 15-min & 30-min forecasts finite in [0..1]",
                 radar.rain_chance_15m >= 0.0 && radar.rain_chance_15m <= 1.0 &&
                 radar.rain_chance_30m >= 0.0 && radar.rain_chance_30m <= 1.0);
+
+    // 11. O(1) Spatial Hash Lookup on a 20 km / 4,000-station Nordschleife-scale circuit + 2D Heightfield Bake
+    {
+        std::vector<TrackWeatherStation> nords;
+        nords.reserve(4000);
+        constexpr double R = 3183.1; // circumference ~ 20,000 m (5 m station spacing)
+        for (int i = 0; i < 4000; ++i) {
+            const double ang = (2.0 * kPi * i) / 4000.0;
+            TrackWeatherStation st;
+            st.x_m = R * std::cos(ang);
+            st.y_m = R * std::sin(ang);
+            st.z_m = 20.0 * std::sin(3.0 * ang);
+            st.width_m = 12.0;
+            st.crown_m = 0.02;
+            nords.push_back(st);
+        }
+        WeatherSystem nw(rain_cfg);
+        nw.bind_track_geometry(nords, true);
+        // Bake explicit laser-scan 2D heightfield with a 25 mm puddle pocket at station 1000, lane 6
+        std::vector<double> hf(static_cast<std::size_t>(4000 * WeatherSystem::kTrackLanes), 0.0);
+        hf[1000 * WeatherSystem::kTrackLanes + 6] = -25.0; // 25 mm laser-scanned dip!
+        test::check("bind_track_heightfield accepts N_stations x 16 heightfield", nw.bind_track_heightfield(hf));
+        for (int s = 0; s < 120; ++s) nw.step(1.0);
+        // Station 1000 sits at ang = pi/2 -> (0, R); tangent is (-1, 0), left normal is (0, -1).
+        // Lane 6 is slightly left of center (+d = +0.5/16 * 12 -> y = R - 1.125)
+        const double dip_y = R - (0.5 - (6.5 / 16.0)) * 12.0;
+        const double flat_y = R - (0.5 - (10.5 / 16.0)) * 12.0;
+        const WeatherWheelSample dip_ws = nw.sample_wheel(0.0, dip_y);
+        const WeatherWheelSample flat_ws = nw.sample_wheel(0.0, flat_y);
+        std::printf("         20km O(1) heightfield bake: laser-scan dip=%.2f mm vs flat lane=%.2f mm\n",
+                    dip_ws.water_depth_mm, flat_ws.water_depth_mm);
+        test::check("laser-scanned heightfield pocket pools deeper standing water than flat lane",
+                    dip_ws.water_depth_mm > flat_ws.water_depth_mm + 0.40);
+    }
+
+    // 12. Real-World City & Circuit Climatology (NOAA/WMO normals) + Southern Hemisphere CustomLatLon
+    {
+        WeatherSystem athens_jul, spa_nov, sydney_jan, sydney_jul;
+        athens_jul.configure_for_region(ClimateRegion::AthensGreece, 197, 14.0, 101u);
+        spa_nov.configure_for_region(ClimateRegion::SpaArdennes, 320, 14.0, 101u);
+        sydney_jan.configure_for_region(ClimateRegion::CustomLatLon, 15, 14.0, 101u, 1.0, -33.87, 151.21);
+        sydney_jul.configure_for_region(ClimateRegion::CustomLatLon, 197, 14.0, 101u, 1.0, -33.87, 151.21);
+        const WeatherSample sa = athens_jul.sample(0, 0);
+        const WeatherSample ss = spa_nov.sample(0, 0);
+        const WeatherSample sy1 = sydney_jan.sample(0, 0);
+        const WeatherSample sy7 = sydney_jul.sample(0, 0);
+        std::printf("         climatology: Athens Jul=%.1f C vs Spa Nov=%.1f C | Sydney Jan=%.1f C vs Jul=%.1f C\n",
+                    sa.ambient_air_c, ss.ambient_air_c, sy1.ambient_air_c, sy7.ambient_air_c);
+        test::check("Athens July climatology is significantly warmer than Spa November", sa.ambient_air_c > ss.ambient_air_c + 15.0);
+        test::check("Southern hemisphere Sydney is warmer in January than July", sy1.ambient_air_c > sy7.ambient_air_c + 8.0);
+    }
+
+    // 13. Live Real-World Weather Ingestion (Open-Meteo / NOAA / METAR observation + incoming forecast)
+    {
+        RealWeatherObservation obs;
+        obs.latitude_deg = 50.43;
+        obs.day_of_year = 240;
+        obs.local_hour = 15.0;
+        obs.ambient_air_c = 14.5;
+        obs.humidity_0_to_1 = 0.93;
+        obs.barometric_kpa = 99.4;
+        obs.wind_speed_mps = 11.0;
+        obs.wind_direction_deg = 225.0;
+        obs.cloud_cover_0_to_1 = 0.95;
+        obs.rain_mm_per_hr = 16.0;
+        WeatherSystem live_w;
+        live_w.configure_from_live_observation(obs, 777u);
+        const WeatherSample ls = live_w.sample(0, 0);
+        std::printf("         live observation: air=%.1f C baro=%.1f kPa rain=%.1f mm/hr water=%.2f mm\n",
+                    ls.ambient_air_c, ls.barometric_kpa, ls.rain_mm_per_hr, ls.surface_water_mm);
+        test::check("live observation pins ambient temp", std::abs(ls.ambient_air_c - 14.5) < 2.0);
+        test::check("live observation pins barometric pressure", std::abs(ls.barometric_kpa - 99.4) < 1.2);
+        test::check("live observation produces matching heavy rain & standing water",
+                    ls.rain_mm_per_hr > 12.0 && ls.surface_water_mm > 1.5);
+
+        // Dry now, incoming +15 min rain front forecast
+        RealWeatherObservation incoming = obs;
+        incoming.rain_mm_per_hr = 0.0;
+        incoming.cloud_cover_0_to_1 = 0.45;
+        incoming.forecast_rain_15m_mm_hr = 9.5;
+        WeatherSystem fc_w;
+        fc_w.configure_from_live_observation(incoming, 888u);
+        const WeatherRadarGrid fc_rad = fc_w.sample_radar(0, 0, 8000.0);
+        test::check("live incoming +15m forecast elevates 15-min radar rain probability", fc_rad.rain_chance_15m > 0.55);
+    }
+
+    // 14. Wet-Line & Compound-Aware AI Driver (shifts off wet rubbered line + adapts speed to slick vs wet tyres!)
+    {
+        std::vector<RouteSample> samples;
+        for (int i = 0; i < 40; ++i) {
+            RouteSample rs;
+            rs.s = i * 10.0;
+            rs.p = {i * 10.0, 0.0, 0.0};
+            rs.heading = 0.0;
+            rs.curvature = 0.0;
+            rs.width_left = 6.0;
+            rs.width_right = 6.0;
+            samples.push_back(rs);
+        }
+        Route route = Route::from_samples(samples, false);
+
+        CarConfig cfg_slick = test::car();
+        apply_compound(cfg_slick.tire_front, "slick");
+        apply_compound(cfg_slick.tire_rear, "slick");
+        CarConfig cfg_wet = test::car();
+        apply_compound(cfg_wet.tire_front, "wet");
+        apply_compound(cfg_wet.tire_rear, "wet");
+
+        AIParams ap;
+        ap.racing_line = false;
+        ap.lane_offset = 0.0; // dry ideal line is rubbered center (d = 0)
+        AIDriver ai_slick(cfg_slick, route, ap);
+        AIDriver ai_wet(cfg_wet, route, ap);
+
+        ChassisState cs_ai;
+        cs_ai.position = {30.0, 0.0, 0.5};
+        cs_ai.velocity = {35.0, 0.0, 0.0};
+        VehicleOutput dummy_out{};
+        for (int step = 0; step < 30; ++step) {
+            ai_slick.update(cs_ai, dummy_out, {}, 0.05, &bank_w);
+            ai_wet.update(cs_ai, dummy_out, {}, 0.05, &bank_w);
+        }
+        std::printf("         wet AI: wet_line=%d offset=%.2f m | slick speed_scale=%.3f vs wet speed_scale=%.3f\n",
+                    ai_wet.driving_wet_line ? 1 : 0, ai_wet.wet_line_offset_m,
+                    ai_slick.weather_speed_scale, ai_wet.weather_speed_scale);
+        test::check("AI detects slippery wet rubbered line and shifts onto off-line wet line",
+                    ai_wet.driving_wet_line && std::abs(ai_wet.wet_line_offset_m) > 1.2);
+        test::check("AI on slicks slows significantly more in heavy rain than AI on full wets",
+                    ai_slick.weather_speed_scale < ai_wet.weather_speed_scale - 0.15);
+    }
+
+    // 15. Lock-Free UE 5.8 AsyncVehicleBridge Per-Wheel Weather & Wind Propagation
+    {
+        CarConfig ucfg = test::car();
+        Vehicle uveh(ucfg);
+        Controls uctrl(ucfg);
+        ue5::AsyncVehicleBridge ubridge(uveh, uctrl);
+        ChassisState ucs;
+        ucs.position = {0, 0, ucfg.cg_height};
+        ucs.velocity = {38.0, 0, 0};
+        uveh.reset_motion(38.0, 4);
+        ubridge.seed_rays(ucs, 1);
+        ubridge.fetch_rays();
+
+        rt::VehicleCommand cmd;
+        cmd.has_settings = true;
+        cmd.settings.wind_world_mps = {0.0, 12.0, 0.0};
+        cmd.settings.barometric_offset_kpa = -2.2;
+        cmd.settings.road_water_mm = 0.0;
+        ubridge.submit_command(cmd);
+
+        auto& gf = ubridge.ground_write_buffer();
+        gf.rays_per_wheel = 1;
+        gf.has_strips = false;
+        const auto& rf = ubridge.current_rays();
+        for (int w = 0; w < 4; ++w) {
+            auto& gs = gf.planes[w][0];
+            gs.hit = true;
+            gs.point = rf.rays[w][0].origin + rf.rays[w][0].direction * (rf.rays[w][0].length - 0.05);
+            gs.normal = {0, 0, 1};
+            gs.surface = ucfg.surface_index("asphalt");
+            gs.water_depth_mm = (w == FR || w == RR) ? 4.2 : 0.0;
+            gs.surface_mu_mult = (w == FR || w == RR) ? 0.78 : 1.05;
+            gs.track_temp_c = (w == FR || w == RR) ? 14.0 : 28.0;
+        }
+        ubridge.publish_ground();
+        const VehicleOutput& uout = ubridge.step(ucs, 0.0025);
+        test::check("UE5 AsyncVehicleBridge propagates per-wheel puddle water & shaded track temp lock-free",
+                    uout.wheels[FR].condition.road_water_mm > 4.0 &&
+                    uout.wheels[FL].condition.road_water_mm < 0.1 &&
+                    uout.wheels[FR].condition.track_surface_c < 15.0 &&
+                    uout.wheels[FL].condition.track_surface_c > 27.0);
+        test::check("UE5 AsyncVehicleBridge propagates 3D weather wind & baro pressure lock-free",
+                    std::abs(uveh.atmosphere().wind_world_mps.y - 12.0) < 1e-6 &&
+                    std::abs(uveh.atmosphere().barometric_offset_kpa + 2.2) < 1e-6);
+    }
 }

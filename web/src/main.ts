@@ -19,6 +19,7 @@ import { createNavScreen } from './scene/navScreen';
 import { SHOW_PRESETS, ShowroomPost } from './showroomPost';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CoreCar, CoreRace, OUT, configureWeather, loadCore, stepWeather, type LapInfo, type RawInput } from './physics/core';
+import { applyCityWeather } from './weatherLive';
 import { CarBody, DT, PhysicsWorld, loadRapier, type CarShape } from './physics/world';
 import { PhysicsWorkerClient } from './physics/workerClient';
 import { CityLighting, loadCity } from './scene/city';
@@ -3330,6 +3331,8 @@ async function main() {
         lastDensityAt = now;
         const baseAirC = worldClock.season.id === 'winter' ? 4 : worldClock.season.id === 'summer' ? 28 : 16;
         const weatherParam = (params.get('weather_preset') || '').toLowerCase();
+        const regionParam = (params.get('weather_region') || '').toLowerCase();
+        const liveWeather = params.get('weather_live') === '1';
         const desiredPreset =
           weatherParam === 'storm' ? 4 :
           weatherParam === 'rain' ? 3 :
@@ -3337,11 +3340,16 @@ async function main() {
           weatherParam === 'cloudy' ? 1 :
           weatherParam === 'drying' ? 5 :
           weatherParam === 'clear' ? 0 :
+          (regionParam || liveWeather) ? 99 :
           (worldClock.weather === 'rain' ? 3 : 0);
         if ((worldClock as unknown as { _weatherPreset?: number })._weatherPreset !== desiredPreset) {
           (worldClock as unknown as { _weatherPreset?: number })._weatherPreset = desiredPreset;
           const doy = worldClock.season.id === 'winter' ? 15 : worldClock.season.id === 'spring' ? 110 : worldClock.season.id === 'summer' ? 185 : 285;
-          configureWeather(desiredPreset, 1337, worldClock.hour, 40.75, doy, 4.0, baseAirC, desiredPreset >= 3 ? 8.5 : 4.2, 245);
+          if (desiredPreset === 99) {
+            applyCityWeather(regionParam || 'nyc', worldClock.hour, doy, 1337, liveWeather);
+          } else {
+            configureWeather(desiredPreset, 1337, worldClock.hour, 40.75, doy, 4.0, baseAirC, desiredPreset >= 3 ? 8.5 : 4.2, 245);
+          }
         }
         const tRain = car.out[OUT.weatherRainMmHr] || 0;
         const tTrack = car.out[OUT.weatherTrackTempC] || baseAirC;

@@ -218,6 +218,39 @@ EMSCRIPTEN_KEEPALIVE void rs_weather_step(double dt) {
     }
 }
 
+EMSCRIPTEN_KEEPALIVE void rs_weather_configure_region(int region, int day_of_year, double local_hour,
+                                                      int seed, double time_scale,
+                                                      double custom_lat_deg, double custom_lon_deg) {
+    const int r = std::max(0, std::min(12, region));
+    g_weather.configure_for_region(static_cast<rs::ClimateRegion>(r), day_of_year, local_hour,
+                                   static_cast<std::uint32_t>(seed > 0 ? seed : 1337),
+                                   std::max(0.0, time_scale), custom_lat_deg, custom_lon_deg);
+    g_weather_enabled = true;
+}
+
+EMSCRIPTEN_KEEPALIVE void rs_weather_configure_live(double lat_deg, int day_of_year, double local_hour,
+                                                    double air_c, double humidity, double baro_kpa,
+                                                    double wind_mps, double wind_dir_deg, double cloud_0_1,
+                                                    double rain_mm_hr, double forecast_15m, double forecast_30m,
+                                                    int seed, double time_scale) {
+    rs::RealWeatherObservation obs;
+    obs.latitude_deg = lat_deg;
+    obs.day_of_year = std::max(1, std::min(365, day_of_year));
+    obs.local_hour = local_hour;
+    obs.ambient_air_c = air_c;
+    obs.humidity_0_to_1 = humidity;
+    obs.barometric_kpa = baro_kpa;
+    obs.wind_speed_mps = wind_mps;
+    obs.wind_direction_deg = wind_dir_deg;
+    obs.cloud_cover_0_to_1 = cloud_0_1;
+    obs.rain_mm_per_hr = rain_mm_hr;
+    obs.forecast_rain_15m_mm_hr = forecast_15m;
+    obs.forecast_rain_30m_mm_hr = forecast_30m;
+    g_weather.configure_from_live_observation(obs, static_cast<std::uint32_t>(seed > 0 ? seed : 1337),
+                                              std::max(0.0, time_scale));
+    g_weather_enabled = true;
+}
+
 EMSCRIPTEN_KEEPALIVE void rs_set_atmosphere(int id, double air_c, double track_c, double altitude_m, double humidity) {
     Car& c = *g_cars[id];
     auto& atm = c.vehicle->atmosphere();

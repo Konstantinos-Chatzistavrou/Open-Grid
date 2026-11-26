@@ -350,6 +350,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|StreetSurface", meta=(ClampMin="0.0", ClampMax="12.0"))
     float RoadWaterMm = 0.0f;
 
+    /** Automatically sync atmosphere, wind, per-wheel puddles, wet-line inversion, tyre wake & spray plumes with UOpenGridWeatherSubsystem. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    bool bAutoSyncWorldWeather = true;
+
     // ---- Drivetrain and assists -------------------------------------------------------------------------------------
 
     /** Turbocharger stage (0 = naturally aspirated, 1 = 0.7 bar, 2 = 1.15 bar, 3 = 1.65 bar). */
@@ -452,6 +456,10 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float EngineHealth = 1.0f;
+
+    /** Live driver forward visibility (m) through rain, fog and trailing car spray plumes from UOpenGridWeatherSubsystem. */
+    UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Weather")
+    float DriverVisibilityMeters = 20000.0f;
 
     UPROPERTY(BlueprintReadOnly, Category="OpenGrid|Telemetry")
     float SteerTorqueNm = 0.0f;

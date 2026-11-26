@@ -42,6 +42,69 @@ enum class EOpenGridWeatherSurfaceType : uint8
     Gravel = 5,
 };
 
+UENUM(BlueprintType)
+enum class EOpenGridClimateRegion : uint8
+{
+    NewYorkMidtown = 0,
+    SpaArdennes = 1,
+    NurburgringEifel = 2,
+    SilverstoneUK = 3,
+    BrandsHatchUK = 4,
+    MonzaItaly = 5,
+    SebringFlorida = 6,
+    TokyoWangan = 7,
+    LosAngelesCanyons = 8,
+    SuzukaJapan = 9,
+    LeMansFrance = 10,
+    AthensGreece = 11,
+    CustomLatLon = 12,
+};
+
+/** Real-world live meteorological observation (from Open-Meteo, NOAA, METAR or UE5 HTTP weather API). */
+USTRUCT(BlueprintType)
+struct OPENGRIDPHYSICS_API FOpenGridRealWeatherObservation
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    float LatitudeDeg = 40.75f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    int32 DayOfYear = 172;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    float LocalHour = 14.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    float AmbientAirC = 22.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    float Humidity01 = 0.55f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    float BarometricKpa = 101.325f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    float WindSpeedMps = 4.5f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    float WindDirectionDeg = 245.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    float CloudCover01 = 0.35f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    float RainMmPerHr = 0.0f;
+
+    /** Optional +15 min forecast rain rate (mm/hr; < 0 if unavailable). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    float ForecastRain15MinMmPerHr = -1.0f;
+
+    /** Optional +30 min forecast rain rate (mm/hr; < 0 if unavailable). */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="OpenGrid|Weather")
+    float ForecastRain30MinMmPerHr = -1.0f;
+};
+
 /** One cross-section station along a UE 5.8 track spline for sub-meter 2D shallow-water hydrology & thermal memory. */
 USTRUCT(BlueprintType)
 struct OPENGRIDPHYSICS_API FOpenGridTrackWeatherStation
@@ -258,9 +321,24 @@ public:
                           float LatitudeDeg = 40.75f, int32 DayOfYear = 172, float TimeScale = 1.0f,
                           float BaseAmbientC = 22.0f, float BaseWindMps = 4.5f, float WindDirectionDeg = 245.0f);
 
-    /** Bind circuit/road spline stations to activate sub-meter curvilinear 2D shallow-water hydrology & thermal memory. */
+    /** Deterministically synthesize weather from real-world NOAA/WMO climatology for a city/circuit, date & seed. */
+    UFUNCTION(BlueprintCallable, Category="OpenGrid|Weather")
+    void ConfigureForClimateRegion(EOpenGridClimateRegion Region, int32 DayOfYear = 172, float LocalHour = 14.0f,
+                                   int32 Seed = 1337, float TimeScale = 1.0f,
+                                   float CustomLatitudeDeg = 40.75f, float CustomLongitudeDeg = -73.99f);
+
+    /** Apply a live real-world meteorological observation (e.g., from Open-Meteo / NOAA / METAR HTTP JSON). */
+    UFUNCTION(BlueprintCallable, Category="OpenGrid|Weather")
+    void ApplyLiveWeatherObservation(const FOpenGridRealWeatherObservation& Observation, int32 Seed = 1337,
+                                     float TimeScale = 1.0f);
+
+    /** Bind circuit/road spline stations to activate O(1) sub-meter curvilinear 2D shallow-water hydrology & thermal memory. */
     UFUNCTION(BlueprintCallable, Category="OpenGrid|Weather")
     void BindTrackGeometryCm(const TArray<FOpenGridTrackWeatherStation>& Stations, bool bClosedLoop = true);
+
+    /** Override per-cell elevation heightfield (size == StationCount * 16, values in UE cm) from laser-scanned / Landscape traces. */
+    UFUNCTION(BlueprintCallable, Category="OpenGrid|Weather")
+    bool BindTrackHeightfieldCm(const TArray<float>& CellElevationCm);
 
     /** Clear bound circuit spline and fall back to the 1.0 m toroidal open-world hydrology patch. */
     UFUNCTION(BlueprintCallable, Category="OpenGrid|Weather")
