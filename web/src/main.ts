@@ -831,6 +831,9 @@ async function main() {
     onRadio: (unit, text, speak) => {
       radioComms.policeIntercept(unit, text, speak !== false);
     },
+    onStreetRadio: (callsign, text) => {
+      radioComms.aiStreetRadio(callsign, text);
+    },
   });
   // Patrol cruiser prototype: cloned into interceptor + flanker + 2-cruiser tactical roadblock with Rapier colliders,
   // AND 2 parked Friends' Cars in the background bays of the Garage showroom.
@@ -1028,6 +1031,26 @@ async function main() {
     car.settle();
     ranked?.reset();
     core.repair(); physWorker?.repair(); damage.repair(); forzaVfx.reset(false); input.hold = true;
+    syncPose();
+    remote?.kick();
+  };
+  let wrongWayT = 0;
+  /** Realigns a car that pulled a U-turn in a race back onto the forward race heading (never repairs damage). */
+  const alignForwardOnTrack = () => {
+    const t = car.body.translation();
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < route.samples.length; i++) {
+      const q = route.samples[i], d = (q.x - t.x) ** 2 + (-q.y - t.z) ** 2;
+      if (d < bd) { bd = d; best = i; }
+    }
+    const q = route.samples[best];
+    const p = new THREE.Vector3(q.x, t.y + 1.5, -q.y);
+    if (nyc) p.y = Math.max(p.y, nyc.heightAt(p.x, p.z) + 1.5);
+    const hit = pw.raycast(p, p.clone().add(new THREE.Vector3(0, -30, 0)), car.body);
+    if (hit) p.y -= hit.toi;
+    p.y += core.info.cgHeight + 0.02;
+    car.place(p, Math.atan2(Math.cos(q.heading), -Math.sin(q.heading)));
+    car.settle();
     syncPose();
     remote?.kick();
   };
@@ -3622,8 +3645,38 @@ async function main() {
     if (!copsOnNow && (cops.active || cops.dispatched)) cops.breakOff();
     playerS = cops.nearest(pos, playerS);
     cops.updateCameras(frame, playerS, pos, liveKmh, state === 'race' && copsOnNow, Math.max(1, heat.level));
-    cops.update(frame, playerS, pos, liveKmh);
+    const inRaceNow = raceLaps() > 0;
+    const myRank = inRaceNow ? Math.max(1, rank(standings()).findIndex((x) => x.you) + 1) : 1;
+    cops.update(frame, playerS, pos, liveKmh, myRank, inRaceNow);
+    minimap.roadblockReroute = cops.roadblockReroute;
     void copSpawned;
+
+    // In-race No-U-Turn enforcement (Free Roam remains 100% free to turn around!)
+    if (state === 'race' && inRaceNow && !myDnf && route.samples.length > 2) {
+      const nS = route.samples.length;
+      const sIdx = Math.min(nS - 1, Math.max(0, Math.round((playerS / Math.max(1, route.length_m)) * nS) % nS));
+      const q = route.samples[sIdx];
+      const rfx = Math.cos(q.heading), rfz = -Math.sin(q.heading);
+      const cfx = 2 * (quat.x * quat.z + quat.w * quat.y);
+      const cfz = 1 - 2 * (quat.x * quat.x + quat.y * quat.y);
+      const dot = cfx * rfx + cfz * rfz;
+      if (dot < -0.35) {
+        wrongWayT += frame * (liveKmh > 10 ? 1.25 : 0.75);
+        hud.outWarn = '⛔ NO U-TURNS IN RACE · WRONG WAY';
+        if (wrongWayT >= 2.2) {
+          wrongWayT = 0;
+          hud.outWarn = '';
+          alignForwardOnTrack();
+          hud.toast('⛔ NO U-TURNS IN RACE', 'Realigned forward on track');
+        }
+      } else {
+        if (hud.outWarn === '⛔ NO U-TURNS IN RACE · WRONG WAY') hud.outWarn = '';
+        wrongWayT = Math.max(0, wrongWayT - frame * 2);
+      }
+    } else {
+      if (hud.outWarn === '⛔ NO U-TURNS IN RACE · WRONG WAY') hud.outWarn = '';
+      wrongWayT = 0;
+    }
 
     // Roadside Speed Camera proximity indicator (posted speed limit circle + distance)
     const nc = state === 'race' && copsOnNow ? cops.nextCamera : null;

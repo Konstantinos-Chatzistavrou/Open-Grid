@@ -49,6 +49,18 @@ export interface NextCameraInfo {
   distM: number;
 }
 
+export interface RoadblockRerouteInfo {
+  active: boolean;
+  /** 'forming' = assembling ahead; 'punch' = top-3 lead pack too close, must thread gap; 'rerouted' = GPS bypass active */
+  phase: 'forming' | 'punch' | 'rerouted';
+  blockX: number;
+  blockZ: number;
+  distM: number;
+  bypassSide: -1 | 1;
+  /** Game-frame (x, y = -z) bypass polyline curving around the roadblock for GPS drawing. */
+  detourPts: { x: number; y: number }[];
+}
+
 export interface CopHooks {
   /** Player was pinned and busted. */
   bust(): void;
@@ -62,6 +74,8 @@ export interface CopHooks {
   onCameraFlash?(cam: SpeedCamera, speedKmh: number, overKmh: number): void;
   /** Police dispatch / patrol unit scanner radio transmission. */
   onRadio?(unit: string, text: string, speak?: boolean): void;
+  /** Street radio / GPS reroute announcement on the racers' underground channel (146.52 MHz). */
+  onStreetRadio?(callsign: string, text: string): void;
 }
 
 interface PatrolUnit {
@@ -85,6 +99,13 @@ interface Roadblock {
   bodies: RAPIER.RigidBody[];
   lights: { r: THREE.MeshBasicMaterial; b: THREE.MeshBasicMaterial }[];
   announced: boolean;
+  bypassSide: -1 | 1;
+  phase: 'forming' | 'punch' | 'rerouted';
+  rerouteTimer: number;
+  rerouteAnnounced: boolean;
+  distM: number;
+  detourPts: { x: number; y: number }[];
+  chevrons: THREE.Group;
 }
 
 function attachLightbar(root: THREE.Object3D): { r: THREE.MeshBasicMaterial; b: THREE.MeshBasicMaterial } {
@@ -324,8 +345,25 @@ export class Cops {
       rbGroup.add(cone);
     }
 
+    // 3D glowing neon-amber bypass chevron markers showing the GPS reroute side around the roadblock
+    const chevrons = new THREE.Group();
+    const chevGeo = new THREE.BoxGeometry(0.95, 0.22, 0.22);
+    const chevMat = new THREE.MeshBasicMaterial({ color: 0xffb02e });
+    for (let k = 0; k < 3; k++) {
+      const m = new THREE.Mesh(chevGeo, chevMat);
+      m.position.set(0, 1.35, -24 - k * 14);
+      m.rotation.y = 0.55;
+      chevrons.add(m);
+    }
+    chevrons.visible = false;
+    rbGroup.add(chevrons);
+
     scene.add(rbGroup);
-    this.roadblock = { active: false, s: 0, world: new THREE.Vector3(), group: rbGroup, bodies: rbBodies, lights: rbLights, announced: false };
+    this.roadblock = {
+      active: false, s: 0, world: new THREE.Vector3(), group: rbGroup, bodies: rbBodies, lights: rbLights,
+      announced: false, bypassSide: 1, phase: 'forming', rerouteTimer: 0, rerouteAnnounced: false, distM: 0,
+      detourPts: [], chevrons,
+    };
   }
 
   /** Nearest arc length to a world point around a hint. */
@@ -445,7 +483,7 @@ export class Cops {
     this.blind = 0;
     this.pitCd = 6.5;
     this.pitWarned = false;
-    this.roadblockCd = this.heat >= 3 ? 14.0 : 22.0;
+    this.roadblockCd = this.heat >= 2 ? 9.0 : 14.0;
     this.lastPullingAwayRadio = 0;
     this.tactic = 'PURSUIT';
 
@@ -497,6 +535,10 @@ export class Cops {
     if (!this.roadblock) return;
     this.roadblock.active = false;
     this.roadblock.announced = false;
+    this.roadblock.rerouteAnnounced = false;
+    this.roadblock.rerouteTimer = 0;
+    this.roadblock.detourPts = [];
+    this.roadblock.chevrons.visible = false;
     this.roadblock.group.visible = false;
     for (const b of this.roadblock.bodies) {
       b.setTranslation({ x: 0, y: -600, z: 0 }, true);
@@ -504,19 +546,44 @@ export class Cops {
     }
   }
 
-  private deployRoadblock(playerS: number) {
+  /** Deploy a police roadblock ahead + trigger quick GPS & Street Radio reroute (first 3 cars must punch through!). */
+  deployRoadblock(playerS: number, playerRank = 1, isRace = true) {
     const rb = this.roadblock;
     if (!rb) return;
     rb.s = this.lane.wrap(playerS + ROADBLOCK_AHEAD);
     this.lane.at(rb.s, 0, rb.world);
     const i = this.lane.idx(rb.s);
     const r = this.lane.right[i];
+    const room = this.lane.room(rb.s);
     const roadYaw = Math.atan2(r.z, -r.x);
+    const bypassSide: -1 | 1 = room.right >= room.left ? 1 : -1;
+    const sideWord = bypassSide > 0 ? 'RIGHT' : 'LEFT';
+
+    rb.bypassSide = bypassSide;
     rb.group.position.set(rb.world.x, rb.world.y, rb.world.z);
     rb.group.rotation.y = roadYaw;
     rb.group.visible = true;
     rb.active = true;
     rb.announced = true;
+    rb.rerouteAnnounced = false;
+    rb.distM = ROADBLOCK_AHEAD;
+
+    // Position the 3 glowing bypass chevrons toward the clear bypass side
+    rb.chevrons.position.set(bypassSide * 4.8, 0, 0);
+    rb.chevrons.rotation.y = bypassSide > 0 ? -0.35 : 0.35;
+
+    // Build smooth 11-point GPS bypass detour polyline in game frame (x, y = -z) curving around the roadblock
+    const detourPts: { x: number; y: number }[] = [];
+    const tmp = new THREE.Vector3();
+    for (let k = 0; k <= 10; k++) {
+      const f = k / 10;
+      const ds = -115 + f * 195; // from 115 m before block to 80 m past block
+      const bell = Math.sin(Math.PI * f);
+      const latOff = bypassSide * bell * Math.max(9.5, Math.min(16.0, (bypassSide > 0 ? room.right : room.left) + 5.5));
+      this.lane.at(this.lane.wrap(rb.s + ds), latOff, tmp);
+      detourPts.push({ x: tmp.x, y: -tmp.z });
+    }
+    rb.detourPts = detourPts;
 
     const cosY = Math.cos(roadYaw), sinY = Math.sin(roadYaw);
     const layouts = [
@@ -534,9 +601,38 @@ export class Cops {
       rb.bodies[k].setTranslation({ x: wx, y: rb.world.y, z: wz }, true);
       rb.bodies[k].setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
     }
+
+    // First 3 cars in a race (P1-P3) get caught past the detour turnoff and must punch through the gap;
+    // P4+ (and Free Roam) get the quick GPS + Street Radio reroute around the block!
+    const topThreeMustPunch = isRace && playerRank >= 1 && playerRank <= 3;
+    rb.phase = topThreeMustPunch ? 'punch' : 'forming';
+    rb.rerouteTimer = topThreeMustPunch ? 1.35 : 0.95;
+    rb.chevrons.visible = !topThreeMustPunch;
+
     this.tactic = 'ROADBLOCK AHEAD';
-    this.hooks.onAlert?.('🚧 ROADBLOCK AHEAD · THREAD THE GAP');
-    this.hooks.onRadio?.('DISPATCH', 'Roadblock is set two hundred fifty meters ahead of the suspect. Hold position.', true);
+    this.hooks.onRadio?.('DISPATCH', 'Roadblock forming two hundred fifty meters ahead of the lead pack! Lock down the strip!', true);
+    if (topThreeMustPunch) {
+      this.hooks.onAlert?.('🚧 ROADBLOCK FORMING · P1–P3 THREAD GAP!');
+      this.hooks.onStreetRadio?.('GPS', `🚧 ROADBLOCK FORMING AHEAD! Top 3 (P1–P3) are too close — PUNCH THROUGH THE GAP! Rerouting P4+ ${sideWord}!`);
+    } else {
+      this.hooks.onAlert?.(`↪ QUICK GPS REROUTE · BYPASS ${sideWord}`);
+      this.hooks.onStreetRadio?.('GPS', `🚧 ROADBLOCK FORMING AHEAD! Quick reroute calculating — P1–P3 punching through, prep ${sideWord} bypass!`);
+    }
+  }
+
+  /** Active roadblock reroute state for in-car GPS display, or null. */
+  get roadblockReroute(): RoadblockRerouteInfo | null {
+    const rb = this.roadblock;
+    if (!rb?.active) return null;
+    return {
+      active: true,
+      phase: rb.phase,
+      blockX: rb.world.x,
+      blockZ: rb.world.z,
+      distM: rb.distM,
+      bypassSide: rb.bypassSide,
+      detourPts: rb.detourPts,
+    };
   }
 
   /** World position of active roadblock (for minimap warning icon), or null. */
@@ -554,8 +650,8 @@ export class Cops {
     return this.cameras.map((c) => ({ x: c.world.x, z: c.world.z, limitKmh: c.limitKmh }));
   }
 
-  /** dt seconds, player's arc length, world position, and speed (km/h). */
-  update(dt: number, playerS: number, playerPos: THREE.Vector3, kmh: number) {
+  /** dt seconds, player's arc length, world position, speed (km/h), race position (1-based), and whether in a race. */
+  update(dt: number, playerS: number, playerPos: THREE.Vector3, kmh: number, playerRank = 1, isRace = true) {
     if (!this.active) return;
     this.t += dt;
     this.pitCd = Math.max(0, this.pitCd - dt);
@@ -669,17 +765,38 @@ export class Cops {
       this.hooks.onRadio?.('UNIT-04', `Suspect is pulling away at over ${Math.round(kmh)}! Cruiser is topped out!`, true);
     }
 
-    // Deploy roadblock only at Heat >= 3 and after a sustained chase (not instantly!)
-    if (!this.evading && this.roadblock && !this.roadblock.active && this.roadblockCd <= 0 && kmh > 75 && this.heat >= 3 && this.t > 16) {
-      this.deployRoadblock(playerS);
+    // Deploy roadblock ahead during sustained pursuit (Heat >= 2 or > 11 s chase) + trigger quick GPS/Radio reroute!
+    if (!this.evading && this.roadblock && !this.roadblock.active && this.roadblockCd <= 0 && kmh > 65 && (this.heat >= 2 || this.t > 11)) {
+      this.deployRoadblock(playerS, playerRank, isRace);
     } else if (this.roadblock?.active) {
-      const rbGap = signedDelta(this.roadblock.s, playerS);
+      const rb = this.roadblock;
+      const rbGap = signedDelta(rb.s, playerS);
+      rb.distM = Math.round(rbGap);
+      // Quick reroute announcement (~1 s after block begins forming)
+      if (!rb.rerouteAnnounced) {
+        rb.rerouteTimer -= dt;
+        if (rb.rerouteTimer <= 0) {
+          rb.rerouteAnnounced = true;
+          const sideWord = rb.bypassSide > 0 ? 'RIGHT' : 'LEFT';
+          if (rb.phase === 'forming') {
+            rb.phase = 'rerouted';
+            rb.chevrons.visible = true;
+            this.hooks.onStreetRadio?.('GPS', `↪ REROUTE ACTIVE! Swing ${sideWord} onto the bypass around the police block!`);
+          } else {
+            // Top 3 still punching through, reroute broadcast goes out to chasing pack behind them
+            rb.chevrons.visible = true;
+            this.hooks.onStreetRadio?.('GPS', `↪ REROUTE LOCKED for P4+ (${sideWord} bypass) — P1–P3 thread the cruisers!`);
+          }
+        }
+      }
       if (rbGap < -35) {
+        const wasPunch = rb.phase === 'punch';
         this.hideRoadblock();
-        this.roadblockCd = 24.0;
+        this.roadblockCd = 22.0;
         this.tactic = this.evading ? 'EVADING' : 'PURSUIT';
-        this.hooks.onAlert?.('✓ ROADBLOCK CLEARED');
-        this.hooks.onRadio?.('UNIT-04', 'Suspect blew right through the roadblock, continuing pursuit!', false);
+        this.hooks.onAlert?.(wasPunch ? '✓ PUNCHED THROUGH ROADBLOCK!' : '✓ ROADBLOCK BYPASSED');
+        this.hooks.onRadio?.('UNIT-04', 'Suspect cleared the roadblock, continuing pursuit!', false);
+        this.hooks.onStreetRadio?.('GPS', wasPunch ? '🔥 Front pack punched through the block! Back on main route.' : '✓ Bypass complete — back on main race route!');
       }
     }
 

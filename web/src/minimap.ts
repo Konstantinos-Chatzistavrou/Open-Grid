@@ -7,6 +7,7 @@
 // shows it and so does the screen on the dash.
 // Frames: road graph and route = game frame (x east, y north); three.js = (x, y up, z = -y_game).
 import { NavBuildings } from './navBuildings';
+import type { RoadblockRerouteInfo } from './cops';
 import {
   DAY, NIGHT, type NavTheme, card, classifyTurn, compassButton, drawHighwayShield, drawLaneGuidance, drawManeuver,
   roundButton, roundRect, speedBubbles, type ManeuverKind,
@@ -111,6 +112,8 @@ export class Minimap {
   /** Click-to-set GPS Waypoint in three.js world coordinates (x, z). */
   waypoint: { x: number; z: number } | null = null;
   onWaypoint?: (wp: { x: number; z: number } | null) => void;
+  /** Active police roadblock reroute (drawn on GPS as amber/cyan bypass curve + urgent maneuver alert card). */
+  roadblockReroute: RoadblockRerouteInfo | null = null;
 
   constructor(parent: HTMLElement) {
     this.el.id = 'minimap';
@@ -859,6 +862,46 @@ export class Minimap {
       }
       c.restore();
     }
+    // Dynamic Police Roadblock Reroute: draw blocked red-X zone + glowing amber/cyan GPS bypass detour curve!
+    const rbr = this.roadblockReroute;
+    if (rbr?.active && rbr.detourPts.length >= 2) {
+      c.save();
+      c.lineCap = 'round'; c.lineJoin = 'round';
+      // Glowing dashed bypass detour ribbon around the police block
+      c.beginPath();
+      let started = false;
+      for (const pt of rbr.detourPts) {
+        this.proj(pt.x, pt.y, 0);
+        if (Number.isNaN(this.sx)) { started = false; continue; }
+        if (started) c.lineTo(this.sx, this.sy); else { c.moveTo(this.sx, this.sy); started = true; }
+      }
+      c.strokeStyle = '#7c2d12';
+      c.lineWidth = this.flat ? 8 : 11;
+      c.stroke();
+      c.strokeStyle = rbr.phase === 'punch' ? '#f59e0b' : '#22d3ee';
+      c.lineWidth = this.flat ? 4.5 : 6.5;
+      c.setLineDash([10, 7]);
+      c.stroke();
+      c.setLineDash([]);
+
+      // Red police barricade badge right on the blocked main lane
+      this.proj(rbr.blockX, -rbr.blockZ, 0);
+      if (!Number.isNaN(this.sx) && this.sx > -20 && this.sx < NAV_W + 20 && this.sy > -20 && this.sy < NAV_H + 20) {
+        const rad = this.flat ? 8 : clamp((4.8 * FOCAL) / Math.max(this.sz, NEAR), 7, 14);
+        c.fillStyle = '#dc2626';
+        c.strokeStyle = '#ffffff';
+        c.lineWidth = 2;
+        c.beginPath(); c.arc(this.sx, this.sy, rad, 0, Math.PI * 2); c.fill(); c.stroke();
+        c.strokeStyle = '#ffffff';
+        c.lineWidth = 2.2;
+        const k = rad * 0.48;
+        c.beginPath();
+        c.moveTo(this.sx - k, this.sy - k); c.lineTo(this.sx + k, this.sy + k);
+        c.moveTo(this.sx + k, this.sy - k); c.lineTo(this.sx - k, this.sy + k);
+        c.stroke();
+      }
+      c.restore();
+    }
     // start / finish
     const s0 = this.route[0];
     this.proj(s0.x, s0.y, 0);
@@ -989,9 +1032,29 @@ export class Minimap {
     const CW = CARD_W, X = 10;
     // street under the car (refreshed twice a second)
     if (now - this.streetAt_ > 500) { this.streetAt_ = now; this.street = this.streetNear(cx, cy); }
-    // ---- maneuver card
+    // ---- maneuver card (Police Roadblock Quick Reroute overrides normal green turn card!)
+    const rbr = this.roadblockReroute;
     let title = '', sub = '', kind: ManeuverKind = 'straight', dir: -1 | 1 = 1, rot = 0;
-    if (this.waypoint) {
+    let cardBg = T.maneuver, cardDark = T.maneuverDark, subStrip = '';
+    if (rbr?.active && rbr.distM > -20 && rbr.distM < 380) {
+      const sideWord = rbr.bypassSide > 0 ? 'right' : 'left';
+      title = rbr.distM < 25 ? 'NOW!' : this.fmtDist(rbr.distM);
+      if (rbr.phase === 'punch') {
+        cardBg = '#dc2626';
+        cardDark = '#991b1b';
+        kind = 'straight';
+        dir = 1;
+        sub = 'ROADBLOCK · THREAD GAP';
+        subStrip = 'P1–P3 punch · P4+ reroute';
+      } else {
+        cardBg = '#d97706';
+        cardDark = '#92400e';
+        kind = 'slight';
+        dir = rbr.bypassSide;
+        sub = `REROUTE · Bypass ${sideWord}`;
+        subStrip = 'Police roadblock ahead';
+      }
+    } else if (this.waypoint) {
       const dx = this.waypoint.x - this.lastCar.x, dz = this.waypoint.z - this.lastCar.z;
       const wd = Math.hypot(dx, dz);
       title = this.fmtDist(wd); sub = 'GPS waypoint';
@@ -1006,10 +1069,10 @@ export class Minimap {
     }
     if (title) {
       const h = 104;
-      card(c, X, 10, CW, h, 14, T.maneuver, T.night);
+      card(c, X, 10, CW, h, 14, cardBg, T.night);
       c.save();
       c.translate(X + 36, 10 + 46);
-      if (this.waypoint) { c.rotate(rot); drawManeuver(c, 'straight', 1, 52); }
+      if (this.waypoint && !subStrip) { c.rotate(rot); drawManeuver(c, 'straight', 1, 52); }
       else drawManeuver(c, kind, dir, 56);
       c.restore();
       c.fillStyle = '#ffffff'; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
@@ -1018,8 +1081,15 @@ export class Minimap {
       c.font = `400 15px ${FONT}`;
       c.fillStyle = '#ffffffdd';
       c.fillText(this.fit(c, sub, CW - 24), X + 14, 10 + 90);
-      // "Then" strip OR 3-lane guidance strip right below the emerald maneuver card
-      if (then && next && thenGap < 320 && !this.waypoint && dist < 1200) {
+      // Roadblock reroute alert strip OR "Then" / 3-lane guidance strip right below the maneuver card
+      if (subStrip) {
+        const ty = 10 + h - 2;
+        c.fillStyle = cardDark;
+        roundRect(c, X, ty - 8, CW, 36, 12); c.fill();
+        c.fillStyle = cardBg; c.fillRect(X, ty - 8, CW, 10);
+        c.fillStyle = '#ffffff'; c.font = `600 12.5px ${FONT}`; c.textBaseline = 'middle';
+        c.fillText(this.fit(c, subStrip, CW - 22), X + 12, ty + 14);
+      } else if (then && next && thenGap < 320 && !this.waypoint && dist < 1200) {
         const ty = 10 + h - 2;
         c.fillStyle = T.maneuverDark;
         roundRect(c, X, ty - 8, CW, 44, 14); c.fill();
