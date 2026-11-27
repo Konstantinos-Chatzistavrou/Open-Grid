@@ -130,30 +130,76 @@ body.touch #warn { right: auto; left: calc(8px + env(safe-area-inset-left)); tra
   top: calc(262px + env(safe-area-inset-top)); width: auto; align-items: flex-start; }
 #touch { position: fixed; inset: 0; pointer-events: none; touch-action: none; user-select: none; -webkit-user-select: none;
   -webkit-touch-callout: none; z-index: 5; contain: strict; }
-#touch button { font: 700 12px/1.1 "Inter", system-ui, sans-serif; color: var(--fg); letter-spacing: .06em;
-  border: 1px solid #ffffff30; background: #0a0e16d0; border-radius: 14px; pointer-events: auto;
-  touch-action: none; -webkit-tap-highlight-color: transparent; }
-#touch button.down { background: #ffffff38; border-color: #ffffffa0; }
-#touch .steer { position: absolute; left: 0; bottom: 0; width: 46vw; height: 62vh; pointer-events: auto; touch-action: none; }
-#touch .steer .hint { position: absolute; left: calc(24px + env(safe-area-inset-left)); bottom: calc(22px + env(safe-area-inset-bottom));
-  color: #ffffff60; font-size: 11px; letter-spacing: .22em; text-transform: uppercase; }
-#touch .knob { position: absolute; width: 74px; height: 74px; border-radius: 50%; border: 2px solid #ffffff80; background: #ffffff18;
-  transform: translate(-50%, -50%); opacity: 0; transition: opacity .12s; pointer-events: none; will-change: transform; }
-#touch .knob.on { opacity: 1; }
-#touch .pedals { position: absolute; right: calc(14px + env(safe-area-inset-right)); bottom: calc(14px + env(safe-area-inset-bottom));
-  display: flex; align-items: flex-end; gap: 12px; }
-#touch .pad.gas { width: 92px; height: 150px; border-color: #3dffa8a0; }
-#touch .pad.brake { width: 92px; height: 112px; border-color: #ff2d55a0; }
-#touch .pad.hb { width: 70px; height: 70px; font-size: 11px; }
-#touch .shift { position: absolute; right: calc(14px + env(safe-area-inset-right)); bottom: calc(176px + env(safe-area-inset-bottom));
-  display: flex; flex-direction: column; gap: 10px; }
+#touch button { font: 700 11px/1 "Inter", system-ui, sans-serif; color: rgba(242, 244, 248, 0.92); letter-spacing: .06em;
+  border: 1px solid rgba(255, 255, 255, 0.24); background: rgba(10, 12, 18, 0.42); border-radius: 999px; pointer-events: auto;
+  touch-action: none; -webkit-tap-highlight-color: transparent; display: inline-flex; align-items: center; justify-content: center;
+  transition: background 90ms ease, border-color 90ms ease, transform 90ms ease; }
+#touch button svg { pointer-events: none; display: block; }
+#touch button.down { background: rgba(255, 255, 255, 0.22); border-color: rgba(255, 255, 255, 0.85); }
+#touch .steer { --steer-inset: 28px; position: absolute; left: calc(18px + env(safe-area-inset-left)); bottom: calc(18px + env(safe-area-inset-bottom));
+  width: clamp(210px, 34vw, 290px); height: 66px; border-radius: 999px;
+  background: rgba(10, 12, 18, 0.42); border: 1.5px solid rgba(255, 255, 255, 0.30);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  pointer-events: auto; touch-action: none; transition: border-color 120ms ease; }
+#touch .steer.active { border-color: rgba(255, 255, 255, 0.48); }
+#touch .steer-rail { position: absolute; left: 26px; right: 26px; top: 50%; height: 3px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28); transform: translateY(-50%); pointer-events: none; }
+#touch .steer-center { position: absolute; left: 50%; top: 50%; width: 2px; height: 14px; border-radius: 1px;
+  background: rgba(255, 255, 255, 0.46); transform: translate(-50%, -50%); pointer-events: none; }
+#touch .steer-fill { position: absolute; left: 50%; top: 50%; width: calc(50% - var(--steer-inset)); height: 3px; border-radius: 2px;
+  background: #ff1111; box-shadow: 0 0 8px rgba(255, 17, 17, 0.70);
+  transform-origin: 0 50%; transform: translate3d(0, -50%, 0) scaleX(0);
+  transition: transform 170ms cubic-bezier(0.22, 1.28, 0.36, 1); pointer-events: none; will-change: transform; }
+#touch .steer.active .steer-fill { transition: none; }
+#touch .knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.92); background: rgba(255, 255, 255, 0.10);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.38);
+  transform: translate3d(-50%, -50%, 0);
+  transition: transform 170ms cubic-bezier(0.22, 1.28, 0.36, 1), background 100ms ease, border-color 100ms ease;
+  pointer-events: none; will-change: transform; }
+#touch .knob::after { content: ""; position: absolute; left: 50%; top: 50%; width: 2px; height: 18px; border-radius: 2px;
+  background: rgba(255, 255, 255, 0.92); transform: translate(-50%, -50%); }
+#touch .steer.active .knob { transition: background 100ms ease, border-color 100ms ease;
+  background: rgba(255, 255, 255, 0.16); border-color: #ffffff; box-shadow: 0 0 12px rgba(255, 17, 17, 0.32), 0 2px 10px rgba(0, 0, 0, 0.42); }
+#touch .pedals { position: absolute; right: calc(18px + env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom));
+  display: flex; align-items: flex-end; gap: 10px; }
+#touch .pad.brake, #touch .pad.gas { width: 78px; height: 108px; border-radius: 16px; background: rgba(10, 12, 18, 0.38);
+  flex-direction: column; justify-content: flex-end; align-items: center; padding: 0 0 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+#touch .pad.brake { border: 1.5px solid rgba(255, 59, 48, 0.80); color: #ff3b30; }
+#touch .pad.brake.down { background: rgba(255, 59, 48, 0.24); border-color: #ff453a;
+  box-shadow: 0 0 16px rgba(255, 59, 48, 0.35), inset 0 0 12px rgba(255, 59, 48, 0.18); transform: scale(0.97); }
+#touch .pad.gas { border: 1.5px solid rgba(48, 209, 88, 0.80); color: #30d158; }
+#touch .pad.gas.down { background: rgba(48, 209, 88, 0.24); border-color: #32d74b;
+  box-shadow: 0 0 16px rgba(48, 209, 88, 0.35), inset 0 0 12px rgba(48, 209, 88, 0.18); transform: scale(0.97); }
+#touch .pad.hb { position: absolute; right: 0; bottom: calc(100% + 12px); width: 46px; height: 46px; border-radius: 50%; padding: 0;
+  border: 1.5px solid rgba(255, 255, 255, 0.42); background: rgba(10, 12, 18, 0.40);
+  font-size: 11px; font-weight: 800; letter-spacing: .08em; color: rgba(255, 255, 255, 0.90);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.32); }
+#touch .pad.hb.down { background: rgba(255, 255, 255, 0.22); border-color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.26); transform: scale(0.95); }
+#touch .shift { position: absolute; right: calc(18px + 56px + env(safe-area-inset-right)); bottom: calc(138px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: row; gap: 6px; }
 #touch .shift[hidden] { display: none; }
-#touch .small { min-width: 48px; height: 40px; padding: 0 10px; }
-#touch [data-c="garage"] { border-color: #ff2d5590; }
+#touch .shift .small { width: 44px; height: 44px; min-width: 44px; padding: 0; border-radius: 50%; font-size: 12px; }
+#touch .small { min-width: 34px; height: 34px; padding: 0 11px; }
+#touch [data-c="garage"] { border-color: rgba(255, 45, 85, 0.68); }
 #touch .top { position: absolute; right: calc(12px + env(safe-area-inset-right)); top: calc(10px + env(safe-area-inset-top)); display: flex; gap: 6px; }
-@media (max-height: 420px) {
-  #touch .pad.gas { height: 120px; width: 82px; } #touch .pad.brake { height: 92px; width: 82px; }
-  #touch .shift { bottom: calc(146px + env(safe-area-inset-bottom)); }
+#touch .top [data-c="reset"], #touch .top [data-c="fullscreen"] { width: 34px; padding: 0; font-size: 13px; }
+@media (max-height: 460px) {
+  #touch .steer { --steer-inset: 24px; left: calc(14px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom));
+    width: clamp(190px, 32vw, 250px); height: 56px; }
+  #touch .steer-rail { left: 22px; right: 22px; }
+  #touch .knob { width: 44px; height: 44px; }
+  #touch .knob::after { height: 14px; }
+  #touch .pedals { right: calc(14px + env(safe-area-inset-right)); bottom: calc(14px + env(safe-area-inset-bottom)); gap: 8px; }
+  #touch .pad.brake, #touch .pad.gas { width: 68px; height: 92px; border-radius: 14px; padding-bottom: 12px; }
+  #touch .pad.hb { width: 42px; height: 42px; bottom: calc(100% + 10px); font-size: 10px; }
+  #touch .shift { right: calc(14px + 50px + env(safe-area-inset-right)); bottom: calc(116px + env(safe-area-inset-bottom)); gap: 6px; }
+  #touch .shift .small { width: 38px; height: 38px; min-width: 38px; }
+  #touch .top { top: calc(8px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right)); gap: 5px; }
+  #touch .top .small { min-width: 30px; height: 30px; padding: 0 9px; font-size: 10px; }
+  #touch .top [data-c="reset"], #touch .top [data-c="fullscreen"] { width: 30px; padding: 0; font-size: 12px; }
 }
 #rotate { display: none; }
 @media (orientation: portrait) and (max-width: 600px) and (pointer: coarse) {
@@ -430,7 +476,7 @@ body.touch.spectating #board { top: calc(54px + env(safe-area-inset-top)); }
 #menu .nav-focus { outline: 2px solid #fff; outline-offset: 3px; box-shadow: 0 0 0 5px #ff2d5560; }
 @media (max-width: 640px) { #menu .meters { grid-template-columns: 1fr 1fr; } }
 #touch .tilt-only { display: none; }
-#touch.tilt .tilt-only { display: inline-block; }
+#touch.tilt .tilt-only { display: inline-flex; }
 #touch.tilt .steer { display: none; }
 
 /* ---- title buttons, credits, settings, shop ---------------------------------------------------- */

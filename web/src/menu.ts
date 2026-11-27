@@ -474,16 +474,16 @@ export class Menu {
   // ---- screens ---------------------------------------------------------------------------------
   private title() {
     const curCar = this.car();
+    const sel = this.sel;
     const dis = this.tuning ? 'disabled' : '';
-    const invite = this.invite && !this.party ? `<div class="invite og-invite"><span>${this.inviteKind === 'garage' ? '🔧' : '🏁'} You're invited to ${this.inviteKind === 'garage' ? "a friend's Live Garage" : 'party'} <b>${esc(this.invite)}</b></span>
-        <button class="primary" data-act="invite" ${dis}>${this.inviteKind === 'garage' ? 'Join Live Garage' : 'Join Party'}</button><button class="small" data-act="noinvite" aria-label="Dismiss">✕</button></div>` : '';
+    const invite = this.invite && !this.party ? `<div class="invite og-invite"><span>You're invited to ${this.inviteKind === 'garage' ? "a friend's Live Garage" : 'party'} <b>${esc(this.invite)}</b></span>
+        <div class="og-invite-acts"><button class="primary small" data-act="invite" ${dis}>${this.inviteKind === 'garage' ? 'Join Live Garage' : 'Join Party'}</button><button class="small" data-act="noinvite" aria-label="Dismiss">✕</button></div></div>` : '';
     const last = this.sp.last ?? this.mp.last;
-    const earned = last && (last.xp || last.cr) ? `<div class="earned">+${fmtXp(last.xp)}${last.cr ? ` · +${fmt(last.cr)}` : ''} <span class="dim">${esc(last.reason)}</span>${last.levelUp ? ` <b class="lvup">LEVEL ${last.levelUp}</b>` : ''}</div>` : '';
+    const earned = last && (last.xp || last.cr) ? `<div class="earned og-earned">+${fmtXp(last.xp)}${last.cr ? ` · +${fmt(last.cr)}` : ''} <span class="dim">${esc(last.reason)}</span>${last.levelUp ? ` <b class="lvup">LEVEL ${last.levelUp}</b>` : ''}</div>` : '';
     if (this.identity.needsPick && !this.tuning) return this.pickName();
 
-    const st = statsOf(applyMods(this.physics[this.sel.car], modsOf(this.sel)));
+    const st = statsOf(applyMods(this.physics[sel.car], modsOf(sel)));
     const cls = st.power > 420 ? 'S' : st.power > 330 ? 'A' : st.power > 250 ? 'B' : 'C';
-    const br = brandOfCar(curCar.id);
     const engCur = engineOf(this.nr, curCar.id);
     const engLbl = engCur.swap === 'stock' ? stockEngineOfCar(curCar.id).label : ENGINE_SWAPS[engCur.swap].label;
     const cs = this.hooks.cities?.();
@@ -492,105 +492,121 @@ export class Menu {
     const lic = mp?.license ?? 'R';
     const dr = Math.round(mp?.dr ?? 1500);
     const sr = (mp?.sr ?? 2.5).toFixed(2);
-    const netBadge = this.cloud.available ? 'FREE ONLINE' : 'Offline';
     const todayEv = todayCalendarEvent();
-    const aidsOff = assistsOffCount(this.assists);
+    const aiPct = Math.max(60, Math.min(110, Math.round(sel.aiDiff || 88)));
+    const aiPreset = AI_DIFFICULTY_PRESETS.find((p) => p.id !== 'adaptive' && Math.abs(p.pct - aiPct) <= 2);
+    const aiDiffLabel = sel.aiAdaptive ? `Adaptive (${aiPct}%)` : (aiPreset?.label ?? `AI ${aiPct}%`);
+    const assistLabel = this.assists.preset ? this.assists.preset[0].toUpperCase() + this.assists.preset.slice(1) : 'Custom';
+    const reqCount = this.identity.friends.incoming.length;
 
-    const card = (act: string, n: string, title: string, sub: string, tag: string, clsExtra = '') =>
-      `<button class="og-tile ${clsExtra}" data-act="${act}" ${dis}>
-        <div class="og-tile-top"><i>${n}</i><span>${tag}</span></div>
-        <b>${title}</b>
-        <p>${sub}</p>
+    const ico = (d: string, size = 20) =>
+      `<svg class="og-ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+
+    const IC = {
+      speaker: ico('<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.8 5.2a9.5 9.5 0 0 1 0 13.6"/>', 14),
+      play: '<svg class="og-play-ico" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>',
+      flag: ico('<path d="M4 21V4"/><path d="M4 4h14l-2.5 5L18 14H4"/><path d="M9 4v10"/><path d="M13.5 4v10"/><path d="M4 9h11.5"/>', 20),
+      users: ico('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', 20),
+      trophy: ico('<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>', 20),
+      compass: ico('<circle cx="12" cy="12" r="9"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>', 20),
+      route: ico('<circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.5"/>', 18),
+      car: ico('<path d="M5 17h14"/><path d="M3 13l2-5a2 2 0 0 1 1.85-1.25h10.3A2 2 0 0 1 19 8l2 5v4a1 1 0 0 1-1 1h-1.5a1.5 1.5 0 0 1-1.5-1.5V16H7v.5A1.5 1.5 0 0 1 5.5 18H4a1 1 0 0 1-1-1v-4Z"/><circle cx="7" cy="13" r="1"/><circle cx="17" cy="13" r="1"/>', 18),
+      sliders: ico('<line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="11" cy="18" r="2"/>', 18),
+      wrench: ico('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"/>', 18),
+      tag: ico('<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42Z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor"/>', 18),
+      gear: ico('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 .99-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51.99H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>', 18),
+      shield: ico('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/>', 14),
+      wheel: ico('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="M12 14v7"/><path d="M3.5 9.5h17"/>', 14),
+      timer: ico('<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2"/><path d="M9 2h6"/>', 14),
+      chat: ico('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>', 14),
+      video: ico('<polygon points="5 3 19 12 5 21 5 3"/>', 14),
+      heart: ico('<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/>', 14),
+      code: ico('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>', 14),
+      lock: ico('<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>', 14),
+      radio: ico('<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/>', 14),
+    };
+
+    const navRow = (act: string, icon: string, label: string, sub: string, dataV = '') =>
+      `<button class="og-nav-row" data-act="${act}" ${dataV ? `data-v="${dataV}"` : ''} ${dis}>
+        <span class="og-nav-ico">${icon}</span>
+        <span class="og-nav-text">
+          <b>${label}</b>
+          <small>${sub}</small>
+        </span>
       </button>`;
 
-    const statBar = (label: string, val: string, f: number) =>
-      `<div class="og-sbar"><span>${label}</span><div><i style="width:${Math.round(Math.max(0.05, Math.min(1, f)) * 100)}%"></i></div><b>${val}</b></div>`;
+    const cfgItem = (act: string, icon: string, label: string, val: string) =>
+      `<button class="og-cfg-item" data-act="${act}" ${dis}>
+        <span class="og-cfg-head">${icon}<b>${label}</b></span>
+        <span class="og-cfg-val">${val}</span>
+      </button>`;
 
     return `${this.tuning ? '<div class="cover"><div class="card center"><div class="spin"></div><p>Tuning graphics for this device…</p><span class="dim">Measuring the street once to pick resolution and effects.</span></div></div>' : ''}
       <div class="og-home">
         <header class="og-topbar">
           <div class="og-brand-wrap">
-            <div class="og-logo">OPEN<span>GRID</span></div>
-            <span class="og-badge">100% FREE · AD-FREE · OPEN SOURCE</span>
-            ${curCity ? `<button class="chip og-city-pill" data-act="play" ${dis} title="Change city or event">📍 ${esc(curCity.name)} · ${esc(curCity.district)}</button>` : ''}
+            <div class="og-logo">OPEN <span>GRID</span></div>
+            <span class="og-badge">240 HZ · WEBGPU · FREE</span>
           </div>
           <div class="og-status-bar">
-            <button class="chip ${this.audioEngineMode === 'real_samples' ? 'on' : ''}" data-act="audio-engine-toggle" ${dis} title="Switch live between Real Recorded Supercars (CC-BY) and Engine-Sim + Muffler IR (WASM)">🔊 ${this.audioEngineMode === 'real_samples' ? 'Real Cars' : 'Sim + IR'}</button>
-            <button class="chip ${this.spotterOn ? 'on' : ''}" data-act="spotter" data-v="${this.spotterOn ? '0' : '1'}" ${dis} title="Toggle iRacing-style Race Spotter">📻 Spotter ${this.spotterOn ? 'ON' : 'OFF'}</button>
-            <button class="chip og-rank-pill" data-act="lobby" ${dis} title="Open Free Community Multiplayer">🏆 ${esc(lic)} · DR ${dr} · SR ${sr} · ${esc(netBadge)}</button>
-            <button class="me-chip og-me" data-act="profile-open" ${dis}>
-              <span class="avatar">${helmetSvg(skinOf(this.sel.skin), 26)}</span>
+            <button class="og-pill ${this.audioEngineMode === 'real_samples' ? 'is-on' : ''}" data-act="audio-engine-toggle" ${dis} title="Switch live between Real Recorded Supercars (CC-BY) and Engine-Sim + Muffler IR (WASM)">${IC.speaker}<span>${this.audioEngineMode === 'real_samples' ? 'Real Cars' : 'Sim + IR'}</span></button>
+            <button class="og-pill og-rank-pill" data-act="lobby" ${dis} title="Open Free Community Multiplayer">CLASS ${esc(lic)} · ${dr} DR · ${sr} SR</button>
+            ${this.heat > 0 ? `<div class="og-pill og-heat ${this.heat >= 5 ? 'maxed' : this.heat >= 4 ? 'hot' : ''}" title="Street Heat Level ${this.heat}/5">
+              <span>HEAT</span>
+              <span class="og-heat-bars">${Array.from({ length: this.heat }, () => '<i class="on"></i>').join('')}</span>
+              ${this.layLowCost >= 0 ? `<button class="og-heat-clear" data-act="laylow" ${this.sp.xp < this.layLowCost ? 'disabled' : ''} title="Pay ${this.layLowCost} XP to clear street heat">Clear</button>` : ''}
+            </div>` : ''}
+            <button class="og-pill og-me" data-act="profile-open" ${dis}>
+              <span class="og-avatar">${helmetSvg(skinOf(sel.skin), 20)}</span>
               <b>${esc(this.identity.name)}</b>
-              <span class="dim">${this.identity.friends.incoming.length ? `· ${this.identity.friends.incoming.length} req` : mp?.email ? '· ✓ Cloud' : '· Log In'}</span>
+              <span class="og-me-sub ${mp?.email ? 'synced' : ''}">${reqCount ? `${reqCount} req` : mp?.email ? '✓' : 'Log In'}</span>
             </button>
-            <div class="og-heat ${this.heat >= 5 ? 'maxed' : this.heat >= 4 ? 'hot' : ''}" title="Street Heat Level">
-              <span>HEAT</span>${Array.from({ length: 5 }, (_, i) => `<i class="${i < this.heat ? 'on' : ''}"></i>`).join('')}<b>${this.heat}/5</b>
-              ${this.heat > 0 && this.layLowCost >= 0 ? `<button class="small" data-act="laylow" ${this.sp.xp < this.layLowCost ? 'disabled' : ''}>Clear (${this.layLowCost} XP)</button>` : ''}
-            </div>
           </div>
         </header>
 
-        ${invite}
-        ${earned}
+        ${(invite || earned) ? `<div class="og-notices">${invite}${earned}</div>` : ''}
 
-        <main class="og-grid">
-          <section class="og-nav-col">
-            <div class="og-tiles">
-              ${card('play', '01', 'PLAY & EVENTS', 'Sanctioned Day Circuits · Underground Night Street Races · Free Roam · 2P Split-Screen · Driving Academy', 'SINGLE & 2P', 'hero')}
-              ${card('lobby', '02', 'ONLINE & RANKED', 'Free Community Splits · Automated Glicko-2 DR & 0x Victim Shield SR · Championships · Global Hotlaps · Teams · Leagues · P2P Voice', this.party ? `IN PARTY ${esc(this.party.code)}` : 'FREE SERVERS', 'online')}
-              ${card('garage-open', '03', 'GARAGE & CO-OP', '25 Cars · Bodykits · Engine Swaps · Live Dyno · Walkable Showroom · 👥 Invite Friends to Watch You Mod Live', '3D SHOWROOM')}
-              ${card('shop-open', '04', 'AUCTION & MODS', 'CS2-Style Live Supply/Demand Market · Salvage & Pre-Swapped Flips · Float Wear Grades · Community Mod Hub', fmt(this.career.credits))}
-              ${card('settings-open', '05', 'SETTINGS & ASSISTS', 'Controller Steering Filter · Braking Assist Ladder · Audio A/B · Race Spotter · Graphics · SimHub / MoTeC · Wheels & FFB', `${this.assists.preset.toUpperCase()} · ${aidsOff}/7 OFF`)}
-              ${card('profile-open', '06', 'PROFILE & FRIENDS', 'Google, GitHub, Discord & Email Cloud Login · Friends List & Instant Party Join · Optional GitHub Sponsors', mp?.email ? '✓ SYNCED' : 'SAVE ACCOUNT')}
-            </div>
-
-            <div class="og-quick-strip">
-              <span class="dim og-qlabel">QUICK LAUNCH</span>
-              <button class="primary small" data-act="pmatch" ${dis}>🌐 Quick Ranked Split</button>
-              <button class="small" data-act="quick-day-race" ${dis}>☀ Day Circuit</button>
-              <button class="small" data-act="quick-night-race" ${dis}>🌙 Night Street</button>
-              <button class="small" data-act="g-invite-open" ${dis}>👥 Host Live Garage</button>
-              <button class="small" data-act="lobby-tab-open" data-v="champs" ${dis}>🏆 Championships</button>
-              <button class="small" data-act="lobby-tab-open" data-v="hotlaps" ${dis}>⏱ Hotlaps</button>
-              <button class="small" data-act="lobby-tab-open" data-v="leagues" ${dis}>🏛 Leagues</button>
-              <button class="small" data-act="controls-open" ${dis}>🎮 Controls &amp; Wheel</button>
-            </div>
+        <main class="og-stage">
+          <section class="og-primary-col" aria-label="Primary Navigation">
+            <button class="og-drive-btn" data-act="start-race" ${dis}>${IC.play}<span>DRIVE</span></button>
+            <nav class="og-nav-list">
+              ${navRow('play', IC.flag, 'RACE EVENTS', `${esc(curCity?.name ?? 'NYC Midtown')} · ${sel.laps} Laps · ${esc(aiDiffLabel)} · ${sel.copMode ? 'Cops ON' : 'Clean'}`)}
+              ${navRow('lobby', IC.users, 'MULTIPLAYER', this.party ? `In Party ${esc(this.party.code)}` : 'Free Community Splits · Championships · Parties')}
+              ${navRow('cal-go', IC.trophy, 'WEEKLY CHALLENGE', `${esc(todayEv.day)} · ${esc(todayEv.title)} · +${todayEv.bonusXp.toLocaleString('en-US')} XP`, String(todayEv.dayIdx))}
+              ${navRow('start-free', IC.compass, 'FREE ROAM', `${cs?.list.length ?? 18} Cities & Circuits · Car Meets · Speed Traps · 1v1 Drags`)}
+            </nav>
           </section>
 
-          <aside class="og-side-col">
-            <div class="og-panel og-car-panel">
-              <div class="og-panel-head">
-                <span class="brand-inline">${brandBadgeSvg(curCar.id, 24)}<div><small class="dim">${esc(br.fullName)} · ${esc(br.country)}</small><h3>${esc(curCar.name)}</h3></div></span>
-                <span class="og-class-badge">CLASS ${cls}</span>
-              </div>
-              <div class="dim small-note" style="margin-bottom:8px">⚙ ${esc(engLbl)} · Assists: <b>${this.assists.preset[0].toUpperCase() + this.assists.preset.slice(1)}</b> (${aidsOff}/7 Off)</div>
-              ${statBar('POWER', `${Math.round(st.power)} kW`, st.power / 520)}
-              ${statBar('GRIP', `${st.grip.toFixed(2)} µ`, (st.grip - 0.9) / 0.8)}
-              ${statBar('LIGHT', `${Math.round(st.mass)} kg`, (1750 - st.mass) / 600)}
-              <div class="chips" style="margin-top:10px">
-                <button class="small primary" data-act="garage-open" ${dis}>🔧 Customize in 3D</button>
-                <button class="small" data-act="cal-go" data-v="${todayEv.dayIdx}" ${dis}>📅 Today: ${esc(todayEv.title)}</button>
-              </div>
+          <section class="og-secondary-col" aria-label="Quick Configuration &amp; Links">
+            <div class="og-config-grid">
+              ${cfgItem('play', IC.route, 'CITY & TRACK', `${esc(curCity?.name ?? 'NYC Midtown')}${curCity?.district ? ` · ${esc(curCity.district)}` : ''}`)}
+              ${cfgItem('garage-open', IC.car, 'CAR', `${esc(curCar.name)} · Class ${cls} (${Math.round(st.power)} kW)`)}
+              ${cfgItem('settings-open', IC.sliders, 'AI & ASSISTS', `${esc(aiDiffLabel)} · ${esc(assistLabel)}`)}
+              ${cfgItem('garage-open', IC.wrench, 'GARAGE', `Showroom · ${esc(engLbl)}`)}
+              ${cfgItem('shop-open', IC.tag, 'AUCTION & MODS', `${fmt(this.career.credits)} · Live Market`)}
+              ${cfgItem('settings-open', IC.gear, 'SETTINGS', 'Graphics · Audio · FFB Wheels')}
             </div>
 
-            <div class="og-panel">
-              <div class="careers">${this.careerCard('sp')}${this.careerCard('mp')}</div>
-            </div>
+            <div class="og-divider" role="separator"></div>
 
-            ${this.ret.challenges.length ? `<div class="og-panel og-daily">
-              <div class="og-panel-head"><h4>⚡ DAILY CHALLENGES</h4><span class="dim small-note">Rep ${this.ret.reputation.toLocaleString()}${this.ret.prestige ? ` · ★${this.ret.prestige}` : ''}</span></div>
-              ${this.ret.challenges.map((c) => `<div class="drow ${c.claimed ? 'done' : ''}"><span>${esc(c.title)}</span><b>${c.claimed ? '✓ DONE' : `${c.progress}/${c.target} (+${c.xpReward} XP)`}</b></div>`).join('')}
-            </div>` : ''}
-          </aside>
+            <div class="og-link-grid">
+              <button class="og-link-item" data-act="profile-open" ${dis}>${IC.shield}<span>Profile &amp; 2FA</span></button>
+              <button class="og-link-item" data-act="controls-open" ${dis}>${IC.wheel}<span>Controls &amp; Wheel</span></button>
+              <button class="og-link-item" data-act="lobby-tab-open" data-v="hotlaps" ${dis}>${IC.timer}<span>Hotlaps</span></button>
+
+              <a class="og-link-item" href="https://discord.gg/RhKdTvAdf" target="_blank" rel="noopener noreferrer">${IC.chat}<span>Discord ↗</span></a>
+              <a class="og-link-item" href="https://youtube.com/@open_grid_motorsport" target="_blank" rel="noopener noreferrer">${IC.video}<span>YouTube ↗</span></a>
+              <a class="og-link-item" href="https://github.com/sponsors/Konstantinos-Chatzistavrou" target="_blank" rel="noopener noreferrer">${IC.heart}<span>GitHub Sponsors ↗</span></a>
+
+              <a class="og-link-item" href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid" target="_blank" rel="noopener noreferrer">${IC.code}<span>GitHub ↗</span></a>
+              <a class="og-link-item" href="/privacy.html" target="_blank" rel="noopener noreferrer">${IC.lock}<span>Privacy ↗</span></a>
+              <button class="og-link-item ${this.spotterOn ? 'is-on' : ''}" data-act="spotter" data-v="${this.spotterOn ? '0' : '1'}" ${dis}>${IC.radio}<span>Spotter ${this.spotterOn ? 'ON' : 'OFF'}</span></button>
+            </div>
+          </section>
         </main>
 
         <footer class="og-foot">
-          <div class="dim small-note">⚡ Ultra-Fast Static City Menu (0% 3D GPU overhead) · ${esc(this.gfxNote || 'WebGPU · 240 Hz C++20 Physics')} · ${this.cars.length} Cars · ${cs?.list.length ?? 18} Real-Scale Cities</div>
-          <div class="chips" style="gap:12px">
-            <a class="source-link dim" href="https://discord.gg/RhKdTvAdf" target="_blank" rel="noopener">💬 Discord</a>
-            <a class="source-link dim" href="https://youtube.com/@open_grid_motorsport" target="_blank" rel="noopener">▶ YouTube</a>
-            <a class="source-link dim" href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid" target="_blank" rel="noopener">Open Source · Code Apache-2.0 · Assets CC BY-NC 4.0</a>
-          </div>
+          <span>${this.cars.length} Cars · ${cs?.list.length ?? 18} Real-Scale Cities · Apache-2.0 · Zero Ads${this.gfxNote ? ` · ${esc(this.gfxNote)}` : ''}</span>
         </footer>
       </div>`;
   }
@@ -1420,7 +1436,7 @@ export class Menu {
         </div>`;
       }).join('');
       return `<div class="lobby-screen"><div class="card lobby-card">
-        <div class="lobby-head"><div class="chips"><button data-act="home" class="back-btn">← Main Menu</button><button data-act="modes" class="back-btn">Modes</button></div><div><div class="kicker">OPENGRID COMMUNITY NETWORK · 100% FREE &amp; AD-FREE</div><h2>Multiplayer</h2></div></div>
+        <div class="lobby-head"><div class="chips"><button data-act="home" class="back-btn">← Main Menu</button><button data-act="modes" class="back-btn">Modes</button></div><div><div class="kicker">OPEN GRID COMMUNITY NETWORK · 100% FREE &amp; AD-FREE</div><h2>Multiplayer</h2></div></div>
         ${nameRow}
         <div class="opts" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
           <span class="pill gold">LICENSE CLASS ${esc(lic)}</span>
@@ -2266,7 +2282,7 @@ export class Menu {
   private pickName() {
     const draft = this.unameDraft ?? (usernameError(this.sel.name) ? '' : this.sel.name);
     return `<div class="lobby-screen"><div class="card lobby-card pick-card">
-      <div class="kicker">WELCOME TO OPENGRID</div><h2>Choose your username</h2>
+      <div class="kicker">WELCOME TO OPEN GRID</div><h2>Choose your username</h2>
       <p class="dim">Friends add you by it, and everyone sees it in races: on the leaderboard, over your car and on your number plate.
         ${this.cloud.available ? 'It is yours alone: nobody else can take it.' : ''}</p>
       ${this.unameField(draft)}

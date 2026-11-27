@@ -1,9 +1,9 @@
 // On-screen controls for phones and tablets (multi-touch, pointer events).
-//   left half, bottom: steering pad - press anywhere, slide sideways (analog, relative to where
-//                      the thumb landed; a knob shows the position)
-//   right, bottom:     GAS and BRAKE pedals, handbrake (BRAKE held at a standstill = reverse:
-//                      the core's pedal reverse, same as keyboard S)
-//   top right:         reset, camera, gearbox auto/manual, fullscreen; shift up/down in manual
+//   left, bottom:  always-visible horizontal pill steering slider (direct tap-to-steer + drag,
+//                  precision non-linear curve, spring return to centre)
+//   right, bottom: minimal glass Brake and Gas icon pedals + circular Handbrake pill above Gas
+//                  (BRAKE held at a standstill = reverse: core's pedal reverse, same as keyboard S)
+//   top right:     menu, reset, straight (tilt), camera, gearbox auto/manual, fullscreen; shift up/down in manual
 export interface TouchState {
   active: boolean;
   steer: number; throttle: number; brake: number; handbrake: number;
@@ -12,8 +12,6 @@ export interface TouchState {
 
 export interface TouchActions { reset(): void; camera(): void; toggleGearbox(): boolean; unlockAudio(): void; garage?(): void; recentre?(): void; tilt?(): boolean }
 
-const STEER_RANGE_PX = 68;   // thumb travel for full lock (short enough for crisp, immediate response)
-
 export class TouchControls {
   readonly state: TouchState = { active: false, steer: 0, throttle: 0, brake: 0, handbrake: 0, shiftUp: false, shiftDown: false };
   private root = document.createElement('div');
@@ -21,15 +19,30 @@ export class TouchControls {
   constructor(private actions: TouchActions) {
     this.root.id = 'touch';
     this.root.innerHTML = `
-      <div class="steer" data-c="steer"><div class="knob"></div><span class="hint">◀ steer ▶</span></div>
+      <div class="steer" data-c="steer" aria-label="Steering slider">
+        <div class="steer-rail"><div class="steer-center"></div></div>
+        <div class="steer-fill"></div>
+        <div class="knob"></div>
+      </div>
       <div class="pedals">
-        <button class="pad hb" data-c="handbrake">HAND<br>BRAKE</button>
-        <button class="pad brake" data-c="brake">BRAKE<br><small>hold: R</small></button>
-        <button class="pad gas" data-c="gas">GAS</button>
+        <button class="pad hb" data-c="handbrake" title="Handbrake" aria-label="Handbrake">HB</button>
+        <button class="pad brake" data-c="brake" title="Brake / Hold to reverse" aria-label="Brake">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11.5" cy="12" r="7.5"/>
+            <circle cx="11.5" cy="12" r="2.6"/>
+            <path d="M16.8 5.2a9 9 0 0 1 3.7 7.3 9 9 0 0 1-1.3 4.6" stroke-width="2.8"/>
+          </svg>
+        </button>
+        <button class="pad gas" data-c="gas" title="Gas" aria-label="Gas">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 19V5"/>
+            <path d="M6 11l6-6 6 6"/>
+          </svg>
+        </button>
       </div>
       <div class="shift" hidden>
-        <button class="small" data-c="up">▲</button>
-        <button class="small" data-c="down">▼</button>
+        <button class="small" data-c="up" title="Shift up" aria-label="Shift up">▲</button>
+        <button class="small" data-c="down" title="Shift down" aria-label="Shift down">▼</button>
       </div>
       <div class="top">
         <button class="small" data-c="garage" title="Back to the menu">← MENU</button>
@@ -82,10 +95,24 @@ export class TouchControls {
       }).catch(() => {});
     });
 
-    // Steering pad: analog, relative to where the thumb first touched.
+    // Always-visible horizontal pill steering slider: direct tap-to-steer + smooth drag.
     const pad = this.root.querySelector<HTMLElement>('.steer')!;
     const knob = pad.querySelector<HTMLElement>('.knob')!;
-    let id = -1, x0 = 0, lastDx = 0;
+    const fill = pad.querySelector<HTMLElement>('.steer-fill')!;
+    let id = -1, centerX = 0, halfTrackPx = 1, lastU = 0;
+
+    const applySteer = (clientX: number, force = false) => {
+      const u = Math.max(-1, Math.min(1, (clientX - centerX) / halfTrackPx));
+      const shaped = Math.sign(u) * (0.40 * Math.abs(u) + 0.60 * u * u);
+      this.state.steer = -shaped;   // core: +1 = left
+      if (force || Math.abs(u - lastU) >= 0.002 || Math.abs(u) === 1 || u === 0) {
+        lastU = u;
+        const dx = u * halfTrackPx;
+        knob.style.transform = `translate3d(calc(-50% + ${dx.toFixed(1)}px), -50%, 0)`;
+        fill.style.transform = `translate3d(0, -50%, 0) scaleX(${u.toFixed(4)})`;
+      }
+    };
+
     pad.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       if (id !== -1) return;
@@ -93,31 +120,29 @@ export class TouchControls {
       pad.setPointerCapture(id);
       this.state.active = true;
       this.actions.unlockAudio();
-      x0 = e.clientX;
-      lastDx = 0;
-      knob.style.left = `${e.clientX}px`;
-      knob.style.top = `${e.clientY - (innerHeight - pad.offsetHeight)}px`;
-      knob.style.transform = 'translate3d(-50%, -50%, 0)';
-      knob.classList.add('on');
+      const rect = pad.getBoundingClientRect();
+      const inset = knob.offsetWidth ? knob.offsetWidth / 2 + 2 : 28;
+      centerX = rect.left + rect.width / 2;
+      halfTrackPx = Math.max(1, rect.width / 2 - inset);
+      pad.classList.add('active');
+      applySteer(e.clientX, true);
     });
     pad.addEventListener('pointermove', (e) => {
       if (e.pointerId !== id) return;
-      const dx = Math.max(-STEER_RANGE_PX, Math.min(STEER_RANGE_PX, e.clientX - x0));
-      this.state.steer = -dx / STEER_RANGE_PX;   // core: +1 = left
-      if (Math.abs(dx - lastDx) >= 1) {
-        lastDx = dx;
-        knob.style.transform = `translate3d(calc(-50% + ${dx.toFixed(0)}px), -50%, 0)`;
-      }
+      applySteer(e.clientX);
     });
     const release = (e: PointerEvent) => {
       if (e.pointerId !== id) return;
       id = -1;
+      lastU = 0;
       this.state.steer = 0;
+      pad.classList.remove('active');
       knob.style.transform = 'translate3d(-50%, -50%, 0)';
-      knob.classList.remove('on');
+      fill.style.transform = 'translate3d(0, -50%, 0) scaleX(0)';
     };
     pad.addEventListener('pointerup', release);
     pad.addEventListener('pointercancel', release);
+    pad.addEventListener('lostpointercapture', release);
 
     this.root.addEventListener('contextmenu', (e) => e.preventDefault());
   }

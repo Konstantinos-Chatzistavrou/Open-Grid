@@ -3008,7 +3008,7 @@ async function main() {
       hud.lapTotal = raceLaps();
       hud.show();
     }
-    if (wantsTouch()) enableTouch();
+    if (isTouch) enableTouch();
     audio.unlock();
     loadingSession = false;
     if (mode === 'online' && !rejoin) {
@@ -3439,7 +3439,7 @@ async function main() {
     zones.setVisible(true);
     raceNodes.setVisible(true);
     hud.show();
-    if (wantsTouch()) enableTouch();
+    if (isTouch) enableTouch();
     resetCar();
     ai.go();
     setState('race');

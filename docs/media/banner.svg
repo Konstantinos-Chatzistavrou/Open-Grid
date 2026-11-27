@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="1200" height="320" role="img" aria-label="Open Grid — Open-Source 240 Hz Motorsport Simulator">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a0c"/>
+      <stop offset="55%" stop-color="#111318"/>
+      <stop offset="100%" stop-color="#1a090b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="72%" cy="48%" r="48%">
+      <stop offset="0%" stop-color="#ff1111" stop-opacity="0.22"/>
+      <stop offset="65%" stop-color="#ff1111" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ff1111" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="redBar" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff1111"/>
+      <stop offset="60%" stop-color="#ff3333"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.7"/>
+    </linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M 48 0 L 0 0 0 48" fill="none" stroke="#ffffff" stroke-opacity="0.045" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <!-- Base Carbon Background -->
+  <rect width="1200" height="320" rx="14" fill="url(#bg)"/>
+  <rect width="1200" height="320" rx="14" fill="url(#grid)"/>
+  <rect width="1200" height="320" rx="14" fill="url(#glow)"/>
+
+  <!-- Subtle diagonal motorsport speed streaks -->
+  <path d="M 880 0 L 940 0 L 820 320 L 760 320 Z" fill="#ff1111" fill-opacity="0.05"/>
+  <path d="M 960 0 L 986 0 L 866 320 L 840 320 Z" fill="#ffffff" fill-opacity="0.03"/>
+
+  <!-- Emblem Mark (centered block with wordmark) -->
+  <g transform="translate(274, 86)">
+    <rect x="0" y="0" width="96" height="96" rx="14" fill="#14171e" stroke="#ffffff" stroke-opacity="0.16" stroke-width="1.5"/>
+    <path d="M 0 14 A 14 14 0 0 1 14 0 L 54 0 L 44 8 L 8 8 L 8 96 L 0 82 Z" fill="#ff1111" fill-opacity="0.18"/>
+    <!-- Closed italicized O + G motorsport crest -->
+    <path fill-rule="evenodd" d="M 20 26 L 48 26 L 39 74 L 11 74 Z M 28 36 L 23 64 L 31 64 L 36 36 Z" fill="#f5f7fa"/>
+    <path d="M 54 26 L 84 26 L 81 38 L 64 38 L 60 62 L 71 62 L 73 54 L 66 54 L 68 44 L 84 44 L 78 74 L 46 74 Z" fill="#ff1111"/>
+    <rect x="14" y="84" width="68" height="3" rx="1.5" fill="url(#redBar)"/>
+  </g>
+
+  <!-- OPEN GRID Wordmark -->
+  <text x="396" y="152" font-family="'Barlow Condensed', 'Arial Narrow', 'Impact', system-ui, sans-serif" font-size="82" font-weight="900" font-style="italic" letter-spacing="2" fill="#f5f7fa">OPEN <tspan fill="#ff1111">GRID</tspan></text>
+
+  <!-- Subtitle stripe + descriptor -->
+  <rect x="398" y="168" width="44" height="4" rx="2" fill="#ff1111"/>
+  <rect x="448" y="168" width="22" height="4" rx="2" fill="#f5f7fa" fill-opacity="0.85"/>
+  <rect x="476" y="168" width="12" height="4" rx="2" fill="#8e96a4"/>
+  <text x="500" y="175" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="700" letter-spacing="3.2" fill="#b8c0ce">OPEN-SOURCE 240 HZ MOTORSPORT SIM</text>
+
+  <!-- Feature ticker bar -->
+  <text x="600" y="254" text-anchor="middle" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="600" letter-spacing="3.0" fill="#8e96a4">RACE IN YOUR BROWSER  ·  WEBGPU &amp; UE 5.8  ·  C++20 PHYSICS  ·  25 CARS  ·  REAL-SCALE CITIES</text>
+
+  <!-- Bottom precision accent line -->
+  <rect x="0" y="314" width="480" height="6" fill="#ff1111"/>
+  <rect x="480" y="314" width="720" height="6" fill="#ffffff" fill-opacity="0.16"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="318.5" rx="13.5" fill="none" stroke="#ffffff" stroke-opacity="0.10" stroke-width="1.5"/>
+</svg>

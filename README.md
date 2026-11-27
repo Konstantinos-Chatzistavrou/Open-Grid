@@ -1,28 +1,52 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/media/logo/open-grid-logo-transparent.svg">
-    <img alt="Open Grid" src="docs/media/logo/open-grid-logo-light.svg" width="220">
-  </picture>
+  <a href="https://open-grid.racing/">
+    <img src="docs/media/banner.svg" alt="Open Grid — Open-Source 240 Hz Motorsport Simulator" width="100%" />
+  </a>
 </p>
 
-# Open Grid
+<p align="center">
+  <strong>
+    <a href="https://open-grid.racing/">&#9654; Play in your browser</a>
+    &nbsp;&middot;&nbsp;
+    <a href="https://discord.gg/RhKdTvAdf">Discord</a>
+    &nbsp;&middot;&nbsp;
+    <a href="https://youtube.com/@open_grid_motorsport">YouTube</a>
+    &nbsp;&middot;&nbsp;
+    <a href="#highlights--architecture">Highlights</a>
+    &nbsp;&middot;&nbsp;
+    <a href="#quick-start">Quick Start</a>
+    &nbsp;&middot;&nbsp;
+    <a href="#controls-wheels--force-feedback">Controls</a>
+    &nbsp;&middot;&nbsp;
+    <a href="docs/ue5_roadmap.md">Unreal Engine 5.8</a>
+    &nbsp;&middot;&nbsp;
+    <a href="#licence">Licence</a>
+  </strong>
+</p>
 
-Open-source, non-profit street & circuit racing simulator built around an engine-independent **C++20 vehicle physics core (`core/`)** targeting **Unreal Engine 5.8** natively, with a full playable **WebGPU + WebAssembly** browser build (`web/`) and a **$0/month Cloudflare Workers + D1** competitive online network (`cloud/`).
+<p align="center">
+  <a href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Konstantinos-Chatzistavrou/Open-Grid/ci.yml?branch=main&style=flat-square&label=CI" alt="CI Status" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0%20%2F%20CC%20BY--NC-181c24?style=flat-square" alt="License" /></a>
+  <img src="https://img.shields.io/badge/physics-C%2B%2B20%20240%20Hz-ff1111?style=flat-square" alt="C++20 240 Hz Physics" />
+  <img src="https://img.shields.io/badge/browser-Three.js%20WebGPU%20%2B%20WASM-181c24?style=flat-square" alt="Three.js WebGPU + WASM" />
+  <img src="https://img.shields.io/badge/native-Unreal%20Engine%205.8-181c24?style=flat-square" alt="Unreal Engine 5.8" />
+  <a href="https://discord.gg/RhKdTvAdf"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
+  <a href="https://github.com/sponsors/Konstantinos-Chatzistavrou"><img src="https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-ea4aaa?style=flat-square&logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" /></a>
+</p>
 
-**[Play live at open-grid.racing](https://open-grid.racing/)** · **[Discord Community](https://discord.gg/RhKdTvAdf)** · **[Official YouTube (@open_grid_motorsport)](https://youtube.com/@open_grid_motorsport)** · **[Sponsor on GitHub](https://github.com/sponsors/Konstantinos-Chatzistavrou)**
+<p align="center">
+  <em>Open-source, non-profit street &amp; circuit racing simulator built around an engine-independent <strong>C++20 vehicle physics core (<code>core/</code>)</strong> targeting <strong>Unreal Engine 5.8</strong> natively, with a playable <strong>WebGPU + WebAssembly</strong> browser build (<code>web/</code>) and a <strong>100% free Cloudflare Workers + D1</strong> competitive online network (<code>cloud/</code>).</em>
+</p>
+
+<p align="center">
+  <a href="https://open-grid.racing/">
+    <img src="docs/media/hero_gameplay.jpg" alt="Open Grid — Midnight rain street racing in 1:1 New York Midtown" width="100%" />
+  </a>
+</p>
 
 Desktop Chrome or Edge recommended (keyboard, controller, or force-feedback wheel); phones and tablets get the same game in a lighter touch mode ([docs/platforms.md](docs/platforms.md)).
 
 > **An independent open-source hobby project.** Built for the love of racing and maintained in spare time: free, non-profit, ad-free. Issues and pull requests are welcome and are read when time allows; online services are best-effort. Details in [docs/MAINTENANCE.md](docs/MAINTENANCE.md).
-
-<!-- Media: drop the files into docs/media/ (shot list: docs/media/SHOTLIST.md), then delete this comment's markers.
-[![30-second gameplay video](docs/media/trailer_poster.jpg)](docs/media/trailer.mp4)
-
-| | |
-|---|---|
-| ![Night race through the city](docs/media/shot_city_night.jpg) | ![Cockpit view at speed](docs/media/shot_cockpit.jpg) |
-| ![Crash damage](docs/media/shot_damage.jpg) | ![Telemetry and tyre temperatures](docs/media/shot_telemetry.jpg) |
--->
 
 ---
 
@@ -30,7 +54,7 @@ Desktop Chrome or Edge recommended (keyboard, controller, or force-feedback whee
 
 | Pillar | What Is Shipped Today |
 |---|---|
-| **C++20 Physics Core (`core/`)** | Engine-independent `rs_core` (130 CTests, GCC + MSVC + WASM): Pacejka MF 5.2/6.1 tyres with 24-node deformable carcass ring, 3-zone tyre thermals & pressure, 16-point contact patch, explicit 3D double-wishbone/MacPherson suspension kinematics, per-car transmissions (`manual`, `dct`, `auto_tc`, `sequential`), physics-up Controller Steering Filter (`Off/Sim/Assisted`, wheels always 1:1) & Corner Braking Assist (`Off/Low/High`), driveline torsional compliance, aero/active aero (DRS & airbrake on declared cars), brake thermals/boil, fuel load, dynamic weather, per-panel crash damage, FIA Race Control (`race_control.cpp`), server-authoritative anti-cheat (`authority.cpp`), and race AI (`125/125` laps on track across all 25 cars × 5 circuits). See **[docs/physics.md](docs/physics.md)** and **[docs/validation.md](docs/validation.md)**. |
+| **C++20 Physics Core (`core/`)** | Engine-independent `rs_core` (131 CTests, GCC + MSVC + WASM): Pacejka MF 5.2/6.1 tyres with 24-node deformable carcass ring, 3-zone tyre thermals & pressure, 16-point contact patch, explicit 3D double-wishbone/MacPherson suspension kinematics, per-car transmissions (`manual`, `dct`, `auto_tc`, `sequential`), physics-up Controller Steering Filter (`Off/Sim/Assisted`, wheels always 1:1) & Corner Braking Assist (`Off/Low/High`), driveline torsional compliance, aero/active aero (DRS & airbrake on declared cars), brake thermals/boil, fuel load, dynamic weather, per-panel crash damage, FIA Race Control (`race_control.cpp`), server-authoritative anti-cheat (`authority.cpp`), and Neural Driver + Frenet quintic race AI (`125/125` laps on track across all 25 cars × 5 circuits). See **[docs/physics.md](docs/physics.md)** and **[docs/validation.md](docs/validation.md)**. |
 | **Unreal Engine 5.8 Target (`ue5/`, `ue5_plugin/`)** | Native `OpenGridPhysics` plugin (`UOpenGridVehicleComponent`, `AsyncVehicleBridge` @ 400–1000 Hz, single-unit `RsCoreUnity.cpp` verified on Windows MSVC every push), `AOpenGridCarPawn`, customization/damage/MetaSound/race/online C++ components, 1-click Editor importer (`tools/ue5/ue5_import_all.py`), 3D Tokyo Night LUTs, and Nanite high-poly car & 14-part modular GLB exporters. See **[docs/ue5_roadmap.md](docs/ue5_roadmap.md)** and **[docs/ue5_first_session.md](docs/ue5_first_session.md)**. |
 | **WebGPU Browser Build (`web/`)** | Three.js r187 (WebGPU with automatic WebGL 2 fallback), Rapier 3D rigid bodies, WebAssembly `rs_core.wasm`, 25 de-branded cars, 5 real-scale 1:1 cities (NYC Midtown, London, Paris, Tokyo, LA), destructible street furniture & building breaches, tactical police AI, 2-player local Split-Screen, Walkable Garage, CS2-style live Auction House, 4K Photo Mode (`[P]`), 5-minute Cinematic Replay (`[T]`), and client-side Race Spotter. |
 | **Live A/B Audio Engine** | Switch live in **Settings** or **Garage** between **43 ear-verified real recorded CC BY 3.0 supercar stems** (Corvette Z06, Mustang, Ferrari 458/F12/812, GT3, Huracán, GT-R, Supra, RX-7, etc.) and our **Thermodynamic Engine-Sim + 192-Tap Exhaust Muffler IR** WebAssembly synth (`engine_audio.cpp`), plus UE 5.8 MetaSound stems (`docs/ue5_audio_metasounds.md`). |
@@ -179,10 +203,10 @@ Every push and scheduled run validates the codebase automatically:
 
 | Path | Description |
 |---|---|
-| `core/` | Engine-independent C++20 physics, race control, audio DSP, AI, anti-cheat verifier (`opengrid_replay_verifier`), and 128 CTests |
+| `core/` | Engine-independent C++20 physics, race control, audio DSP, Neural Driver AI, anti-cheat verifier (`opengrid_replay_verifier`), and 131 CTests |
 | `ue5/` & `ue5_plugin/` | Unreal Engine 5.8 project shell, `OpenGridPhysics` C++ plugin (`RsCoreUnity.cpp`), pawn/audio/damage/online components |
 | `web/` | Playable browser client: Three.js r187 WebGPU/WebGL 2, Rapier 3D, WASM bridge (`web/wasm/`), PeerJS P2P voice & poses, Race Spotter |
-| `cloud/` | Live Cloudflare Workers + D1 + Durable Objects backend (auth, Patreon webhooks/OAuth2, DR/SR, SOF splits, championships, protests, hotlaps, teams, leagues) |
+| `cloud/` | Live Cloudflare Workers + D1 + Durable Objects backend (auth + 2FA TOTP, Google/GitHub/Discord OAuth2, DR/SR, SOF splits, championships, hotlaps, teams, leagues) |
 | `packages/vehicle-physics/` | Standalone `open-grid-physics` WebAssembly npm package & headless Bot API |
 | `server/` | Optional self-hosted services: PeerJS signaling broker and the big Free Roam room server (`rooms.js`) |
 | `data/` | Engine-neutral JSON car physics (25 cars), tyres, validation datasets, UE5 DataTables/LUTs, i18n string tables |
@@ -198,7 +222,7 @@ Every push and scheduled run validates the codebase automatically:
 - **[docs/ue5_roadmap.md](docs/ue5_roadmap.md)** & **[docs/ue5_first_session.md](docs/ue5_first_session.md)** — UE 5.8 migration boundary & 1-click Editor import guide
 - **[docs/ue5_audio_metasounds.md](docs/ue5_audio_metasounds.md)** — MetaSounds patch wiring & 48 kHz/24-bit audio stems
 - **[docs/MODDING.md](docs/MODDING.md)** & **[docs/adding_a_car.md](docs/adding_a_car.md)** — Open car modding pipeline & validator
-- **[cloud/README.md](cloud/README.md)** & **[docs/design/multiplayer-anti-cheat.md](docs/design/multiplayer-anti-cheat.md)** — Online backend API, Patreon setup, capacity math & anti-cheat
+- **[cloud/README.md](cloud/README.md)** & **[docs/design/multiplayer-anti-cheat.md](docs/design/multiplayer-anti-cheat.md)** — Online backend API, OAuth2/2FA security, capacity math & anti-cheat
 - **[docs/MAINTENANCE.md](docs/MAINTENANCE.md)** — What to expect from this hobby project: support, online services, accounts, what is not promised
 - **[docs/COSTS.md](docs/COSTS.md)** & **[docs/self_hosting.md](docs/self_hosting.md)** — What the project runs on (free plans, the domain is the only recurring cost) and how to host a big Free Roam server yourself
 - **[docs/PROJECT_MEMORY.md](docs/PROJECT_MEMORY.md)** — Developer handoff & operational architecture reference
