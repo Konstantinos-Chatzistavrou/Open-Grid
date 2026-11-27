@@ -8,7 +8,7 @@ Every car consists of three engine-agnostic files that work identically in the W
 
 | File | Purpose |
 |---|---|
-| `data/cars/<car_id>.json` | Physics specification (`schema: "car/1"`): mass, CG, inertia, Pacejka MF 6.2 tires, suspension rates/kinematics, torque curve, gearbox ratios, aero CdA/ClA (optional `aero.drs` / `aero.airbrake` booleans, default false: only a car with a real active rear wing sets them). |
+| `data/cars/<car_id>.json` | Physics specification (`schema: "car/1"`): mass, CG, inertia, Pacejka Magic Formula tires (MF 5.2 base, MF 6.1/6.2 extensions), suspension rates/kinematics, torque curve, gearbox ratios, aero CdA/ClA (optional `aero.drs` / `aero.airbrake` booleans, default false: only a car with a real active rear wing sets them). |
 | `data/cars/<car_id>.visual.json` | Visual & hitbox contract: `.glb` path, collision box (`size_m`, `centre_in_model_m`), wheel node names, headlight/taillight slots, driver seat coordinates. |
 | `web/public/assets/cars/v3/<car_id>.glb` | Clean triangulated glTF/GLB mesh (real-world metres, `+Z` forward, `+Y` up) with standard material slots (`paint_body`, `glass`, `trim_dark`, `chrome`, `caliper`). |
 

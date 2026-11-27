@@ -108,7 +108,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
 
   const renderOverview = () => `
     <div class="mc-cards">
-      <div class="mc-card"><span class="mc-k">01 · PHYSICS</span><b>400 Hz C++20 Sim Core</b><p>Pacejka MF 6.2 tyres with 3-zone thermals, 3D suspension kinematics, active aero &amp; WebHID wheel force feedback.</p></div>
+      <div class="mc-card"><span class="mc-k">01 · PHYSICS</span><b>400 Hz C++20 Sim Core</b><p>Pacejka Magic Formula tyres (MF 5.2 + 6.1/6.2 extensions) with 3-zone thermals, 3D suspension kinematics, active aero &amp; WebHID wheel force feedback.</p></div>
       <div class="mc-card"><span class="mc-k">02 · WORLD</span><b>18 Real-Scale 1:1 Cities</b><p>New York, Tokyo, London, Paris, Singapore, Chicago, Madrid, Crete Imbros Pass &amp; more — zero U-turn street circuits.</p></div>
       <div class="mc-card"><span class="mc-k">03 · ONLINE</span><b>Free Community Splits &amp; DR/SR</b><p>Glicko-2 Driver Rating, Automated Fault-Aware Safety Rating (0x Victim Shield), License Ladder (R → PRO) &amp; Global Hotlaps.</p></div>
       <div class="mc-card"><span class="mc-k">04 · STREETS</span><b>Speed-Cam Cops &amp; Street Radio</b><p>Roadside radar cameras dispatch CH-04 police scanner pursuits, GPS roadblock reroutes &amp; 5 km proximity CB radio.</p></div>
