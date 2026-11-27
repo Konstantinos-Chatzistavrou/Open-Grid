@@ -8,6 +8,8 @@ import type { Custom } from './custom-data';
 
 export type LicenseClass = 'R' | 'D' | 'C' | 'B' | 'A' | 'PRO';
 export type SubTier = 'none' | 'trial' | 'pro' | 'team_pro';
+export type OAuthProvider = 'google' | 'github' | 'discord';
+export interface OAuthProvidersStatus { google: boolean; github: boolean; discord: boolean }
 
 export interface Profile {
   id: string; name: string; username: string | null; usernameAt: number | null; xp: number; credits: number;
@@ -48,9 +50,26 @@ export interface Friends { friends: Friend[]; incoming: string[]; outgoing: stri
 export class Cloud {
   readonly base = BASE;
   private acct: { id: string; token: string } | null = null;
+  /** Set when returning from a 1-click Google / GitHub / Discord OAuth redirect (#og_auth=...). */
+  oauthSignedInProvider: OAuthProvider | null = null;
 
   constructor() {
     try { const s = JSON.parse(localStorage.getItem(KEY) ?? 'null'); if (s?.id && s?.token) this.acct = s; } catch { /* blocked */ }
+    this.consumeOAuthHash();
+  }
+
+  private consumeOAuthHash() {
+    if (typeof location === 'undefined' || !location.hash || !location.hash.includes('og_auth=')) return;
+    try {
+      const params = new URLSearchParams(location.hash.slice(1));
+      const code = params.get('og_auth') ?? '';
+      const prov = params.get('og_provider') ?? '';
+      if (this.restore(code)) {
+        if (prov === 'google' || prov === 'github' || prov === 'discord') this.oauthSignedInProvider = prov;
+      }
+      // Immediately strip credentials from the URL bar so tokens never linger in browser history!
+      history.replaceState(null, '', location.pathname + location.search);
+    } catch { /* ignore */ }
   }
   get available() { return !!this.base; }
   get id() { return this.acct?.id ?? ''; }
@@ -105,6 +124,25 @@ export class Cloud {
     }
     this.acct = null;
     try { localStorage.removeItem(KEY); } catch { /* blocked */ }
+  }
+
+  /** Discover which 1-click OAuth providers (Google, GitHub, Discord) are active on the cloud server. */
+  async authProviders(): Promise<OAuthProvidersStatus> {
+    if (!this.base) return { google: false, github: false, discord: false };
+    try {
+      const r = await fetch(`${this.base}/v1/auth/providers`);
+      if (!r.ok) return { google: false, github: false, discord: false };
+      const j = await r.json() as Partial<OAuthProvidersStatus>;
+      return { google: Boolean(j.google), github: Boolean(j.github), discord: Boolean(j.discord) };
+    } catch {
+      return { google: false, github: false, discord: false };
+    }
+  }
+
+  /** Start a 1-click Google / GitHub / Discord OAuth login (automatically upgrades current guest account in-place!). */
+  async startOAuth(provider: OAuthProvider, returnTo = `${location.origin}${location.pathname}${location.search}`): Promise<string> {
+    const j = await this.call<{ url: string }>('POST', `/v1/auth/oauth/${provider}/start`, { returnTo }, true);
+    return j.url;
   }
 
   me() { return this.call<Profile>('GET', '/v1/me'); }

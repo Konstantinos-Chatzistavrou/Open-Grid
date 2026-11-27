@@ -21,6 +21,13 @@ export interface Env {
   /** Minimum monthly pledge in USD cents for OpenGrid Pro (default 500 = $5) and Team Pro (default 1000 = $10) */
   PATREON_PRO_CENTS?: string;
   PATREON_TEAM_CENTS?: string;
+  /** Optional 1-click OAuth2 sign-in providers (buttons auto-hide in UI until secrets are configured) */
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  DISCORD_CLIENT_ID?: string;
+  DISCORD_CLIENT_SECRET?: string;
   ALLOWED_ORIGINS?: string;
   /** local tests only (.dev.vars): honour the x-test-ip header to simulate players on different networks */
   ALLOW_TEST_IP?: string;

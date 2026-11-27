@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { emailError, hashPassword, hmacSha256Hex, normalizeEmail, passwordError, timingSafeEqualHex, verifyPassword } from '../src/auth.ts';
 import { hmacMd5Hex, md5Hex, parsePatreonIdentity, parsePatreonWebhook } from '../src/patreon.ts';
+import { buildOAuthAuthorizeUrl, enabledOAuthProviders, sanitizeReturnTo } from '../src/oauth.ts';
 import {
   OFFICIAL_SERIES, TRIAL_DURATION_MS, applyDropWeeks, calcChampionshipPoints,
   computeRestorativeVerdict, computeSof, driverGradeOf, evaluateSafetyAndLicense,
@@ -205,6 +206,26 @@ await test('Restorative Protest refunds 100% of lost victim DR & SR and quaranti
   assert.equal(v.offenderQuarantine, true);
   assert.equal(v.offenderStrike, true);
   assert.equal(v.offenderSrPenalty, 0.75);
+});
+
+// 7. 1-Click OAuth2 Sign-In (Google / GitHub / Discord) + Open-Redirect Guard
+await test('OAuth2 provider discovery, authorize URLs, and safe returnTo allowlist (including UE 5.8)', () => {
+  const none = enabledOAuthProviders({});
+  assert.deepEqual(none, { google: false, github: false, discord: false });
+  const partial = enabledOAuthProviders({ GOOGLE_CLIENT_ID: 'g1', GOOGLE_CLIENT_SECRET: 's1', GITHUB_CLIENT_ID: 'gh1' });
+  assert.deepEqual(partial, { google: true, github: false, discord: false });
+
+  assert.equal(sanitizeReturnTo('https://open-grid.racing/'), 'https://open-grid.racing/');
+  assert.equal(sanitizeReturnTo('opengrid://auth'), 'opengrid://auth');
+  assert.equal(sanitizeReturnTo('https://evil.example.com/phish'), 'https://open-grid.racing/');
+  assert.equal(sanitizeReturnTo('https://open-grid.racing/#old_hash'), 'https://open-grid.racing/');
+
+  const gUrl = buildOAuthAuthorizeUrl('google', 'cid_g', 'https://api.open-grid.racing/v1/auth/oauth/google/callback', 'st1');
+  assert.ok(gUrl.startsWith('https://accounts.google.com/o/oauth2/v2/auth?') && gUrl.includes('openid+email+profile'));
+  const ghUrl = buildOAuthAuthorizeUrl('github', 'cid_gh', 'https://api.open-grid.racing/v1/auth/oauth/github/callback', 'st2');
+  assert.ok(ghUrl.startsWith('https://github.com/login/oauth/authorize?') && ghUrl.includes('user%3Aemail'));
+  const dUrl = buildOAuthAuthorizeUrl('discord', 'cid_d', 'https://api.open-grid.racing/v1/auth/oauth/discord/callback', 'st3');
+  assert.ok(dUrl.startsWith('https://discord.com/api/oauth2/authorize?') && dUrl.includes('identify+email'));
 });
 
 console.log(`\nALL ${passed} OpenGrid Competitive Online Moat tests PASSED`);

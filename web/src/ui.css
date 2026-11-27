@@ -1538,3 +1538,12 @@ body.mobile-companion-mode #view, body.mobile-companion-mode #hud, body.mobile-c
   font: 600 11.5px/1.2 var(--text); text-decoration: underline; padding: 6px 8px;
 }
 #mobile-companion .mc-escape:hover { color: #fff; }
+#mobile-companion .mc-oauth-col { display: flex; flex-direction: column; gap: 7px; margin: 10px 0 4px; }
+
+/* ---- 1-Click OAuth Provider Buttons (Google / GitHub / Discord) ---- */
+.og-oauth.google { background: #ffffff !important; color: #0a0a0a !important; border-color: #ffffff !important; }
+.og-oauth.google:hover:not(:disabled) { background: #e5e7eb !important; }
+.og-oauth.github { background: #1c2128 !important; color: #f5f7fa !important; border-color: #ffffff44 !important; }
+.og-oauth.github:hover:not(:disabled) { background: #2d333b !important; border-color: #fff !important; }
+.og-oauth.discord { background: #5865f2 !important; color: #ffffff !important; border-color: #5865f2 !important; }
+.og-oauth.discord:hover:not(:disabled) { background: #4752c4 !important; }

@@ -23,6 +23,7 @@ import { cleanCustom } from '../../web/src/custom-data';
 import { usernameError } from '../../web/src/username';
 import { emailError, hashPassword, hmacSha256Hex, normalizeEmail, passwordError, timingSafeEqualHex, verifyPassword } from './auth';
 import { DEFAULT_PRO_MIN_CENTS, DEFAULT_TEAM_MIN_CENTS, hmacMd5Hex, parsePatreonIdentity, parsePatreonWebhook } from './patreon';
+import { buildOAuthAuthorizeUrl, enabledOAuthProviders, exchangeOAuthCode, isOAuthProvider, oauthCreds, sanitizeReturnTo } from './oauth';
 import { paceOf } from './pace';
 import {
   OFFICIAL_SERIES, TRIAL_DURATION_MS, computeRestorativeVerdict, currentSeasonId,
@@ -221,6 +222,134 @@ async function route(req: Request, env: Env): Promise<Response> {
     ]);
     const fresh = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(id).first<AccountRow>();
     return json({ id, token, upgraded: false, profile: profileOf(fresh!) });
+  }
+
+  // ---- Public OAuth2 Provider Discovery (UI only shows buttons for configured providers) ----
+  if (path === '/v1/auth/providers' && req.method === 'GET') {
+    return json(enabledOAuthProviders(env));
+  }
+
+  // ---- Start 1-Click OAuth2 Login (Google / GitHub / Discord) ----
+  // Authenticated callers pass their guest Bearer token so their existing guest account upgrades in-place!
+  const oauthStartMatch = /^\/v1\/auth\/oauth\/(google|github|discord)\/start$/.exec(path);
+  if (oauthStartMatch && req.method === 'POST') {
+    const provider = oauthStartMatch[1];
+    if (!isOAuthProvider(provider)) return json({ error: 'unsupported provider' }, 400);
+    const creds = oauthCreds(provider, env);
+    if (!creds) return json({ error: `${provider} sign-in is not configured yet.` }, 503);
+    const body = await req.json<{ returnTo?: string }>().catch(() => ({ returnTo: undefined }));
+    const returnTo = sanitizeReturnTo(body.returnTo);
+    const existing = await accountOf(req, env);
+    const guestId = existing && !existing.email ? existing.id : '';
+    const exp = Date.now() + 10 * 60_000;
+    const payloadStr = `${provider}|${guestId}|${returnTo}|${exp}`;
+    const payloadB64 = btoa(payloadStr).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const secret = `${creds.clientSecret}|${env.IP_SALT ?? 'opengrid-oauth'}`;
+    const sig = await hmacSha256Hex(secret, payloadB64);
+    const state = `${payloadB64}.${sig}`;
+    const redirectUri = `${url.origin}/v1/auth/oauth/${provider}/callback`;
+    return json({ url: buildOAuthAuthorizeUrl(provider, creds.clientId, redirectUri, state) });
+  }
+
+  // ---- OAuth2 Callback (Google / GitHub / Discord) -> In-Place Guest Upgrade or Verified-Email Match ----
+  const oauthCbMatch = /^\/v1\/auth\/oauth\/(google|github|discord)\/callback$/.exec(path);
+  if (oauthCbMatch && req.method === 'GET') {
+    const provider = oauthCbMatch[1];
+    if (!isOAuthProvider(provider)) return new Response('Unsupported provider', { status: 400 });
+    const creds = oauthCreds(provider, env);
+    if (!creds) return new Response(`${provider} login is not configured.`, { status: 503 });
+
+    const code = url.searchParams.get('code') ?? '';
+    const state = url.searchParams.get('state') ?? '';
+    const [payloadB64, sig] = state.split('.');
+    const secret = `${creds.clientSecret}|${env.IP_SALT ?? 'opengrid-oauth'}`;
+    const expectedSig = payloadB64 ? await hmacSha256Hex(secret, payloadB64) : '';
+    if (!code || !payloadB64 || !sig || !timingSafeEqualHex(sig.toLowerCase(), expectedSig)) {
+      return new Response('Invalid or expired OpenGrid sign-in state. Please return to OpenGrid and try again.', { status: 400 });
+    }
+
+    let decoded = '';
+    try {
+      const b64 = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
+      decoded = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
+    } catch {
+      return new Response('Malformed sign-in state.', { status: 400 });
+    }
+    const [stProvider, guestId, rawReturnTo, expStr] = decoded.split('|');
+    if (stProvider !== provider || (Number(expStr) || 0) < Date.now()) {
+      return new Response('Sign-in link expired. Please return to OpenGrid and try again.', { status: 400 });
+    }
+    const returnTo = sanitizeReturnTo(rawReturnTo);
+    const redirectUri = `${url.origin}/v1/auth/oauth/${provider}/callback`;
+
+    let oauthUser;
+    try {
+      oauthUser = await exchangeOAuthCode(provider, creds.clientId, creds.clientSecret, code, redirectUri);
+    } catch {
+      return new Response(`Could not complete ${provider} sign-in. Return to OpenGrid and try again.`, { status: 502 });
+    }
+
+    const now = Date.now();
+    let targetId: string | null = null;
+
+    // 1. Exact existing link in oauth_identities
+    const linked = await env.DB.prepare('SELECT account_id FROM oauth_identities WHERE provider = ? AND provider_id = ?')
+      .bind(provider, oauthUser.providerId).first<{ account_id: string }>();
+    if (linked) targetId = linked.account_id;
+
+    // 2. Legacy accounts.provider / provider_id match
+    if (!targetId) {
+      const leg = await env.DB.prepare('SELECT id FROM accounts WHERE provider = ? AND provider_id = ?')
+        .bind(provider, oauthUser.providerId).first<{ id: string }>();
+      if (leg) targetId = leg.id;
+    }
+
+    // 3. Verified email match -> merges seamlessly onto the same OpenGrid profile (never duplicates!)
+    if (!targetId && oauthUser.email && oauthUser.emailVerified) {
+      const byEm = await byEmail(env, oauthUser.email);
+      if (byEm) targetId = byEm.id;
+    }
+
+    // 4. In-place upgrade of caller's active guest account (keeps 100% of cars, credits, DR/SR, builds!)
+    if (!targetId && guestId) {
+      const guest = await env.DB.prepare('SELECT id, email FROM accounts WHERE id = ?').bind(guestId).first<{ id: string; email: string | null }>();
+      if (guest && !guest.email) {
+        targetId = guest.id;
+        await env.DB.prepare(
+          'UPDATE accounts SET email = COALESCE(?, email), email_verified = CASE WHEN ? = 1 THEN 1 ELSE email_verified END, provider = COALESCE(provider, ?), provider_id = COALESCE(provider_id, ?) WHERE id = ?',
+        ).bind(oauthUser.emailVerified ? oauthUser.email : null, oauthUser.emailVerified ? 1 : 0, provider, oauthUser.providerId, targetId).run();
+      }
+    }
+
+    const newToken = randomId(32);
+    const tokHash = await sha256(newToken);
+
+    if (targetId) {
+      await env.DB.batch([
+        env.DB.prepare('UPDATE accounts SET token_hash = ?, seen = ?, email_verified = CASE WHEN ? = 1 THEN 1 ELSE email_verified END WHERE id = ?')
+          .bind(tokHash, now, oauthUser.emailVerified ? 1 : 0, targetId),
+        env.DB.prepare('INSERT OR REPLACE INTO oauth_identities (provider, provider_id, account_id, email, created) VALUES (?, ?, ?, ?, ?)')
+          .bind(provider, oauthUser.providerId, targetId, oauthUser.email, now),
+      ]);
+    } else {
+      // 5. Brand-new OpenGrid account with automatic 7-day Rookie Online Trial
+      const net = await netOf(req, env), today = day(now);
+      const id = randomId(12);
+      targetId = id;
+      const cleanDisp = oauthUser.displayName.replace(/[\u0000-\u001f<>#]/g, '').trim().slice(0, 16) || `Driver ${id.slice(0, 4).toUpperCase()}`;
+      await env.DB.batch([
+        env.DB.prepare(
+          'INSERT INTO accounts (id, token_hash, name, created, net, provider, provider_id, email, email_verified, sub_tier, sub_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ).bind(id, tokHash, cleanDisp, now, net, provider, oauthUser.providerId, oauthUser.emailVerified ? oauthUser.email : null, oauthUser.emailVerified ? 1 : 0, 'trial', now + TRIAL_DURATION_MS),
+        env.DB.prepare('INSERT OR REPLACE INTO oauth_identities (provider, provider_id, account_id, email, created) VALUES (?, ?, ?, ?, ?)')
+          .bind(provider, oauthUser.providerId, id, oauthUser.email, now),
+        env.DB.prepare('INSERT INTO signups (net, day, n) VALUES (?, ?, 1) ON CONFLICT (net, day) DO UPDATE SET n = n + 1').bind(net, today),
+      ]);
+    }
+
+    // Hand off credentials via URL hash fragment (never sent to servers or Referer logs!)
+    const dest = `${returnTo}#og_auth=${encodeURIComponent(`${targetId}.${newToken}`)}&og_provider=${provider}`;
+    return Response.redirect(dest, 302);
   }
 
   // ---- Real Email + Password Login (brute-force protected, rotates bearer token) ----

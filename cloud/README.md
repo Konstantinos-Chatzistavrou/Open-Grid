@@ -98,8 +98,16 @@ Required Cloudflare secrets (`wrangler secret put <NAME>`):
 
 Patreon activation (when your Patreon page is created):
 1. Set `PATREON_URL = "https://www.patreon.com/<your-page>"` in `wrangler.toml` `[vars]` (optional: `PATREON_PRO_CENTS = "500"`, `PATREON_TEAM_CENTS = "1000"`, `PATREON_CAMPAIGN_ID`).
-2. In Patreon Developer Portal → **Webhooks**, register `https://api.open-grid.racing/v1/patreon/webhook` for `members:pledge:create`, `members:pledge:update`, `members:pledge:delete`, then run `npx wrangler secret put PATREON_WEBHOOK_SECRET`.
-3. *(Optional OAuth2)* Register a Patreon OAuth Client with redirect URI `https://api.open-grid.racing/v1/patreon/callback`, set `PATREON_CLIENT_ID` in `wrangler.toml`, and run `npx wrangler secret put PATREON_CLIENT_SECRET`.
+2. In Patreon Developer Portal → **Webhooks**, register `https://opengrid.opengrid-racing.workers.dev/v1/patreon/webhook` (or `https://api.open-grid.racing/v1/patreon/webhook`) for `members:pledge:create`, `members:pledge:update`, `members:pledge:delete`, then run `npx wrangler secret put PATREON_WEBHOOK_SECRET`.
+3. *(Optional OAuth2)* Register a Patreon OAuth Client with redirect URI `https://opengrid.opengrid-racing.workers.dev/v1/patreon/callback`, set `PATREON_CLIENT_ID`, and run `npx wrangler secret put PATREON_CLIENT_SECRET`.
+
+### 1-Click OAuth2 Login (Google, GitHub & Discord — $0/mo, Zero Dependencies)
+Buttons automatically appear on **Desktop Profile** and the **Mobile Companion** as soon as each provider's secrets are configured via `wrangler secret put`:
+- **Google** (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`): Callback `https://opengrid.opengrid-racing.workers.dev/v1/auth/oauth/google/callback` (scopes: `openid email profile`)
+- **GitHub** (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`): Callback `https://opengrid.opengrid-racing.workers.dev/v1/auth/oauth/github/callback` (scopes: `read:user user:email`)
+- **Discord** (`DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`): Callback `https://opengrid.opengrid-racing.workers.dev/v1/auth/oauth/discord/callback` (scopes: `identify email`)
+
+All three support **in-place guest account upgrade** (keeps cars, credits, DR/SR) and **verified email matching** (same OpenGrid profile across Google, GitHub, Discord, Email+Password, and UE 5.8 via `opengrid://auth`).
 
 ---
 

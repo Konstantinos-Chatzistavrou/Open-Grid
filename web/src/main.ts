@@ -2217,6 +2217,15 @@ async function main() {
       menu.patreonInfo = sub;
       if (menu.screen === 'title' || menu.screen === 'lobby' || menu.screen === 'profile') menu.render();
     }).catch(() => {});
+    void cloud.authProviders().then((p) => {
+      menu.oauthProviders = p;
+      if (menu.screen === 'profile') menu.render();
+    }).catch(() => {});
+    if (cloud.oauthSignedInProvider) {
+      const pName = cloud.oauthSignedInProvider[0].toUpperCase() + cloud.oauthSignedInProvider.slice(1);
+      menu.authNote = `✓ Signed in with ${pName}!`;
+      void mp.refresh().then(() => { if (menu.screen === 'title' || menu.screen === 'profile') menu.render(); }).catch(() => {});
+    }
   }
   let pendingGarageInvite = false;
   {

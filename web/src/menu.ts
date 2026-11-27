@@ -13,7 +13,7 @@ import { FREE_ROAM_MAX_PLAYERS, RACE_MAX_PLAYERS, cleanCode, type GarageStateNet
 import type { ControlsUi } from './controls-menu';
 import { PRESET_INFO, applyPreset, assistsOffCount, matchPreset, type AssistSettings, type BrakingAssistLevel, type Preset, type SteeringAssistLevel } from './assists';
 import { fmt, fmtXp, type Career, type MpCareer, type SpCareer } from './career';
-import type { Cloud, Friend, OfficialSeriesEvent } from './cloud';
+import type { Cloud, Friend, OAuthProvider, OAuthProvidersStatus, OfficialSeriesEvent } from './cloud';
 import type { RankedResult } from './ranked';
 import { STARTER_CAR, levelOf } from './progression';
 import type { Loader } from './loading';
@@ -227,12 +227,13 @@ export class Menu {
   private friendNote = '';
   private authEmail = '';
   private authPass = '';
-  private authNote = '';
+  authNote = '';
   private authBusy = false;
   officialEvents: OfficialSeriesEvent[] = [];
   officialSeason = '';
   officialNote = '';
   patreonInfo: { patreonUrl?: string | null; patreonConnected?: boolean; patreonOAuthEnabled?: boolean; proMinUsd?: number; teamMinUsd?: number; daysLeft?: number } | null = null;
+  oauthProviders: OAuthProvidersStatus = { google: false, github: false, discord: false };
   lobbyTab: 'splits' | 'champs' | 'hotlaps' | 'leagues' = 'splits';
   champSeries = 'gt3_championship';
   champStandings: { account: string; name: string; license: string; dr: number; locked_car: string; points: number; starts: number; wins: number; podiums: number }[] = [];
@@ -1989,6 +1990,11 @@ export class Menu {
         break;
       case 'auth-register': void this.submitAuth('register'); break;
       case 'auth-login': void this.submitAuth('login'); break;
+      case 'auth-oauth': {
+        const prov = v as OAuthProvider;
+        if (prov === 'google' || prov === 'github' || prov === 'discord') void this.startOAuthLogin(prov);
+        break;
+      }
       case 'auth-logout': void this.submitLogout(); break;
       case 'music': this.musicOn = v === '1'; this.hooks.musicToggle?.(this.musicOn); this.render(); break;
       case 'audio-engine': {
@@ -2237,6 +2243,21 @@ export class Menu {
     this.render();
   }
 
+  private async startOAuthLogin(provider: OAuthProvider) {
+    if (this.authBusy) return;
+    this.authBusy = true;
+    this.authNote = `Connecting to ${provider[0].toUpperCase() + provider.slice(1)}…`;
+    this.render();
+    try {
+      const authUrl = await this.cloud.startOAuth(provider);
+      location.href = authUrl;
+    } catch (e) {
+      this.authNote = e instanceof Error ? e.message : `Could not start ${provider} login.`;
+      this.authBusy = false;
+      this.render();
+    }
+  }
+
   private profile() {
     const id = this.identity, f = id.friends, online = this.cloud.available;
     const mp = this.mp.profile;
@@ -2255,13 +2276,19 @@ export class Menu {
         <button class="small primary" data-act="friend-accept" data-v="${esc(u)}">Accept</button><button class="small" data-act="friend-remove" data-v="${esc(u)}">Decline</button></div>`).join('');
     const outgoing = f.outgoing.map((u) => `<div class="member"><div class="mtext"><div class="mname"><b>${esc(u)}</b></div><span class="dim">request sent</span></div>
         <button class="small" data-act="friend-remove" data-v="${esc(u)}">Cancel</button></div>`).join('');
+    const oauthBtns = [
+      this.oauthProviders.google ? `<button class="small og-oauth google" data-act="auth-oauth" data-v="google" ${this.authBusy ? 'disabled' : ''}>G · Continue with Google</button>` : '',
+      this.oauthProviders.github ? `<button class="small og-oauth github" data-act="auth-oauth" data-v="github" ${this.authBusy ? 'disabled' : ''}>⌥ · Continue with GitHub</button>` : '',
+      this.oauthProviders.discord ? `<button class="small og-oauth discord" data-act="auth-oauth" data-v="discord" ${this.authBusy ? 'disabled' : ''}>💬 · Continue with Discord</button>` : '',
+    ].filter(Boolean).join('');
     const authBlock = !online ? '<div class="dim note">Email login activates automatically once connected to the OpenGrid cloud backend.</div>'
       : mp?.email ? `<div class="opts" style="flex-wrap:wrap;gap:8px">
           <span class="pill gold">✓ SIGNED IN · ${esc(mp.email)}</span>
           <span class="pill">CLASS ${esc(mp.license ?? 'R')} · DR ${Math.round(mp.dr ?? 1500)} · SR ${(mp.sr ?? 2.5).toFixed(2)}</span>
           <button class="small" data-act="auth-logout" ${this.authBusy ? 'disabled' : ''}>Sign Out</button>
         </div>`
-      : `<p class="dim small-note">Save your career, cars, Driver Rating, License &amp; Online Pass across browsers and UE 5.8 (PBKDF2-SHA256 secured, upgrades your current guest account with zero progress lost).</p>
+      : `<p class="dim small-note">Save your career, cars, Driver Rating, License &amp; Online Pass across browsers and UE 5.8 (upgrades your current guest account in-place with zero progress lost).</p>
+        ${oauthBtns ? `<div class="chips" style="margin:8px 0 10px;gap:8px">${oauthBtns}</div>` : ''}
         <div class="joinrow" style="flex-wrap:wrap;gap:6px">
           <input id="auth-email" type="email" value="${esc(this.authEmail)}" placeholder="Email address" autocomplete="email" />
           <input id="auth-pass" type="password" value="${esc(this.authPass)}" placeholder="Password (8+ chars)" autocomplete="current-password" />

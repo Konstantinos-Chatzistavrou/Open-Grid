@@ -2,7 +2,7 @@
 // Loads in < 0.3s on phones WITHOUT downloading Three.js, Rapier, WASM, or city tiles (~15 KB vs ~8 MB).
 // Gives mobile visitors a sharp #0A0A0A / #FF1111 motorsport landing page plus live Cloudflare D1
 // Profile (DR/SR/License), Global Hotlaps, and Official Split Schedule, with a discreet opt-in to launch WebGPU.
-import { Cloud, type OfficialSeriesEvent, type Profile } from './cloud';
+import { Cloud, type OAuthProvider, type OAuthProvidersStatus, type OfficialSeriesEvent, type Profile } from './cloud';
 
 type TabId = 'overview' | 'hotlaps' | 'schedule' | 'profile';
 
@@ -50,16 +50,19 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
   const inviteParty = params.get('party');
   const inviteGarage = params.get('garage');
 
-  let tab: TabId = 'overview';
+  let tab: TabId = cloud.oauthSignedInProvider ? 'profile' : 'overview';
   let track = 'nyc';
   let copyStatus = '';
   let patreonUrl = '';
+  let oauthProviders: OAuthProvidersStatus = { google: false, github: false, discord: false };
   let hotlaps: { username: string; car: string; lap_ms: number }[] | null = null;
   let hotlapErr = '';
   let schedule: OfficialSeriesEvent[] | null = null;
   let scheduleErr = '';
   let profile: Profile | null = null;
-  let authMsg = '';
+  let authMsg = cloud.oauthSignedInProvider
+    ? `✓ Signed in with ${cloud.oauthSignedInProvider[0].toUpperCase() + cloud.oauthSignedInProvider.slice(1)}!`
+    : '';
   let authBusy = false;
 
   const fetchHotlaps = async () => {
@@ -87,7 +90,9 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
   };
 
   const loadAccountIfSignedIn = async () => {
-    if (!cloud.available || !cloud.id) return;
+    if (!cloud.available) return;
+    void cloud.authProviders().then((p) => { oauthProviders = p; render(); }).catch(() => {});
+    if (!cloud.id) return;
     try {
       profile = await cloud.me();
       const sub = await cloud.subscription().catch(() => null);
@@ -174,15 +179,21 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
         </div>
       </div>`;
     }
+    const oauthBtns = [
+      oauthProviders.google ? `<button type="button" class="mc-btn og-oauth google" data-oauth="google" ${authBusy ? 'disabled' : ''}>G · Continue with Google</button>` : '',
+      oauthProviders.github ? `<button type="button" class="mc-btn og-oauth github" data-oauth="github" ${authBusy ? 'disabled' : ''}>⌥ · Continue with GitHub</button>` : '',
+      oauthProviders.discord ? `<button type="button" class="mc-btn og-oauth discord" data-oauth="discord" ${authBusy ? 'disabled' : ''}>💬 · Continue with Discord</button>` : '',
+    ].filter(Boolean).join('');
     return `<div class="mc-section">
       <div class="mc-card">
         <span class="mc-k">OPENGRID CLOUD COMPANION</span>
         <b>Check Your DR, SR &amp; License</b>
-        <p>Sign in with your OpenGrid Email &amp; Password to check your live ratings, Patreon pass status, and career stats on mobile.</p>
+        <p>Sign in with Google, GitHub, Discord, or your OpenGrid Email &amp; Password to check your live ratings, Patreon pass status, and career stats on mobile.</p>
+        ${oauthBtns ? `<div class="mc-oauth-col">${oauthBtns}</div>` : ''}
         <form id="mc-login-form" class="mc-form">
           <input type="email" id="mc-email" placeholder="Email address" required autocomplete="email" />
           <input type="password" id="mc-pass" placeholder="Password" required autocomplete="current-password" />
-          <button type="submit" class="mc-btn primary" ${authBusy ? 'disabled' : ''}>${authBusy ? 'Signing In…' : 'Sign In to Profile'}</button>
+          <button type="submit" class="mc-btn primary" ${authBusy ? 'disabled' : ''}>${authBusy ? 'Signing In…' : 'Sign In with Email'}</button>
         </form>
         ${authMsg ? `<div class="mc-note">${esc(authMsg)}</div>` : ''}
       </div>
@@ -271,6 +282,20 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
       }
       render();
       setTimeout(() => { copyStatus = ''; render(); }, 2500);
+    });
+
+    root.querySelectorAll<HTMLButtonElement>('[data-oauth]').forEach((b) => {
+      b.onclick = async () => {
+        const prov = b.dataset.oauth as OAuthProvider;
+        if (!prov || authBusy) return;
+        authBusy = true; authMsg = `Redirecting to ${prov}…`; render();
+        try {
+          location.href = await cloud.startOAuth(prov);
+        } catch (err) {
+          authMsg = err instanceof Error ? err.message : `Could not start ${prov} sign-in.`;
+          authBusy = false; render();
+        }
+      };
     });
 
     root.querySelector('#mc-login-form')?.addEventListener('submit', async (e) => {
