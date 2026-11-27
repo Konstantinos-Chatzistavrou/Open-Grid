@@ -1,8 +1,8 @@
 // Apache-2.0 — Underground Street Radio Comms + Police Scanner (OpenGrid).
 // Gives both Race Events and Free Roam an authentic illegal street-racing radio feel:
-//   - Race Frequency (146.52 MHz · RACE FREQ): grid-wide street radio text + walkie-talkie squelch SFX
+//   - Race Frequency (146.52 MHz · RACE FREQ): grid-wide street radio text + neural CB voice clips + walkie-talkie squelch SFX
 //   - Free Roam Proximity Radio (146.52 MHz · 5.0 KM): strict 5,000 m distance filter with live signal bars & distance-scaled static
-//   - Police Scanner Intercept (CH-04 · 460.12 MHz): speed camera dispatch, pursuit callouts, & Web Speech filtered police radio
+//   - Police Scanner Intercept (CH-04 · 460.12 MHz): Motorola APX/MDC-1200 chirp, studio neural VHF voice clips, & clean TX queue
 
 export const FREE_ROAM_RADIO_RANGE_M = 5000;
 
@@ -31,13 +31,49 @@ export interface RadioCommsHooks {
   isDriving(): boolean;
 }
 
+interface RadioTxItem {
+  channel: 'police' | 'street';
+  clipId?: string;
+  text: string;
+  signal: number;
+  allowTtsFallback: boolean;
+}
+
 const MAX_LINES = 6;
+const MAX_QUEUED_TX = 2;
+
 const QUICK_CALLS = [
   '🚨 Cops behind us!',
   '📸 Watch the speed cam',
   '🚧 Roadblock ahead',
   '🏁 Clean run · GG',
 ];
+
+const KNOWN_CLIPS = new Set<string>([
+  // Police Dispatch
+  'cam_dispatch',
+  'cam_respot',
+  'roadblock_deploy',
+  'escaped',
+  // Police Interceptor
+  'patrol_spotted',
+  'unit_visual',
+  'intercept_ahead',
+  'pit_request',
+  'pit_contact',
+  'roadblock_cleared',
+  'high_speed',
+  'evading_gap',
+  'evading_los',
+  'reacquired',
+  'busted',
+  // Underground Street Crew / GPS
+  'street_cam_warn',
+  'street_rb_punch',
+  'street_rb_forming',
+  'street_rb_reroute',
+  'street_rb_cleared',
+]);
 
 function esc(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -48,6 +84,42 @@ function signalBars(sig: number): string {
   if (sig >= 0.52) return '▂▄▆░';
   if (sig >= 0.28) return '▂▄░░';
   return '▂░░░';
+}
+
+function resolveClipUrl(clipId: string): string {
+  const base = (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL || '/';
+  const norm = base.endsWith('/') ? base : `${base}/`;
+  return `${norm}assets/audio/radio/${clipId}.ogg`;
+}
+
+/** Automatic keyword -> clipId fallback when callers pass natural radio text without an explicit clipId. */
+function inferClipId(channel: 'police' | 'street', text: string): string | undefined {
+  if (channel === 'police') {
+    if (/10-15|ten-fifteen|in custody|immobilized|boxed in and stopped/i.test(text)) return 'busted';
+    if (/10-22|ten-twenty-two|cancel pursuit|return to patrol|stand down|terminated|slipped the net|evaded/i.test(text)) return 'escaped';
+    if (/visual re-?acquired|re-?acquired|got 'em|back in (hot )?pursuit/i.test(text)) return 'reacquired';
+    if (/lost visual|behind.*blocks|side streets|cooldown search/i.test(text)) return 'evading_los';
+    if (/out of visual|opening a gap|search pattern/i.test(text)) return 'evading_gap';
+    if (/contact!|pit engaged|keep 'em boxed/i.test(text)) return 'pit_contact';
+    if (/\bpit\b|rear quarter/i.test(text)) return 'pit_request';
+    if (/cleared.*roadblock|blew.*through.*roadblock|through the roadblock/i.test(text)) return 'roadblock_cleared';
+    if (/roadblock/i.test(text)) return 'roadblock_deploy';
+    if (/caught.*again|re-?engag|blew past camera/i.test(text)) return 'cam_respot';
+    if (/speed cam|camera.*tripped|clocked at/i.test(text)) return 'cam_dispatch';
+    if (/pulling away|pulling hard|topped out|high-?speed backup/i.test(text)) return 'high_speed';
+    if (/rolling out ahead|cut 'em off|cut them off|intersection/i.test(text)) return 'intercept_ahead';
+    if (/reckless|flying past|on 'em/i.test(text)) return 'patrol_spotted';
+    if (/10-4|ten-four|has visual|moving to intercept|lights and sirens/i.test(text)) return 'unit_visual';
+    return undefined;
+  }
+
+  // Underground street radio / GPS channel
+  if (/speed cam|tripped.*cam|scanners/i.test(text)) return 'street_cam_warn';
+  if (/punched through|bypass complete|past the roadblock|back on (the )?main/i.test(text)) return 'street_rb_cleared';
+  if (/reroute active|reroute locked|bypass route locked|swing (left|right|wide)/i.test(text)) return 'street_rb_reroute';
+  if (/punch through|top 3.*too close/i.test(text)) return 'street_rb_punch';
+  if (/roadblock forming|roadblock ahead|rerouting/i.test(text)) return 'street_rb_forming';
+  return undefined;
 }
 
 export class RadioComms {
@@ -67,6 +139,15 @@ export class RadioComms {
   private lastActivity = 0;
   private mode: 'race' | 'free' = 'free';
   private voiceMuted = false;
+
+  // Real neural-voice radio clip cache & non-overlapping transmission queue
+  private clipCache = new Map<string, AudioBuffer | null>();
+  private clipLoading = new Map<string, Promise<AudioBuffer | null>>();
+  private txQueue: RadioTxItem[] = [];
+  private txBusy = false;
+  private activeSource: AudioBufferSourceNode | null = null;
+  private txSessionGen = 0;
+  private nextTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private hooks: RadioCommsHooks) {
     this.mount();
@@ -232,28 +313,49 @@ export class RadioComms {
     return true;
   }
 
-  /** Street AI racer ambient chatter on the illegal race frequency. */
-  aiStreetRadio(callsign: string, text: string) {
-    this.playSquelch('rx', 0.85);
+  /** Street AI racer / GPS callout on the illegal race frequency (plays real neural CB voice clip when mapped). */
+  aiStreetRadio(callsign: string, text: string, clipId?: string) {
     this.push({
       channel: 'street',
       callsign,
       text,
-      signal: 0.85,
+      signal: 0.88,
       ts: Date.now(),
     });
+    const resolvedClip = (clipId && KNOWN_CLIPS.has(clipId)) ? clipId : inferClipId('street', text);
+    if (resolvedClip && !this.voiceMuted) {
+      this.enqueueTx({
+        channel: 'street',
+        clipId: resolvedClip,
+        text,
+        signal: 0.88,
+        allowTtsFallback: false,
+      });
+    } else {
+      this.playSquelch('rx', 0.85);
+    }
   }
 
-  /** Police Scanner Intercept (CH-04): plays VHF police repeater tone + static + dispatch voice. */
-  policeIntercept(unit: string, text: string, speak = true) {
-    this.playSquelch('police', 0.9);
+  /** Police Scanner Intercept (CH-04): queues Motorola repeater chirp + real neural VHF voice clip + trailing squelch. */
+  policeIntercept(unit: string, text: string, speak = true, clipId?: string) {
     this.push({
       channel: 'police',
       callsign: unit,
       text,
       ts: Date.now(),
     });
-    if (speak && !this.voiceMuted) this.speakPolice(text);
+    if (speak && !this.voiceMuted) {
+      const resolvedClip = (clipId && KNOWN_CLIPS.has(clipId)) ? clipId : inferClipId('police', text);
+      this.enqueueTx({
+        channel: 'police',
+        clipId: resolvedClip,
+        text,
+        signal: 0.92,
+        allowTtsFallback: true,
+      });
+    } else {
+      this.playSquelch('police', 0.9);
+    }
   }
 
   systemNotice(text: string) {
@@ -262,6 +364,7 @@ export class RadioComms {
 
   clearSession() {
     this.entries = [];
+    this.stopAllTransmissions();
     this.setPoliceScannerActive(false);
     this.closeInput();
     this.render();
@@ -271,6 +374,138 @@ export class RadioComms {
     if (!this.root) return;
     const quiet = !this.open && !this.policeActive && nowMs - this.lastActivity > 9500;
     this.root.classList.toggle('idle', quiet);
+  }
+
+  private stopAllTransmissions() {
+    this.txSessionGen++;
+    this.txQueue.length = 0;
+    this.txBusy = false;
+    if (this.nextTimer !== null) {
+      clearTimeout(this.nextTimer);
+      this.nextTimer = null;
+    }
+    if (this.activeSource) {
+      try {
+        this.activeSource.onended = null;
+        this.activeSource.stop();
+        this.activeSource.disconnect();
+      } catch { /* already stopped */ }
+      this.activeSource = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
+    }
+  }
+
+  private enqueueTx(item: RadioTxItem) {
+    // Drop stale queued transmissions if more than MAX_QUEUED_TX are backed up so radio stays snappy & live
+    while (this.txQueue.length >= MAX_QUEUED_TX) {
+      this.txQueue.shift();
+    }
+    this.txQueue.push(item);
+    // Warm-start fetch immediately so clip is decoded by the time the repeater chirp finishes
+    if (item.clipId) void this.loadClip(item.clipId);
+    if (!this.txBusy) void this.pumpQueue();
+  }
+
+  private async pumpQueue() {
+    if (this.txBusy) return;
+    const item = this.txQueue.shift();
+    if (!item) return;
+
+    const gen = this.txSessionGen;
+    this.txBusy = true;
+
+    const finish = () => {
+      if (gen !== this.txSessionGen) return;
+      this.activeSource = null;
+      this.playTrailingSquelch(item.channel, item.signal);
+      this.nextTimer = setTimeout(() => {
+        if (gen !== this.txSessionGen) return;
+        this.nextTimer = null;
+        this.txBusy = false;
+        void this.pumpQueue();
+      }, 150);
+    };
+
+    try {
+      // Load real neural .ogg clip first (fast from in-memory cache after first play)
+      const clipBuf = item.clipId ? await this.loadClip(item.clipId) : null;
+      if (gen !== this.txSessionGen) return;
+
+      // Opening Motorola MDC-1200 / PTT chirp bookend
+      const chirpDelayMs = item.channel === 'police' ? 145 : 80;
+      this.playSquelch(item.channel === 'police' ? 'police' : 'rx', item.signal);
+
+      if (clipBuf) {
+        const ctx = this.ensureAudio();
+        if (ctx) {
+          const startAt = ctx.currentTime + chirpDelayMs / 1000;
+          const src = ctx.createBufferSource();
+          src.buffer = clipBuf;
+
+          const gain = ctx.createGain();
+          gain.gain.value = item.channel === 'police' ? 0.90 : 0.84;
+
+          src.connect(gain).connect(ctx.destination);
+          this.activeSource = src;
+
+          let done = false;
+          const onDone = () => {
+            if (done) return;
+            done = true;
+            finish();
+          };
+          src.onended = onDone;
+          src.start(startAt);
+          return;
+        }
+      }
+
+      // Natural browser neural-voice fallback ONLY if .ogg unavailable or unmapped custom line
+      if (item.allowTtsFallback) {
+        setTimeout(() => {
+          if (gen !== this.txSessionGen) return;
+          this.speakNaturalFallback(item.text, finish);
+        }, chirpDelayMs);
+      } else {
+        finish();
+      }
+    } catch {
+      finish();
+    }
+  }
+
+  private loadClip(clipId: string): Promise<AudioBuffer | null> {
+    if (this.clipCache.has(clipId)) {
+      return Promise.resolve(this.clipCache.get(clipId) ?? null);
+    }
+    const inflight = this.clipLoading.get(clipId);
+    if (inflight) return inflight;
+
+    const p = (async () => {
+      try {
+        const ctx = this.ensureAudio();
+        if (!ctx) return null;
+        const resp = await fetch(resolveClipUrl(clipId));
+        if (!resp.ok) {
+          this.clipCache.set(clipId, null);
+          return null;
+        }
+        const arr = await resp.arrayBuffer();
+        const decoded = await ctx.decodeAudioData(arr);
+        this.clipCache.set(clipId, decoded);
+        return decoded;
+      } catch {
+        this.clipCache.set(clipId, null);
+        return null;
+      } finally {
+        this.clipLoading.delete(clipId);
+      }
+    })();
+
+    this.clipLoading.set(clipId, p);
+    return p;
   }
 
   private push(e: RadioEntry) {
@@ -317,7 +552,7 @@ export class RadioComms {
     }
   }
 
-  /** Procedural VHF/CB squelch, bandpass radio static, police repeater chirp, and GATSO speed camera flash beep. */
+  /** Procedural Motorola MDC-1200 / VHF squelch, bandpass radio static, repeater chirp, and GATSO speed camera flash beep. */
   playSquelch(kind: 'tx' | 'rx' | 'police' | 'flash', signalQuality = 1) {
     const ctx = this.ensureAudio();
     if (!ctx) return;
@@ -340,17 +575,17 @@ export class RadioComms {
         return;
       }
 
-      // Bandpass static hiss (louder when further away in 5 km Free Roam proximity)
+      // Bandpass carrier squelch burst (louder when further away in 5 km Free Roam proximity)
       if (this.noiseBuf) {
         const src = ctx.createBufferSource();
         src.buffer = this.noiseBuf;
         const bp = ctx.createBiquadFilter();
         bp.type = 'bandpass';
-        bp.frequency.value = kind === 'police' ? 1450 : 1750;
+        bp.frequency.value = kind === 'police' ? 1550 : 1750;
         bp.Q.value = 2.4;
         const ng = ctx.createGain();
-        const staticAmp = kind === 'police' ? 0.055 : 0.025 + (1 - Math.max(0, Math.min(1, signalQuality))) * 0.07;
-        const dur = kind === 'police' ? 0.16 : 0.095;
+        const staticAmp = kind === 'police' ? 0.048 : 0.024 + (1 - Math.max(0, Math.min(1, signalQuality))) * 0.065;
+        const dur = kind === 'police' ? 0.14 : 0.085;
         ng.gain.setValueAtTime(staticAmp, now);
         ng.gain.exponentialRampToValueAtTime(0.001, now + dur);
         src.connect(bp).connect(ng).connect(ctx.destination);
@@ -358,28 +593,35 @@ export class RadioComms {
         src.stop(now + dur + 0.01);
       }
 
-      // Repeater / Roger beep
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = kind === 'police' ? 'square' : 'sine';
       if (kind === 'police') {
-        // Classic two-tone police dispatch repeater chirp
-        osc.frequency.setValueAtTime(1120, now);
-        osc.frequency.setValueAtTime(1480, now + 0.06);
-        g.gain.setValueAtTime(0.04, now);
-        g.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+        // Authentic Motorola MDC-1200 PTT pre-ID FSK warble (1200/1800 Hz rapid digital chirp) + VHF repeater beep
+        const osc = ctx.createOscillator();
         const bp = ctx.createBiquadFilter();
         bp.type = 'bandpass';
-        bp.frequency.value = 1300;
-        bp.Q.value = 1.6;
+        bp.frequency.value = 1480;
+        bp.Q.value = 1.8;
+        const g = ctx.createGain();
+        osc.type = 'square';
+        const fskSteps = [1200, 1800, 1200, 1800, 1800, 1200, 1800, 1200];
+        for (let i = 0; i < fskSteps.length; i++) {
+          osc.frequency.setValueAtTime(fskSteps[i], now + i * 0.011);
+        }
+        // Short clean VHF repeater talk-permit tone right after MDC burst
+        osc.frequency.setValueAtTime(1520, now + 0.092);
+        g.gain.setValueAtTime(0.036, now);
+        g.gain.setValueAtTime(0.032, now + 0.09);
+        g.gain.exponentialRampToValueAtTime(0.0008, now + 0.145);
         osc.connect(bp).connect(g).connect(ctx.destination);
         osc.start(now);
-        osc.stop(now + 0.15);
+        osc.stop(now + 0.155);
       } else {
-        // Walkie-talkie PTT squelch tone
+        // Walkie-talkie / CB PTT squelch tone
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
         osc.frequency.setValueAtTime(kind === 'tx' ? 1320 : 940, now);
         osc.frequency.exponentialRampToValueAtTime(kind === 'tx' ? 1680 : 720, now + 0.055);
-        g.gain.setValueAtTime(0.045, now);
+        g.gain.setValueAtTime(0.042, now);
         g.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
         osc.connect(g).connect(ctx.destination);
         osc.start(now);
@@ -388,17 +630,85 @@ export class RadioComms {
     } catch { /* ignore audio errors */ }
   }
 
-  private speakPolice(text: string) {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  /** Crisp trailing Motorola PTT un-key click + short VHF squelch tail after a voice clip finishes. */
+  private playTrailingSquelch(channel: 'police' | 'street', signalQuality: number) {
+    const ctx = this.ensureAudio();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    try {
+      if (this.noiseBuf) {
+        const src = ctx.createBufferSource();
+        src.buffer = this.noiseBuf;
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = channel === 'police' ? 1900 : 1650;
+        bp.Q.value = 2.6;
+        const ng = ctx.createGain();
+        const amp = channel === 'police' ? 0.052 : 0.03 + (1 - Math.max(0, Math.min(1, signalQuality))) * 0.04;
+        ng.gain.setValueAtTime(amp, now);
+        ng.gain.exponentialRampToValueAtTime(0.0008, now + 0.095);
+        src.connect(bp).connect(ng).connect(ctx.destination);
+        src.start(now);
+        src.stop(now + 0.105);
+      }
+      // Subtle PTT release "kshh-tick" drop
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(channel === 'police' ? 980 : 840, now);
+      osc.frequency.exponentialRampToValueAtTime(420, now + 0.032);
+      g.gain.setValueAtTime(0.028, now);
+      g.gain.exponentialRampToValueAtTime(0.0008, now + 0.038);
+      osc.connect(g).connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.045);
+    } catch { /* ignore */ }
+  }
+
+  /** Natural-voice browser TTS fallback ONLY used if an .ogg clip fails to load or for custom unmapped lines. */
+  private speakNaturalFallback(text: string, onDone: () => void) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      onDone();
+      return;
+    }
+    let finished = false;
+    const done = () => {
+      if (finished) return;
+      finished = true;
+      onDone();
+    };
     try {
       const synth = window.speechSynthesis;
       if (synth.speaking) synth.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1.16;
-      u.pitch = 0.88;
-      u.volume = 0.78;
-      u.onend = () => this.playSquelch('rx', 0.7); // trailing roger static burst
+      const bestVoice = this.pickBestNaturalVoice(synth);
+      if (bestVoice) u.voice = bestVoice;
+      u.rate = 1.03;
+      u.pitch = 1.0;
+      u.volume = 0.80;
+      const safetyTimer = setTimeout(done, 8500);
+      u.onend = () => { clearTimeout(safetyTimer); done(); };
+      u.onerror = () => { clearTimeout(safetyTimer); done(); };
       synth.speak(u);
-    } catch { /* speech unavailable */ }
+    } catch {
+      done();
+    }
+  }
+
+  private pickBestNaturalVoice(synth: SpeechSynthesis): SpeechSynthesisVoice | null {
+    const voices = synth.getVoices?.() || [];
+    if (!voices.length) return null;
+    const patterns: RegExp[] = [
+      /Microsoft .* Online \(Natural\).*English/i,
+      /Google US English/i,
+      /\b(Samantha|Alex|Daniel|Ava|Allison|Serena)\b/i,
+    ];
+    for (const re of patterns) {
+      const hit = voices.find((v) => re.test(v.name));
+      if (hit) return hit;
+    }
+    return voices.find((v) => /^en[-_]US/i.test(v.lang))
+      ?? voices.find((v) => /^en/i.test(v.lang))
+      ?? null;
   }
 }

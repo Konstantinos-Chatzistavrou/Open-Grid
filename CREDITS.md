@@ -195,6 +195,12 @@ represents or is endorsed by any real manufacturer.
   Latin 400 / 500 / 700 woff2 from the `@fontsource/roboto` 5.3.0 package in `web/public/fonts/`, unmodified, licence text
   alongside. Used only for the in-car navigation screen.
 
+## Radio voice clips
+- **Police dispatch & street radio voice clips** (`web/public/assets/audio/radio/*.ogg`): generated with **Piper TTS**
+  (https://github.com/rhasspy/piper, MIT licence) using open-licensed `rhasspy/piper-voices` US English neural models
+  (`en_US-lessac-high`, `en_US-ryan-high`, `en_US-joe-medium`) and processed through a VHF/CB radio filter chain via
+  `tools/audio/generate_radio_voices.py`.
+
 - **Valenza Corsa V12** (`web/public/assets/cars/v5/valenza_corsa_hero.glb`): modified from "Custom 2023 Ferrari 812 Competizione" by Jumping Jax, https://sketchfab.com/3d-models/custom-2023-ferrari-812-competizione-cebbf16094464063a9b6e5e882bb4600, licensed CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: OEM marks, badges, plates and internal OEM names removed; subtle ~2.5% GTA 6-style proportional restyling applied; 3D OpenGrid brand crests added; unified clearcoat paint material, 4 axle-centered spinning wheels, decimated, WebP textures and meshopt compression (`tools/pipeline/sketchfab_gta6_blender.py`). Licence evidence: `assets_source/licenses/downloaded_cars_2026-11-22/valenza_corsa.json`. Real manufacturer trademarks are not used.
 
 - **Valenza Fiamma V8** (`web/public/assets/cars/v5/valenza_fiamma_hero.glb`): modified from "Ferrari 488 Pista Widebody" by Dev365TH, https://sketchfab.com/3d-models/ferrari-488-pista-widebody-16c28f5b3ed24991ac3d1208f4a8bc1f, licensed CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: OEM marks, badges, plates and internal OEM names removed; subtle ~2.5% GTA 6-style proportional restyling applied; 3D OpenGrid brand crests added; unified clearcoat paint material, 4 axle-centered spinning wheels, decimated, WebP textures and meshopt compression (`tools/pipeline/sketchfab_gta6_blender.py`). Licence evidence: `assets_source/licenses/downloaded_cars_2026-11-22/valenza_fiamma.json`. Real manufacturer trademarks are not used.

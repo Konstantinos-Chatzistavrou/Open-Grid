@@ -1543,7 +1543,6 @@ export class Menu {
       <button class="small" data-act="report-send" data-k="cheating" data-v="${esc(this.reportTarget)}">Suspected Cheating</button>
       <button class="small" data-act="report-cancel">Cancel</button></div>` : (this.protestNote ? `<div class="pnote ${this.protestNote.startsWith('✓') ? '' : 'bad'}">${esc(this.protestNote)}</div>` : '');
     const maintLines: string[] = [];
-    if (r.penaltySec && r.penaltySec > 0) maintLines.push(`⚠ Race Control Time Penalties: +${r.penaltySec.toFixed(1)}s added to finish time`);
     if (r.towFeeXp) maintLines.push(`🚛 Tow Truck Fee (Totaled): -${r.towFeeXp} XP${r.insured ? ' (50% Insured)' : ''}`);
     if (r.damagePct && r.damagePct > 0) maintLines.push(`🔧 Saved Car Damage: ${r.damagePct}% · Est. Repair ${r.repairBillXp ?? 0} XP${r.insured ? ' (-50% Insured)' : ''} — repair in Garage`);
     const maintHtml = maintLines.length ? `<div class="pnote bad">${maintLines.map(esc).join('<br>')}</div>` : '';

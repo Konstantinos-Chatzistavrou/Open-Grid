@@ -1,33 +1,45 @@
-// Realistic Speed-Camera Triggered Tactical Physics Police AI (OpenGrid).
+// Relentless Tactical Police Interceptor Pursuit AI (OpenGrid).
 //
-// How pursuits work realistically:
-//   1. Speed Cameras (GATSO roadside radar traps) line the city's streets with posted speed limits
-//      (60 / 80 / 100 km/h based on road curvature). Cops stay in standby until a camera catches you
-//      speeding (> limit + 15 km/h) — never spawning out of thin air at the start line!
-//   2. When a camera flashes you, Police Dispatch broadcasts over CH-04 Scanner Radio and dispatches
-//      units (~4 s realistic response delay, arriving ~115 m behind rather than on your rear bumper).
-//   3. Zero arcade rubber-banding: cruisers obey realistic acceleration (~6.2 m/s²), aerodynamic drag,
-//      speed caps (195-244 km/h by Heat), and corner grip (mu = 0.86) so skilled cornering or a fast
-//      supercar on a straight genuinely pulls away!
-//   4. Fair bust mechanics (must be nearly pinned < 12 km/h within 8 m for 5.0 s with a live bust meter)
-//      and realistic EVADING / COOLDOWN phase when you pull > 165 m clear or break line-of-sight.
+// Features:
+//   1. Roadside GATSO speed cameras (fast 1.2 s dispatch) PLUS proactive patrol high-speed sightings
+//      so speeding in Night Street / Free Roam gets Police Interceptors on your tail immediately.
+//   2. 4-Unit Black & White Interceptor Squad (built via policeCar.ts with real flashing red/blue lights):
+//      - Unit 04 (PIT): spawns 48 m behind at matching speed — fills your rear-view mirror instantly!
+//      - Unit 07 (INTERCEPT): spawns 155 m AHEAD even at Heat 1+ so you face live cruisers pulling out ahead!
+//      - Unit 11 (FLANK): joins at Heat 2+ from 65 m behind on opposite side to box you in!
+//      - Unit 15 (ENFORCER): joins at Heat 3+ as a high-speed heavy interceptor!
+//      - Non-lead units that fall > 340 m behind dynamically leapfrog 240 m AHEAD as fresh intercept patrols.
+//   3. High-performance twin-turbo interceptor tuning (245-325 km/h by Heat) + aggressive box-in & PIT maneuvers.
+//   4. Challenging escape mechanics (275 m gap for 3.8 s, 6.5 s LOS break, 14.0 s EVADING cooldown with
+//      92% hunt speed and immediate < 175 m re-acquisition) + Doppler stereo siren telemetry.
 import * as THREE from 'three/webgpu';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { Lane } from './ai';
 import { GROUP_CAR, type PhysicsWorld } from './physics/world';
+import {
+  buildPoliceInterceptor,
+  updatePoliceLights,
+  type PoliceLightRig,
+} from './scene/policeCar';
 
-const ESCAPE_GAP = 165;        // m of clear road to enter EVADING cooldown
-const EVADE_HOLD = 6.5;        // s in EVADING cooldown to completely shake the squad
-const BUST_GAP = 8.0;          // m proximity required to pin & bust
-const BUST_SLOW = 12;          // km/h under which a pinned car counts toward busted
-const BUST_HOLD = 5.0;         // s pinned before busted (fair chance to reverse / escape!)
-const GIVE_UP = 95;            // s max chase if player stays fast and un-busted
-const LOS_HOLD = 2.8;          // s out of sight behind buildings to enter EVADING cooldown
-const PIT_COOLDOWN = 9.0;      // s between PIT attempts (realistic, not spammed)
+const ESCAPE_GAP = 275;        // m of clear road required before entering EVADING cooldown
+const ESCAPE_HOLD_FAR = 3.8;   // s continuously > 275 m before entering EVADING
+const EVADE_HOLD = 14.0;       // s in EVADING cooldown to completely shake the squad
+const EVADE_REACQUIRE = 175;   // m within which any unit immediately re-engages during EVADING
+const BUST_GAP = 9.5;          // m proximity required to pin & bust
+const BUST_SLOW = 15;          // km/h under which a pinned car counts toward busted
+const BUST_HOLD = 4.2;         // s pinned before busted
+const GIVE_UP = 240;           // s max chase if player stays fast and un-busted
+const LOS_HOLD = 6.5;          // s out of sight behind buildings to enter EVADING cooldown
+const PIT_COOLDOWN = 6.5;      // s between PIT attempts
 const ROADBLOCK_AHEAD = 260;   // m ahead of player along route
 const CAM_SPACING_M = 460;     // m between roadside speed cameras
 const CAM_OVER_MARGIN = 15;    // km/h grace margin above posted limit before camera flashes
 const CAM_COOLDOWN_S = 22;     // s cooldown per camera so it won't spam while parked
+const DISPATCH_DELAY_S = 1.2;  // s brisk radio dispatch delay after camera flash
+const LEAPFROG_BEHIND = 340;   // m behind before a non-lead unit redeploys ahead as fresh intercept
+const LEAPFROG_AHEAD = 240;    // m ahead to redeploy intercept unit
+const SOUND_SPEED = 340;       // m/s for acoustic Doppler calculation
 
 export interface SpeedCamera {
   id: number;
@@ -61,6 +73,14 @@ export interface RoadblockRerouteInfo {
   detourPts: { x: number; y: number }[];
 }
 
+export interface SirenState {
+  proximity: number;
+  dopplerRatio: number;
+  pan: number;
+  aggressive: boolean;
+  hornPulse: number;
+}
+
 export interface CopHooks {
   /** Player was pinned and busted. */
   bust(): void;
@@ -73,20 +93,28 @@ export interface CopHooks {
   /** Roadside speed camera caught the player speeding! */
   onCameraFlash?(cam: SpeedCamera, speedKmh: number, overKmh: number): void;
   /** Police dispatch / patrol unit scanner radio transmission. */
-  onRadio?(unit: string, text: string, speak?: boolean): void;
+  onRadio?(unit: string, text: string, speak?: boolean, clipId?: string): void;
   /** Street radio / GPS reroute announcement on the racers' underground channel (146.52 MHz). */
-  onStreetRadio?(callsign: string, text: string): void;
+  onStreetRadio?(callsign: string, text: string, clipId?: string): void;
 }
 
+type UnitRole = 'pit' | 'intercept' | 'flank' | 'enforcer';
+
 interface PatrolUnit {
+  unitNumber: string;
+  callsign: string;
   s: number;
   lat: number;
   speed: number;
   side: 1 | -1;
-  role: 'pit' | 'flank';
+  role: UnitRole;
   world: THREE.Vector3;
+  prevWorld: THREE.Vector3;
+  velX: number;
+  velZ: number;
+  yaw: number;
   root: THREE.Object3D | null;
-  lights: { r: THREE.MeshBasicMaterial; b: THREE.MeshBasicMaterial } | null;
+  lights: PoliceLightRig | null;
   body: RAPIER.RigidBody | null;
   active: boolean;
 }
@@ -97,7 +125,7 @@ interface Roadblock {
   world: THREE.Vector3;
   group: THREE.Group;
   bodies: RAPIER.RigidBody[];
-  lights: { r: THREE.MeshBasicMaterial; b: THREE.MeshBasicMaterial }[];
+  lights: PoliceLightRig[];
   announced: boolean;
   bypassSide: -1 | 1;
   phase: 'forming' | 'punch' | 'rerouted';
@@ -108,36 +136,13 @@ interface Roadblock {
   chevrons: THREE.Group;
 }
 
-function attachLightbar(root: THREE.Object3D): { r: THREE.MeshBasicMaterial; b: THREE.MeshBasicMaterial } {
-  const bar = new THREE.Mesh(
-    new THREE.BoxGeometry(0.95, 0.08, 0.18),
-    new THREE.MeshBasicMaterial({ color: 0x111218 }),
-  );
-  bar.position.set(0, 1.38, -0.08);
-  const rl = new THREE.Mesh(
-    new THREE.BoxGeometry(0.42, 0.11, 0.2),
-    new THREE.MeshBasicMaterial({ color: 0xff2d55 }),
-  );
-  rl.position.set(-0.24, 1.4, -0.08);
-  const bl = new THREE.Mesh(
-    new THREE.BoxGeometry(0.42, 0.11, 0.2),
-    new THREE.MeshBasicMaterial({ color: 0x2a9dff }),
-  );
-  bl.position.set(0.24, 1.4, -0.08);
-  root.add(bar, rl, bl);
-  return {
-    r: rl.material as THREE.MeshBasicMaterial,
-    b: bl.material as THREE.MeshBasicMaterial,
-  };
-}
-
 export class Cops {
   active = false;
   heat = 1;
-  /** Lead unit arc length (backwards-compatible telemetry). */
+  /** Closest active unit arc length (backwards-compatible telemetry). */
   s = 0;
   speed = 0;
-  /** Lead unit world position (used for LOS and audio). */
+  /** Closest active unit world position (used for LOS and audio). */
   readonly world = new THREE.Vector3();
   /** Lead unit visual root (kept compatible with existing setup). */
   root: THREE.Object3D | null = null;
@@ -155,36 +160,67 @@ export class Cops {
   private pw: PhysicsWorld | null = null;
   private proto: THREE.Object3D | null = null;
 
-  private gap = 0;
+  private minDist = 999;
   private far = 0;
   private slow = 0;
   private evadeTimer = 0;
   private evading = false;
   private t = 0;
   private blind = 0;
-  private pitCd = 6.0;
+  private pitCd = 4.5;
   private pitWarned = false;
-  private roadblockCd = 18.0;
-  private flashPhase = false;
-  private flashAcc = 0;
+  private roadblockCd = 15.0;
   private dispatchDelay = 0;
   private dispatchHeat = 1;
+  private recklessTimer = 0;
+  private lastPlayerSpeedMs = 36;
   private lastPullingAwayRadio = 0;
-  private tmpPos = new THREE.Vector3();
+  private lastInterceptRadio = -20;
+  private hornPulse = 0;
+  private hornCd = 0;
+  private prevPlayerPos = new THREE.Vector3();
+  private hasPrevPlayer = false;
+  private smoothDoppler = 1.0;
+  private smoothPan = 0;
+  private sirenSnapshot: SirenState = {
+    proximity: 0,
+    dopplerRatio: 1.0,
+    pan: 0,
+    aggressive: false,
+    hornPulse: 0,
+  };
   private tmpQuat = new THREE.Quaternion();
   private upAxis = new THREE.Vector3(0, 1, 0);
 
   constructor(private lane: Lane, private hooks: CopHooks) {
     this.units = [
-      { s: 0, lat: 0.7, speed: 0, side: 1, role: 'pit', world: this.world, root: null, lights: null, body: null, active: false },
-      { s: 0, lat: -1.8, speed: 0, side: -1, role: 'flank', world: new THREE.Vector3(), root: null, lights: null, body: null, active: false },
+      {
+        unitNumber: '04', callsign: 'UNIT-04', s: 0, lat: 1.2, speed: 0, side: 1, role: 'pit',
+        world: new THREE.Vector3(), prevWorld: new THREE.Vector3(), velX: 0, velZ: 0, yaw: 0,
+        root: null, lights: null, body: null, active: false,
+      },
+      {
+        unitNumber: '07', callsign: 'UNIT-07', s: 0, lat: -1.6, speed: 0, side: -1, role: 'intercept',
+        world: new THREE.Vector3(), prevWorld: new THREE.Vector3(), velX: 0, velZ: 0, yaw: 0,
+        root: null, lights: null, body: null, active: false,
+      },
+      {
+        unitNumber: '11', callsign: 'UNIT-11', s: 0, lat: -2.0, speed: 0, side: -1, role: 'flank',
+        world: new THREE.Vector3(), prevWorld: new THREE.Vector3(), velX: 0, velZ: 0, yaw: 0,
+        root: null, lights: null, body: null, active: false,
+      },
+      {
+        unitNumber: '15', callsign: 'UNIT-15', s: 0, lat: 2.0, speed: 0, side: 1, role: 'enforcer',
+        world: new THREE.Vector3(), prevWorld: new THREE.Vector3(), velX: 0, velZ: 0, yaw: 0,
+        root: null, lights: null, body: null, active: false,
+      },
     ];
     this.buildCameraData();
   }
 
   /** Whether dispatch has been alerted by a speed camera and cruisers are inbound. */
   get dispatched() { return this.dispatchDelay > 0; }
-  /** 0..1 progress toward getting busted (only rises when pinned < 12 km/h within 8 m). */
+  /** 0..1 progress toward getting busted (only rises when pinned < 15 km/h within 9.5 m). */
   get bustProgress() { return this.active ? Math.min(1, this.slow / BUST_HOLD) : 0; }
   /** 0..1 progress toward shaking off the pursuit during EVADING cooldown. */
   get evadeProgress() { return this.active && this.evading ? Math.min(1, this.evadeTimer / EVADE_HOLD) : 0; }
@@ -198,14 +234,12 @@ export class Cops {
     const step = L / count;
     const nPts = this.lane.n;
     for (let k = 0; k < count; k++) {
-      // Offset first camera ~240 m down-street so the start line isn't immediately flashed
       const s = this.lane.wrap(240 + k * step);
       const ci = this.lane.idx(s);
       const rA = this.lane.right[(ci - 3 + nPts) % nPts];
       const rB = this.lane.right[(ci + 3) % nPts];
       const dAng = Math.acos(Math.max(-1, Math.min(1, rA.x * rB.x + rA.z * rB.z)));
       const curv = dAng / 24;
-      // Realistic speed limits: 60 km/h technical downtown, 80 km/h avenues, 100 km/h express straights
       const limitKmh = curv > 0.012 ? 60 : curv > 0.0045 ? 80 : 100;
       const room = this.lane.room(s);
       const lat = Math.min(room.right + 1.05, 8.5);
@@ -279,7 +313,7 @@ export class Cops {
     this.buildCameraMeshes();
   }
 
-  /** Provide the unmarked cruiser template, scene, and Rapier world for multi-unit pursuits + physical roadblocks. */
+  /** Build 4 Black & White Police Interceptors + 2 Roadblock Interceptors with flashing lights & Rapier colliders. */
   setupVisuals(proto: THREE.Object3D, scene: THREE.Scene, pw: PhysicsWorld) {
     this.proto = proto;
     this.scene = scene;
@@ -288,30 +322,34 @@ export class Cops {
 
     for (let i = 0; i < this.units.length; i++) {
       const u = this.units[i];
-      const model = i === 0 ? proto : proto.clone(true);
-      const wrap = new THREE.Group();
-      wrap.name = `cop_unit_${i}`;
-      wrap.add(model);
-      const lights = attachLightbar(wrap);
-      wrap.visible = false;
-      scene.add(wrap);
-      u.root = wrap;
-      u.lights = lights;
-      const body = pw.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, -600, 0));
-      pw.world.createCollider(
-        RAPIER.ColliderDesc.cuboid(0.95, 0.425, 2.1).setTranslation(0, 0.575, 0).setFriction(0.35).setRestitution(0.05).setCollisionGroups(GROUP_CAR),
-        body,
-      );
-      body.setEnabled(false);
-      u.body = body;
-      if (i === 0) this.root = wrap;
+      if (u.root) u.root.removeFromParent();
+      const built = buildPoliceInterceptor(proto, u.unitNumber, true);
+      built.root.name = `cop_unit_${i}_${u.unitNumber}`;
+      built.root.visible = false;
+      updatePoliceLights(built.lights, 0, false);
+      scene.add(built.root);
+      u.root = built.root;
+      u.lights = built.lights;
+      if (!u.body) {
+        const body = pw.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, -600, 0));
+        pw.world.createCollider(
+          RAPIER.ColliderDesc.cuboid(0.98, 0.48, 2.3).setTranslation(0, 0.62, 0).setFriction(0.35).setRestitution(0.05).setCollisionGroups(GROUP_CAR),
+          body,
+        );
+        body.setEnabled(false);
+        u.body = body;
+      }
+      if (i === 0) this.root = built.root;
     }
 
-    // Build reusable tactical roadblock (2 angled cruisers + flashing cones + Rapier kinematic colliders)
+    // Build reusable tactical roadblock (2 angled Police Interceptors + cones + bypass chevrons + Rapier colliders)
+    if (this.roadblock) {
+      this.roadblock.group.removeFromParent();
+    }
     const rbGroup = new THREE.Group();
     rbGroup.name = 'cop_roadblock';
     rbGroup.visible = false;
-    const rbLights: { r: THREE.MeshBasicMaterial; b: THREE.MeshBasicMaterial }[] = [];
+    const rbLights: PoliceLightRig[] = [];
     const rbBodies: RAPIER.RigidBody[] = [];
 
     const coneGeo = new THREE.ConeGeometry(0.24, 0.72, 6);
@@ -319,21 +357,20 @@ export class Cops {
 
     // Wide 4.6 m skill gap so attentive drivers can thread through cleanly
     const layouts = [
-      { x: -4.1, z: 0, yaw: Math.PI * 0.42 },
-      { x: 4.1, z: 0.4, yaw: -Math.PI * 0.42 },
+      { x: -4.1, z: 0, yaw: Math.PI * 0.42, num: '21' },
+      { x: 4.1, z: 0.4, yaw: -Math.PI * 0.42, num: '22' },
     ];
     for (const lay of layouts) {
-      const car = proto.clone(true);
-      const wrap = new THREE.Group();
-      wrap.add(car);
-      wrap.position.set(lay.x, 0.02, lay.z);
-      wrap.rotation.y = lay.yaw;
-      rbLights.push(attachLightbar(wrap));
-      rbGroup.add(wrap);
+      const built = buildPoliceInterceptor(proto, lay.num, true);
+      built.root.position.set(lay.x, 0.02, lay.z);
+      built.root.rotation.y = lay.yaw;
+      updatePoliceLights(built.lights, 0, false);
+      rbLights.push(built.lights);
+      rbGroup.add(built.root);
 
       const body = pw.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, -600, 0));
       pw.world.createCollider(
-        RAPIER.ColliderDesc.cuboid(0.95, 0.55, 2.1).setTranslation(0, 0.65, 0).setFriction(0.4).setRestitution(0.08).setCollisionGroups(GROUP_CAR),
+        RAPIER.ColliderDesc.cuboid(0.98, 0.55, 2.3).setTranslation(0, 0.65, 0).setFriction(0.4).setRestitution(0.08).setCollisionGroups(GROUP_CAR),
         body,
       );
       body.setEnabled(false);
@@ -380,14 +417,50 @@ export class Cops {
     return best;
   }
 
-  /** Monitor roadside speed cameras; triggers police radio dispatch only when caught exceeding speed limit! */
+  /** Monitor roadside speed cameras AND proactive patrol sightings; triggers immediate pursuits! */
   updateCameras(dt: number, playerS: number, playerPos: THREE.Vector3, kmh: number, enabled: boolean, heatLevel = 1) {
     this.setCamerasVisible(enabled);
     this.nextCamera = null;
-    if (!enabled || !this.cameras.length) {
+    this.lastPlayerSpeedMs = Math.max(0, kmh / 3.6);
+
+    if (!enabled) {
       this.dispatchDelay = 0;
+      this.recklessTimer = 0;
       return;
     }
+
+    // Escalate active pursuit squad if heat rises mid-chase
+    if (this.active && heatLevel > this.heat) {
+      this.heat = Math.min(5, Math.floor(heatLevel));
+      this.activateHeatReinforcements(playerS);
+    }
+
+    // Pending dispatch countdown: brisk 1.2 s arrival after speed camera alerts police radio
+    if (this.dispatchDelay > 0 && !this.active) {
+      this.dispatchDelay -= dt;
+      if (this.dispatchDelay <= 0) {
+        this.dispatchDelay = 0;
+        this.spawn(playerS, playerPos, this.dispatchHeat, 'camera');
+      }
+    }
+
+    // Proactive patrol sighting: speeding > 140 km/h for 4.5 s (or 2.0 s at Heat 2+) brings a live patrol right onto you!
+    if (!this.active && this.dispatchDelay <= 0) {
+      if (kmh > 140) {
+        this.recklessTimer += dt;
+        const triggerS = heatLevel >= 2 ? 2.0 : 4.5;
+        if (this.recklessTimer >= triggerS) {
+          this.recklessTimer = 0;
+          this.spawn(playerS, playerPos, Math.max(1, heatLevel), 'patrol', kmh);
+        }
+      } else {
+        this.recklessTimer = Math.max(0, this.recklessTimer - dt * 0.5);
+      }
+    } else {
+      this.recklessTimer = 0;
+    }
+
+    if (!this.cameras.length) return;
 
     const L = this.lane.length;
     const half = L * 0.5;
@@ -395,15 +468,6 @@ export class Cops {
       const raw = ((a - b) % L + L) % L;
       return raw > half ? raw - L : raw;
     };
-
-    // Pending dispatch countdown: realistic 4 s arrival delay after speed camera alerts police radio
-    if (this.dispatchDelay > 0 && !this.active) {
-      this.dispatchDelay -= dt;
-      if (this.dispatchDelay <= 0) {
-        this.dispatchDelay = 0;
-        this.spawn(playerS, playerPos, this.dispatchHeat);
-      }
-    }
 
     let closestAheadDist = 240;
     for (const cam of this.cameras) {
@@ -424,7 +488,7 @@ export class Cops {
         this.nextCamera = { id: cam.id, name: cam.name, limitKmh: cam.limitKmh, distM: Math.round(ahead) };
       }
 
-      // Trigger speed camera when passing within 15 m laterally/longitudinally over limit + grace margin
+      // Trigger speed camera when passing within 15 m over limit + grace margin
       if (cam.cooldown <= 0 && Math.abs(ahead) < 14) {
         const dWorld = Math.hypot(cam.world.x - playerPos.x, cam.world.z - playerPos.z);
         if (dWorld < 20 && kmh > cam.limitKmh + CAM_OVER_MARGIN) {
@@ -435,18 +499,17 @@ export class Cops {
           this.hooks.onCameraFlash?.(cam, spd, over);
 
           if (!this.active && this.dispatchDelay <= 0) {
-            // Fresh pursuit triggered by speed camera! Dispatch over police radio first, unit rolls in 4s later
-            this.dispatchDelay = 4.0;
+            this.dispatchDelay = DISPATCH_DELAY_S;
             this.dispatchHeat = Math.max(1, Math.min(5, heatLevel + (over >= 70 ? 1 : 0)));
             this.tactic = 'DISPATCHED';
-            this.hooks.onAlert?.(`📸 ${cam.name} FLASHED · ${spd} km/h IN ${cam.limitKmh} ZONE · POLICE DISPATCHED`);
+            this.hooks.onAlert?.(`📸 ${cam.name} FLASHED · ${spd} km/h IN ${cam.limitKmh} ZONE · INTERCEPTORS DISPATCHED`);
             this.hooks.onRadio?.(
               'DISPATCH',
-              `All units, speed camera ${cam.id} tripped — suspect clocked at ${spd} in a ${cam.limitKmh} zone. Interceptor unit respond, over.`,
+              `All units, speed camera ${cam.id} tripped — suspect clocked at ${spd} in a ${cam.limitKmh} zone. Interceptors respond immediately, over.`,
               true,
+              'cam_dispatch',
             );
           } else if (this.active) {
-            // Re-spotted by another speed camera during pursuit or cooldown!
             if (this.evading) {
               this.evading = false;
               this.evadeTimer = 0;
@@ -455,14 +518,16 @@ export class Cops {
               this.tactic = 'PURSUIT';
               this.hooks.onRadio?.(
                 'DISPATCH',
-                `Camera ${cam.id} just caught the suspect again at ${spd} kilometers per hour! Units re-engaging.`,
+                `Camera ${cam.id} just caught the suspect again at ${spd} kilometers per hour! All units re-engaging.`,
                 true,
+                'cam_respot',
               );
             } else {
               this.hooks.onRadio?.(
                 'DISPATCH',
                 `Update: suspect blew past camera ${cam.id} at ${spd} in a ${cam.limitKmh} zone.`,
                 false,
+                'cam_respot',
               );
             }
           }
@@ -471,9 +536,37 @@ export class Cops {
     }
   }
 
-  spawn(playerS: number, playerPos: THREE.Vector3, heatLevel = 1) {
+  /** Bring Heat 2+ and Heat 3+ units online mid-chase if Heat escalated. */
+  private activateHeatReinforcements(playerS: number) {
+    const pSpd = Math.max(36, this.lastPlayerSpeedMs);
+    const u2 = this.units[2];
+    if (this.heat >= 2 && !u2.active) {
+      u2.active = true;
+      u2.s = this.lane.wrap(playerS - 65);
+      u2.lat = -2.0;
+      u2.speed = Math.max(36, pSpd * 1.04);
+      this.placeUnit(u2, true);
+    }
+    const u3 = this.units[3];
+    if (this.heat >= 3 && !u3.active) {
+      u3.active = true;
+      u3.s = this.lane.wrap(playerS + 190);
+      u3.lat = 1.8;
+      u3.speed = Math.max(22, pSpd * 0.55);
+      this.placeUnit(u3, true);
+    }
+  }
+
+  spawn(
+    playerS: number,
+    playerPos: THREE.Vector3,
+    heatLevel = 1,
+    trigger: 'camera' | 'patrol' | 'manual' = 'manual',
+    triggerKmh = 160,
+  ) {
     this.active = true;
     this.dispatchDelay = 0;
+    this.recklessTimer = 0;
     this.heat = Math.max(1, Math.min(5, Math.floor(heatLevel || 1)));
     this.t = 0;
     this.far = 0;
@@ -481,47 +574,89 @@ export class Cops {
     this.evadeTimer = 0;
     this.evading = false;
     this.blind = 0;
-    this.pitCd = 6.5;
+    this.pitCd = 4.5;
     this.pitWarned = false;
     this.roadblockCd = this.heat >= 2 ? 9.0 : 14.0;
     this.lastPullingAwayRadio = 0;
+    this.lastInterceptRadio = -10;
+    this.hornPulse = 0.85;
+    this.hornCd = 4.0;
+    this.hasPrevPlayer = false;
     this.tactic = 'PURSUIT';
 
-    // Realistic arrival distance: cruisers roll in ~105-145 m behind from patrol, NOT 32 m on your bumper!
+    const pSpd = Math.max(34, this.lastPlayerSpeedMs);
+
+    // Unit 0 (PIT, Unit-04): 48 m behind at matching/closing speed — immediately visible in mirrors!
     const u0 = this.units[0];
     u0.active = true;
-    u0.s = this.lane.wrap(playerS - 105);
-    u0.lat = 1.6;
-    u0.speed = 32; // ~115 km/h rolling pursuit speed
-    this.s = u0.s;
-    this.speed = u0.speed;
-    this.gap = 105;
+    u0.s = this.lane.wrap(playerS - 48);
+    u0.lat = 1.2;
+    u0.speed = Math.max(36, pSpd * 1.05);
 
+    // Unit 1 (INTERCEPT, Unit-07): Active even at Heat 1+! Spawns 155 m AHEAD rolling onto the route!
     const u1 = this.units[1];
-    u1.active = this.heat >= 3; // Second cruiser only joins at Heat 3+
-    u1.s = this.lane.wrap(playerS - 145);
-    u1.lat = -1.9;
-    u1.speed = 30;
+    u1.active = true;
+    u1.s = this.lane.wrap(playerS + 155);
+    u1.lat = -1.6;
+    u1.speed = Math.max(18, pSpd * 0.45);
+
+    // Unit 2 (FLANK, Unit-11): Joins at Heat 2+ from 65 m behind on opposite side
+    const u2 = this.units[2];
+    u2.active = this.heat >= 2;
+    u2.s = this.lane.wrap(playerS - 65);
+    u2.lat = -2.1;
+    u2.speed = Math.max(36, pSpd * 1.04);
+
+    // Unit 3 (ENFORCER, Unit-15): Joins at Heat 3+ (high-speed interceptor closing from 110 m behind or 190 m ahead)
+    const u3 = this.units[3];
+    u3.active = this.heat >= 3;
+    u3.s = this.lane.wrap(this.heat >= 4 ? playerS + 190 : playerS - 110);
+    u3.lat = 2.0;
+    u3.speed = this.heat >= 4 ? Math.max(22, pSpd * 0.5) : Math.max(40, pSpd * 1.08);
 
     this.hideRoadblock();
     this.placeUnits(playerPos, true);
-    this.hooks.onAlert?.(this.heat >= 3 ? `🚨 INTERCEPTOR SQUAD INBOUND · HEAT ${this.heat}` : '🚨 PATROL UNIT IN PURSUIT');
-    this.hooks.onRadio?.(
-      'UNIT-04',
-      `10-4 Dispatch, Unit 4 has visual on the speeding vehicle. Lights and sirens, moving to intercept.`,
-      true,
-    );
+    this.s = u0.s;
+    this.speed = u0.speed;
+    this.world.copy(u0.world);
+    this.minDist = Math.hypot(u0.world.x - playerPos.x, u0.world.z - playerPos.z);
+
+    if (trigger === 'patrol') {
+      this.hooks.onAlert?.(`🚨 PATROL SPOTTED YOU AT ${Math.round(triggerKmh)} KM/H · HEAT ${this.heat}`);
+      this.hooks.onRadio?.(
+        'UNIT-04',
+        `Dispatch, Unit 4 on patrol — suspect just blew past at ${Math.round(triggerKmh)}! Lights and sirens, engaging pursuit!`,
+        true,
+        'patrol_spotted',
+      );
+    } else {
+      const count = this.units.filter((u) => u.active).length;
+      this.hooks.onAlert?.(count >= 3 ? `🚨 ${count}-UNIT INTERCEPTOR SQUAD · HEAT ${this.heat}` : '🚨 POLICE INTERCEPTORS IN PURSUIT');
+      this.hooks.onRadio?.(
+        'UNIT-04',
+        `10-4 Dispatch, Unit 4 has visual on the speeding vehicle. Unit 7 moving to intercept ahead!`,
+        true,
+        'unit_visual',
+      );
+    }
   }
 
   breakOff() {
     this.active = false;
     this.dispatchDelay = 0;
+    this.recklessTimer = 0;
     this.evading = false;
     this.evadeTimer = 0;
     this.slow = 0;
+    this.far = 0;
+    this.blind = 0;
+    this.hornPulse = 0;
+    this.minDist = 999;
     this.tactic = 'PURSUIT';
+    this.sirenSnapshot = { proximity: 0, dopplerRatio: 1.0, pan: 0, aggressive: false, hornPulse: 0 };
     for (const u of this.units) {
       u.active = false;
+      if (u.lights) updatePoliceLights(u.lights, 0, false);
       if (u.root) u.root.visible = false;
       if (u.body) {
         u.body.setTranslation({ x: 0, y: -600, z: 0 }, true);
@@ -540,6 +675,7 @@ export class Cops {
     this.roadblock.detourPts = [];
     this.roadblock.chevrons.visible = false;
     this.roadblock.group.visible = false;
+    for (const l of this.roadblock.lights) updatePoliceLights(l, 0, false);
     for (const b of this.roadblock.bodies) {
       b.setTranslation({ x: 0, y: -600, z: 0 }, true);
       b.setEnabled(false);
@@ -577,7 +713,7 @@ export class Cops {
     const tmp = new THREE.Vector3();
     for (let k = 0; k <= 10; k++) {
       const f = k / 10;
-      const ds = -115 + f * 195; // from 115 m before block to 80 m past block
+      const ds = -115 + f * 195;
       const bell = Math.sin(Math.PI * f);
       const latOff = bypassSide * bell * Math.max(9.5, Math.min(16.0, (bypassSide > 0 ? room.right : room.left) + 5.5));
       this.lane.at(this.lane.wrap(rb.s + ds), latOff, tmp);
@@ -602,21 +738,33 @@ export class Cops {
       rb.bodies[k].setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
     }
 
-    // First 3 cars in a race (P1-P3) get caught past the detour turnoff and must punch through the gap;
-    // P4+ (and Free Roam) get the quick GPS + Street Radio reroute around the block!
     const topThreeMustPunch = isRace && playerRank >= 1 && playerRank <= 3;
     rb.phase = topThreeMustPunch ? 'punch' : 'forming';
     rb.rerouteTimer = topThreeMustPunch ? 1.35 : 0.95;
     rb.chevrons.visible = !topThreeMustPunch;
 
     this.tactic = 'ROADBLOCK AHEAD';
-    this.hooks.onRadio?.('DISPATCH', 'Roadblock forming two hundred fifty meters ahead of the lead pack! Lock down the strip!', true);
+    this.triggerHorn();
+    this.hooks.onRadio?.(
+      'DISPATCH',
+      'Roadblock forming two hundred fifty meters ahead of the lead pack! Lock down the strip!',
+      true,
+      'roadblock_deploy',
+    );
     if (topThreeMustPunch) {
       this.hooks.onAlert?.('🚧 ROADBLOCK FORMING · P1–P3 THREAD GAP!');
-      this.hooks.onStreetRadio?.('GPS', `🚧 ROADBLOCK FORMING AHEAD! Top 3 (P1–P3) are too close — PUNCH THROUGH THE GAP! Rerouting P4+ ${sideWord}!`);
+      this.hooks.onStreetRadio?.(
+        'GPS',
+        `🚧 ROADBLOCK FORMING AHEAD! Top 3 (P1–P3) are too close — PUNCH THROUGH THE GAP! Rerouting P4+ ${sideWord}!`,
+        'street_rb_punch',
+      );
     } else {
       this.hooks.onAlert?.(`↪ QUICK GPS REROUTE · BYPASS ${sideWord}`);
-      this.hooks.onStreetRadio?.('GPS', `🚧 ROADBLOCK FORMING AHEAD! Quick reroute calculating — P1–P3 punching through, prep ${sideWord} bypass!`);
+      this.hooks.onStreetRadio?.(
+        'GPS',
+        `🚧 ROADBLOCK FORMING AHEAD! Quick reroute calculating — P1–P3 punching through, prep ${sideWord} bypass!`,
+        'street_rb_forming',
+      );
     }
   }
 
@@ -650,23 +798,48 @@ export class Cops {
     return this.cameras.map((c) => ({ x: c.world.x, z: c.world.z, limitKmh: c.limitKmh }));
   }
 
-  /** dt seconds, player's arc length, world position, speed (km/h), race position (1-based), and whether in a race. */
-  update(dt: number, playerS: number, playerPos: THREE.Vector3, kmh: number, playerRank = 1, isRace = true) {
-    if (!this.active) return;
-    this.t += dt;
-    this.pitCd = Math.max(0, this.pitCd - dt);
-    this.roadblockCd -= dt;
+  private triggerHorn() {
+    if (this.hornCd > 0) return;
+    this.hornPulse = 1.0;
+    this.hornCd = 5.5;
+  }
 
-    // Strobe police lightbars at 6 Hz
-    this.flashAcc += dt;
-    if (this.flashAcc >= 0.14) {
-      this.flashAcc = 0;
-      this.flashPhase = !this.flashPhase;
-      const rc = this.flashPhase ? 0xff2d55 : 0x2a0008;
-      const bc = this.flashPhase ? 0x001030 : 0x2a9dff;
-      for (const u of this.units) if (u.lights) { u.lights.r.color.setHex(rc); u.lights.b.color.setHex(bc); }
-      if (this.roadblock) for (const l of this.roadblock.lights) { l.r.color.setHex(rc); l.b.color.setHex(bc); }
+  /** dt seconds, player's arc length, world position, speed (km/h), race position (1-based), in-race flag, optional player heading (rad). */
+  update(
+    dt: number,
+    playerS: number,
+    playerPos: THREE.Vector3,
+    kmh: number,
+    playerRank = 1,
+    isRace = true,
+    playerHeadingRad?: number,
+  ) {
+    if (!this.active) {
+      this.sirenSnapshot.proximity = this.dispatchDelay > 0 ? 0.2 : 0;
+      this.sirenSnapshot.dopplerRatio = 1.0;
+      this.sirenSnapshot.pan = 0;
+      this.sirenSnapshot.aggressive = false;
+      this.sirenSnapshot.hornPulse = 0;
+      return;
     }
+
+    const safeDt = Math.max(1e-4, Math.min(0.1, dt));
+    this.t += safeDt;
+    this.pitCd = Math.max(0, this.pitCd - safeDt);
+    this.roadblockCd -= safeDt;
+    this.hornCd = Math.max(0, this.hornCd - safeDt);
+    this.hornPulse = Math.max(0, this.hornPulse - safeDt * 1.45);
+    this.lastPlayerSpeedMs = Math.max(0, kmh / 3.6);
+
+    // Player velocity estimate for Doppler calculation
+    let pVelX = 0;
+    let pVelZ = 0;
+    if (this.hasPrevPlayer) {
+      pVelX = (playerPos.x - this.prevPlayerPos.x) / safeDt;
+      pVelZ = (playerPos.z - this.prevPlayerPos.z) / safeDt;
+    }
+    this.prevPlayerPos.copy(playerPos);
+    this.hasPrevPlayer = true;
 
     const L = this.lane.length;
     const half = L * 0.5;
@@ -679,230 +852,385 @@ export class Cops {
     const pCenter = this.lane.pts[pIdx];
     const pRight = this.lane.right[pIdx];
     const playerLat = (playerPos.x - pCenter.x) * pRight.x + (playerPos.z - pCenter.z) * pRight.z;
+    const playerSpeedMs = kmh / 3.6;
 
-    // Realistic patrol sedan / interceptor speed caps (zero unfair 350 km/h rubber-banding!)
-    // Heat 1: 195 km/h | Heat 2: 208 km/h | Heat 3: 220 km/h | Heat 4: 232 km/h | Heat 5: 244 km/h
-    const topSpeed = (195 + (this.heat - 1) * 12.25) / 3.6;
-    const maxAccel = 5.4 + this.heat * 0.38; // realistic heavy cruiser acceleration (m/s²)
-    const maxBrake = 9.0;                    // m/s²
+    // High-performance twin-turbo Interceptor tuning (genuinely hard to shake!)
+    // Heat 1: 245 km/h | Heat 2: 265 km/h | Heat 3: 285 km/h | Heat 4: 305 km/h | Heat 5: 325 km/h
+    const topSpeed = (245 + (this.heat - 1) * 20) / 3.6;
+    const maxAccel = 9.2 + this.heat * 0.75; // twin-turbo interceptor acceleration (m/s²)
+    const maxBrake = 12.5;                   // heavy-duty pursuit brakes (m/s²)
+    const cornerMu = 1.18 + this.heat * 0.03;
 
     let minDist = Infinity;
-    let closestGap = 999;
+    let closestUnit: PatrolUnit = this.units[0];
 
-    for (const u of this.units) {
+    for (let uIdx = 0; uIdx < this.units.length; uIdx++) {
+      const u = this.units[uIdx];
       if (!u.active) continue;
-      const gapAhead = signedDelta(playerS, u.s); // positive = player ahead of cop
+
+      let gapAhead = signedDelta(playerS, u.s); // positive = player ahead of cop; negative = cop ahead of player
+
+      // Dynamic leapfrog intercept: if a non-lead unit falls > 340 m behind while NOT evading,
+      // redeploy it as a fresh intercept unit 240 m AHEAD so the player constantly faces live police!
+      if (!this.evading && uIdx > 0 && gapAhead > LEAPFROG_BEHIND) {
+        u.s = this.lane.wrap(playerS + LEAPFROG_AHEAD);
+        const aheadRoom = this.lane.room(u.s);
+        u.lat = Math.max(-aheadRoom.left, Math.min(aheadRoom.right, playerLat + u.side * 1.4));
+        u.speed = Math.max(20, Math.min(topSpeed * 0.6, playerSpeedMs * 0.55));
+        this.placeUnit(u, true);
+        gapAhead = signedDelta(playerS, u.s);
+        if (this.t - this.lastInterceptRadio > 16) {
+          this.lastInterceptRadio = this.t;
+          this.hooks.onRadio?.(
+            u.callsign,
+            `Unit ${u.unitNumber} pulling onto the avenue ahead — moving to intercept and box in the suspect!`,
+            true,
+            'intercept_ahead',
+          );
+        }
+      }
+
       const room = this.lane.room(u.s);
 
-      // Realistic heavy cruiser corner grip limit (mu = 0.86): heavy sedans genuinely lose speed in tight corners!
+      // Planted interceptor corner grip limit
       const ci = this.lane.idx(u.s);
       const nPts = this.lane.n;
       const rA = this.lane.right[(ci - 2 + nPts) % nPts];
       const rB = this.lane.right[(ci + 2) % nPts];
       const dAng = Math.acos(Math.max(-1, Math.min(1, rA.x * rB.x + rA.z * rB.z)));
       const curv = dAng / 16;
-      const cornerLimit = curv > 0.007 ? Math.sqrt((0.86 * 9.81) / curv) : topSpeed;
+      const cornerLimit = curv > 0.006 ? Math.sqrt((cornerMu * 9.81) / curv) : topSpeed;
 
-      const wantOffsetS = u.role === 'pit' ? -4.0 : -1.8;
+      // Role-based tactical offset along track (box-in formation: PIT rear quarter, intercept/flank pull ahead/beside!)
+      const wantOffsetS =
+        u.role === 'pit'
+          ? -3.2
+          : u.role === 'intercept'
+          ? 3.6
+          : u.role === 'flank'
+          ? 1.4
+          : -1.6;
       const d = signedDelta(playerS + wantOffsetS, u.s);
-      const playerSpeedMs = kmh / 3.6;
-      // NO rubber-banding: cruiser either floors it up to its own physical topSpeed or paces gently when close
+
       let targetSpeed: number;
       if (this.evading) {
-        targetSpeed = Math.min(topSpeed * 0.82, cornerLimit);
-      } else if (d > 14) {
+        // Units keep hunting hard at 92% speed during EVADING!
+        targetSpeed = Math.min(topSpeed * 0.92, cornerLimit);
+      } else if (gapAhead < -18) {
+        // Unit is AHEAD of the player: roll at a visible tactical intercept/blocking pace so the player
+        // closes right up onto flashing police lights and must thread/dodge past!
+        const aheadDist = -gapAhead;
+        const holdFactor = aheadDist > 80 ? 0.42 : 0.68;
+        targetSpeed = Math.min(topSpeed * 0.72, Math.max(15, playerSpeedMs * holdFactor));
+      } else if (d > 6) {
+        // Behind the player: floor it to close the gap fast!
         targetSpeed = topSpeed;
-      } else if (d > -6) {
-        targetSpeed = Math.min(topSpeed, Math.max(0, playerSpeedMs + d * 0.42));
+      } else if (d > -8) {
+        // Alongside / box-in window: match aggressively with slight closing authority
+        targetSpeed = Math.min(topSpeed, Math.max(0, playerSpeedMs + d * 0.85 + 2.2));
       } else {
-        targetSpeed = Math.max(0, playerSpeedMs - 4);
+        // Slightly ahead during box-in: brake/pace tightly to pin the player's nose!
+        targetSpeed = Math.max(0, playerSpeedMs - 3.5);
       }
       targetSpeed = Math.min(targetSpeed, cornerLimit);
 
-      // High-speed aerodynamic drag falloff above 140 km/h (cruisers struggle to climb past 190 km/h)
-      const speedFrac = Math.min(0.95, u.speed / topSpeed);
-      const availAccel = maxAccel * (1 - 0.65 * speedFrac * speedFrac);
+      // Mild high-speed aerodynamic drag falloff (0.35 instead of 0.65)
+      const speedFrac = Math.min(0.96, u.speed / Math.max(1, topSpeed));
+      const availAccel = maxAccel * (1 - 0.35 * speedFrac * speedFrac);
       const dv = targetSpeed - u.speed;
-      if (dv > 0) u.speed += Math.min(dv, availAccel * dt);
-      else u.speed += Math.max(dv, -maxBrake * dt);
+      if (dv > 0) u.speed += Math.min(dv, availAccel * safeDt);
+      else u.speed += Math.max(dv, -maxBrake * safeDt);
       u.speed = Math.max(0, Math.min(topSpeed, u.speed));
-      u.s = this.lane.wrap(u.s + u.speed * dt);
+      u.s = this.lane.wrap(u.s + u.speed * safeDt);
 
-      const understeerPush = u.speed > cornerLimit * 1.02 ? (u.speed - cornerLimit) * 0.5 : 0;
-      const latBias = u.role === 'pit' ? (playerLat > 0 ? -2.0 : 2.0) : (playerLat > 0 ? 2.2 : -2.2);
-      const engagedPit = !this.evading && u.role === 'pit' && Math.abs(gapAhead - 2.1) < 2.2 && this.pitCd <= 0 && kmh > 55;
-      const wantLat = Math.max(-room.left, Math.min(room.right, playerLat + (engagedPit ? latBias * 0.5 : latBias) + understeerPush * u.side));
-      u.lat += (wantLat - u.lat) * Math.min(1, dt * (engagedPit ? 3.8 : 2.1));
+      // Aggressive lateral positioning: intercept ahead moves into player's lane; flanker boxes opposite side; PIT hunts rear quarter
+      let latBias: number;
+      if (gapAhead < -15 && gapAhead > -180) {
+        // Intercepting from ahead: move toward player's lane to force evasive action
+        latBias = u.side * 0.7;
+      } else if (u.role === 'pit') {
+        latBias = playerLat > 0 ? -2.0 : 2.0;
+      } else if (u.role === 'flank' || u.role === 'intercept') {
+        // Box-in from opposite side of PIT unit (and pull in tighter when player slows down!)
+        const squeeze = kmh < 50 ? 1.45 : 2.15;
+        latBias = playerLat > 0 ? squeeze : -squeeze;
+      } else {
+        // Enforcer rides tight on rear bumper / opposite quarter
+        latBias = u.side * 1.4;
+      }
 
+      const engagedPit =
+        !this.evading &&
+        (u.role === 'pit' || u.role === 'enforcer') &&
+        Math.abs(gapAhead - 2.0) < 2.6 &&
+        this.pitCd <= 0 &&
+        kmh > 50;
+
+      const understeerPush = u.speed > cornerLimit * 1.03 ? (u.speed - cornerLimit) * 0.35 : 0;
+      const wantLat = Math.max(
+        -room.left,
+        Math.min(room.right, playerLat + (engagedPit ? latBias * 0.4 : latBias) + understeerPush * u.side),
+      );
+      u.lat += (wantLat - u.lat) * Math.min(1, safeDt * (engagedPit ? 4.8 : 2.9));
+
+      u.prevWorld.copy(u.world);
       this.lane.at(u.s, u.lat, u.world);
+      u.velX = (u.world.x - u.prevWorld.x) / safeDt;
+      u.velZ = (u.world.z - u.prevWorld.z) / safeDt;
+
       const dist3 = Math.hypot(u.world.x - playerPos.x, u.world.z - playerPos.z);
       if (dist3 < minDist) {
         minDist = dist3;
-        closestGap = gapAhead;
+        closestUnit = u;
       }
 
-      // Controlled realistic PIT only when cruiser genuinely earns side-by-side rear-quarter overlap
-      if (!this.evading && u.role === 'pit' && Math.abs(gapAhead - 2.1) < 3.0 && Math.abs(u.lat - playerLat) < 2.6 && kmh > 55) {
-        if (!this.pitWarned && this.pitCd < 1.2) {
+      // Close-range airhorn burst when closing aggressively < 22 m
+      if (!this.evading && dist3 < 22 && u.speed > playerSpeedMs + 3) {
+        this.triggerHorn();
+      }
+
+      // Tactical PIT maneuver when PIT or Enforcer unit earns rear-quarter overlap
+      if (
+        !this.evading &&
+        (u.role === 'pit' || u.role === 'enforcer') &&
+        Math.abs(gapAhead - 2.0) < 3.4 &&
+        Math.abs(u.lat - playerLat) < 2.8 &&
+        kmh > 50
+      ) {
+        if (!this.pitWarned && this.pitCd < 1.4) {
           this.pitWarned = true;
           this.tactic = 'PIT MANEUVER';
+          this.triggerHorn();
           this.hooks.onAlert?.('⚠ INTERCEPTOR ALIGNING FOR PIT');
-          this.hooks.onRadio?.('UNIT-04', 'I have the rear quarter, requesting permission for PIT.', false);
+          this.hooks.onRadio?.(u.callsign, 'I have the rear quarter, moving in for PIT maneuver!', false, 'pit_request');
         }
-        if (this.pitCd <= 0 && dist3 < 3.8) {
+        if (this.pitCd <= 0 && dist3 < 4.2) {
           const pushDir = u.lat < playerLat ? 1 : -1;
           this.pitCd = PIT_COOLDOWN;
           this.pitWarned = false;
-          this.hooks.onPitNudge?.(pushDir, 0.45 + this.heat * 0.06);
+          this.triggerHorn();
+          this.hooks.onPitNudge?.(pushDir, 0.50 + this.heat * 0.06);
           this.hooks.onAlert?.('🚨 PIT CONTACT · COUNTER-STEER!');
+          this.hooks.onRadio?.(u.callsign, 'PIT contact! Suspect fishtailing — box them in!', false, 'pit_contact');
         }
       }
     }
 
-    // Police radio reaction when player genuinely pulls away at high speed
-    if (!this.evading && minDist > 115 && kmh > 205 && this.t - this.lastPullingAwayRadio > 18) {
-      this.lastPullingAwayRadio = this.t;
-      this.hooks.onRadio?.('UNIT-04', `Suspect is pulling away at over ${Math.round(kmh)}! Cruiser is topped out!`, true);
+    // Update realistic multi-flash LED strobes + dynamic PointLights on all pursuit units and active roadblock
+    for (const u of this.units) {
+      if (u.lights) updatePoliceLights(u.lights, this.t, u.active);
+    }
+    if (this.roadblock) {
+      for (const l of this.roadblock.lights) updatePoliceLights(l, this.t, this.roadblock.active);
     }
 
-    // Deploy roadblock ahead during sustained pursuit (Heat >= 2 or > 11 s chase) + trigger quick GPS/Radio reroute!
-    if (!this.evading && this.roadblock && !this.roadblock.active && this.roadblockCd <= 0 && kmh > 65 && (this.heat >= 2 || this.t > 11)) {
+    // Police radio reaction when player genuinely pulls away at very high speed
+    if (!this.evading && minDist > 165 && kmh > 250 && this.t - this.lastPullingAwayRadio > 18) {
+      this.lastPullingAwayRadio = this.t;
+      this.hooks.onRadio?.(
+        'UNIT-04',
+        `Suspect is flying at over ${Math.round(kmh)}! Calling intercept units ahead to cut them off!`,
+        true,
+        'high_speed',
+      );
+    }
+
+    // Deploy roadblock ahead during sustained pursuit (Heat >= 2 or > 10 s chase) + trigger quick GPS/Radio reroute!
+    if (!this.evading && this.roadblock && !this.roadblock.active && this.roadblockCd <= 0 && kmh > 65 && (this.heat >= 2 || this.t > 10)) {
       this.deployRoadblock(playerS, playerRank, isRace);
     } else if (this.roadblock?.active) {
       const rb = this.roadblock;
       const rbGap = signedDelta(rb.s, playerS);
       rb.distM = Math.round(rbGap);
-      // Quick reroute announcement (~1 s after block begins forming)
       if (!rb.rerouteAnnounced) {
-        rb.rerouteTimer -= dt;
+        rb.rerouteTimer -= safeDt;
         if (rb.rerouteTimer <= 0) {
           rb.rerouteAnnounced = true;
           const sideWord = rb.bypassSide > 0 ? 'RIGHT' : 'LEFT';
           if (rb.phase === 'forming') {
             rb.phase = 'rerouted';
             rb.chevrons.visible = true;
-            this.hooks.onStreetRadio?.('GPS', `↪ REROUTE ACTIVE! Swing ${sideWord} onto the bypass around the police block!`);
+            this.hooks.onStreetRadio?.(
+              'GPS',
+              `↪ REROUTE ACTIVE! Swing ${sideWord} onto the bypass around the police block!`,
+              'street_rb_reroute',
+            );
           } else {
-            // Top 3 still punching through, reroute broadcast goes out to chasing pack behind them
             rb.chevrons.visible = true;
-            this.hooks.onStreetRadio?.('GPS', `↪ REROUTE LOCKED for P4+ (${sideWord} bypass) — P1–P3 thread the cruisers!`);
+            this.hooks.onStreetRadio?.(
+              'GPS',
+              `↪ REROUTE LOCKED for P4+ (${sideWord} bypass) — P1–P3 thread the cruisers!`,
+              'street_rb_reroute',
+            );
           }
         }
       }
       if (rbGap < -35) {
         const wasPunch = rb.phase === 'punch';
         this.hideRoadblock();
-        this.roadblockCd = 22.0;
+        this.roadblockCd = 20.0;
         this.tactic = this.evading ? 'EVADING' : 'PURSUIT';
         this.hooks.onAlert?.(wasPunch ? '✓ PUNCHED THROUGH ROADBLOCK!' : '✓ ROADBLOCK BYPASSED');
-        this.hooks.onRadio?.('UNIT-04', 'Suspect cleared the roadblock, continuing pursuit!', false);
-        this.hooks.onStreetRadio?.('GPS', wasPunch ? '🔥 Front pack punched through the block! Back on main route.' : '✓ Bypass complete — back on main race route!');
+        this.hooks.onRadio?.('UNIT-04', 'Suspect cleared the roadblock, continuing pursuit!', false, 'roadblock_cleared');
+        this.hooks.onStreetRadio?.(
+          'GPS',
+          wasPunch ? '🔥 Front pack punched through the block! Back on main route.' : '✓ Bypass complete — back on main race route!',
+          'street_rb_cleared',
+        );
       }
     }
 
-    this.s = this.units[0].s;
-    this.speed = this.units[0].speed;
-    this.gap = closestGap;
+    // Track closest active unit for LOS raycast, HUD distance, and acoustic Doppler stereo siren
+    this.s = closestUnit.s;
+    this.speed = closestUnit.speed;
+    this.world.copy(closestUnit.world);
+    this.minDist = Number.isFinite(minDist) ? minDist : 999;
     this.placeUnits(playerPos);
 
-    // Fair bust meter: only builds if nearly stopped (< 12 km/h) AND pinned within 8 m; decays smoothly if you break loose!
-    if (minDist < BUST_GAP && kmh < BUST_SLOW) {
-      this.slow += dt;
+    // Compute acoustic Doppler ratio & stereo pan for closest active unit
+    const dx = closestUnit.world.x - playerPos.x;
+    const dz = closestUnit.world.z - playerPos.z;
+    const distSafe = Math.max(0.5, Math.hypot(dx, dz));
+    const dirX = dx / distSafe;
+    const dirZ = dz / distSafe;
+    const vRel = (closestUnit.velX - pVelX) * dirX + (closestUnit.velZ - pVelZ) * dirZ;
+    const rawDoppler = THREE.MathUtils.clamp(SOUND_SPEED / Math.max(120, SOUND_SPEED + vRel), 0.86, 1.16);
+    this.smoothDoppler += (rawDoppler - this.smoothDoppler) * Math.min(1, safeDt * 8);
+
+    let rightX: number;
+    let rightZ: number;
+    if (playerHeadingRad !== undefined && Number.isFinite(playerHeadingRad)) {
+      const fwdX = Math.sin(playerHeadingRad);
+      const fwdZ = Math.cos(playerHeadingRad);
+      rightX = -fwdZ;
+      rightZ = fwdX;
     } else {
-      this.slow = Math.max(0, this.slow - dt * 1.6);
+      rightX = pRight.x;
+      rightZ = pRight.z;
+    }
+    const rawPan = THREE.MathUtils.clamp(dirX * rightX + dirZ * rightZ, -1, 1);
+    this.smoothPan += (rawPan - this.smoothPan) * Math.min(1, safeDt * 10);
+
+    const prox = Math.max(0, Math.min(1, 1 - this.minDist / 260));
+    this.sirenSnapshot.proximity = prox;
+    this.sirenSnapshot.dopplerRatio = this.smoothDoppler;
+    this.sirenSnapshot.pan = this.smoothPan;
+    this.sirenSnapshot.aggressive = this.minDist < 42 || this.tactic === 'PIT MANEUVER' || !!this.roadblock?.active;
+    this.sirenSnapshot.hornPulse = this.hornPulse;
+
+    // Bust meter: dangerous when boxed in (< 15 km/h within 9.5 m for 4.2 s)
+    if (this.minDist < BUST_GAP && kmh < BUST_SLOW) {
+      this.slow += safeDt;
+    } else {
+      this.slow = Math.max(0, this.slow - safeDt * 1.4);
     }
     if (this.slow >= BUST_HOLD) {
-      this.hooks.onRadio?.('UNIT-04', 'Suspect vehicle pinned and immobilized. Driver in custody, 10-15.', true);
+      this.hooks.onRadio?.('UNIT-04', 'Suspect vehicle pinned and immobilized. Driver in custody, 10-15.', true, 'busted');
       this.breakOff();
       this.hooks.bust();
       return;
     }
 
-    // Realistic EVADING cooldown transition when player pulls > 165 m clear
-    if (minDist > ESCAPE_GAP) {
-      this.far += dt;
-      if (!this.evading && this.far >= 1.8) {
-        this.enterEvading('Suspect out of visual range, switching to search pattern.');
+    // Harder escape: must hold > 275 m clear continuously for 3.8 s to enter EVADING
+    if (this.minDist > ESCAPE_GAP) {
+      this.far += safeDt;
+      if (!this.evading && this.far >= ESCAPE_HOLD_FAR) {
+        this.enterEvading('Suspect pulled out of visual range, switching to high-speed search pattern.', 'evading_gap');
       }
     } else {
       this.far = 0;
-      if (this.evading && minDist < 95) {
+      if (this.evading && this.minDist < EVADE_REACQUIRE) {
         this.evading = false;
         this.evadeTimer = 0;
+        this.blind = 0;
         this.tactic = 'PURSUIT';
-        this.hooks.onRadio?.('UNIT-04', 'Visual re-acquired! Back in pursuit!', true);
+        this.triggerHorn();
+        this.hooks.onAlert?.('🚨 VISUAL RE-ACQUIRED · BACK IN PURSUIT!');
+        this.hooks.onRadio?.(closestUnit.callsign, 'Visual re-acquired! Closing in, back in pursuit!', true, 'reacquired');
       }
     }
 
     if (this.evading) {
-      this.evadeTimer += dt;
+      this.evadeTimer += safeDt;
       if (this.evadeTimer >= EVADE_HOLD) {
-        this.hooks.onRadio?.('DISPATCH', '10-22, cancel pursuit. Suspect evaded — all units return to patrol.', true);
+        this.hooks.onRadio?.('DISPATCH', '10-22, cancel pursuit. Suspect evaded — all units return to patrol.', true, 'escaped');
         this.breakOff();
         this.hooks.escaped();
         return;
       }
-    } else if (this.t > GIVE_UP && minDist > 90) {
-      this.hooks.onRadio?.('DISPATCH', 'Pursuit terminated for public safety. All units stand down.', true);
+    } else if (this.t > GIVE_UP && this.minDist > 130) {
+      this.hooks.onRadio?.('DISPATCH', 'Pursuit terminated for public safety. All units stand down.', true, 'escaped');
       this.breakOff();
       this.hooks.escaped();
     }
   }
 
-  private enterEvading(radioLine: string) {
+  private enterEvading(radioLine: string, clipId: string) {
     if (this.evading) return;
     this.evading = true;
     this.evadeTimer = 0;
     this.tactic = 'EVADING';
-    this.hooks.onAlert?.('💨 EVADING PURSUIT · STAY OUT OF SIGHT');
-    this.hooks.onRadio?.('UNIT-04', radioLine, true);
+    this.hooks.onAlert?.('💨 EVADING PURSUIT · STAY CLEAR FOR 14s');
+    this.hooks.onRadio?.('UNIT-04', radioLine, true, clipId);
   }
 
-  /** Line-of-sight escape: losing sight behind city buildings triggers EVADING cooldown cleanly. */
+  /** Line-of-sight escape: losing sight behind city buildings for 6.5 s triggers EVADING cooldown. */
   see(blocked: boolean, dt: number) {
     if (!this.active) return;
     this.blind = blocked ? this.blind + dt : 0;
     if (this.blind >= LOS_HOLD && !this.evading) {
-      this.enterEvading('Lost visual behind downtown blocks, entering cooldown search.');
+      this.enterEvading('Lost visual behind downtown blocks, widening search grid.', 'evading_los');
     }
   }
 
-  get proximity() { return this.active ? Math.max(0, 1 - Math.abs(this.gap) / 185) : 0; }
-  get distance() { return Math.abs(this.gap); }
+  /** Rich siren telemetry for spatial Doppler siren & airhorn audio. */
+  get sirenState(): SirenState {
+    return this.sirenSnapshot;
+  }
+
+  /** Backwards-compatible siren proximity (0..1 within 260 m). */
+  get proximity() { return this.active ? Math.max(0, 1 - this.minDist / 260) : 0; }
+  /** Backwards-compatible distance (m) to closest pursuing unit. */
+  get distance() { return this.minDist; }
+
+  private placeUnit(u: PatrolUnit, teleport = false) {
+    if (!u.active) {
+      if (u.root) u.root.visible = false;
+      if (u.body) {
+        u.body.setTranslation({ x: 0, y: -600, z: 0 }, true);
+        u.body.setEnabled(false);
+      }
+      return;
+    }
+    this.lane.at(u.s, u.lat, u.world);
+    if (teleport) u.prevWorld.copy(u.world);
+    const i = this.lane.idx(u.s);
+    const r = this.lane.right[i];
+    const yaw = Math.atan2(r.z, -r.x);
+    u.yaw = yaw;
+    if (u.root) {
+      u.root.position.set(u.world.x, u.world.y + 0.02, u.world.z);
+      u.root.rotation.y = yaw;
+      u.root.visible = true;
+    }
+    if (u.body) {
+      this.tmpQuat.setFromAxisAngle(this.upAxis, yaw);
+      u.body.setEnabled(true);
+      const pos = { x: u.world.x, y: u.world.y, z: u.world.z };
+      const rot = { x: this.tmpQuat.x, y: this.tmpQuat.y, z: this.tmpQuat.z, w: this.tmpQuat.w };
+      if (teleport) {
+        u.body.setTranslation(pos, true);
+        u.body.setRotation(rot, true);
+      } else {
+        u.body.setNextKinematicTranslation(pos);
+        u.body.setNextKinematicRotation(rot);
+      }
+    }
+  }
 
   private placeUnits(_playerPos: THREE.Vector3, teleport = false) {
     for (const u of this.units) {
-      if (!u.active) {
-        if (u.root) u.root.visible = false;
-        if (u.body) {
-          u.body.setTranslation({ x: 0, y: -600, z: 0 }, true);
-          u.body.setEnabled(false);
-        }
-        continue;
-      }
-      this.lane.at(u.s, u.lat, u.world);
-      const i = this.lane.idx(u.s);
-      const r = this.lane.right[i];
-      const yaw = Math.atan2(r.z, -r.x);
-      if (u.root) {
-        u.root.position.set(u.world.x, u.world.y + 0.02, u.world.z);
-        u.root.rotation.y = yaw;
-        u.root.visible = true;
-      }
-      if (u.body) {
-        this.tmpQuat.setFromAxisAngle(this.upAxis, yaw);
-        u.body.setEnabled(true);
-        const pos = { x: u.world.x, y: u.world.y, z: u.world.z };
-        const rot = { x: this.tmpQuat.x, y: this.tmpQuat.y, z: this.tmpQuat.z, w: this.tmpQuat.w };
-        if (teleport) {
-          u.body.setTranslation(pos, true);
-          u.body.setRotation(rot, true);
-        } else {
-          u.body.setNextKinematicTranslation(pos);
-          u.body.setNextKinematicRotation(rot);
-        }
-      }
-      void this.tmpPos;
+      this.placeUnit(u, teleport);
     }
   }
 }

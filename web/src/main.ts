@@ -826,22 +826,29 @@ async function main() {
         const bot = ai.cars[Math.floor(Math.random() * ai.cars.length)];
         const call = bot?.name.split(' ')[0] || '#Bot2';
         setTimeout(() => {
-          if (driving()) radioComms.aiStreetRadio(call, `Heads up! ${sel.name} just tripped ${cam.name} at ${speedKmh} km/h — scanners are hot!`);
+          if (driving()) radioComms.aiStreetRadio(call, `Heads up! ${sel.name} just tripped ${cam.name} at ${speedKmh} km/h — scanners are hot!`, 'street_cam_warn');
         }, 1600);
       }
     },
-    onRadio: (unit, text, speak) => {
-      radioComms.policeIntercept(unit, text, speak !== false);
+    onRadio: (unit, text, speak, clipId) => {
+      radioComms.policeIntercept(unit, text, speak !== false, clipId);
     },
-    onStreetRadio: (callsign, text) => {
-      radioComms.aiStreetRadio(callsign, text);
+    onStreetRadio: (callsign, text, clipId) => {
+      radioComms.aiStreetRadio(callsign, text, clipId);
     },
   });
-  // Patrol cruiser prototype: cloned into interceptor + flanker + 2-cruiser tactical roadblock with Rapier colliders,
-  // AND 2 parked Friends' Cars in the background bays of the Garage showroom.
-  void loadGLTF('/assets/cars/v3/vela_gt_traffic.glb').then((g) => {
+  // Police Interceptor template: Falcorn Hellhound muscle interceptor dressed with black-and-white livery,
+  // steel pushbar, full LED lightbar & real flashing red/blue lights (built in policeCar.ts).
+  void loadGLTF('/assets/cars/v5/falcorn_hellhound_hero.glb').then((g) => {
     cops.setupVisuals(g.scene, scene, pw);
-    if (garage) {
+  }).catch(() => {
+    void loadGLTF('/assets/cars/v3/vela_gt_traffic.glb').then((g) => {
+      cops.setupVisuals(g.scene, scene, pw);
+    }).catch(() => { /* pursuit & roadblock logic still runs even without cruiser mesh */ });
+  });
+  // 2 parked Friends' Cars in the background bays of the Garage showroom.
+  if (garage) {
+    void loadGLTF('/assets/cars/v3/vela_gt_traffic.glb').then((g) => {
       const baySpecs = [
         { x: -6.2, z: -5.4, yaw: 0.42 },
         { x: 6.4, z: -5.8, yaw: -0.48 },
@@ -853,8 +860,8 @@ async function main() {
         fc.scale.setScalar(0.98);
         garage.scene.add(fc);
       }
-    }
-  }).catch(() => { /* pursuit & roadblock logic still runs even without cruiser mesh */ });
+    }).catch(() => {});
+  }
   let playerS = 0, copSpawned = false;
   /** test/dev hook: the headless probes set the dial directly */
   const setHeat = (n: number) => { heat.level = Math.max(0, Math.min(HEAT_MAX, n)); heat.lastGain = Date.now(); renderHeat(); menu.heat = heat.level; return heat.level; };
@@ -898,8 +905,6 @@ async function main() {
       const carContact = (lastIncidentAt - lastRemoteTouchAt) < 900;
       ranked.incident(carContact ? 'contact_fault' : 'wall');
     }
-    // stewards: a heavy hit in a race (ramming / cutting through the wall line) costs +5.0 s
-    if (state === 'race' && raceLaps() > 0 && kj > 22 && penalties.addPenalty('Collision / Track Cut', 5.0)) hud.toast('⚠ +5.0s PENALTY', 'Clean racing enforced (GT7 / iRacing rules)');
   }; };
   wireDamage();
   input.onAnyInput = () => audio.unlock();
@@ -1033,26 +1038,6 @@ async function main() {
     car.settle();
     ranked?.reset();
     core.repair(); physWorker?.repair(); damage.repair(); forzaVfx.reset(false); input.hold = true;
-    syncPose();
-    remote?.kick();
-  };
-  let wrongWayT = 0;
-  /** Realigns a car that pulled a U-turn in a race back onto the forward race heading (never repairs damage). */
-  const alignForwardOnTrack = () => {
-    const t = car.body.translation();
-    let best = 0, bd = Infinity;
-    for (let i = 0; i < route.samples.length; i++) {
-      const q = route.samples[i], d = (q.x - t.x) ** 2 + (-q.y - t.z) ** 2;
-      if (d < bd) { bd = d; best = i; }
-    }
-    const q = route.samples[best];
-    const p = new THREE.Vector3(q.x, t.y + 1.5, -q.y);
-    if (nyc) p.y = Math.max(p.y, nyc.heightAt(p.x, p.z) + 1.5);
-    const hit = pw.raycast(p, p.clone().add(new THREE.Vector3(0, -30, 0)), car.body);
-    if (hit) p.y -= hit.toi;
-    p.y += core.info.cgHeight + 0.02;
-    car.place(p, Math.atan2(Math.cos(q.heading), -Math.sin(q.heading)));
-    car.settle();
     syncPose();
     remote?.kick();
   };
@@ -2549,7 +2534,7 @@ async function main() {
     specPrev.copy(cur.root.position);
     specOut[OUT.speed] = cur.ground ? cur.speed() : v;
     rig.update(frame, specPos, specQuat, stepAcc.set(0, 0, 0), specOut);
-    // esports broadcast pill (~10 Hz): watched car's speed, lateral G, and our steward penalties
+    // broadcast telemetry pill (~10 Hz): watched car's speed and lateral G
     const now = performance.now();
     if (now - specTelAt > 100) {
       const dtT = (now - specTelAt) / 1000;
@@ -2562,7 +2547,7 @@ async function main() {
       const latG = dtT > 0 && dtT < 1 ? Math.abs(spd * dYaw / dtT) / 9.81 : 0;
       let tel = specEl.querySelector('.sp-tel') as HTMLElement | null;
       if (!tel) { tel = document.createElement('span'); tel.className = 'sp-tel'; specEl.insertBefore(tel, specEl.querySelector('button')); }
-      tel.textContent = `${Math.round(spd * 3.6)} km/h · ${latG.toFixed(2)} G${penalties.seconds > 0 ? ` · YOU +${penalties.seconds.toFixed(1)}s` : ''}`;
+      tel.textContent = `${Math.round(spd * 3.6)} km/h · ${latG.toFixed(2)} G`;
     }
   }
   let specTelAt = 0, specTelYaw = 0;
@@ -3167,8 +3152,8 @@ async function main() {
     setState('results');
     audio.muted = true;
     if (raceLaps() > 0 && !myDnf) audio.triggerFinishSwell();
-    const penaltySec = raceLaps() > 0 ? penalties.seconds : 0;
-    const total = lapTimes.reduce((a, b) => a + b, 0) + penaltySec;
+    const penaltySec = 0;
+    const total = lapTimes.reduce((a, b) => a + b, 0);
     hideSpectate();
     rig.setTarget(car.body, core.info.redline);
     const st = standings();
@@ -3662,36 +3647,10 @@ async function main() {
     cops.updateCameras(frame, playerS, pos, liveKmh, state === 'race' && copsOnNow, Math.max(1, heat.level));
     const inRaceNow = raceLaps() > 0;
     const myRank = inRaceNow ? Math.max(1, rank(standings()).findIndex((x) => x.you) + 1) : 1;
-    cops.update(frame, playerS, pos, liveKmh, myRank, inRaceNow);
+    const playerHeadingRad = Math.atan2(2 * (quat.w * quat.y + quat.x * quat.z), 1 - 2 * (quat.y * quat.y + quat.x * quat.x));
+    cops.update(frame, playerS, pos, liveKmh, myRank, inRaceNow, playerHeadingRad);
     minimap.roadblockReroute = cops.roadblockReroute;
     void copSpawned;
-
-    // In-race No-U-Turn enforcement (Free Roam remains 100% free to turn around!)
-    if (state === 'race' && inRaceNow && !myDnf && route.samples.length > 2) {
-      const nS = route.samples.length;
-      const sIdx = Math.min(nS - 1, Math.max(0, Math.round((playerS / Math.max(1, route.length_m)) * nS) % nS));
-      const q = route.samples[sIdx];
-      const rfx = Math.cos(q.heading), rfz = -Math.sin(q.heading);
-      const cfx = 2 * (quat.x * quat.z + quat.w * quat.y);
-      const cfz = 1 - 2 * (quat.x * quat.x + quat.y * quat.y);
-      const dot = cfx * rfx + cfz * rfz;
-      if (dot < -0.35) {
-        wrongWayT += frame * (liveKmh > 10 ? 1.25 : 0.75);
-        hud.outWarn = '⛔ NO U-TURNS IN RACE · WRONG WAY';
-        if (wrongWayT >= 2.2) {
-          wrongWayT = 0;
-          hud.outWarn = '';
-          alignForwardOnTrack();
-          hud.toast('⛔ NO U-TURNS IN RACE', 'Realigned forward on track');
-        }
-      } else {
-        if (hud.outWarn === '⛔ NO U-TURNS IN RACE · WRONG WAY') hud.outWarn = '';
-        wrongWayT = Math.max(0, wrongWayT - frame * 2);
-      }
-    } else {
-      if (hud.outWarn === '⛔ NO U-TURNS IN RACE · WRONG WAY') hud.outWarn = '';
-      wrongWayT = 0;
-    }
 
     // Roadside Speed Camera proximity indicator (posted speed limit circle + distance)
     const nc = state === 'race' && copsOnNow ? cops.nextCamera : null;
@@ -3719,7 +3678,8 @@ async function main() {
       copRayD.x = dx / len; copRayD.y = dy / len; copRayD.z = dz / len;
       const hit = pw.world.castRay(copRay, len - 2, true);
       cops.see(!!hit, frame);
-      audio.siren(cops.proximity);
+      const ss = cops.sirenState;
+      audio.siren(ss.proximity, { doppler: ss.dopplerRatio, pan: ss.pan, aggressive: ss.aggressive, hornPulse: ss.hornPulse });
       const bp = cops.bustProgress;
       const ct = bp > 0.05
         ? `🚨 BUSTING ${Math.round(bp * 100)}% — FLOOR IT!`

@@ -370,8 +370,24 @@ export class GameAudio {
   /** Surface wetness 0 (dry asphalt) .. 1 (rain puddles) & off-road gravel flag. */
   roadWetness = 0.3;
   onGravel = false;
-  /** two-tone police siren, created on first use; gain follows the pursuit's proximity */
-  private srn: { o: OscillatorNode; lfo: OscillatorNode; lg: GainNode; g: GainNode } | null = null;
+  /** Multi-mode Whelen/Federal Signal 100W police siren + Rumbler sub-layer + Doppler/Pan + dual-tone airhorn. */
+  private srn: {
+    oMain: OscillatorNode;
+    oDet: OscillatorNode;
+    oRumbler: OscillatorNode;
+    lfo: OscillatorNode;
+    lg: GainNode;
+    lgSub: GainNode;
+    distLp: BiquadFilterNode;
+    rumbleGain: GainNode;
+    panner: StereoPannerNode | null;
+    g: GainNode;
+    airhornGain: GainNode;
+    revSend: GainNode | null;
+    mode: 'wail' | 'yelp' | 'phaser';
+    modeSwitchAt: number;
+    lastAirhornAt: number;
+  } | null = null;
   private lastGear = 1;
   private lastRpm = 800;
   private nextCrackleAt = 0;
@@ -548,6 +564,8 @@ export class GameAudio {
     zero(this.brakeSquealGain);
     zero(this.stemIntakeGain);
     zero(this.srn?.g);
+    zero(this.srn?.rumbleGain);
+    zero(this.srn?.airhornGain);
     for (let i = 0; i < 4; i++) zero(this.stemZoneGains[i]);
     zero(this.stemDecelGain);
     zero(this.stemEngMaster);
@@ -766,6 +784,8 @@ export class GameAudio {
     zero(this.cavity?.g);
     zero(this.wind?.g);
     zero(this.srn?.g);
+    zero(this.srn?.rumbleGain);
+    zero(this.srn?.airhornGain);
     zero(this.brakeGain);
     zero(this.brakeHissGain);
     zero(this.brakeSquealGain);
@@ -1272,33 +1292,298 @@ export class GameAudio {
   }
 
   /**
-   * Police siren while a pursuit is live: a wailing tone (LFO on pitch) at a level set by proximity. Silent and free
-   * when there is no chase (the nodes are created once, on the first call after the audio context unlocks).
+   * Realistic multi-mode Whelen CenCom / Federal Signal 100W police interceptor siren:
+   * - Detuned dual-oscillator horn-speaker resonator stack (megaphone formant bandpass + presence peak + distance LP + soft saturation)
+   * - Low-frequency Rumbler sub-layer (0.5x pitch) that kicks in at close range (> 0.55)
+   * - Organic WAIL / YELP / PHASER mode cycling based on proximity & pursuit aggression
+   * - 3D Doppler pitch shift, stereo panning, urban canyon reverb send, and dual-tone brass police airhorn bursts
    */
-  siren(level: number) {
+  siren(
+    level: number,
+    opts?: { doppler?: number; pan?: number; aggressive?: boolean; hornPulse?: number },
+  ) {
     if (!this.ctx || !this.out) return;
-    const t = this.ctx.currentTime;
-    if (level <= 0.01 || this.muted) {
-      if (this.srn) this.srn.g.gain.setTargetAtTime(0, t, 0.12);
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const lvl = clamp(level, 0, 1);
+
+    if (lvl <= 0.01 || this.muted) {
+      if (this.srn) {
+        this.srn.g.gain.setTargetAtTime(0, t, 0.10);
+        this.srn.rumbleGain.gain.setTargetAtTime(0, t, 0.08);
+        if (this.muted) {
+          this.srn.airhornGain.gain.cancelScheduledValues(t);
+          this.srn.airhornGain.gain.setTargetAtTime(0, t, 0.02);
+        }
+      }
       return;
     }
+
     if (!this.srn) {
-      const o = this.ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.frequency.value = 760;
-      const lfo = this.ctx.createOscillator();
+      // Primary horn driver stack: sawtooth + 1.004x detuned square through soft PA saturation & megaphone formants
+      const oMain = ctx.createOscillator();
+      oMain.type = 'sawtooth';
+      oMain.frequency.value = 1055;
+
+      const oDet = ctx.createOscillator();
+      oDet.type = 'square';
+      oDet.frequency.value = 1055;
+      oDet.detune.value = 7; // ~1.00405x subtle compression-driver chorus/detune
+
+      const gMain = ctx.createGain();
+      gMain.gain.value = 0.66;
+      const gDet = ctx.createGain();
+      gDet.gain.value = 0.24;
+
+      const shaper = ctx.createWaveShaper();
+      let hornCurve = this.shaperCache.get('siren_pa');
+      if (!hornCurve) {
+        hornCurve = warmExhaustCurve(2.2);
+        this.shaperCache.set('siren_pa', hornCurve);
+      }
+      shaper.curve = hornCurve;
+      shaper.oversample = '2x';
+
+      // Dual resonant megaphone formant filter + distance-dependent atmospheric lowpass
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 1350;
+      bp.Q.value = 1.4;
+
+      const peak = ctx.createBiquadFilter();
+      peak.type = 'peaking';
+      peak.frequency.value = 2500;
+      peak.Q.value = 1.5;
+      peak.gain.value = 5.5;
+
+      const distLp = ctx.createBiquadFilter();
+      distLp.type = 'lowpass';
+      distLp.frequency.value = 2200;
+      distLp.Q.value = 0.85;
+
+      // Low-frequency Federal Signal Rumbler sub-layer (0.5x pitch, felt when cruiser is close)
+      const oRumbler = ctx.createOscillator();
+      oRumbler.type = 'sawtooth';
+      oRumbler.frequency.value = 527.5;
+
+      const rumbleLp = ctx.createBiquadFilter();
+      rumbleLp.type = 'lowpass';
+      rumbleLp.frequency.value = 380;
+      rumbleLp.Q.value = 1.1;
+
+      const rumbleGain = ctx.createGain();
+      rumbleGain.gain.value = 0;
+
+      // Shared LFO driving primary horn oscillators + half-depth Rumbler oscillator
+      const lfo = ctx.createOscillator();
       lfo.type = 'sine';
-      lfo.frequency.value = 0.55;          // one wail every ~1.8 s
-      const lg = this.ctx.createGain();
-      lg.gain.value = 230;
-      const g = this.ctx.createGain();
+      lfo.frequency.value = 0.21;
+
+      const lg = ctx.createGain();
+      lg.gain.value = 425;
+
+      const lgSub = ctx.createGain();
+      lgSub.gain.value = 212.5;
+
+      lfo.connect(lg);
+      lg.connect(oMain.frequency);
+      lg.connect(oDet.frequency);
+      lfo.connect(lgSub).connect(oRumbler.frequency);
+
+      // Master siren gain -> StereoPanner -> out (+ urban reverb / tunnel send)
+      const g = ctx.createGain();
       g.gain.value = 0;
-      lfo.connect(lg).connect(o.frequency);
-      o.connect(g).connect(this.out);
-      o.start(); lfo.start();
-      this.srn = { o, lfo, lg, g };
+
+      const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+      if (panner) panner.pan.value = 0;
+
+      oMain.connect(gMain).connect(shaper);
+      oDet.connect(gDet).connect(shaper);
+      shaper.connect(bp).connect(peak).connect(distLp).connect(g);
+      oRumbler.connect(rumbleLp).connect(rumbleGain).connect(g);
+
+      const airhornGain = ctx.createGain();
+      airhornGain.gain.value = 1;
+
+      if (panner) {
+        g.connect(panner);
+        airhornGain.connect(panner);
+        panner.connect(this.out);
+      } else {
+        g.connect(this.out);
+        airhornGain.connect(this.out);
+      }
+
+      // Urban street-canyon / tunnel echo send for realistic Manhattan bounce
+      let revSend: GainNode | null = null;
+      if (this.reverbSend || this.tunnelSend) {
+        revSend = ctx.createGain();
+        revSend.gain.value = 0.36;
+        g.connect(revSend);
+        airhornGain.connect(revSend);
+        if (this.reverbSend) revSend.connect(this.reverbSend);
+        if (this.tunnelSend) revSend.connect(this.tunnelSend);
+      }
+
+      oMain.start();
+      oDet.start();
+      oRumbler.start();
+      lfo.start();
+
+      this.srn = {
+        oMain,
+        oDet,
+        oRumbler,
+        lfo,
+        lg,
+        lgSub,
+        distLp,
+        rumbleGain,
+        panner,
+        g,
+        airhornGain,
+        revSend,
+        mode: 'wail',
+        modeSwitchAt: t + 3.5,
+        lastAirhornAt: -10,
+      };
     }
-    this.srn.g.gain.setTargetAtTime(0.025 + level * 0.11, t, 0.15);
+
+    const s = this.srn;
+    const doppler = clamp(opts?.doppler ?? 1.0, 0.85, 1.18);
+    const pan = clamp(opts?.pan ?? 0, -0.85, 0.85);
+    const aggressive = Boolean(opts?.aggressive);
+
+    // Organic Whelen CenCom mode selection based on proximity & tactical aggression
+    let desiredMode: 'wail' | 'yelp' | 'phaser';
+    if (aggressive || lvl >= 0.78) {
+      if (s.mode !== 'phaser' && s.mode !== 'yelp') {
+        s.mode = 'phaser';
+        s.modeSwitchAt = t + 3.5;
+      } else if (t >= s.modeSwitchAt) {
+        s.mode = s.mode === 'phaser' ? 'yelp' : 'phaser';
+        s.modeSwitchAt = t + 3.4 + Math.random() * 0.6;
+      }
+      desiredMode = s.mode;
+    } else if (lvl >= 0.48) {
+      desiredMode = 'yelp';
+      s.mode = 'yelp';
+      s.modeSwitchAt = t + 3.5;
+    } else {
+      desiredMode = 'wail';
+      s.mode = 'wail';
+      s.modeSwitchAt = t + 3.5;
+    }
+
+    // Mode pitch sweep ranges (authentic US 100W electronic police siren specs):
+    // WAIL:   0.21 Hz, 630–1480 Hz (center 1055, depth 425)
+    // YELP:   2.70 Hz, 660–1560 Hz (center 1110, depth 450)
+    // PHASER: 8.20 Hz, 720–1450 Hz (center 1085, depth 365)
+    let lfoHz = 0.21;
+    let centerHz = 1055;
+    let depthHz = 425;
+    if (desiredMode === 'yelp') {
+      lfoHz = 2.7;
+      centerHz = 1110;
+      depthHz = 450;
+    } else if (desiredMode === 'phaser') {
+      lfoHz = 8.2;
+      centerHz = 1085;
+      depthHz = 365;
+    }
+
+    const dCenter = centerHz * doppler;
+    const dDepth = depthHz * doppler;
+    s.lfo.frequency.setTargetAtTime(lfoHz, t, 0.04);
+    s.oMain.frequency.setTargetAtTime(dCenter, t, 0.045);
+    s.oDet.frequency.setTargetAtTime(dCenter, t, 0.045);
+    s.oRumbler.frequency.setTargetAtTime(dCenter * 0.5, t, 0.045);
+    s.lg.gain.setTargetAtTime(dDepth, t, 0.045);
+    s.lgSub.gain.setTargetAtTime(dDepth * 0.5, t, 0.045);
+
+    // Distance-dependent atmospheric air absorption: muffled 950 Hz far away -> crisp 4600 Hz right next to you
+    const lpHz = 950 + Math.pow(lvl, 1.15) * (4600 - 950);
+    s.distLp.frequency.setTargetAtTime(lpHz, t, 0.06);
+
+    // Rumbler low-frequency sub-layer kicks in above 0.55 proximity
+    const rumbleAmt = lvl > 0.55 ? clamp((lvl - 0.55) / 0.45, 0, 1) * 0.45 : 0;
+    s.rumbleGain.gain.setTargetAtTime(rumbleAmt, t, 0.08);
+
+    // Stereo panning + urban reverb wet ratio (more wet echo when further away)
+    if (s.panner) s.panner.pan.setTargetAtTime(pan, t, 0.045);
+    if (s.revSend) {
+      const revAmt = clamp(0.22 + (1 - lvl) * 0.34 + this.envReverb * 0.28, 0.18, 0.72);
+      s.revSend.gain.setTargetAtTime(revAmt, t, 0.08);
+    }
+
+    // Master siren gain (balanced so it cuts cleanly through engine + city mix without piercing)
+    const targetGain = 0.032 + Math.pow(lvl, 1.1) * 0.145;
+    s.g.gain.setTargetAtTime(targetGain, t, 0.08);
+    s.airhornGain.gain.setTargetAtTime(1, t, 0.02);
+
+    // Dual-tone brass police airhorn double-tap burst (2.8 s cooldown)
+    if (opts?.hornPulse && opts.hornPulse > 0.5 && t - s.lastAirhornAt >= 2.8) {
+      s.lastAirhornAt = t;
+      this.firePoliceAirhorn(s.airhornGain, doppler, lvl);
+    }
+  }
+
+  /** Brief authentic double-tap dual-tone brass police airhorn (385 Hz + 478 Hz sawtooth + 750 Hz bandpass). */
+  private firePoliceAirhorn(dest: GainNode, doppler: number, level: number) {
+    const ctx = this.ctx;
+    if (!ctx || this.muted) return;
+    const t0 = ctx.currentTime;
+    const peakAmp = 0.065 + clamp(level, 0.2, 1) * 0.135;
+
+    // Double-tap bursts: 0.22 s first blast, 0.07 s gap, 0.32 s second blast
+    const bursts: [number, number][] = [
+      [0.0, 0.22],
+      [0.29, 0.32],
+    ];
+
+    let shaperCurve = this.shaperCache.get('siren_pa');
+    if (!shaperCurve) {
+      shaperCurve = warmExhaustCurve(2.2);
+      this.shaperCache.set('siren_pa', shaperCurve);
+    }
+
+    for (const [offset, dur] of bursts) {
+      const start = t0 + offset;
+      const end = start + dur;
+
+      const o1 = ctx.createOscillator();
+      o1.type = 'sawtooth';
+      o1.frequency.setValueAtTime(385 * doppler, start);
+      o1.frequency.exponentialRampToValueAtTime(378 * doppler, end);
+
+      const o2 = ctx.createOscillator();
+      o2.type = 'sawtooth';
+      o2.frequency.setValueAtTime(478 * doppler, start);
+      o2.frequency.exponentialRampToValueAtTime(470 * doppler, end);
+
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 750;
+      bp.Q.value = 1.15;
+
+      const shaper = ctx.createWaveShaper();
+      shaper.curve = shaperCurve;
+
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0.0001, start);
+      env.gain.linearRampToValueAtTime(peakAmp, start + 0.012);
+      env.gain.setValueAtTime(peakAmp * 0.92, Math.max(start + 0.02, end - 0.035));
+      env.gain.exponentialRampToValueAtTime(0.0001, end);
+
+      o1.connect(bp);
+      o2.connect(bp);
+      bp.connect(shaper).connect(env).connect(dest);
+
+      o1.start(start);
+      o2.start(start);
+      o1.stop(end + 0.02);
+      o2.stop(end + 0.02);
+    }
   }
 
   unlock() {
