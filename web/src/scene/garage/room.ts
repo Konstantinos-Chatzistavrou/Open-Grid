@@ -6,6 +6,7 @@ import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { abs, dot, normalView, positionViewDirection, pow, uv, vec3, vec4 } from 'three/tsl';
 import { loadKTX2 } from '../loaders';
+import { pubUrl } from '../../assetBase';
 import { LightBake } from './bake';
 import { bakedMaterial, decalMaterial, emissiveMaterial, floorMaterial, type FloorHandle, type SurfaceMaps } from './materials';
 
@@ -190,7 +191,7 @@ export interface GarageRoom {
   bays: { x: number; z: number; ry: number }[];
 }
 
-const T = (n: string, m: string) => `/assets/garage/tex/${n}_${m}.ktx2`;
+const T = (n: string, m: string) => pubUrl(`/assets/garage/tex/${n}_${m}.ktx2`);
 async function maps(name: string, nor = true, arm = false): Promise<SurfaceMaps> {
   const [diff, n, a] = await Promise.all([
     loadKTX2(T(name, 'diff'), true),

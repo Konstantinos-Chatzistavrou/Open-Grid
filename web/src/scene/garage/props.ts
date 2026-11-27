@@ -4,6 +4,7 @@
 // gets its own baked light attributes while sharing the model's vertex buffers.
 import * as THREE from 'three/webgpu';
 import { loadGLTF } from '../loaders';
+import { pubUrl } from '../../assetBase';
 import type { LightBake } from './bake';
 import { bakedPropMaterial } from './materials';
 
@@ -59,7 +60,7 @@ export const LAMPS: [number, number][] = PLACES.filter((p) => p.m === 'hanging_i
 export async function loadProps(group: THREE.Group, bake: LightBake, env: THREE.Texture): Promise<number> {
   const names = [...new Set(PLACES.map((p) => p.m))];
   const loaded = new Map<string, THREE.Object3D>();
-  await Promise.all(names.map((n) => loadGLTF(`/assets/garage/props/${n}.glb`).then((g) => { loaded.set(n, g.scene); }).catch(() => { /* a missing prop is not fatal */ })));
+  await Promise.all(names.map((n) => loadGLTF(pubUrl(`/assets/garage/props/${n}.glb`)).then((g) => { loaded.set(n, g.scene); }).catch(() => { /* a missing prop is not fatal */ })));
   const matCache = new Map<THREE.Material, THREE.Material>();
   const v = new THREE.Vector3(), nrm = new THREE.Vector3(), nm = new THREE.Matrix3();
   let count = 0;

@@ -13,10 +13,11 @@
 import * as THREE from 'three/webgpu';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 import { equirectUV, mix, positionWorldDirection, texture, uniform } from 'three/tsl';
+import { pubUrl } from '../assetBase';
 
 export interface KitHdriEntry { id: string; name: string; file: string; role: 'night' | 'overcast'; strength: number; licence: string }
 
-const BASE = '/assets/kit/hdri/';
+const BASE = pubUrl('/assets/kit/hdri/');
 
 /** which night HDRI a city reflects: street-level old towns, the neon skyline for the high-rise cities */
 const NIGHT_FOR: Record<string, string> = {

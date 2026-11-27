@@ -25,9 +25,27 @@ const isolationHeaders = process.env.DISABLE_COOP_COEP === '1' ? undefined : {
   'Cross-Origin-Embedder-Policy': 'credentialless',
 };
 
+const isItchBuild = process.env.VITE_ITCH_BUILD === '1';
+
+// When building for itch.io subpath hosting (`base: './'`), rewrite root-absolute public CSS URLs
+// (`/fonts/...`, `/assets/...`) in emitted `assets/*.css` bundles to relative `../` paths.
+const itchRelativeCss: Plugin = {
+  name: 'itch-relative-css',
+  generateBundle(_options, bundle) {
+    if (!isItchBuild) return;
+    for (const chunk of Object.values(bundle)) {
+      if (chunk.type === 'asset' && chunk.fileName.endsWith('.css') && typeof chunk.source === 'string') {
+        chunk.source = chunk.source
+          .replace(/url\(\s*(['"]?)\/(fonts|assets)\//g, 'url($1../$2/');
+      }
+    }
+  },
+};
+
 // public/data is a symlink to ../data; public/assets holds the car and city glTF files.
 export default defineConfig({
-  plugins: [telemetry],
+  base: isItchBuild ? './' : '/',
+  plugins: [telemetry, itchRelativeCss],
   server: { fs: { allow: ['..'] }, host: '127.0.0.1', port: 5173, headers: isolationHeaders },
   preview: { headers: isolationHeaders },
   build: { target: 'es2022', assetsInlineLimit: 0 },

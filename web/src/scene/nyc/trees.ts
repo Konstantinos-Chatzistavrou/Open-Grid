@@ -8,6 +8,7 @@
 import * as THREE from 'three/webgpu';
 import { Fn, attribute, dFdx, dFdy, dot, float, hash, instanceIndex, log2, max, mix, texture, uv, vec2, vec3 } from 'three/tsl';
 import type { TreeSpecies } from './props';
+import { pubUrl } from '../../assetBase';
 
 interface Habit {
   bark: 'plane' | 'furrowed' | 'ridged';
@@ -218,7 +219,7 @@ const barkMats = new Map<string, THREE.MeshStandardNodeMaterial>();
 /** Leaves: the atlas, alpha-tested, per-tree tone variation, darker inside the crown. */
 export function leafMaterial() {
   if (leafMat) return leafMat;
-  const map = tex('/assets/trees/leaves.webp', true, false);
+  const map = tex(pubUrl('/assets/trees/leaves.webp'), true, false);
   const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.72, metalness: 0, side: THREE.FrontSide });
   const t = texture(map, uv());
   const ao = attribute('ao', 'float');
@@ -238,7 +239,7 @@ export function leafMaterial() {
 export function barkMaterial(kind: string) {
   let m = barkMats.get(kind);
   if (!m) {
-    m = new THREE.MeshStandardNodeMaterial({ map: tex(`/assets/trees/bark_${kind}.jpg`, true), normalMap: tex(`/assets/trees/bark_${kind}_n.jpg`, false), roughness: 0.92, metalness: 0 });
+    m = new THREE.MeshStandardNodeMaterial({ map: tex(pubUrl(`/assets/trees/bark_${kind}.jpg`), true), normalMap: tex(pubUrl(`/assets/trees/bark_${kind}_n.jpg`), false), roughness: 0.92, metalness: 0 });
     m.normalScale.set(1.2, 1.2);
     m.color.setScalar(kind === 'plane' ? 0.75 : 0.62);
     barkMats.set(kind, m);

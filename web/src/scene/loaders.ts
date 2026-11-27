@@ -14,6 +14,7 @@ import type * as THREE from 'three/webgpu';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { pubUrl } from '../assetBase';
 
 let loader: GLTFLoader | null = null;
 let ktx2: KTX2Loader | null = null;
@@ -22,7 +23,7 @@ const cache = new Map<string, Promise<GLTF>>();
 /** Wire the decoders to the renderer (once, after renderer.init()). */
 export function initLoaders(renderer: THREE.WebGPURenderer) {
   if (loader) return;
-  ktx2 = new KTX2Loader().setTranscoderPath('/libs/basis/').detectSupport(renderer as never);
+  ktx2 = new KTX2Loader().setTranscoderPath(pubUrl('/libs/basis/')).detectSupport(renderer as never);
   // Prefer BC whenever the GPU has it. KTX2Loader ranks ETC2 (colour) and ASTC (normals) first,
   // and Mesa on Linux ADVERTISES both on Intel/AMD GPUs that only emulate them (three disables
   // them for this case on its WebGL path, not on WebGPU). On this laptop (Intel UHD, Vulkan) the
@@ -99,5 +100,9 @@ export function loadKTX2(url: string, srgb: boolean, anisotropy = 8): Promise<TH
   return p;
 }
 
-/** Game asset path from a Godot-style res:// path (the visual JSONs still use those). */
-export const assetUrl = (res: string) => res.replace('res://assets/', '/assets/');
+/** Game asset path from a Godot-style res:// path (or relative path under /assets/). */
+export const assetUrl = (res: string) => {
+  if (res.startsWith('res://assets/')) return pubUrl(res.replace('res://assets/', '/assets/'));
+  if (/^(https?:|\/|\.)/i.test(res)) return pubUrl(res);
+  return pubUrl(`/assets/${res}`);
+};

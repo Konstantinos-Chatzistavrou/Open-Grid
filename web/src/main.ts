@@ -7,6 +7,7 @@
 // Flow: loading -> title (graphics tuned once behind a cover) -> Play -> game modes: Race (you + 5 AI rivals) / Free Roam (just you) /
 // Multiplayer (party lobby). The garage (title -> Garage) is cars, paint and upgrades only: back to the title, or Continue -> game modes.
 import * as THREE from 'three/webgpu';
+import { pubUrl } from './assetBase';
 import { ClusteredForwardLighting, PROP_DETAIL_LAYER, Post, PRESETS, PRESET_ORDER, usePotatoOnly, type PresetName } from './post';
 import { advancePaintWear, createPaintWearState, resetPaintWear } from './gpu/materials/carPaint';
 import { CarProbe } from './fx/carProbe';
@@ -372,12 +373,12 @@ async function main() {
   const visualCfgCache = new Map<string, Promise<CarVisualConfig>>();
   const fetchVisualCfg = (path: string) => {
     let p = visualCfgCache.get(path);
-    if (!p) { p = fetch(`/data/${path}`).then((r) => r.json() as Promise<CarVisualConfig>); visualCfgCache.set(path, p); }
+    if (!p) { p = fetch(pubUrl(`/data/${path}`)).then((r) => r.json() as Promise<CarVisualConfig>); visualCfgCache.set(path, p); }
     return p;
   };
   const physics: Record<string, unknown> = {};
-  const catalogP = fetch('/data/cars/catalog.json').then((r) => r.json() as Promise<{ cars: CatalogCar[] }>).then(async (j) => {
-    await Promise.all(j.cars.map((c) => fetch(`/data/${c.physics}`).then((r) => r.json()).then((d) => { physics[c.id] = d; })));
+  const catalogP = fetch(pubUrl('/data/cars/catalog.json')).then((r) => r.json() as Promise<{ cars: CatalogCar[] }>).then(async (j) => {
+    await Promise.all(j.cars.map((c) => fetch(pubUrl(`/data/${c.physics}`)).then((r) => r.json()).then((d) => { physics[c.id] = d; })));
     return j.cars;
   });
   // Merge any extra 1:1 cities ingested via tools/pipeline/ingest_city.py (zero TS edits!)
@@ -397,7 +398,7 @@ async function main() {
   const [catalog, defaultCfg, initRoute] = await Promise.all([
     catalogP,
     fetchVisualCfg(DEFAULT_VISUAL),
-    fetch(useNyc ? cityInfo.route : '/data/tracks/city_route.json').then((r) => r.json()),
+    fetch(useNyc ? cityInfo.route : pubUrl('/data/tracks/city_route.json')).then((r) => r.json()),
     loadCore(),
     loadRapier(),
   ]);
@@ -849,16 +850,16 @@ async function main() {
   });
   // Police Interceptor template: Falcorn Hellhound muscle interceptor dressed with black-and-white livery,
   // steel pushbar, full LED lightbar & real flashing red/blue lights (built in policeCar.ts).
-  void loadGLTF('/assets/cars/v5/falcorn_hellhound_hero.glb').then((g) => {
+  void loadGLTF(pubUrl('/assets/cars/v5/falcorn_hellhound_hero.glb')).then((g) => {
     cops.setupVisuals(g.scene, scene, pw);
   }).catch(() => {
-    void loadGLTF('/assets/cars/v3/vela_gt_traffic.glb').then((g) => {
+    void loadGLTF(pubUrl('/assets/cars/v3/vela_gt_traffic.glb')).then((g) => {
       cops.setupVisuals(g.scene, scene, pw);
     }).catch(() => { /* pursuit & roadblock logic still runs even without cruiser mesh */ });
   });
   // 2 parked Friends' Cars in the background bays of the Garage showroom.
   if (garage) {
-    void loadGLTF('/assets/cars/v3/vela_gt_traffic.glb').then((g) => {
+    void loadGLTF(pubUrl('/assets/cars/v3/vela_gt_traffic.glb')).then((g) => {
       const baySpecs = [
         { x: -6.2, z: -5.4, yaw: 0.42 },
         { x: 6.4, z: -5.8, yaw: -0.48 },

@@ -5,6 +5,7 @@
 // ?kitmat=0 turns kit materials off (reverts to the procedural materials before Phase C for before/after checks).
 import type * as THREE from 'three/webgpu';
 import { loadKTX2 } from '../scene/loaders';
+import { pubUrl } from '../assetBase';
 
 export type KitMaterialRole =
   | 'dry_asphalt'
@@ -46,7 +47,7 @@ export interface KitMaterialSet {
 
 export type KitMaterialMap = Partial<Record<KitMaterialRole, KitMaterialSet>>;
 
-const BASE = '/assets/kit/materials/';
+const BASE = pubUrl('/assets/kit/materials/');
 
 let enabled = true;
 let manifestP: Promise<KitMaterialEntry[]> | null = null;

@@ -1,12 +1,13 @@
 // Engine-agnostic Dual-Layer PBR Car Paint state, finish presets, gameplay-driven wear model,
 // and std140 UBO packer (ZERO Three.js imports; maps 1:1 to a UE5 Material Parameter Collection).
 import type { Mat4Like, Vec3Tuple } from '../math';
+import { pubUrl } from '../../assetBase';
 import carPaintWgslSource from './car_paint.wgsl?raw';
 
 export { carPaintWgslSource };
 
 /** Path to the shared 512x512 tileable RGBA dirt/splatter/streak mask (also stored in assets_source/textures/ for UE5). */
-export const CAR_DIRT_MASK_TEXTURE_PATH = '/assets/textures/car_dirt_mask_rgba.png';
+export const CAR_DIRT_MASK_TEXTURE_PATH = pubUrl('/assets/textures/car_dirt_mask_rgba.png');
 
 export type CarPaintFinishName = 'gloss' | 'satin' | 'metallic' | 'pearl' | 'candy' | 'matte';
 

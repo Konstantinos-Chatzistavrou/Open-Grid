@@ -11,6 +11,7 @@ import * as THREE from 'three/webgpu';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { PhysicsWorld } from '../../physics/world';
 import { gltfLoader } from '../loaders';
+import { pubUrl } from '../../assetBase';
 import { createPlaceholderFacade, createPlaceholderGround, createPlaceholderRoof } from './placeholders';
 import { createGroundMaterials } from './groundMaterials';
 import { createFacadeMaterial, createFarFacadeMaterial, createRoofMaterial, setCityStyle } from './facade';
@@ -158,9 +159,10 @@ export class NycStreamer {
 
   constructor(private scene: THREE.Scene, private renderer: THREE.WebGPURenderer, private pw: PhysicsWorld, private camera: THREE.Camera, opts: NycOptions) {
     this.o = {
-      base: '/assets/nyc/tiles/', nearLoad: 380, nearKeep: 460, farLoad: 1000, farKeep: 1150, colLoad: 260, colKeep: 330,
+      base: pubUrl('/assets/nyc/tiles/'), nearLoad: 380, nearKeep: 460, farLoad: 1000, farKeep: 1150, colLoad: 260, colKeep: 330,
       receiveShadow: true, debug: false, budgetMs: 2.5, fogDensity: 0.0024, treeDensity: 1, ...opts,
     };
+    this.o.base = pubUrl(this.o.base);
     this.atm = applyNycAtmosphere(this.scene, this.renderer, { fogDensity: this.o.fogDensity });
     this.breaches = new Breaches(this.scene, this.pw, {
       building: (h) => { const e = this.buildingOf.get(h); return e && !e.bc.breached ? { key: e.t.key, box: e.bc.box } : null; },

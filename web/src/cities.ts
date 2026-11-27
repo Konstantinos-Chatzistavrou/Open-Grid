@@ -6,6 +6,8 @@
 //   grid   street-grid angle from east in degrees (sidewalk slabs and pavers line up with the kerbs)
 //   map    attribution for the map data (shown in the credits line; full list in CREDITS.md)
 
+import { pubUrl } from './assetBase';
+
 export interface CityLandmark {
   name: string;
   x: number;
@@ -307,6 +309,11 @@ export const CITIES: CityInfo[] = [
     ] },
 ];
 
+for (const c of CITIES) {
+  c.base = pubUrl(c.base);
+  c.route = pubUrl(c.route);
+}
+
 const KEY = 'nr.city';
 
 export function cityById(id: string | null | undefined): CityInfo | undefined {
@@ -332,11 +339,13 @@ export function saveCity(id: string) {
  */
 export async function loadExtraCities(): Promise<void> {
   try {
-    const r = await fetch('/data/cities/extra.json');
+    const r = await fetch(pubUrl('/data/cities/extra.json'));
     if (!r.ok) return;
     const d = (await r.json()) as { cities?: CityInfo[] };
     for (const c of d.cities ?? []) {
       if (!c?.id || CITIES.some((x) => x.id === c.id)) continue;
+      c.base = pubUrl(c.base);
+      c.route = pubUrl(c.route);
       CITIES.push(c);
     }
   } catch { /* optional manifest not yet created */ }

@@ -2,6 +2,7 @@
 // Zero external dependencies, zero per-tick heap allocations, exact parity with
 // core/src/neural_driver.cpp (14 -> 48 tanh -> 32 tanh -> 3 tanh / 0.5+0.5*tanh).
 // Loads /assets/ai/neural_driver.json lazily once; fails gracefully if offline.
+import { pubUrl } from './assetBase';
 
 export const NEURAL_OBS_DIM = 14;
 export const NEURAL_H1_DIM = 48;
@@ -64,7 +65,7 @@ export class NeuralDriverPolicy {
   }
 
   /** Lazily fetch trained Open Grid Neural Driver weights once; safe & silent when offline. */
-  load(url = '/assets/ai/neural_driver.json'): Promise<boolean> {
+  load(url = pubUrl('/assets/ai/neural_driver.json')): Promise<boolean> {
     if (this.ready) return Promise.resolve(true);
     if (this.loadPromise) return this.loadPromise;
     if (typeof fetch !== 'function') return Promise.resolve(false);
@@ -117,7 +118,7 @@ export class NeuralDriverPolicy {
 let sharedPolicy: NeuralDriverPolicy | null = null;
 
 /** Shared Open Grid Neural Driver singleton (kicks off lazy fetch once in browser). */
-export function getNeuralDriver(url = '/assets/ai/neural_driver.json'): NeuralDriverPolicy {
+export function getNeuralDriver(url = pubUrl('/assets/ai/neural_driver.json')): NeuralDriverPolicy {
   if (!sharedPolicy) {
     sharedPolicy = new NeuralDriverPolicy();
     void sharedPolicy.load(url);

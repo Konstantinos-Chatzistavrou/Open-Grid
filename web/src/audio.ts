@@ -8,6 +8,7 @@
 //   * breakWallSound(): heavy structural masonry/concrete demolition + falling brick rubble + glass shatter
 import { OUT } from './physics/core';
 import { stockEngineOfCar, type EngineVoiceId } from './brands';
+import { pubUrl } from './assetBase';
 
 /** Acoustic synthesis parameters derived from real engine firing orders, crank planes & exhaust manifolds. */
 interface EngineVoiceSpec {
@@ -2217,7 +2218,7 @@ export class GameAudio {
     const dir = sep > 0 ? key.slice(0, sep) : this.stemPackDir();
     const id = sep > 0 ? key.slice(sep + 1) : key;
     try {
-      const res = await fetch(`/assets/${dir}/${id}.ogg`);
+      const res = await fetch(pubUrl(`/assets/${dir}/${id}.ogg`));
       if (!res.ok) return;
       const ab = await res.arrayBuffer();
       if (!this.ctx) return;

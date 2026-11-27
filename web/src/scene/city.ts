@@ -7,6 +7,7 @@
 import * as THREE from 'three/webgpu';
 import { texture, uv, floor, hash, vec3, float, mix, step, smoothstep, positionWorld, mx_noise_float } from 'three/tsl';
 import { gltfLoader } from './loaders';
+import { pubUrl } from '../assetBase';
 import type { PhysicsWorld } from '../physics/world';
 import type { CarInfo } from '../physics/core';
 import { CityInstances, type PropsJson } from './instancing';
@@ -26,9 +27,9 @@ export async function loadCity(scene: THREE.Scene, pw: PhysicsWorld, surfaces: C
   const prog = [0, 0];
   const report = () => onProgress(prog[0] * 0.75 + prog[1] * 0.25);
   const [gltf, lib, props] = await Promise.all([
-    L.loadAsync('/assets/city/city.glb', (e) => { if (e.total) { prog[0] = e.loaded / e.total; report(); } }),
-    L.loadAsync('/assets/city/city_props.glb', (e) => { if (e.total) { prog[1] = e.loaded / e.total; report(); } }),
-    fetch('/data/city_props.json').then((r) => r.json() as Promise<PropsJson>),
+    L.loadAsync(pubUrl('/assets/city/city.glb'), (e) => { if (e.total) { prog[0] = e.loaded / e.total; report(); } }),
+    L.loadAsync(pubUrl('/assets/city/city_props.glb'), (e) => { if (e.total) { prog[1] = e.loaded / e.total; report(); } }),
+    fetch(pubUrl('/data/city_props.json')).then((r) => r.json() as Promise<PropsJson>),
   ]);
   const root = gltf.scene;
   root.updateMatrixWorld(true);
