@@ -80,5 +80,17 @@ ok('main.ts enables dynamic weather for solo free roam only (not online, not wit
   ok('the board does not call itself global', !/GLOBAL/i.test(zs.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')));
   ok('the invented player names are gone', !/Kurogane_JP|Valkyrie99|MidnightApex|StreetGhost|Redline_NYC/.test(zs + fs.readFileSync(path.join(here, '../src/zoneBoard.ts'), 'utf8').replace(/\/\/.*$/gm, '')));
 }
+// ---- feature tiers
+{
+  const { TIERS, TIER_ORDER, tierFor } = await import(pathToFileURL(path.join(here, '../src/tiers.ts')).href);
+  ok('every preset has a tier', ['max', 'ultra', 'high', 'medium', 'low', 'potato'].every((p) => TIERS[p]));
+  const mono = (key) => TIER_ORDER.every((p, i) => i === 0 || TIERS[p][key] >= TIERS[TIER_ORDER[i - 1]][key]);
+  ok('background traffic never decreases from potato up to max', mono('backgroundTraffic'));
+  ok('pedestrians never decrease from potato up to max', mono('pedestrians'));
+  ok('the detailed rival cars stay at the current 5 on every tier (no regression, and they are the expensive kind)', TIER_ORDER.every((p) => TIERS[p].rivalCars === 5));
+  ok('the minimum tier (low) has at most 12 background cars and no pedestrians until measured', TIERS.low.backgroundTraffic <= 12 && TIERS.low.pedestrians === 0);
+  ok('no tier claims to be measured yet (only a stronger device or the minimum measurement can change that)', TIER_ORDER.every((p) => TIERS[p].measured === false));
+  ok('an unknown preset falls back to the minimum tier', tierFor('nonsense') === TIERS.low);
+}
 console.log(fails ? `\n${fails} of ${checks} FAILED` : `\nall ${checks} passed`);
 process.exit(fails ? 1 : 0);
