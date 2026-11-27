@@ -1,7 +1,8 @@
-// City-Wide Speed Traps & Drift Zones + Global/Party Leaderboards (Free Roam Exploration, OpenGrid).
+// City-Wide Speed Traps & Drift Zones + Personal/Party Leaderboards with pace targets (Free Roam Exploration, OpenGrid).
 // Deterministically scatters Speed Traps (fast straightaways) and Drift Zones (narrow twisty streets)
 // across every real-scale city (NYC, London, Paris, Tokyo, LA), renders glowing 3D street gates,
-// tracks live drift combos & trap speeds, awards XP + 1-3 Stars, and maintains persistent Global/Party Leaderboards.
+// tracks live drift combos & trap speeds, awards XP + 1-3 Stars, and keeps your bests (this device) and your party's on each zone's board, next to five fixed pace targets.
+import { paceTargets, type LeaderboardEntry } from './zoneBoard';
 import * as THREE from 'three/webgpu';
 import type { ZoneScoreNetMsg } from './party';
 import { ZONE_STAR_XP } from './progression';
@@ -24,14 +25,7 @@ export interface ZoneDef {
   stars: [number, number, number];
 }
 
-export interface LeaderboardEntry {
-  name: string;
-  score: number;
-  car: string;
-  stars: number;
-  you?: boolean;
-  party?: boolean;
-}
+export type { LeaderboardEntry } from './zoneBoard';
 
 export interface ZoneHooks {
   onScore(z: ZoneDef, score: number, stars: number, isPB: boolean, xp: number): void;
@@ -56,17 +50,9 @@ const DRIFT_NAMES: Record<string, string[]> = {
   losangeles: ['Bunker Hill Switch', 'Arts District Drift', 'Olvera Corner', 'Spring St Sweep'],
 };
 
-/** Seeded realistic global leaderboard rivals so every zone has competitive targets immediately. */
+/** The pace targets a zone's board starts with (zoneBoard.ts): fixed times, not other players. */
 function seededBoard(z: ZoneDef): LeaderboardEntry[] {
-  const [s1, s2, s3] = z.stars;
-  const mult = z.kind === 'speed' ? 1 : 1;
-  return [
-    { name: 'Kurogane_JP', score: Math.round(s3 * 1.12 * mult), car: 'strix_gt7', stars: 3 },
-    { name: 'Valkyrie99', score: Math.round(s3 * 1.03 * mult), car: 'basilisk_v12', stars: 3 },
-    { name: 'MidnightApex', score: Math.round((s2 + s3) * 0.52 * mult), car: 'harrier_gt', stars: 2 },
-    { name: 'StreetGhost', score: Math.round(s2 * 0.96 * mult), car: 'kestrel_gt', stars: 2 },
-    { name: 'Redline_NYC', score: Math.round(s1 * 1.08 * mult), car: 'vela_gt', stars: 1 },
-  ];
+  return paceTargets(z.stars);
 }
 
 export function starsFor(z: ZoneDef, score: number): number {
@@ -184,7 +170,7 @@ export class CityZones {
     holdSlip: number;
   } | null = null;
 
-  /** Toggleable Global Leaderboard overlay state (`KeyB`). */
+  /** Toggleable zone leaderboard overlay state (`KeyB`). */
   boardVisible = false;
   /** Most recently triggered zone (shown first in leaderboard overlay). */
   lastZoneId = '';
@@ -406,18 +392,18 @@ export class CityZones {
     return `<div class="drift-pill"><b>🔥 ${d.zone.name}</b> · <span>${pts} PTS</span> · ${d.combo.toFixed(1)}× · ${stars}</div>`;
   }
 
-  /** Compact Global/Party Leaderboard overlay HTML (toggled via [B] in Free Roam). */
+  /** Compact zone leaderboard overlay HTML: your bests, your party's and the pace targets (toggled via [B] in Free Roam). */
   leaderboardHtml(): string {
     if (!this.boardVisible) return '';
     const ordered = [...this.zones].sort((a, b) => (a.id === this.lastZoneId ? -1 : b.id === this.lastZoneId ? 1 : 0));
     const cards = ordered.slice(0, 6).map((z) => {
       const unit = z.kind === 'speed' ? 'km/h' : 'pts';
       const rows = (this.boards.get(z.id) ?? []).slice(0, 5).map((e, idx) =>
-        `<div class="zb-row ${e.you ? 'you' : e.party ? 'party' : ''}"><span>#${idx + 1}</span><b>${e.name}</b><span>${e.score.toLocaleString()} ${unit}</span></div>`,
+        `<div class="zb-row ${e.you ? 'you' : e.party ? 'party' : e.pace ? 'pace' : ''}"><span>#${idx + 1}</span><b>${e.name}</b><span>${e.score.toLocaleString()} ${unit}</span></div>`,
       ).join('');
       return `<div class="zb-card"><div class="zb-head"><span class="zb-tag ${z.kind}">${z.kind === 'speed' ? '⚡ SPEED TRAP' : '🔥 DRIFT ZONE'}</span><b>${z.name}</b></div>${rows}</div>`;
     }).join('');
-    return `<div class="zone-board"><div class="zb-top"><b>GLOBAL &amp; PARTY LEADERBOARDS</b><span>Press [B] to close · Explore narrow streets to set records</span></div><div class="zb-grid">${cards}</div></div>`;
+    return `<div class="zone-board"><div class="zb-top"><b>ZONE LEADERBOARDS · THIS DEVICE &amp; PARTY</b><span>Targets are fixed times, not other players · Press [B] to close</span></div><div class="zb-grid">${cards}</div></div>`;
   }
 
   /** Snapshot for diagnostics/tests. */

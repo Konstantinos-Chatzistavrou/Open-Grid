@@ -108,7 +108,7 @@ export class Input {
   onFlash = () => {};
   /** Toggle spontaneous wager stake between Cash ($5,000) and Pink Slip (KeyV). */
   onStakeToggle = () => {};
-  /** Toggle Speed Trap & Drift Zone Global Leaderboard overlay (KeyB). */
+  /** Toggle the Speed Trap & Drift Zone leaderboard overlay (KeyB). */
   onBoard = () => {};
   /** Open / close 4K Photo Mode (KeyP). */
   onPhoto = () => {};

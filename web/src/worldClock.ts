@@ -37,6 +37,7 @@ export function currentRealSeason(date = new Date()): SeasonInfo {
 
 /** 1:4 time scale -> 1 real second = 4 in-game seconds (30 real min = 2 game hours). */
 const TIME_SCALE = 4;
+const WEATHER_STEP_MIN = 20;
 
 export class WorldClock {
   /** In-game seconds since midnight (0..86400). Starts at 22:30 (Night Shift). */
@@ -46,6 +47,13 @@ export class WorldClock {
   /** Shader wetness factor 0.15 (dry night sheen) .. 1.0 (rain puddles). */
   wetness = 0.28;
   private targetWetness = 0.28;
+  /** Free roam only: the weather evolves with the game clock (below). Races and ?weather= keep it fixed. */
+  dynamic = false;
+  /** Called when the weather changes during a session, so the sky follows. */
+  onWeatherChange?: (w: WeatherKind) => void;
+  /** Random source (a test replaces it). */
+  rng: () => number = Math.random;
+  private weatherAccMin = 0;
   private skyCol = new THREE.Color(0x05060c);
   /** twilight tint (reused: was a new THREE.Color every frame of dawn / dusk) */
   private twCol = new THREE.Color();
@@ -70,6 +78,21 @@ export class WorldClock {
     this.targetWetness = this.weather === 'rain' ? 1.0 : (this.season.id === 'winter' ? 0.42 : 0.22);
     this.wetness = this.targetWetness;
     return this.weather;
+  }
+
+  /** Every WEATHER_STEP_MIN game minutes (5 real minutes at 4x) the weather may change: dry to rain with 10 % (14 % in winter and spring), rain to dry with 30 %,
+   *  a long-run rain share of about 25 %, the same as the roll at the start of a session. Wetness eases to its new target over about a minute. */
+  private evolveWeather(gameMinutes: number) {
+    this.weatherAccMin += gameMinutes;
+    while (this.weatherAccMin >= WEATHER_STEP_MIN) {
+      this.weatherAccMin -= WEATHER_STEP_MIN;
+      const toRain = this.season.id === 'winter' || this.season.id === 'spring' ? 0.14 : 0.10;
+      const next: WeatherKind = this.weather === 'dry' ? (this.rng() < toRain ? 'rain' : 'dry') : (this.rng() < 0.30 ? 'dry' : 'rain');
+      if (next === this.weather) continue;
+      this.weather = next;
+      this.targetWetness = next === 'rain' ? 1.0 : (this.season.id === 'winter' ? 0.42 : 0.22);
+      this.onWeatherChange?.(next);
+    }
   }
 
   /** Set in-game hour directly (0..24) for testing or Car Meet atmosphere. */
@@ -118,7 +141,8 @@ export class WorldClock {
   /** Advance 1:4 game clock and subtly update scene sky/fog & moon lighting. */
   update(dt: number, scene: THREE.Scene, moon: THREE.DirectionalLight) {
     this.gameSeconds = (this.gameSeconds + dt * TIME_SCALE) % 86400;
-    this.wetness += (this.targetWetness - this.wetness) * Math.min(1, dt * 0.6);
+    if (this.dynamic) this.evolveWeather((dt * TIME_SCALE) / 60);
+    this.wetness += (this.targetWetness - this.wetness) * Math.min(1, dt * (this.dynamic ? 0.05 : 0.6));
 
     // Subtle twilight/dawn/midnight sky mood shift (keeps night racing identity crisp!)
     const h = this.hour;

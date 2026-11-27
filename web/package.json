@@ -12,7 +12,8 @@
     "test:gate": "node tools/test_gate.mjs",
     "audit:cars": "node tools/audit_all_cars.mjs",
     "meshlets": "node tools/meshlet-cli.mjs",
-    "test:lab": "node tools/test_lab.mjs"
+    "test:lab": "node tools/test_lab.mjs",
+    "test:freeroam": "node tools/test_freeroam.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",

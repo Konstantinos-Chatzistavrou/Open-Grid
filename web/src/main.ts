@@ -2943,6 +2943,9 @@ async function main() {
       radioComms.systemNotice('Tuned to 146.52 MHz Local Street Radio (5.0 km range) · Speed cameras active.');
     }
     { const w = params.get('weather'); if (w === 'dry' || w === 'rain') worldClock.setWeather(w); else worldClock.rollWeather(!isFreeSession); }
+    // solo free roam: the weather changes with the clock (worldClock.ts); online sessions do not synchronise weather, so they keep a fixed one; ?weather= pins it
+    worldClock.dynamic = mode === 'free' && !params.get('weather');
+    worldClock.onWeatherChange = (w) => kitSky?.setWeather(w);
     kitSky?.setWeather(worldClock.weather);
     zones.setVisible(isFreeSession);
     raceNodes.setVisible(isFreeSession);
