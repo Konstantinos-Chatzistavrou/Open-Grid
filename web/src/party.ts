@@ -7,10 +7,13 @@
 // type the code) and land in the leader's lobby. The leader picks Free Roam or a Race and starts;
 // everyone loads, the leader waits until all are on the grid, then sends GO (race: 3-2-1 together).
 // ?peer=host:port[/path] uses your own PeerJS server instead of the public one (see server/).
+// ?server=wss://host joins a big Free Roam lobby on a self-hosted room server instead (server/rooms.js, docs/self_hosting.md):
+// the server plays the leader, so the rest of this file is the same code path as a member of a party.
 import { USERNAME_MAX } from './username';
 import Peer, { type DataConnection, type MediaConnection, type PeerOptions } from 'peerjs';
 import { cleanCustom, type Custom } from './scene/custom';
 import { skinOf } from './scene/driver';
+import { ServerLink, parseServerAddress } from './serverLink';
 
 export const FREE_ROAM_MAX_PLAYERS = 16;
 export const RACE_MAX_PLAYERS = 12;
@@ -104,8 +107,8 @@ export interface RadioChatNetMsg {
 }
 
 type Msg =
-  | { t: 'hello'; name: string; car: string; paint: number; skin?: string; look?: Custom; city?: string }
-  | { t: 'lobby'; members: Member[]; mode: PartyMode; laps: number; realism: boolean; copMode: boolean; phase: Phase }
+  | { t: 'hello'; name: string; car: string; paint: number; skin?: string; look?: Custom; city?: string; pw?: string }
+  | { t: 'lobby'; members: Member[]; mode: PartyMode; laps: number; realism: boolean; copMode: boolean; phase: Phase; cap?: number }
   | { t: 'start'; mode: PartyMode; laps: number; realism: boolean; copMode: boolean }
   | { t: 'loaded' }
   | { t: 'go' }
@@ -219,8 +222,15 @@ export class Party {
   private loadTimer = 0;
   private closed = false;
 
-  /** Mode-specific lobby player cap: 16 players in Free Roam, 12 in instanced Race Events. */
-  get maxMembers() { return this.mode === 'free' ? FREE_ROAM_MAX_PLAYERS : RACE_MAX_PLAYERS; }
+  /** Set when this party is a room server (Party.joinServer): its address, and the player cap it announced. */
+  private serverUrl = '';
+  private serverLabel = '';
+  private serverCap = 0;
+  /** Joined a self-hosted room server instead of a peer to peer party (big Free Roam lobby: other cars are ghosts). */
+  get isServer() { return !!this.serverUrl; }
+
+  /** Mode-specific lobby player cap: 16 players in Free Roam, 12 in instanced Race Events (a room server announces its own). */
+  get maxMembers() { return this.serverUrl ? this.serverCap || FREE_ROAM_MAX_PLAYERS : this.mode === 'free' ? FREE_ROAM_MAX_PLAYERS : RACE_MAX_PLAYERS; }
 
   private constructor(private peer: Peer, readonly code: string, readonly isHost: boolean) {
     peer.on('disconnected', () => { if (!this.closed) peer.reconnect(); });   // broker link only: peers stay connected
@@ -279,7 +289,7 @@ export class Party {
 
   get selfId() { return this.peer.id; }
   get host() { return this.members.find((m) => m.host); }
-  get link() { return inviteLink(this.code); }
+  get link() { return this.serverUrl ? `${location.origin}${location.pathname}?server=${encodeURIComponent(this.serverLabel)}` : inviteLink(this.code); }
   get garageLink() { return inviteLink(this.code, 'garage'); }
 
   /** New party with us as leader. Optional `preferredCode` hosts a deterministic Official Split / public room code. */
@@ -346,6 +356,39 @@ export class Party {
           p.onData(c, m);
         });
         c.on('error', () => fail('Could not connect to that party.'));
+      });
+    });
+  }
+
+  /** Join a self-hosted room server (server/rooms.js) by address: wss://host[:port], or just host[:port]. */
+  static joinServer(address: string, me: Me, password?: string): Promise<Party> {
+    const addr = parseServerAddress(address);
+    if (!addr) return Promise.reject(new Error('That server address does not look right. Use something like wss://play.example.com'));
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let link: ServerLink;
+      try { link = new ServerLink(addr.url); } catch { reject(new Error('Could not connect to that server.')); return; }
+      const fail = (msg: string) => { if (settled) return; settled = true; clearTimeout(timer); link.destroy(); reject(new Error(msg)); };
+      const timer = setTimeout(() => fail('No answer from that server. Check the address, or try again later.'), 15000);
+      link.on('error', () => fail('Could not connect to that server.'));
+      link.on('close', () => fail('The server closed the connection.'));
+      link.on('open', () => link.send({ t: 'hello', name: cleanName(me.name), car: me.car, paint: me.paint, skin: me.skin, look: me.look, city: me.city, pw: password } satisfies Msg));
+      let party: Party | null = null;
+      link.on('data', (d) => {
+        const m = d as Msg;
+        if (!party) {
+          if (settled) return;
+          if (m?.t === 'bye') { fail(m.reason); return; }
+          if (m?.t !== 'lobby') return;
+          settled = true; clearTimeout(timer);
+          const p = new Party(link as unknown as Peer, 'SERVER', false);
+          p.serverUrl = addr.url; p.serverLabel = addr.label;
+          p.conns.set(link.peer, link as unknown as DataConnection);
+          link.on('close', () => p.end('Lost the connection to the server.'));
+          party = p;
+          resolve(p);
+        }
+        party.onData(link as unknown as DataConnection, m);
       });
     });
   }
@@ -655,6 +698,7 @@ export class Party {
         this.realism = m.realism !== false;
         this.copMode = m.mode === 'free' ? false : m.copMode !== false;
         this.phase = m.phase;
+        if (this.serverUrl && Number.isInteger(m.cap) && m.cap! > 0 && m.cap! <= 500) this.serverCap = m.cap!;
         this.syncVoiceCalls();
         this.hooks.changed();
         break;

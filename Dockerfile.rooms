@@ -1,0 +1,11 @@
+# Self-hosted Open Grid room server (big Free Roam lobbies). See docs/self_hosting.md.
+FROM node:24-alpine
+WORKDIR /app
+COPY server/package*.json ./
+RUN npm ci --omit=dev
+COPY server/ ./
+ENV PORT=9100
+EXPOSE 9100
+HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://127.0.0.1:9100/health || exit 1
+USER node
+CMD ["node", "rooms.js"]

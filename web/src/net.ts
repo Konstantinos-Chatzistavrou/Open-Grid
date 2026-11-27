@@ -57,6 +57,8 @@ export class RemoteCars {
   names = new Map<string, string>();
   /** each player's car parts and driver skin (from the party lobby) */
   looks = new Map<string, { skin?: string; look?: Custom }>();
+  /** ghost cars (big room-server lobbies): drawn and name-tagged, but no collision body, so nothing to simulate per car */
+  ghost = false;
 
   constructor(private scene: THREE.Scene, private visual: CarVisual, private pw: PhysicsWorld, private shape: CarShape) {
     this.proto = visual.model.clone(true);
@@ -165,6 +167,7 @@ export class RemoteCars {
 
   /** Same hull as ours, kinematic: moved every physics tick to the predicted pose (Rapier derives its velocity from the move). */
   private makeBody() {
+    if (this.ghost) return null;
     const body = this.pw.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
     const collider = this.pw.world.createCollider(carHull(this.shape, this.visual.cg).setFriction(0.3).setRestitution(0.05).setCollisionGroups(GROUP_CAR), body);
     this.colliders.add(collider);

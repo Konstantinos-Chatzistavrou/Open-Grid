@@ -142,6 +142,7 @@ The last device touched drives; switch seamlessly between keyboard, gamepad, ste
 Open Grid separates **free-forever base play & private P2P** from the **community ranked network** (free and best-effort, see [docs/MAINTENANCE.md](docs/MAINTENANCE.md)):
 
 - **Free Forever (Zero Ads, Zero Hostage Content):** All 25 cars, all 5 cities, Single Player career, Testing Mode, Walkable Garage, Auction House, 2P Split-Screen, Friends, and **Private P2P Parties** (up to 16 players in Free Roam / 12 in Race Events over WebRTC PeerJS, with `[Z]` Push-to-Talk & proximity Car Meet voice chat). You can also self-host the PeerJS broker (`server/`).
+- **Big lobbies are self-hosted (optional):** anyone with a server can run the room server (`server/rooms.js`) for Free Roam lobbies of 64+ players, joined with `?server=your-host`; it is theirs to run and pay for, like a Minecraft server. See **[docs/self_hosting.md](docs/self_hosting.md)**. The official setup stays on free plans ([docs/COSTS.md](docs/COSTS.md)).
 - **Community Ranked Network (`cloud/` on Cloudflare Workers + D1, 100% Free & Ad-Free):**
   - **Free for every account, everywhere.** Sign in as a guest, with Email+Password, or with Google, GitHub or Discord. There is no paid tier, no Patreon, and no trial countdown; optional **[GitHub Sponsors](https://github.com/sponsors/Konstantinos-Chatzistavrou)** buys no perks and simply supports the hobby project.
   - **Automated Dual Rating & Licenses:** Glicko-2 Driver Rating (`DR 800–3500`, Grade `E → S`), Automated Fault-Aware Safety Rating (`SR 0.00–4.99` with `0x Victim Shield`), License Ladder (`R → D → C → B → A → PRO`), Bad-Sport Quarantine splits, and **Season Disconnect Jokers**.
@@ -180,7 +181,7 @@ Every push and scheduled run validates the codebase automatically:
 | `web/` | Playable browser client: Three.js r187 WebGPU/WebGL 2, Rapier 3D, WASM bridge (`web/wasm/`), PeerJS P2P voice & poses, Race Spotter |
 | `cloud/` | Live Cloudflare Workers + D1 + Durable Objects backend (auth, Patreon webhooks/OAuth2, DR/SR, SOF splits, championships, protests, hotlaps, teams, leagues) |
 | `packages/vehicle-physics/` | Standalone `open-grid-physics` WebAssembly npm package & headless Bot API |
-| `server/` | Optional self-hosted PeerJS signaling broker |
+| `server/` | Optional self-hosted services: PeerJS signaling broker and the big Free Roam room server (`rooms.js`) |
 | `data/` | Engine-neutral JSON car physics (25 cars), tyres, validation datasets, UE5 DataTables/LUTs, i18n string tables |
 | `tools/` | Asset/Blender pipelines, UE 5.8 exporters & importer, SimHub UDP bridge, physics reference validators, replay verifier runner |
 | `assets_source/` | Source art masters and tracked licence provenance ledgers (`tools/assets/check_licences.mjs`) |
@@ -196,6 +197,7 @@ Every push and scheduled run validates the codebase automatically:
 - **[docs/MODDING.md](docs/MODDING.md)** & **[docs/adding_a_car.md](docs/adding_a_car.md)** — Open car modding pipeline & validator
 - **[cloud/README.md](cloud/README.md)** & **[docs/design/multiplayer-anti-cheat.md](docs/design/multiplayer-anti-cheat.md)** — Online backend API, Patreon setup, capacity math & anti-cheat
 - **[docs/MAINTENANCE.md](docs/MAINTENANCE.md)** — What to expect from this hobby project: support, online services, accounts, what is not promised
+- **[docs/COSTS.md](docs/COSTS.md)** & **[docs/self_hosting.md](docs/self_hosting.md)** — What the project runs on (free plans, the domain is the only recurring cost) and how to host a big Free Roam server yourself
 - **[docs/PROJECT_MEMORY.md](docs/PROJECT_MEMORY.md)** — Developer handoff & operational architecture reference
 
 ---

@@ -1,7 +1,7 @@
 // Night Run (web build): three.js WebGPU renderer + Rapier rigid bodies + the rs_core physics
 // compiled to WebAssembly. WebGPU required. URL options: ?scale=0.75 (pins the render resolution; default adaptive),
 // ?quality=max|ultra|high|medium|low|potato (pins the post/render preset; default adaptive), ?webgl=1 (debug only),
-// ?bloom=0, ?aa=0, ?shadows=0, ?lights=12 (WebGL 2 light pool size), ?party=CODE (invite: join that multiplayer party, see party.ts),
+// ?bloom=0, ?aa=0, ?shadows=0, ?lights=12 (WebGL 2 light pool size), ?party=CODE (invite: join that multiplayer party, see party.ts), ?server=host[&pw=...] (join a self-hosted room server, docs/self_hosting.md),
 // ?peer=host:port (own PeerJS server), ?ai=0..5 (race rivals, default 5), ?blackcar=1 (AI cars matte black, lights off: night lighting test),
 // ?menu=0 (skip the title and garage: straight into a free run, for the test tools).
 // Flow: loading -> title (graphics tuned once behind a cover) -> Play -> game modes: Race (you + 5 AI rivals) / Free Roam (just you) /
@@ -54,6 +54,7 @@ import { LOAD_TIPS, Loader, steadyFrames } from './loading';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { RemoteCars } from './net';
 import { Party, cleanCode, type GarageEventNetMsg, type GarageStateNetMsg, type Progress } from './party';
+import { parseServerAddress } from './serverLink';
 import { Menu, rank, type Gfx, type Screen, type Standing } from './menu';
 import { applyMods, customOf, loadSelection, modsOf, paintOf, saveSelection, type CatalogCar, type Mode } from './garage';
 import { cleanCustom } from './custom-data';
@@ -651,6 +652,7 @@ async function main() {
   };
   (globalThis as { __wearState?: () => unknown }).__wearState = () => ({ ...paintWear, uniforms: visual.custom.getWear() });
   let party: Party | null = null;         // the multiplayer party we are in (lobby or driving)
+  let serverInvite: { url: string; label: string } | null = null;   // ?server=... (a self-hosted room server, docs/self_hosting.md)
   const remoteProg = new Map<string, Progress>();
   let shape = shapeOf(visualCfg);
   visual.renderDt = capInterval ? capInterval / 1000 : 1 / 60;
@@ -1588,6 +1590,13 @@ async function main() {
         .finally(() => { menu.partyBusy = false; if (menu.screen === 'lobby') menu.render(); });
     },
     partyJoin: (code) => {
+      if (serverInvite && code === serverInvite.label) {      // ?server=... invite: a self-hosted room server, not a peer to peer party
+        if (menu.partyBusy) return;
+        menu.partyBusy = true; menu.partyNote = ''; menu.render();
+        Party.joinServer(serverInvite.url, meForParty(), params.get('pw') ?? undefined).then(attachParty, (e: Error) => { menu.partyNote = e.message; })
+          .finally(() => { menu.partyBusy = false; if (menu.screen === 'lobby') menu.render(); });
+        return;
+      }
       code = cleanCode(code);
       if (menu.partyBusy) return;
       if (code.length < 4) { menu.partyNote = 'Type the party code your friend sent you.'; menu.render(); return; }
@@ -2225,6 +2234,10 @@ async function main() {
     const pInv = cleanCode(params.get('party') ?? '');
     if (gInv.length >= 4) { menu.invite = gInv; menu.inviteKind = 'garage'; pendingGarageInvite = true; }
     else if (pInv.length >= 4) { menu.invite = pInv; menu.inviteKind = 'party'; }
+    else if (params.get('server')) {
+      serverInvite = parseServerAddress(params.get('server') ?? '');
+      if (serverInvite) { menu.invite = serverInvite.label; menu.inviteKind = 'party'; }
+    }
   }
 
   /** Build a serializable snapshot of our current Garage build to stream live to visiting friends. */
@@ -2988,6 +3001,7 @@ async function main() {
     if (mode === 'online') {
       remote?.clear();
       remote = new RemoteCars(scene, visual, pw, shape);
+      remote.ghost = !!party?.isServer;   // room-server lobbies: other cars are ghosts (no collision bodies)
       if (party) { remote.names = new Map(party.members.map((m) => [m.id, m.name])); remote.looks = new Map(party.members.map((m) => [m.id, { skin: m.skin, look: m.look }])); }
       remote.warmup(true);           // remote car shaders compiled now, not as a hitch when someone joins
       await warm();

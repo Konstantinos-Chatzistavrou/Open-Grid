@@ -3,16 +3,19 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
-  "description": "Optional self-hosted PeerJS matchmaking for OpenGrid parties (the game defaults to the public PeerJS broker)",
+  "description": "Optional self-hosted services for Open Grid: PeerJS matchmaking (server.js) and a big Free Roam room server (rooms.js)",
   "scripts": {
     "start": "node server.js",
-    "test": "node test.mjs"
+    "rooms": "node rooms.js",
+    "loadtest": "node loadtest.mjs",
+    "test": "node test.mjs && node test_rooms.mjs"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "express": "^5.1.0",
-    "peer": "^1.0.2"
+    "peer": "^1.0.2",
+    "ws": "^8.23.0"
   }
 }

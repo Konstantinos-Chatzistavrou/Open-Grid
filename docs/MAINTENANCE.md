@@ -21,7 +21,8 @@ Open Grid is an **independent, open-source hobby project**, built for the love o
 - **Private P2P lobbies** are casual and unranked, and there is no trusted server, so cheating cannot be fully prevented there.
 - **Ranked splits, ratings, championships and hotlaps** are free for every account while the service runs. They are automated community features run on a best-effort basis, not a guaranteed live service — there is no human stewarding team (penalties, fault scoring, and replay checks are automated). Ratings and seasons may be reset or changed.
 - **Support the project:** optional **[GitHub Sponsors](https://github.com/sponsors/Konstantinos-Chatzistavrou)** only (no Patreon, no trials, no paid tiers). Sponsorships are optional, buy no perks, and create no obligations either way.
-- **Run your own.** Everything needed to host your own league or servers is in the repo (`cloud/` for the backend, `server/` for the PeerJS broker). Community-run leagues are welcome. Forks must use their own name and logo (see [LICENSING.md](../LICENSING.md)).
+- **Big lobbies are self-hosted.** The official setup stays on free plans (a domain is the only recurring cost, see [COSTS.md](COSTS.md)), so peer to peer parties are about 16 players. Anyone with a server can run the **room server** for much larger Free Roam lobbies: [self_hosting.md](self_hosting.md). It is theirs to run and pay for, like a Minecraft server.
+- **Run your own.** Everything needed to host your own league or servers is in the repo (`cloud/` for the backend, `server/` for the PeerJS broker and the room server). Community-run leagues are welcome. Forks must use their own name and logo (see [LICENSING.md](../LICENSING.md)).
 
 ## Accounts
 

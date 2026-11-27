@@ -15,6 +15,7 @@
       pose: (id, ps, c) => log.push([tag, 'pose', ps.x, c]),
       progress: (id, g) => log.push([tag, 'prog', g.d, g.fin]),
       left: (id) => log.push([tag, 'left']),
+      gone: (id) => log.push([tag, 'gone', id]),
       closed: (r) => log.push([tag, 'closed', r]),
     };
   };
