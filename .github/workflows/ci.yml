@@ -95,6 +95,7 @@ jobs:
           npm run test:gate
           npm run test:lab
           npm run test:freeroam
+          npm run test:traffic
       - name: Typecheck & Test Cloudflare Worker Backend
         working-directory: cloud
         run: |
