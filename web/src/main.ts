@@ -56,7 +56,7 @@ import { RemoteCars } from './net';
 import { Party, cleanCode, type GarageEventNetMsg, type GarageStateNetMsg, type Progress } from './party';
 import { parseServerAddress } from './serverLink';
 import { Menu, rank, type Gfx, type Screen, type Standing } from './menu';
-import { applyMods, customOf, loadSelection, modsOf, paintOf, saveSelection, type CatalogCar, type Mode } from './garage';
+import { applyMods, customOf, loadSelection, modsOf, paintOf, saveSelection, statsOf, type CatalogCar, type Mode } from './garage';
 import { cleanCustom } from './custom-data';
 import { frameStats, sceneTextureStats } from './stats';
 import { GRADE } from './fx/grade';
@@ -804,16 +804,21 @@ async function main() {
       hud.toast('PURSUIT EVADED', '+25% ESCAPE BONUS');
     },
     onPitNudge: (latSign, intensity) => {
-      // Realistic rear-quarter PIT kick: gentler lateral slip + yaw rotation that skilled counter-steer catches cleanly.
+      // Gentle controlled low-speed bump if a cruiser catches right beside you (NEVER violent ramming or spin-out).
       pitRight.set(1, 0, 0).applyQuaternion(quat).setY(0).normalize();
       const lv = car.body.linvel();
       const av = car.body.angvel();
-      const latDv = latSign * intensity * 2.9;
-      const yawDw = latSign * intensity * 1.15;
+      const safeI = Math.min(0.18, Math.max(0, intensity));
+      const latDv = latSign * safeI * 1.4;
+      const yawDw = latSign * safeI * 0.25;
       car.body.setLinvel({ x: lv.x + pitRight.x * latDv, y: lv.y, z: lv.z + pitRight.z * latDv }, true);
       car.body.setAngvel({ x: av.x, y: av.y + yawDw, z: av.z }, true);
-      audio.impact(20, false);
-      rumbleKj = Math.max(rumbleKj, 20);
+      audio.impact(6, false);
+      rumbleKj = Math.max(rumbleKj, 6);
+    },
+    onUnitDisabled: (callsign) => {
+      copNote(`💥 ${callsign} DISABLED`, 3600);
+      hud.toast(`🚓 ${callsign} DISABLED`, 'Pursuit cruiser wrecked!');
     },
     onAlert: (msg) => copNote(msg, 3800),
     onCameraFlash: (cam, speedKmh, overKmh) => {
@@ -862,7 +867,7 @@ async function main() {
       }
     }).catch(() => {});
   }
-  let playerS = 0, copSpawned = false;
+  let playerS = 0, copSpawned = false, cachedVmaxKey = '', cachedPlayerMaxKmh = 295;
   /** test/dev hook: the headless probes set the dial directly */
   const setHeat = (n: number) => { heat.level = Math.max(0, Math.min(HEAT_MAX, n)); heat.lastGain = Date.now(); renderHeat(); menu.heat = heat.level; return heat.level; };
   const audio = new GameAudio();
@@ -3514,7 +3519,8 @@ async function main() {
       }
       if (workerLive) {
         const aiDt = Math.min(0.05, simDt);
-        ai.tick(aiDt, physPos);
+        const copObs = cops.active || cops.roadblockWorld ? cops.obstacleList() : undefined;
+        ai.tick(aiDt, physPos, copObs);
         remote?.tick(now, aiDt);
         const t0 = performance.now();
         pw.world.timestep = aiDt;
@@ -3590,15 +3596,17 @@ async function main() {
         p2Car.tick(state === 'race' ? p2p.raw : IDLE, input.assists);
       }
       if (inShowroom) { car.body.setLinvel({ x: 0, y: Math.min(0, car.body.linvel().y), z: 0 }, true); car.body.setAngvel({ x: 0, y: 0, z: 0 }, true); settledShowroom++; }   // parked for the showroom
-      ai.tick(DT, car.body.translation());
+      const copObs = cops.active || cops.roadblockWorld ? cops.obstacleList() : undefined;
+      ai.tick(DT, car.body.translation(), copObs);
       remote?.tick(now - (acc - DT) * 1000, DT);   // other players' bodies at this tick's time
-      if (remote?.colliders.size || obstacles || nyc || ai.mode !== 'off') { const lv = car.body.linvel(), av = car.body.angvel(); preV.set(lv.x, lv.y, lv.z); preW.set(av.x, av.y, av.z); }
+      if (remote?.colliders.size || obstacles || nyc || ai.mode !== 'off' || cops.active || cops.roadblockWorld) { const lv = car.body.linvel(), av = car.body.angvel(); preV.set(lv.x, lv.y, lv.z); preW.set(av.x, av.y, av.z); }
       const t0 = performance.now();
       pw.world.step();
       if (obstacles) { const h = obstacles.afterStep(car.collider, car.body, core.info.mass, preV, preW); if (h) poleHit(h, true); }
       if (nyc && driving()) { const w = nyc.breaches.check(car.collider, car.body, core.info.mass, preV, preW); if (w) wallHit(w); }
       if (remote?.colliders.size) halveRemoteHits(now - (acc - DT) * 1000);
       if (ai.mode !== 'off') ai.afterStep(car.collider, car.body, preV, preW);   // rivals & cruising traffic take their half of a hit (ai.ts)
+      if (cops.active || cops.roadblockWorld) cops.afterStep(car.collider, car.body, preV, preW);   // police cruisers share collision impulse & take exact CoreDamageSim damage!
       stepMs += (performance.now() - t0 - stepMs) * 0.01;   // Rapier cost per 240 Hz step, smoothed
       readBody(physPos, physQuat);
       if (splitActive && p2Car) {
@@ -3648,7 +3656,20 @@ async function main() {
     const inRaceNow = raceLaps() > 0;
     const myRank = inRaceNow ? Math.max(1, rank(standings()).findIndex((x) => x.you) + 1) : 1;
     const playerHeadingRad = Math.atan2(2 * (quat.w * quat.y + quat.x * quat.z), 1 - 2 * (quat.y * quat.y + quat.x * quat.x));
-    cops.update(frame, playerS, pos, liveKmh, myRank, inRaceNow, playerHeadingRad);
+    // Police interceptors are ALWAYS strictly capped at 90% of the player's current car+mods+swap top speed (cached, 0 allocs/frame)!
+    const curEng = engineOf(nr, sel.car);
+    const curMod = modsOf(sel);
+    const vmaxKey = `${sel.car}|${curMod.engine}|${curMod.aero}|${curMod.weight}|${curMod.tyres}|${curEng.swap}|${curEng.turbo}`;
+    if (vmaxKey !== cachedVmaxKey) {
+      cachedVmaxKey = vmaxKey;
+      const curCarPhys = physics[sel.car];
+      const modPhys = curCarPhys ? applyNightRunnersToPhysics(applyMods(curCarPhys, curMod), curEng, stanceOf(nr, sel.car)) : null;
+      cachedPlayerMaxKmh = modPhys
+        ? (statsOf(modPhys).vmax || CAR_VMAX_KMH[sel.car] || 295)
+        : (CAR_VMAX_KMH[sel.car] || 295);
+    }
+    const playerMaxSpeedMs = Math.max(45, cachedPlayerMaxKmh / 3.6);
+    cops.update(frame, playerS, pos, liveKmh, myRank, inRaceNow, playerHeadingRad, playerMaxSpeedMs, ai.mode !== 'off' ? ai.obstacleList() : undefined);
     minimap.roadblockReroute = cops.roadblockReroute;
     void copSpawned;
 
@@ -3773,7 +3794,7 @@ async function main() {
         p2Visual.setExhaustFlame(p2Car.nosThrustN > 0 ? 1.25 : 0, p2Car.nosThrustN > 0, worldClock.wetness);
       }
       if (!inShowroom || settledShowroom <= 40) {
-        ai.update(alpha, camera);
+        ai.update(alpha, camera, live ? frame : 0);
         damage.update(live ? frame : 0, () => core.damage());
       }
     }

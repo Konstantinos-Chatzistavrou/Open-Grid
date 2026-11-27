@@ -126,6 +126,30 @@ CLIPS: list[tuple[str, str, str, str]] = [
         "police",
         "Suspect vehicle is boxed in and stopped. Driver in custody, ten-fifteen.",
     ),
+    (
+        "pull_over_1",
+        "unit",
+        "police",
+        "This is the police! Pull your vehicle over to the side of the road and stop immediately!",
+    ),
+    (
+        "pull_over_2",
+        "unit",
+        "police",
+        "Driver, slow down and pull over right now! Stop the vehicle!",
+    ),
+    (
+        "boxing_in",
+        "unit",
+        "police",
+        "Unit Four moving alongside to box the suspect in. Keep it clean, do not ram.",
+    ),
+    (
+        "unit_disabled",
+        "unit",
+        "police",
+        "Unit disabled! Heavy crash damage, we're out of the pursuit!",
+    ),
     # Underground Street Crew / GPS (street radio — natural urgent racer voice)
     (
         "street_cam_warn",
@@ -176,10 +200,12 @@ def find_bin(name: str) -> str:
     raise FileNotFoundError(f"Required binary '{name}' not found in PATH or ~/.local/bin")
 
 
-def ensure_models(models_dir: Path) -> dict[str, Path]:
+def ensure_models(models_dir: Path, needed_keys: set[str] | None = None) -> dict[str, Path]:
     models_dir.mkdir(parents=True, exist_ok=True)
     resolved: dict[str, Path] = {}
     for key, (stem, url_base) in VOICE_MODELS.items():
+        if needed_keys is not None and key not in needed_keys:
+            continue
         onnx_path = models_dir / f"{stem}.onnx"
         json_path = models_dir / f"{stem}.onnx.json"
         for path, url in ((onnx_path, f"{url_base}.onnx"), (json_path, f"{url_base}.onnx.json")):
@@ -298,11 +324,26 @@ def main() -> None:
         default=repo_root / "web" / "public" / "assets" / "audio" / "radio",
         help="Destination folder for generated .ogg voice clips.",
     )
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        default=None,
+        help="Optional list of clip_ids to generate (defaults to all clips).",
+    )
     args = parser.parse_args()
 
+    selected_clips = CLIPS
+    if args.only:
+        want = set(args.only)
+        selected_clips = [c for c in CLIPS if c[0] in want]
+        missing = want - {c[0] for c in selected_clips}
+        if missing:
+            raise SystemExit(f"Unknown clip_id(s): {sorted(missing)}")
+
+    needed_voices = {c[1] for c in selected_clips}
     ffmpeg_bin = find_bin("ffmpeg")
     ffprobe_bin = find_bin("ffprobe")
-    model_paths = ensure_models(args.models_dir)
+    model_paths = ensure_models(args.models_dir, needed_voices)
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     from piper.voice import PiperVoice
@@ -315,7 +356,7 @@ def main() -> None:
     total_bytes = 0
     with tempfile.TemporaryDirectory(prefix="opengrid_radio_") as tmpdir:
         tmp = Path(tmpdir)
-        for clip_id, voice_key, profile, text in CLIPS:
+        for clip_id, voice_key, profile, text in selected_clips:
             raw_wav = tmp / f"{clip_id}.wav"
             out_ogg = args.out_dir / f"{clip_id}.ogg"
             syn_cfg = build_syn_config(voice_key)
@@ -327,7 +368,7 @@ def main() -> None:
             total_bytes += sz
             print(f"  [ok] {clip_id:20s} ({voice_key:8s}/{profile:6s})  {dur:4.2f}s  {sz / 1024:5.1f} KB")
 
-    print(f"\nGenerated {len(CLIPS)} clips in {args.out_dir} — total {total_bytes / 1024:.1f} KB ({total_bytes} bytes)")
+    print(f"\nGenerated {len(selected_clips)} clips in {args.out_dir} — total {total_bytes / 1024:.1f} KB ({total_bytes} bytes)")
 
 
 if __name__ == "__main__":

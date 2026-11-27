@@ -1,17 +1,21 @@
-// Relentless Tactical Police Interceptor Pursuit AI (OpenGrid).
+// Apache-2.0 — Disciplined Real-Life Tactical Police Interceptor Pursuit AI (OpenGrid).
 //
 // Features:
 //   1. Roadside GATSO speed cameras (fast 1.2 s dispatch) PLUS proactive patrol high-speed sightings
-//      so speeding in Night Street / Free Roam gets Police Interceptors on your tail immediately.
+//      so speeding in Night Street / Free Roam brings Police Interceptors onto your tail realistically.
 //   2. 4-Unit Black & White Interceptor Squad (built via policeCar.ts with real flashing red/blue lights):
-//      - Unit 04 (PIT): spawns 48 m behind at matching speed — fills your rear-view mirror instantly!
-//      - Unit 07 (INTERCEPT): spawns 155 m AHEAD even at Heat 1+ so you face live cruisers pulling out ahead!
-//      - Unit 11 (FLANK): joins at Heat 2+ from 65 m behind on opposite side to box you in!
-//      - Unit 15 (ENFORCER): joins at Heat 3+ as a high-speed heavy interceptor!
-//      - Non-lead units that fall > 340 m behind dynamically leapfrog 240 m AHEAD as fresh intercept patrols.
-//   3. High-performance twin-turbo interceptor tuning (245-325 km/h by Heat) + aggressive box-in & PIT maneuvers.
-//   4. Challenging escape mechanics (275 m gap for 3.8 s, 6.5 s LOS break, 14.0 s EVADING cooldown with
-//      92% hunt speed and immediate < 175 m re-acquisition) + Doppler stereo siren telemetry.
+//      - Unit 04 (ESCORT): spawns behind at matching speed, holds disciplined escort/pull-over spacing & broadcasts PA orders.
+//      - Unit 07 (INTERCEPT): active at Heat 1+ ahead to roll out and box/slow cleanly with safe lateral clearance.
+//      - Unit 11 (BOX): joins at Heat 2+ on the opposite side for clean non-ramming box-in maneuvers.
+//      - Unit 15 (BACKUP): joins at Heat 3+ as a disciplined trail/intercept interceptor.
+//      - NEVER rams or PIT-wrecks the player; maintains >= 2.65 m lateral clearance when alongside and brakes cleanly behind.
+//   3. Strict 90% Top Speed Cap: every interceptor's top speed is ALWAYS strictly 90% of the player's current car top speed
+//      (further reduced by engine/aero damage when crashed), keeping corners and city streets intense while clean straights reward speed.
+//   4. Intelligent 7-Candidate Multi-Obstacle Path Planner: dynamic Outside -> Apex -> Exit cornering lines, traffic/rival/wreck
+//      overtaking with lateral hysteresis, roadblock avoidance, and strict player personal-space safety bubble.
+//   5. Exact-Parity Crash Damage & Durability (CoreDamageSim + VehicleDamageRig + SharedDamageVfx):
+//      police interceptors take the exact same impact math, GPU vertex dents, power/grip loss, broken headlights, hood steam/smoke,
+//      and disable/wreck thresholds as the player car!
 import * as THREE from 'three/webgpu';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { Lane } from './ai';
@@ -21,6 +25,12 @@ import {
   updatePoliceLights,
   type PoliceLightRig,
 } from './scene/policeCar';
+import {
+  CoreDamageSim,
+  SharedDamageVfx,
+  VehicleDamageRig,
+  type RoadObstacle,
+} from './vehicleDamage';
 
 const ESCAPE_GAP = 275;        // m of clear road required before entering EVADING cooldown
 const ESCAPE_HOLD_FAR = 3.8;   // s continuously > 275 m before entering EVADING
@@ -31,15 +41,18 @@ const BUST_SLOW = 15;          // km/h under which a pinned car counts toward bu
 const BUST_HOLD = 4.2;         // s pinned before busted
 const GIVE_UP = 240;           // s max chase if player stays fast and un-busted
 const LOS_HOLD = 6.5;          // s out of sight behind buildings to enter EVADING cooldown
-const PIT_COOLDOWN = 6.5;      // s between PIT attempts
 const ROADBLOCK_AHEAD = 260;   // m ahead of player along route
 const CAM_SPACING_M = 460;     // m between roadside speed cameras
 const CAM_OVER_MARGIN = 15;    // km/h grace margin above posted limit before camera flashes
 const CAM_COOLDOWN_S = 22;     // s cooldown per camera so it won't spam while parked
 const DISPATCH_DELAY_S = 1.2;  // s brisk radio dispatch delay after camera flash
-const LEAPFROG_BEHIND = 340;   // m behind before a non-lead unit redeploys ahead as fresh intercept
+const LEAPFROG_BEHIND = 340;   // m behind before a non-lead undamaged unit redeploys ahead as fresh intercept
 const LEAPFROG_AHEAD = 240;    // m ahead to redeploy intercept unit
 const SOUND_SPEED = 340;       // m/s for acoustic Doppler calculation
+const COP_MASS_KG = 1680;      // heavy-duty police interceptor mass (exact CoreDamageSim durability parity)
+const PLAYER_SAFE_LAT = 2.65;  // m minimum lateral clearance alongside the player (strict non-ramming bubble)
+const GENTLE_TAP_COOLDOWN = 10.5; // s cooldown for tiny low-speed catch bump (<= 0.14 intensity)
+const FALLBACK_PLAYER_MAX_MS = 295 / 3.6;
 
 export interface SpeedCamera {
   id: number;
@@ -84,9 +97,9 @@ export interface SirenState {
 export interface CopHooks {
   /** Player was pinned and busted. */
   bust(): void;
-  /** Player broke away from the pursuit squad. */
+  /** Player broke away from the pursuit squad (or disabled all active units). */
   escaped(): void;
-  /** Tactical PIT maneuver engaged on the player's rear quarter (latSign = +1 right / -1 left, intensity 0..1). */
+  /** Gentle low-speed contact bump if a cruiser physically catches alongside at low speed (intensity <= 0.14, never wrecks). */
   onPitNudge?(latSign: number, intensity: number): void;
   /** Tactical alert for HUD banner. */
   onAlert?(msg: string): void;
@@ -96,9 +109,19 @@ export interface CopHooks {
   onRadio?(unit: string, text: string, speak?: boolean, clipId?: string): void;
   /** Street radio / GPS reroute announcement on the racers' underground channel (146.52 MHz). */
   onStreetRadio?(callsign: string, text: string, clipId?: string): void;
+  /** A pursuing police interceptor suffered heavy crash damage and was disabled/totaled. */
+  onUnitDisabled?(callsign: string): void;
 }
 
-type UnitRole = 'pit' | 'intercept' | 'flank' | 'enforcer';
+type UnitRole = 'escort' | 'intercept' | 'box' | 'backup';
+
+export type CopTactic =
+  | 'PURSUIT'
+  | 'PULL OVER'
+  | 'BOX IN'
+  | 'ROADBLOCK AHEAD'
+  | 'EVADING'
+  | 'DISPATCHED';
 
 interface PatrolUnit {
   unitNumber: string;
@@ -113,10 +136,20 @@ interface PatrolUnit {
   velX: number;
   velZ: number;
   yaw: number;
+  steerLean: number;
   root: THREE.Object3D | null;
   lights: PoliceLightRig | null;
   body: RAPIER.RigidBody | null;
+  collider: RAPIER.Collider | null;
   active: boolean;
+  damageSim: CoreDamageSim;
+  damageRig: VehicleDamageRig | null;
+  latV: number;
+  yawOff: number;
+  yawRate: number;
+  wrecked: boolean;
+  overtakeSide: -1 | 0 | 1;
+  overtakeHoldT: number;
 }
 
 interface Roadblock {
@@ -125,6 +158,13 @@ interface Roadblock {
   world: THREE.Vector3;
   group: THREE.Group;
   bodies: RAPIER.RigidBody[];
+  colliders: RAPIER.Collider[];
+  carRoots: THREE.Object3D[];
+  carWorlds: THREE.Vector3[];
+  carYaws: number[];
+  carLats: number[];
+  damageSims: CoreDamageSim[];
+  damageRigs: VehicleDamageRig[];
   lights: PoliceLightRig[];
   announced: boolean;
   bypassSide: -1 | 1;
@@ -135,6 +175,11 @@ interface Roadblock {
   detourPts: { x: number; y: number }[];
   chevrons: THREE.Group;
 }
+
+const ROADBLOCK_LAYOUTS = [
+  { x: -4.1, z: 0, yaw: Math.PI * 0.42, num: '21' },
+  { x: 4.1, z: 0.4, yaw: -Math.PI * 0.42, num: '22' },
+] as const;
 
 export class Cops {
   active = false;
@@ -147,7 +192,7 @@ export class Cops {
   /** Lead unit visual root (kept compatible with existing setup). */
   root: THREE.Object3D | null = null;
   /** Current tactical state label for HUD. */
-  tactic: 'PURSUIT' | 'PIT MANEUVER' | 'ROADBLOCK AHEAD' | 'EVADING' | 'DISPATCHED' = 'PURSUIT';
+  tactic: CopTactic = 'PURSUIT';
   /** Roadside speed cameras placed along the active city route. */
   cameras: SpeedCamera[] = [];
   /** Nearest upcoming speed camera within 240 m (for HUD speed limit indicator). */
@@ -159,6 +204,7 @@ export class Cops {
   private scene: THREE.Scene | null = null;
   private pw: PhysicsWorld | null = null;
   private proto: THREE.Object3D | null = null;
+  private vfx: SharedDamageVfx | null = null;
 
   private minDist = 999;
   private far = 0;
@@ -167,13 +213,15 @@ export class Cops {
   private evading = false;
   private t = 0;
   private blind = 0;
-  private pitCd = 4.5;
-  private pitWarned = false;
+  private gentleTapCd = 6.0;
+  private pullOverRadioCd = 3.5;
+  private pullOverOrderIdx = 0;
   private roadblockCd = 15.0;
   private dispatchDelay = 0;
   private dispatchHeat = 1;
   private recklessTimer = 0;
   private lastPlayerSpeedMs = 36;
+  private lastCopTopSpeedMs = FALLBACK_PLAYER_MAX_MS * 0.90;
   private lastPullingAwayRadio = 0;
   private lastInterceptRadio = -20;
   private hornPulse = 0;
@@ -191,31 +239,69 @@ export class Cops {
   };
   private tmpQuat = new THREE.Quaternion();
   private upAxis = new THREE.Vector3(0, 1, 0);
+  private tmpLin = { x: 0, y: 0, z: 0 };
+  private tmpAng = { x: 0, y: 0, z: 0 };
+  private roomScratch = { left: 0, right: 0 };
+  private obstaclesBuf: RoadObstacle[] = [];
+  private plannerObsBuf: RoadObstacle[] = [];
+  private candLatsBuf: number[] = [0, 0, 0, 0, 0, 0, 0];
 
   constructor(private lane: Lane, private hooks: CopHooks) {
     this.units = [
-      {
-        unitNumber: '04', callsign: 'UNIT-04', s: 0, lat: 1.2, speed: 0, side: 1, role: 'pit',
-        world: new THREE.Vector3(), prevWorld: new THREE.Vector3(), velX: 0, velZ: 0, yaw: 0,
-        root: null, lights: null, body: null, active: false,
-      },
-      {
-        unitNumber: '07', callsign: 'UNIT-07', s: 0, lat: -1.6, speed: 0, side: -1, role: 'intercept',
-        world: new THREE.Vector3(), prevWorld: new THREE.Vector3(), velX: 0, velZ: 0, yaw: 0,
-        root: null, lights: null, body: null, active: false,
-      },
-      {
-        unitNumber: '11', callsign: 'UNIT-11', s: 0, lat: -2.0, speed: 0, side: -1, role: 'flank',
-        world: new THREE.Vector3(), prevWorld: new THREE.Vector3(), velX: 0, velZ: 0, yaw: 0,
-        root: null, lights: null, body: null, active: false,
-      },
-      {
-        unitNumber: '15', callsign: 'UNIT-15', s: 0, lat: 2.0, speed: 0, side: 1, role: 'enforcer',
-        world: new THREE.Vector3(), prevWorld: new THREE.Vector3(), velX: 0, velZ: 0, yaw: 0,
-        root: null, lights: null, body: null, active: false,
-      },
+      this.makeUnit('04', 'UNIT-04', 1.2, 1, 'escort'),
+      this.makeUnit('07', 'UNIT-07', -1.8, -1, 'intercept'),
+      this.makeUnit('11', 'UNIT-11', -2.4, -1, 'box'),
+      this.makeUnit('15', 'UNIT-15', 2.4, 1, 'backup'),
     ];
     this.buildCameraData();
+  }
+
+  private makeUnit(unitNumber: string, callsign: string, lat: number, side: 1 | -1, role: UnitRole): PatrolUnit {
+    return {
+      unitNumber,
+      callsign,
+      s: 0,
+      lat,
+      speed: 0,
+      side,
+      role,
+      world: new THREE.Vector3(),
+      prevWorld: new THREE.Vector3(),
+      velX: 0,
+      velZ: 0,
+      yaw: 0,
+      steerLean: 0,
+      root: null,
+      lights: null,
+      body: null,
+      collider: null,
+      active: false,
+      damageSim: new CoreDamageSim(COP_MASS_KG),
+      damageRig: null,
+      latV: 0,
+      yawOff: 0,
+      yawRate: 0,
+      wrecked: false,
+      overtakeSide: 0,
+      overtakeHoldT: 0,
+    };
+  }
+
+  private resetUnitState(u: PatrolUnit) {
+    u.damageSim.reset();
+    u.damageRig?.clear();
+    u.latV = 0;
+    u.yawOff = 0;
+    u.yawRate = 0;
+    u.steerLean = 0;
+    u.wrecked = false;
+    u.overtakeSide = 0;
+    u.overtakeHoldT = 0;
+  }
+
+  /** Current police interceptor maximum top speed cap in km/h (strictly 90% of player car's top speed). */
+  get currentMaxSpeedKmh(): number {
+    return this.lastCopTopSpeedMs * 3.6;
   }
 
   /** Whether dispatch has been alerted by a speed camera and cruisers are inbound. */
@@ -313,12 +399,18 @@ export class Cops {
     this.buildCameraMeshes();
   }
 
-  /** Build 4 Black & White Police Interceptors + 2 Roadblock Interceptors with flashing lights & Rapier colliders. */
+  /** Build 4 Black & White Police Interceptors + 2 Roadblock Interceptors with flashing lights, GPU dent rigs & Rapier colliders. */
   setupVisuals(proto: THREE.Object3D, scene: THREE.Scene, pw: PhysicsWorld) {
     this.proto = proto;
     this.scene = scene;
     this.pw = pw;
     this.buildCameraMeshes();
+
+    if (this.vfx) {
+      this.vfx.smoke.sprite.removeFromParent();
+      this.vfx.sparks.sprite.removeFromParent();
+    }
+    this.vfx = new SharedDamageVfx(scene);
 
     for (let i = 0; i < this.units.length; i++) {
       const u = this.units[i];
@@ -330,19 +422,28 @@ export class Cops {
       scene.add(built.root);
       u.root = built.root;
       u.lights = built.lights;
+      u.damageSim = new CoreDamageSim(COP_MASS_KG);
+      u.damageRig = new VehicleDamageRig(built.root);
+      this.resetUnitState(u);
+
       if (!u.body) {
         const body = pw.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, -600, 0));
-        pw.world.createCollider(
-          RAPIER.ColliderDesc.cuboid(0.98, 0.48, 2.3).setTranslation(0, 0.62, 0).setFriction(0.35).setRestitution(0.05).setCollisionGroups(GROUP_CAR),
+        const collider = pw.world.createCollider(
+          RAPIER.ColliderDesc.cuboid(0.98, 0.48, 2.3)
+            .setTranslation(0, 0.62, 0)
+            .setFriction(0.35)
+            .setRestitution(0.05)
+            .setCollisionGroups(GROUP_CAR),
           body,
         );
         body.setEnabled(false);
         u.body = body;
+        u.collider = collider;
       }
       if (i === 0) this.root = built.root;
     }
 
-    // Build reusable tactical roadblock (2 angled Police Interceptors + cones + bypass chevrons + Rapier colliders)
+    // Build reusable tactical roadblock (2 angled Police Interceptors + cones + bypass chevrons + Rapier colliders + damage rigs)
     if (this.roadblock) {
       this.roadblock.group.removeFromParent();
     }
@@ -351,30 +452,44 @@ export class Cops {
     rbGroup.visible = false;
     const rbLights: PoliceLightRig[] = [];
     const rbBodies: RAPIER.RigidBody[] = [];
+    const rbColliders: RAPIER.Collider[] = [];
+    const rbCarRoots: THREE.Object3D[] = [];
+    const rbCarWorlds: THREE.Vector3[] = [];
+    const rbCarYaws: number[] = [];
+    const rbCarLats: number[] = [];
+    const rbDamageSims: CoreDamageSim[] = [];
+    const rbDamageRigs: VehicleDamageRig[] = [];
 
     const coneGeo = new THREE.ConeGeometry(0.24, 0.72, 6);
     const coneMat = new THREE.MeshBasicMaterial({ color: 0xff5a1f });
 
     // Wide 4.6 m skill gap so attentive drivers can thread through cleanly
-    const layouts = [
-      { x: -4.1, z: 0, yaw: Math.PI * 0.42, num: '21' },
-      { x: 4.1, z: 0.4, yaw: -Math.PI * 0.42, num: '22' },
-    ];
-    for (const lay of layouts) {
+    for (const lay of ROADBLOCK_LAYOUTS) {
       const built = buildPoliceInterceptor(proto, lay.num, true);
       built.root.position.set(lay.x, 0.02, lay.z);
       built.root.rotation.y = lay.yaw;
       updatePoliceLights(built.lights, 0, false);
       rbLights.push(built.lights);
+      rbCarRoots.push(built.root);
+      rbCarWorlds.push(new THREE.Vector3());
+      rbCarYaws.push(lay.yaw);
+      rbCarLats.push(lay.x);
+      rbDamageSims.push(new CoreDamageSim(COP_MASS_KG));
+      rbDamageRigs.push(new VehicleDamageRig(built.root));
       rbGroup.add(built.root);
 
       const body = pw.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, -600, 0));
-      pw.world.createCollider(
-        RAPIER.ColliderDesc.cuboid(0.98, 0.55, 2.3).setTranslation(0, 0.65, 0).setFriction(0.4).setRestitution(0.08).setCollisionGroups(GROUP_CAR),
+      const collider = pw.world.createCollider(
+        RAPIER.ColliderDesc.cuboid(0.98, 0.55, 2.3)
+          .setTranslation(0, 0.65, 0)
+          .setFriction(0.4)
+          .setRestitution(0.08)
+          .setCollisionGroups(GROUP_CAR),
         body,
       );
       body.setEnabled(false);
       rbBodies.push(body);
+      rbColliders.push(collider);
     }
     for (const cx of [-6.2, -2.3, 2.3, 6.2]) {
       const cone = new THREE.Mesh(coneGeo, coneMat);
@@ -397,9 +512,27 @@ export class Cops {
 
     scene.add(rbGroup);
     this.roadblock = {
-      active: false, s: 0, world: new THREE.Vector3(), group: rbGroup, bodies: rbBodies, lights: rbLights,
-      announced: false, bypassSide: 1, phase: 'forming', rerouteTimer: 0, rerouteAnnounced: false, distM: 0,
-      detourPts: [], chevrons,
+      active: false,
+      s: 0,
+      world: new THREE.Vector3(),
+      group: rbGroup,
+      bodies: rbBodies,
+      colliders: rbColliders,
+      carRoots: rbCarRoots,
+      carWorlds: rbCarWorlds,
+      carYaws: rbCarYaws,
+      carLats: rbCarLats,
+      damageSims: rbDamageSims,
+      damageRigs: rbDamageRigs,
+      lights: rbLights,
+      announced: false,
+      bypassSide: 1,
+      phase: 'forming',
+      rerouteTimer: 0,
+      rerouteAnnounced: false,
+      distM: 0,
+      detourPts: [],
+      chevrons,
     };
   }
 
@@ -444,7 +577,7 @@ export class Cops {
       }
     }
 
-    // Proactive patrol sighting: speeding > 140 km/h for 4.5 s (or 2.0 s at Heat 2+) brings a live patrol right onto you!
+    // Proactive patrol sighting: speeding > 140 km/h for 4.5 s (or 2.0 s at Heat 2+) brings a live patrol onto you
     if (!this.active && this.dispatchDelay <= 0) {
       if (kmh > 140) {
         this.recklessTimer += dt;
@@ -488,7 +621,7 @@ export class Cops {
         this.nextCamera = { id: cam.id, name: cam.name, limitKmh: cam.limitKmh, distM: Math.round(ahead) };
       }
 
-      // Trigger speed camera when passing within 15 m over limit + grace margin
+      // Trigger speed camera when passing within 14 m over limit + grace margin
       if (cam.cooldown <= 0 && Math.abs(ahead) < 14) {
         const dWorld = Math.hypot(cam.world.x - playerPos.x, cam.world.z - playerPos.z);
         if (dWorld < 20 && kmh > cam.limitKmh + CAM_OVER_MARGIN) {
@@ -538,21 +671,24 @@ export class Cops {
 
   /** Bring Heat 2+ and Heat 3+ units online mid-chase if Heat escalated. */
   private activateHeatReinforcements(playerS: number) {
-    const pSpd = Math.max(36, this.lastPlayerSpeedMs);
+    const cap = this.lastCopTopSpeedMs;
+    const pSpd = Math.min(cap, Math.max(32, this.lastPlayerSpeedMs));
     const u2 = this.units[2];
     if (this.heat >= 2 && !u2.active) {
+      this.resetUnitState(u2);
       u2.active = true;
       u2.s = this.lane.wrap(playerS - 65);
-      u2.lat = -2.0;
-      u2.speed = Math.max(36, pSpd * 1.04);
+      u2.lat = -2.4;
+      u2.speed = Math.min(cap, Math.max(32, pSpd * 0.98));
       this.placeUnit(u2, true);
     }
     const u3 = this.units[3];
     if (this.heat >= 3 && !u3.active) {
+      this.resetUnitState(u3);
       u3.active = true;
       u3.s = this.lane.wrap(playerS + 190);
-      u3.lat = 1.8;
-      u3.speed = Math.max(22, pSpd * 0.55);
+      u3.lat = 2.2;
+      u3.speed = Math.min(cap * 0.65, Math.max(20, pSpd * 0.55));
       this.placeUnit(u3, true);
     }
   }
@@ -574,8 +710,9 @@ export class Cops {
     this.evadeTimer = 0;
     this.evading = false;
     this.blind = 0;
-    this.pitCd = 4.5;
-    this.pitWarned = false;
+    this.gentleTapCd = 6.0;
+    this.pullOverRadioCd = 3.5;
+    this.pullOverOrderIdx = 0;
     this.roadblockCd = this.heat >= 2 ? 9.0 : 14.0;
     this.lastPullingAwayRadio = 0;
     this.lastInterceptRadio = -10;
@@ -584,35 +721,43 @@ export class Cops {
     this.hasPrevPlayer = false;
     this.tactic = 'PURSUIT';
 
-    const pSpd = Math.max(34, this.lastPlayerSpeedMs);
+    this.vfx?.clear();
+    const cap = this.lastCopTopSpeedMs;
+    const pSpd = Math.min(cap, Math.max(30, this.lastPlayerSpeedMs));
 
-    // Unit 0 (PIT, Unit-04): 48 m behind at matching/closing speed — immediately visible in mirrors!
+    // Unit 0 (ESCORT, Unit-04): 48 m behind at disciplined pursuit speed
     const u0 = this.units[0];
+    this.resetUnitState(u0);
     u0.active = true;
     u0.s = this.lane.wrap(playerS - 48);
-    u0.lat = 1.2;
-    u0.speed = Math.max(36, pSpd * 1.05);
+    u0.lat = 1.4;
+    u0.speed = Math.min(cap, Math.max(32, pSpd * 0.98));
 
-    // Unit 1 (INTERCEPT, Unit-07): Active even at Heat 1+! Spawns 155 m AHEAD rolling onto the route!
+    // Unit 1 (INTERCEPT, Unit-07): Active even at Heat 1+! Spawns 155 m AHEAD rolling onto the route
     const u1 = this.units[1];
+    this.resetUnitState(u1);
     u1.active = true;
     u1.s = this.lane.wrap(playerS + 155);
-    u1.lat = -1.6;
-    u1.speed = Math.max(18, pSpd * 0.45);
+    u1.lat = -1.8;
+    u1.speed = Math.min(cap * 0.65, Math.max(18, pSpd * 0.45));
 
-    // Unit 2 (FLANK, Unit-11): Joins at Heat 2+ from 65 m behind on opposite side
+    // Unit 2 (BOX, Unit-11): Joins at Heat 2+ from 65 m behind on opposite side
     const u2 = this.units[2];
+    this.resetUnitState(u2);
     u2.active = this.heat >= 2;
     u2.s = this.lane.wrap(playerS - 65);
-    u2.lat = -2.1;
-    u2.speed = Math.max(36, pSpd * 1.04);
+    u2.lat = -2.4;
+    u2.speed = Math.min(cap, Math.max(32, pSpd * 0.96));
 
-    // Unit 3 (ENFORCER, Unit-15): Joins at Heat 3+ (high-speed interceptor closing from 110 m behind or 190 m ahead)
+    // Unit 3 (BACKUP, Unit-15): Joins at Heat 3+
     const u3 = this.units[3];
+    this.resetUnitState(u3);
     u3.active = this.heat >= 3;
     u3.s = this.lane.wrap(this.heat >= 4 ? playerS + 190 : playerS - 110);
-    u3.lat = 2.0;
-    u3.speed = this.heat >= 4 ? Math.max(22, pSpd * 0.5) : Math.max(40, pSpd * 1.08);
+    u3.lat = 2.4;
+    u3.speed = this.heat >= 4
+      ? Math.min(cap * 0.65, Math.max(20, pSpd * 0.5))
+      : Math.min(cap, Math.max(34, pSpd * 0.98));
 
     this.hideRoadblock();
     this.placeUnits(playerPos, true);
@@ -654,8 +799,10 @@ export class Cops {
     this.minDist = 999;
     this.tactic = 'PURSUIT';
     this.sirenSnapshot = { proximity: 0, dopplerRatio: 1.0, pan: 0, aggressive: false, hornPulse: 0 };
+    this.vfx?.clear();
     for (const u of this.units) {
       u.active = false;
+      this.resetUnitState(u);
       if (u.lights) updatePoliceLights(u.lights, 0, false);
       if (u.root) u.root.visible = false;
       if (u.body) {
@@ -675,6 +822,8 @@ export class Cops {
     this.roadblock.detourPts = [];
     this.roadblock.chevrons.visible = false;
     this.roadblock.group.visible = false;
+    for (const sim of this.roadblock.damageSims) sim.reset();
+    for (const rig of this.roadblock.damageRigs) rig.clear();
     for (const l of this.roadblock.lights) updatePoliceLights(l, 0, false);
     for (const b of this.roadblock.bodies) {
       b.setTranslation({ x: 0, y: -600, z: 0 }, true);
@@ -722,17 +871,19 @@ export class Cops {
     rb.detourPts = detourPts;
 
     const cosY = Math.cos(roadYaw), sinY = Math.sin(roadYaw);
-    const layouts = [
-      { x: -4.1, z: 0, yaw: Math.PI * 0.42 },
-      { x: 4.1, z: 0.4, yaw: -Math.PI * 0.42 },
-    ];
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
-    for (let k = 0; k < layouts.length; k++) {
-      const l = layouts[k];
+    for (let k = 0; k < ROADBLOCK_LAYOUTS.length; k++) {
+      const l = ROADBLOCK_LAYOUTS[k];
       const wx = rb.world.x + l.x * cosY + l.z * sinY;
       const wz = rb.world.z - l.x * sinY + l.z * cosY;
-      q.setFromAxisAngle(up, roadYaw + l.yaw);
+      const wyaw = roadYaw + l.yaw;
+      rb.carWorlds[k].set(wx, rb.world.y, wz);
+      rb.carYaws[k] = wyaw;
+      rb.carLats[k] = (wx - rb.world.x) * r.x + (wz - rb.world.z) * r.z;
+      rb.damageSims[k].reset();
+      rb.damageRigs[k].clear();
+      q.setFromAxisAngle(up, wyaw);
       rb.bodies[k].setEnabled(true);
       rb.bodies[k].setTranslation({ x: wx, y: rb.world.y, z: wz }, true);
       rb.bodies[k].setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
@@ -788,14 +939,55 @@ export class Cops {
     return this.roadblock?.active ? this.roadblock.world : null;
   }
 
-  /** All active patrol unit positions (for minimap blips). */
+  /** All active non-wrecked patrol unit positions (for minimap pursuit blips). */
   unitPositions(): THREE.Vector3[] {
-    return this.units.filter((u) => u.active).map((u) => u.world);
+    return this.units.filter((u) => u.active && !u.wrecked).map((u) => u.world);
   }
 
   /** All speed camera world positions (for minimap radar blips). */
   cameraPositions(): { x: number; z: number; limitKmh: number }[] {
     return this.cameras.map((c) => ({ x: c.world.x, z: c.world.z, limitKmh: c.limitKmh }));
+  }
+
+  /**
+   * Reused array of active police cruiser & roadblock obstacles so AI racers can see and intelligently
+   * dodge moving interceptors, wrecked cruisers, and roadblock vehicles.
+   */
+  obstacleList(): RoadObstacle[] {
+    const out = this.obstaclesBuf;
+    let n = 0;
+    const pushObs = (x: number, z: number, v: number, lat: number, radius: number, isBlock: boolean) => {
+      if (n < out.length) {
+        const slot = out[n++];
+        slot.x = x;
+        slot.z = z;
+        slot.v = v;
+        slot.lat = lat;
+        slot.radius = radius;
+        slot.isCop = true;
+        slot.isBlock = isBlock;
+      } else {
+        out.push({ x, z, v, lat, radius, isCop: true, isBlock });
+        n++;
+      }
+    };
+
+    if (this.active) {
+      for (let i = 0; i < this.units.length; i++) {
+        const u = this.units[i];
+        if (!u.active) continue;
+        pushObs(u.world.x, u.world.z, u.speed, u.lat, 1.35, u.wrecked);
+      }
+      const rb = this.roadblock;
+      if (rb?.active) {
+        for (let k = 0; k < rb.carWorlds.length; k++) {
+          const w = rb.carWorlds[k];
+          pushObs(w.x, w.z, 0, rb.carLats[k], 2.1, true);
+        }
+      }
+    }
+    out.length = n;
+    return out;
   }
 
   private triggerHorn() {
@@ -804,7 +996,232 @@ export class Cops {
     this.hornCd = 5.5;
   }
 
-  /** dt seconds, player's arc length, world position, speed (km/h), race position (1-based), in-race flag, optional player heading (rad). */
+  /** Mark a police unit disabled/totaled after lethal crash energy, broadcast radio, and end pursuit if none left. */
+  private markUnitDisabled(u: PatrolUnit) {
+    if (u.wrecked) return;
+    u.wrecked = true;
+    this.hooks.onUnitDisabled?.(u.callsign);
+    this.hooks.onAlert?.(`💥 ${u.callsign} DISABLED · OUT OF PURSUIT!`);
+    this.hooks.onRadio?.(
+      u.callsign,
+      'Unit disabled! Heavy vehicle damage, out of the pursuit!',
+      true,
+      'unit_disabled',
+    );
+    // If ALL active pursuit units are disabled/wrecked, pursuit immediately ends!
+    const anyOperational = this.units.some((x) => x.active && !x.wrecked);
+    if (!anyOperational && this.active) {
+      this.breakOff();
+      this.hooks.escaped();
+    }
+  }
+
+  /**
+   * After `pw.world.step()`: share player collisions with active police patrol units and roadblock cruisers.
+   * Mirrors `AiTraffic.afterStep`: player keeps half the solver velocity change, the police cruiser takes the
+   * other half as longitudinal/lateral shove + yaw spin + exact `CoreDamageSim` crash damage & GPU vertex dents!
+   */
+  afterStep(
+    playerCollider: RAPIER.Collider,
+    playerBody: RAPIER.RigidBody,
+    preV: THREE.Vector3,
+    preW: THREE.Vector3,
+  ): boolean {
+    if (!this.active || !this.pw) return false;
+    const world = this.pw.world;
+    const p = playerBody.translation();
+    const stepDt = Math.max(1 / 400, Math.min(0.05, world.timestep || 1 / 240));
+
+    // 1. Check active patrol units within 8 m
+    let hitUnit: PatrolUnit | null = null;
+    for (let i = 0; i < this.units.length; i++) {
+      const u = this.units[i];
+      if (!u.active || !u.collider) continue;
+      const dx = p.x - u.world.x;
+      const dz = p.z - u.world.z;
+      if (dx * dx + dz * dz > 64) continue;
+      let touching = false;
+      world.contactPair(playerCollider, u.collider, (m) => {
+        if (m.numContacts() > 0) touching = true;
+      });
+      if (touching) {
+        hitUnit = u;
+        break;
+      }
+    }
+
+    if (hitUnit) {
+      const u = hitUnit;
+      const lv = playerBody.linvel();
+      const av = playerBody.angvel();
+      const dvx = lv.x - preV.x;
+      const dvz = lv.z - preV.z;
+      const dv = Math.hypot(dvx, dvz);
+      if (dv < 0.02) return true;
+
+      // Split velocity change realistically (player keeps half, cruiser takes the other half)
+      this.tmpLin.x = (preV.x + lv.x) * 0.5;
+      this.tmpLin.y = lv.y;
+      this.tmpLin.z = (preV.z + lv.z) * 0.5;
+      this.tmpAng.x = (preW.x + av.x) * 0.5;
+      this.tmpAng.y = (preW.y + av.y) * 0.5;
+      this.tmpAng.z = (preW.z + av.z) * 0.5;
+      playerBody.setLinvel(this.tmpLin, true);
+      playerBody.setAngvel(this.tmpAng, true);
+
+      // Apply the cruiser's half in its own frame
+      const ci = this.lane.idx(u.s);
+      const right = this.lane.right[ci];
+      const sinY = Math.sin(u.yaw);
+      const cosY = Math.cos(u.yaw);
+      const fwdX = sinY;
+      const fwdZ = cosY;
+      const rx = -dvx * 0.5;
+      const rz = -dvz * 0.5;
+      const along = rx * fwdX + rz * fwdZ;
+      const across = rx * right.x + rz * right.z;
+      u.speed = Math.max(0, u.speed + along);
+      u.latV += across;
+
+      const wx = p.x - u.world.x;
+      const wz = p.z - u.world.z;
+      const lever = Math.max(-1, Math.min(1, (wx * fwdX + wz * fwdZ) / 2.2));
+      u.yawRate += across * lever * 0.55;
+
+      // Model-space impact point (+Z = front, +X = left)
+      const lz = Math.max(-2.3, Math.min(2.3, wx * fwdX + wz * fwdZ));
+      const lx = Math.max(-0.98, Math.min(0.98, wx * cosY - wz * sinY));
+      const ly = 0.55;
+      const hitRes = u.damageSim.addImpact(dv * 0.5, lx, ly, lz, stepDt, 1);
+      if (hitRes) {
+        if (u.root && u.damageRig) {
+          u.root.updateMatrixWorld(true);
+          u.damageRig.applyHit(u.damageSim, hitRes, u.root, this.vfx);
+        }
+        if (hitRes.justTotaled || (u.damageSim.totaled && !u.wrecked)) {
+          this.markUnitDisabled(u);
+        }
+      }
+      return true;
+    }
+
+    // 2. Check active roadblock cruisers within 8 m
+    const rb = this.roadblock;
+    if (rb?.active) {
+      for (let k = 0; k < rb.colliders.length; k++) {
+        const w = rb.carWorlds[k];
+        const dx = p.x - w.x;
+        const dz = p.z - w.z;
+        if (dx * dx + dz * dz > 64) continue;
+        let touching = false;
+        world.contactPair(playerCollider, rb.colliders[k], (m) => {
+          if (m.numContacts() > 0) touching = true;
+        });
+        if (!touching) continue;
+
+        const lv = playerBody.linvel();
+        const av = playerBody.angvel();
+        const dvx = lv.x - preV.x;
+        const dvz = lv.z - preV.z;
+        const dv = Math.hypot(dvx, dvz);
+        if (dv < 0.02) return true;
+
+        this.tmpLin.x = (preV.x + lv.x) * 0.5;
+        this.tmpLin.y = lv.y;
+        this.tmpLin.z = (preV.z + lv.z) * 0.5;
+        this.tmpAng.x = (preW.x + av.x) * 0.5;
+        this.tmpAng.y = (preW.y + av.y) * 0.5;
+        this.tmpAng.z = (preW.z + av.z) * 0.5;
+        playerBody.setLinvel(this.tmpLin, true);
+        playerBody.setAngvel(this.tmpAng, true);
+
+        const wyaw = rb.carYaws[k];
+        const sinY = Math.sin(wyaw);
+        const cosY = Math.cos(wyaw);
+        const lz = Math.max(-2.3, Math.min(2.3, dx * sinY + dz * cosY));
+        const lx = Math.max(-0.98, Math.min(0.98, dx * cosY - dz * sinY));
+        const hitRes = rb.damageSims[k].addImpact(dv * 0.5, lx, 0.55, lz, stepDt, 1);
+        if (hitRes && rb.carRoots[k] && rb.damageRigs[k]) {
+          rb.carRoots[k].updateMatrixWorld(true);
+          rb.damageRigs[k].applyHit(rb.damageSims[k], hitRes, rb.carRoots[k], this.vfx);
+        }
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /** Signed curvature at arc length s: > 0 means right-hand turn, < 0 means left-hand turn. */
+  private signedCurvatureAt(s: number): number {
+    const nPts = this.lane.n;
+    const ci = this.lane.idx(s);
+    const rPrev = this.lane.right[(ci - 2 + nPts) % nPts];
+    const rNext = this.lane.right[(ci + 2) % nPts];
+    const fwdNextX = rNext.z;
+    const fwdNextZ = -rNext.x;
+    const dot = Math.max(-1, Math.min(1, rPrev.x * rNext.x + rPrev.z * rNext.z));
+    const mag = Math.acos(dot) / 16;
+    const turnDot = fwdNextX * rPrev.x + fwdNextZ * rPrev.z;
+    return turnDot >= 0 ? mag : -mag;
+  }
+
+  /** Dynamic outside -> apex -> exit cornering line offset based on upcoming curvature 20..65 m ahead. */
+  private computeCornerLineLat(s: number, roomLeft: number, roomRight: number): number {
+    const kNear = this.signedCurvatureAt(s + 20);
+    const kMid = this.signedCurvatureAt(s + 40);
+    const kFar = this.signedCurvatureAt(s + 65);
+    const absNear = Math.abs(kNear);
+    const absMid = Math.abs(kMid);
+    const absFar = Math.abs(kFar);
+
+    let normOffset = 0; // -1..+1 of available road half-width (+ = right)
+    if (absNear > 0.0045) {
+      // Entering/clipping the apex: hug the inside of the turn
+      const sign = Math.sign(kNear);
+      normOffset = sign * Math.min(0.68, absNear * 48);
+    } else if (absMid > 0.0045 || absFar > 0.0045) {
+      // Setting up on entry: swing smoothly toward the outside before turning in
+      const dominant = absMid >= absFar ? kMid : kFar;
+      const sign = Math.sign(dominant);
+      normOffset = -sign * Math.min(0.62, Math.abs(dominant) * 44);
+    }
+    return normOffset >= 0 ? normOffset * roomRight : normOffset * roomLeft;
+  }
+
+  /** Update wrecked cruiser's dim hazard/flickering lightbar so disabled units look unmistakably knocked out. */
+  private applyWreckedLights(rig: PoliceLightRig, tSec: number) {
+    updatePoliceLights(rig, tSec, false);
+    rig.wasActive = true;
+    const haz = Math.sin(tSec * 5.2 + rig.phaseOffset * 6.0) > 0.15;
+    const glitch = Math.sin(tSec * 29.0 + rig.phaseOffset * 13.0) > 0.55;
+    if (haz) {
+      rig.barPods[0].color.setRGB(1.35, 0.08, 0.14);
+      rig.barPods[2].color.setRGB(1.45, 0.72, 0.08);
+      rig.barPods[3].color.setRGB(1.45, 0.72, 0.08);
+      if (glitch) rig.barPods[5].color.setRGB(0.08, 0.55, 1.55);
+      rig.rearR.color.setRGB(1.2, 0.06, 0.10);
+      rig.groundWashMat.color.setHex(0xff4c1e);
+      rig.groundWashMat.opacity = 0.16;
+      if (rig.pointLight) {
+        rig.pointLight.color.setHex(0xff421a);
+        rig.pointLight.intensity = 12;
+      }
+    } else {
+      rig.groundWashMat.opacity = 0.02;
+      if (rig.pointLight) rig.pointLight.intensity = 0;
+    }
+    rig.wigWagL.color.setHex(0x14161c);
+    rig.wigWagR.color.setHex(0x14161c);
+  }
+
+  /**
+   * Main pursuit update:
+   *  - Strict 90% top speed cap relative to player car's top speed (`playerMaxSpeedMs * 0.90`)
+   *  - Intelligent 7-candidate multi-obstacle lateral planner + Outside->Apex->Exit cornering line
+   *  - Disciplined real-life police tactics (PULL OVER / BOX IN / ROADBLOCK AHEAD; NEVER ramming/PIT-wrecking!)
+   *  - Exact-parity damage/smoke/disabled-unit progression
+   */
   update(
     dt: number,
     playerS: number,
@@ -813,19 +1230,29 @@ export class Cops {
     playerRank = 1,
     isRace = true,
     playerHeadingRad?: number,
+    playerMaxSpeedMs?: number,
+    trafficObstacles?: readonly RoadObstacle[],
   ) {
+    const safeDt = Math.max(1e-4, Math.min(0.1, dt));
+
+    // Always keep currentMaxSpeedKmh accurately synchronized with 90% of player's top speed
+    const basePlayerMaxMs = Math.max(45, playerMaxSpeedMs ?? FALLBACK_PLAYER_MAX_MS);
+    const copTopSpeed = basePlayerMaxMs * 0.90;
+    this.lastCopTopSpeedMs = copTopSpeed;
+
     if (!this.active) {
       this.sirenSnapshot.proximity = this.dispatchDelay > 0 ? 0.2 : 0;
       this.sirenSnapshot.dopplerRatio = 1.0;
       this.sirenSnapshot.pan = 0;
       this.sirenSnapshot.aggressive = false;
       this.sirenSnapshot.hornPulse = 0;
+      this.vfx?.update(safeDt);
       return;
     }
 
-    const safeDt = Math.max(1e-4, Math.min(0.1, dt));
     this.t += safeDt;
-    this.pitCd = Math.max(0, this.pitCd - safeDt);
+    this.gentleTapCd = Math.max(0, this.gentleTapCd - safeDt);
+    this.pullOverRadioCd = Math.max(0, this.pullOverRadioCd - safeDt);
     this.roadblockCd -= safeDt;
     this.hornCd = Math.max(0, this.hornCd - safeDt);
     this.hornPulse = Math.max(0, this.hornPulse - safeDt * 1.45);
@@ -854,188 +1281,513 @@ export class Cops {
     const playerLat = (playerPos.x - pCenter.x) * pRight.x + (playerPos.z - pCenter.z) * pRight.z;
     const playerSpeedMs = kmh / 3.6;
 
-    // High-performance twin-turbo Interceptor tuning (genuinely hard to shake!)
-    // Heat 1: 245 km/h | Heat 2: 265 km/h | Heat 3: 285 km/h | Heat 4: 305 km/h | Heat 5: 325 km/h
-    const topSpeed = (245 + (this.heat - 1) * 20) / 3.6;
-    const maxAccel = 9.2 + this.heat * 0.75; // twin-turbo interceptor acceleration (m/s²)
-    const maxBrake = 12.5;                   // heavy-duty pursuit brakes (m/s²)
-    const cornerMu = 1.18 + this.heat * 0.03;
+    // Realistic base interceptor acceleration (8.5..10.5 m/s²) and corner grip (mu = 1.12), scaled by damage per unit
+    const baseAccel = Math.min(10.5, 8.5 + (this.heat - 1) * 0.5);
 
     let minDist = Infinity;
-    let closestUnit: PatrolUnit = this.units[0];
+    let closestUnit: PatrolUnit | null = null;
+    let closeUnitCount = 0;
+    let operationalCount = 0;
 
     for (let uIdx = 0; uIdx < this.units.length; uIdx++) {
       const u = this.units[uIdx];
       if (!u.active) continue;
 
-      let gapAhead = signedDelta(playerS, u.s); // positive = player ahead of cop; negative = cop ahead of player
+      // Step exact CoreDamageSim timers (overheat smoulder, fire, headlight flicker)
+      u.damageSim.step(safeDt);
+      if (u.damageSim.totaled && !u.wrecked) {
+        this.markUnitDisabled(u);
+        if (!this.active) return;
+      }
 
-      // Dynamic leapfrog intercept: if a non-lead unit falls > 340 m behind while NOT evading,
-      // redeploy it as a fresh intercept unit 240 m AHEAD so the player constantly faces live police!
+      const room = this.lane.roomInto(u.s, this.roomScratch);
+
+      // ---- Disabled / Wrecked Police Cruiser: coasts/skids to a smoking stop on the street ----
+      if (u.wrecked) {
+        u.speed = Math.max(0, u.speed - 4.2 * safeDt);
+        let dl = 0;
+        if (u.latV !== 0) {
+          dl = u.latV * safeDt;
+          u.latV -= Math.sign(u.latV) * Math.min(Math.abs(u.latV), 7.0 * safeDt);
+          const minEdge = -room.left - 0.6;
+          const maxEdge = room.right + 0.6;
+          if (u.lat + dl > maxEdge) {
+            dl = maxEdge - u.lat;
+            u.latV = 0;
+            u.speed *= 0.72;
+          } else if (u.lat + dl < minEdge) {
+            dl = minEdge - u.lat;
+            u.latV = 0;
+            u.speed *= 0.72;
+          }
+        }
+        if (u.yawRate !== 0) {
+          u.yawOff += u.yawRate * safeDt;
+          u.yawRate *= Math.exp(-2.2 * safeDt);
+          if (Math.abs(u.yawRate) < 0.002) u.yawRate = 0;
+        }
+        u.steerLean *= Math.exp(-5.0 * safeDt);
+        u.lat += dl;
+        u.s = this.lane.wrap(u.s + u.speed * safeDt);
+        u.prevWorld.copy(u.world);
+        this.lane.at(u.s, u.lat, u.world);
+        u.velX = (u.world.x - u.prevWorld.x) / safeDt;
+        u.velZ = (u.world.z - u.prevWorld.z) / safeDt;
+        if (u.root && u.damageRig) {
+          u.damageRig.updateSmoke(safeDt, u.damageSim, u.root, this.vfx);
+        }
+        continue;
+      }
+
+      operationalCount++;
+      let gapAhead = signedDelta(playerS, u.s); // > 0 player ahead; < 0 cop ahead
+
+      // Dynamic leapfrog intercept: if a non-lead operational unit falls > 340 m behind while NOT evading,
+      // redeploy it as a fresh intercept unit 240 m AHEAD (never leapfrog a wrecked unit!)
       if (!this.evading && uIdx > 0 && gapAhead > LEAPFROG_BEHIND) {
+        this.resetUnitState(u);
         u.s = this.lane.wrap(playerS + LEAPFROG_AHEAD);
-        const aheadRoom = this.lane.room(u.s);
-        u.lat = Math.max(-aheadRoom.left, Math.min(aheadRoom.right, playerLat + u.side * 1.4));
-        u.speed = Math.max(20, Math.min(topSpeed * 0.6, playerSpeedMs * 0.55));
+        const aheadRoom = this.lane.roomInto(u.s, this.roomScratch);
+        u.lat = Math.max(-aheadRoom.left, Math.min(aheadRoom.right, playerLat + u.side * PLAYER_SAFE_LAT));
+        u.speed = Math.min(copTopSpeed * 0.62, Math.max(18, playerSpeedMs * 0.55));
         this.placeUnit(u, true);
         gapAhead = signedDelta(playerS, u.s);
         if (this.t - this.lastInterceptRadio > 16) {
           this.lastInterceptRadio = this.t;
           this.hooks.onRadio?.(
             u.callsign,
-            `Unit ${u.unitNumber} pulling onto the avenue ahead — moving to intercept and box in the suspect!`,
+            `Unit ${u.unitNumber} pulling onto the avenue ahead — moving to intercept cleanly!`,
             true,
             'intercept_ahead',
           );
         }
       }
 
-      const room = this.lane.room(u.s);
+      const curRoom = this.lane.roomInto(u.s, this.roomScratch);
+      const roomLeft = Math.max(1.2, curRoom.left);
+      const roomRight = Math.max(1.2, curRoom.right);
 
-      // Planted interceptor corner grip limit
-      const ci = this.lane.idx(u.s);
-      const nPts = this.lane.n;
-      const rA = this.lane.right[(ci - 2 + nPts) % nPts];
-      const rB = this.lane.right[(ci + 2) % nPts];
-      const dAng = Math.acos(Math.max(-1, Math.min(1, rA.x * rB.x + rA.z * rB.z)));
-      const curv = dAng / 16;
-      const cornerLimit = curv > 0.006 ? Math.sqrt((cornerMu * 9.81) / curv) : topSpeed;
+      // Per-unit damage-scaled performance (strictly <= 90% of player car's top speed!)
+      const powerScale = u.damageSim.powerScale;
+      const gripScale = u.damageSim.gripScale;
+      const dragScale = u.damageSim.dragScale;
+      const unitTopSpeed = Math.min(
+        copTopSpeed,
+        copTopSpeed * Math.sqrt(Math.max(0.25, powerScale) / Math.max(1, dragScale)),
+      );
+      const maxAccel = baseAccel * powerScale;
+      const maxBrake = 12.2 * gripScale;
+      const cornerMu = 1.12 * gripScale;
 
-      // Role-based tactical offset along track (box-in formation: PIT rear quarter, intercept/flank pull ahead/beside!)
+      // Multi-point upcoming corner speed lookahead (smooth braking into corners!)
+      let cornerLimit = unitTopSpeed;
+      const lookDists = [0, 14, 30, 50, 70];
+      for (let lk = 0; lk < lookDists.length; lk++) {
+        const dLook = lookDists[lk];
+        const absK = Math.abs(this.signedCurvatureAt(u.s + dLook));
+        if (absK > 0.005) {
+          const vTurn = Math.sqrt((cornerMu * 9.81) / absK);
+          const vAllow = dLook > 0 ? Math.sqrt(vTurn * vTurn + 2 * maxBrake * dLook) : vTurn;
+          if (vAllow < cornerLimit) cornerLimit = vAllow;
+        }
+      }
+
+      // Role-based disciplined tactical longitudinal offset (NO aggressive rear-quarter ramming!)
       const wantOffsetS =
-        u.role === 'pit'
-          ? -3.2
+        u.role === 'escort'
+          ? -6.0
           : u.role === 'intercept'
-          ? 3.6
-          : u.role === 'flank'
-          ? 1.4
-          : -1.6;
+          ? 5.0
+          : u.role === 'box'
+          ? 1.8
+          : -9.5;
       const d = signedDelta(playerS + wantOffsetS, u.s);
 
       let targetSpeed: number;
       if (this.evading) {
-        // Units keep hunting hard at 92% speed during EVADING!
-        targetSpeed = Math.min(topSpeed * 0.92, cornerLimit);
-      } else if (gapAhead < -18) {
-        // Unit is AHEAD of the player: roll at a visible tactical intercept/blocking pace so the player
-        // closes right up onto flashing police lights and must thread/dodge past!
+        targetSpeed = Math.min(unitTopSpeed * 0.90, cornerLimit);
+      } else if (gapAhead < -22) {
+        // Ahead of the player: maintain steady intercept pace so player can see lights & maneuver cleanly
         const aheadDist = -gapAhead;
-        const holdFactor = aheadDist > 80 ? 0.42 : 0.68;
-        targetSpeed = Math.min(topSpeed * 0.72, Math.max(15, playerSpeedMs * holdFactor));
-      } else if (d > 6) {
-        // Behind the player: floor it to close the gap fast!
-        targetSpeed = topSpeed;
-      } else if (d > -8) {
-        // Alongside / box-in window: match aggressively with slight closing authority
-        targetSpeed = Math.min(topSpeed, Math.max(0, playerSpeedMs + d * 0.85 + 2.2));
+        const holdFactor = aheadDist > 85 ? 0.44 : 0.70;
+        targetSpeed = Math.min(unitTopSpeed * 0.75, Math.max(15, playerSpeedMs * holdFactor));
+      } else if (d > 8) {
+        // Behind target escort slot: accelerate up to strict 90% cap
+        targetSpeed = unitTopSpeed;
+      } else if (d > -6) {
+        // Alongside / disciplined escort & box-in window: match speed smoothly without surging into bumper
+        targetSpeed = Math.min(unitTopSpeed, Math.max(0, playerSpeedMs + d * 0.75));
       } else {
-        // Slightly ahead during box-in: brake/pace tightly to pin the player's nose!
-        targetSpeed = Math.max(0, playerSpeedMs - 3.5);
+        // Ahead of player during box-in: ease pace gently to encourage player to slow & pull over
+        targetSpeed = Math.max(0, playerSpeedMs - 2.6);
       }
-      targetSpeed = Math.min(targetSpeed, cornerLimit);
 
-      // Mild high-speed aerodynamic drag falloff (0.35 instead of 0.65)
-      const speedFrac = Math.min(0.96, u.speed / Math.max(1, topSpeed));
+      // ---- Intelligent 7-Candidate Multi-Obstacle Lateral Path Planner ----
+      const ci = this.lane.idx(u.s);
+      const rNow = this.lane.right[ci];
+      const fwdX = rNow.z;
+      const fwdZ = -rNow.x;
+
+      // Dynamic Outside -> Apex -> Exit cornering line
+      const cornerLineLat = this.computeCornerLineLat(u.s, roomLeft, roomRight);
+
+      // Disciplined escort / box-in lateral offset (ALWAYS >= 2.65 m clearance alongside player!)
+      let tacticalLat = cornerLineLat;
+      const nearPlayerLong = gapAhead > -28 && gapAhead < 48;
+      if (!this.evading && nearPlayerLong) {
+        // Choose side with more road space for escort/box units
+        const rightTarget = playerLat + PLAYER_SAFE_LAT + 0.25;
+        const leftTarget = playerLat - PLAYER_SAFE_LAT - 0.25;
+        const canRight = rightTarget <= roomRight;
+        const canLeft = leftTarget >= -roomLeft;
+        let escortLat: number;
+        if (u.role === 'escort' || u.role === 'backup') {
+          // Lead escort pulls slightly to the clearer side (never directly riding into bumper)
+          escortLat = (u.side > 0 ? canRight : !canLeft) ? rightTarget : leftTarget;
+        } else {
+          // Intercept / box unit takes the opposite lane with >= 2.65 m safe clearance
+          escortLat = (u.side < 0 ? canLeft : !canRight) ? leftTarget : rightTarget;
+        }
+        // Blend cornering line when > 20 m away; prioritize disciplined escort lane when close
+        const proxBlend = Math.max(0, Math.min(1, 1 - Math.abs(gapAhead) / 45));
+        tacticalLat = cornerLineLat * (1 - proxBlend * 0.75) + escortLat * (proxBlend * 0.75);
+      }
+      const desiredLat = Math.max(-roomLeft, Math.min(roomRight, tacticalLat + u.damageSim.steerPull));
+
+      // Collect all non-player obstacles for this unit (traffic/rivals + other cops + active roadblock cruisers)
+      const obsList = this.plannerObsBuf;
+      let obsCount = 0;
+      const pushPlanObs = (x: number, z: number, v: number, lat: number, radius: number, isBlock: boolean) => {
+        if (obsCount < obsList.length) {
+          const o = obsList[obsCount++];
+          o.x = x; o.z = z; o.v = v; o.lat = lat; o.radius = radius; o.isBlock = isBlock;
+        } else {
+          obsList.push({ x, z, v, lat, radius, isBlock });
+          obsCount++;
+        }
+      };
+
+      if (trafficObstacles) {
+        for (let k = 0; k < trafficObstacles.length; k++) {
+          const to = trafficObstacles[k];
+          pushPlanObs(to.x, to.z, to.v, to.lat, to.radius ?? 1.3, !!to.isBlock);
+        }
+      }
+      for (let j = 0; j < this.units.length; j++) {
+        if (j === uIdx) continue;
+        const ou = this.units[j];
+        if (!ou.active) continue;
+        pushPlanObs(ou.world.x, ou.world.z, ou.speed, ou.lat, 1.35, ou.wrecked);
+      }
+      if (this.roadblock?.active) {
+        for (let k = 0; k < this.roadblock.carWorlds.length; k++) {
+          const rw = this.roadblock.carWorlds[k];
+          pushPlanObs(rw.x, rw.z, 0, this.roadblock.carLats[k], 2.15, true);
+        }
+      }
+      obsList.length = obsCount;
+
+      // Evaluate 7 candidate lateral positions across [-roomLeft, +roomRight]
+      const span = roomLeft + roomRight;
+      for (let cIdx = 0; cIdx < 7; cIdx++) {
+        this.candLatsBuf[cIdx] = -roomLeft + (span * cIdx) / 6;
+      }
+
+      if (u.overtakeHoldT > 0) {
+        u.overtakeHoldT = Math.max(0, u.overtakeHoldT - safeDt);
+        if (u.overtakeHoldT <= 0) u.overtakeSide = 0;
+      }
+
+      const lookAhead = Math.max(26, 16 + u.speed * 1.15);
+      let blockingObsAhead = false;
+      let blockingObsLat = u.lat;
+      let blockingObsDs = Infinity;
+      let blockingObsV = unitTopSpeed;
+
+      // First scan obstacles for direct forward blocking (for braking & overtake hysteresis)
+      for (let k = 0; k < obsCount; k++) {
+        const obs = obsList[k];
+        const dx = obs.x - u.world.x;
+        const dz = obs.z - u.world.z;
+        const ds = dx * fwdX + dz * fwdZ;
+        if (ds > 0 && ds < lookAhead) {
+          const relLat = dx * rNow.x + dz * rNow.z;
+          const obsLat = u.lat + relLat;
+          const clear = (obs.radius ?? 1.3) + (obs.isBlock ? 1.75 : 1.15);
+          if (Math.abs(obsLat - u.lat) < clear && ds < blockingObsDs) {
+            blockingObsAhead = true;
+            blockingObsDs = ds;
+            blockingObsLat = obsLat;
+            blockingObsV = obs.v;
+          }
+        }
+      }
+
+      let bestLat = desiredLat;
+      let bestCost = Infinity;
+      for (let cIdx = 0; cIdx < 7; cIdx++) {
+        const candLat = this.candLatsBuf[cIdx];
+        let cost = Math.abs(candLat - desiredLat) * 0.55 + Math.abs(candLat - u.lat) * 0.22;
+
+        // Lateral hysteresis: commit smoothly to chosen overtake side while passing
+        if (blockingObsAhead && u.overtakeHoldT > 0 && u.overtakeSide !== 0) {
+          const onChosenSide = (candLat - blockingObsLat) * u.overtakeSide > 0.5;
+          if (onChosenSide) cost -= 1.6;
+        }
+
+        // Cost against traffic, rivals, other police cruisers, wrecks, and roadblocks
+        for (let k = 0; k < obsCount; k++) {
+          const obs = obsList[k];
+          const dx = obs.x - u.world.x;
+          const dz = obs.z - u.world.z;
+          const ds = dx * fwdX + dz * fwdZ;
+          if (ds < -5.5 || ds > lookAhead) continue;
+          const obsLat = u.lat + (dx * rNow.x + dz * rNow.z);
+          const clearLat = obs.isBlock ? 3.2 : (obs.radius ?? 1.3) + 1.55;
+          const dLat = Math.abs(candLat - obsLat);
+          if (dLat < clearLat) {
+            const overlap = (clearLat - dLat) / clearLat;
+            const prox = 1 / Math.max(3.5, Math.abs(ds));
+            const closing = Math.max(1.0, u.speed - obs.v + 6.0);
+            const blockMul = obs.isBlock ? 3.5 : 1.0;
+            cost += overlap * overlap * prox * closing * 22 * blockMul;
+          }
+        }
+
+        // STRICT NON-RAMMING PERSONAL-SPACE BUBBLE around the player car (>= 2.65 m lateral clearance!)
+        if (gapAhead > -7.5 && gapAhead < 14.0) {
+          const dLatPlayer = Math.abs(candLat - playerLat);
+          if (dLatPlayer < PLAYER_SAFE_LAT) {
+            const pen = (PLAYER_SAFE_LAT - dLatPlayer) / PLAYER_SAFE_LAT;
+            const longWeight = Math.max(0.35, 1 - Math.abs(gapAhead) / 14.5);
+            cost += (12 + pen * 55) * longWeight;
+          }
+        }
+
+        if (cost < bestCost) {
+          bestCost = cost;
+          bestLat = candLat;
+        }
+      }
+
+      if (blockingObsAhead && Math.abs(bestLat - blockingObsLat) > 1.2) {
+        const sideChoice: -1 | 1 = bestLat >= blockingObsLat ? 1 : -1;
+        if (u.overtakeSide === 0 || u.overtakeHoldT <= 0.1) {
+          u.overtakeSide = sideChoice;
+        }
+        u.overtakeHoldT = 1.6;
+      }
+
+      // Smooth braking if directly behind a blocking non-player obstacle while changing lanes
+      if (blockingObsAhead && blockingObsDs < 28) {
+        const safeSpeed = Math.max(0, blockingObsV + (blockingObsDs - 8.5) * 0.85);
+        targetSpeed = Math.min(targetSpeed, safeSpeed);
+      }
+
+      // STRICT ANTI-REAR-END BRAKING behind the player car so police NEVER ram your rear bumper!
+      if (gapAhead > 0 && gapAhead < 22 && Math.abs(u.lat - playerLat) < 2.55) {
+        const followSafe = Math.max(0, playerSpeedMs + (gapAhead - 6.8) * 0.95);
+        targetSpeed = Math.min(targetSpeed, followSafe);
+      }
+
+      targetSpeed = Math.min(targetSpeed, cornerLimit, unitTopSpeed);
+
+      // Spun-out recovery: brake briefly to gather the cruiser up
+      const spun = Math.abs(u.yawOff) > 0.6;
+      if (spun) targetSpeed = 0;
+
+      // Longitudinal velocity update (smooth acceleration with aero drag falloff, strictly capped at unitTopSpeed <= 90% player max!)
+      const speedFrac = Math.min(0.98, u.speed / Math.max(1, unitTopSpeed));
       const availAccel = maxAccel * (1 - 0.35 * speedFrac * speedFrac);
-      const dv = targetSpeed - u.speed;
-      if (dv > 0) u.speed += Math.min(dv, availAccel * safeDt);
-      else u.speed += Math.max(dv, -maxBrake * safeDt);
-      u.speed = Math.max(0, Math.min(topSpeed, u.speed));
-      u.s = this.lane.wrap(u.s + u.speed * safeDt);
+      const dvSpeed = targetSpeed - u.speed;
+      if (dvSpeed > 0) u.speed += Math.min(dvSpeed, availAccel * safeDt);
+      else u.speed += Math.max(dvSpeed, -maxBrake * safeDt);
+      u.speed = Math.max(0, Math.min(unitTopSpeed, u.speed));
 
-      // Aggressive lateral positioning: intercept ahead moves into player's lane; flanker boxes opposite side; PIT hunts rear quarter
-      let latBias: number;
-      if (gapAhead < -15 && gapAhead > -180) {
-        // Intercepting from ahead: move toward player's lane to force evasive action
-        latBias = u.side * 0.7;
-      } else if (u.role === 'pit') {
-        latBias = playerLat > 0 ? -2.0 : 2.0;
-      } else if (u.role === 'flank' || u.role === 'intercept') {
-        // Box-in from opposite side of PIT unit (and pull in tighter when player slows down!)
-        const squeeze = kmh < 50 ? 1.45 : 2.15;
-        latBias = playerLat > 0 ? squeeze : -squeeze;
-      } else {
-        // Enforcer rides tight on rear bumper / opposite quarter
-        latBias = u.side * 1.4;
+      // Lateral movement + crash slide physics (mirrors AiTraffic with wall-impact CoreDamageSim!)
+      const sliding = Math.abs(u.latV) > 0.4 || spun;
+      const maxLatRate = sliding ? 0 : Math.min(3.4, 0.45 + u.speed * 0.14);
+      const maxDl = maxLatRate * safeDt;
+      let dl = Math.max(-maxDl, Math.min(maxDl, bestLat - u.lat));
+      const steerRate = dl / safeDt;
+
+      // Smooth visual heading lean into lane changes / overtakes
+      const targetLean = u.speed > 1.0 && !sliding
+        ? Math.max(-0.26, Math.min(0.26, Math.atan2(steerRate, Math.max(4, u.speed))))
+        : 0;
+      u.steerLean += (targetLean - u.steerLean) * Math.min(1, safeDt * 8);
+
+      // Sideways crash slide scrubbed by tyres; wall/curb collision applies exact CoreDamageSim damage!
+      if (u.latV !== 0) {
+        dl += u.latV * safeDt;
+        u.latV -= Math.sign(u.latV) * Math.min(Math.abs(u.latV), 7.0 * safeDt);
+        const minEdge = -roomLeft - 0.6;
+        const maxEdge = roomRight + 0.6;
+        const hitRight = u.lat + dl > maxEdge;
+        const hitLeft = u.lat + dl < minEdge;
+        if (hitRight || hitLeft) {
+          const hitDv = Math.abs(u.latV);
+          dl = (hitRight ? maxEdge : minEdge) - u.lat;
+          u.latV = 0;
+          u.speed *= 0.72;
+          // Model space: +X is left, -X is right
+          const lx = hitRight ? -0.95 : 0.95;
+          const wallHit = u.damageSim.addImpact(hitDv, lx, 0.55, 0.35, safeDt, 2);
+          if (wallHit) {
+            if (u.root && u.damageRig) {
+              u.root.updateMatrixWorld(true);
+              u.damageRig.applyHit(u.damageSim, wallHit, u.root, this.vfx);
+            }
+            if (wallHit.justTotaled || (u.damageSim.totaled && !u.wrecked)) {
+              this.markUnitDisabled(u);
+              if (!this.active) return;
+            }
+          }
+        }
       }
 
-      const engagedPit =
-        !this.evading &&
-        (u.role === 'pit' || u.role === 'enforcer') &&
-        Math.abs(gapAhead - 2.0) < 2.6 &&
-        this.pitCd <= 0 &&
-        kmh > 50;
+      if (u.yawRate !== 0 || u.yawOff !== 0) {
+        u.yawOff += u.yawRate * safeDt;
+        u.yawRate *= Math.exp(-2.2 * safeDt);
+        u.yawOff -= u.yawOff * Math.min(1, (spun ? 0.9 : 2.4) * safeDt);
+        if (Math.abs(u.yawOff) < 0.002 && Math.abs(u.yawRate) < 0.002) {
+          u.yawOff = 0;
+          u.yawRate = 0;
+        }
+      }
 
-      const understeerPush = u.speed > cornerLimit * 1.03 ? (u.speed - cornerLimit) * 0.35 : 0;
-      const wantLat = Math.max(
-        -room.left,
-        Math.min(room.right, playerLat + (engagedPit ? latBias * 0.4 : latBias) + understeerPush * u.side),
-      );
-      u.lat += (wantLat - u.lat) * Math.min(1, safeDt * (engagedPit ? 4.8 : 2.9));
+      u.lat += dl;
+      u.s = this.lane.wrap(u.s + u.speed * safeDt);
 
       u.prevWorld.copy(u.world);
       this.lane.at(u.s, u.lat, u.world);
       u.velX = (u.world.x - u.prevWorld.x) / safeDt;
       u.velZ = (u.world.z - u.prevWorld.z) / safeDt;
 
+      // Emit hood steam/smoke when engine/cooling is damaged
+      if (u.root && u.damageRig) {
+        u.damageRig.updateSmoke(safeDt, u.damageSim, u.root, this.vfx);
+      }
+
       const dist3 = Math.hypot(u.world.x - playerPos.x, u.world.z - playerPos.z);
       if (dist3 < minDist) {
         minDist = dist3;
         closestUnit = u;
       }
+      if (dist3 < 45) closeUnitCount++;
 
-      // Close-range airhorn burst when closing aggressively < 22 m
-      if (!this.evading && dist3 < 22 && u.speed > playerSpeedMs + 3) {
+      // Close-range airhorn / PA attention pulse when closing within 24 m
+      if (!this.evading && dist3 < 24 && u.speed > playerSpeedMs + 2.5) {
         this.triggerHorn();
       }
 
-      // Tactical PIT maneuver when PIT or Enforcer unit earns rear-quarter overlap
-      if (
-        !this.evading &&
-        (u.role === 'pit' || u.role === 'enforcer') &&
-        Math.abs(gapAhead - 2.0) < 3.4 &&
-        Math.abs(u.lat - playerLat) < 2.8 &&
-        kmh > 50
-      ) {
-        if (!this.pitWarned && this.pitCd < 1.4) {
-          this.pitWarned = true;
-          this.tactic = 'PIT MANEUVER';
-          this.triggerHorn();
-          this.hooks.onAlert?.('⚠ INTERCEPTOR ALIGNING FOR PIT');
-          this.hooks.onRadio?.(u.callsign, 'I have the rear quarter, moving in for PIT maneuver!', false, 'pit_request');
+      // Very gentle low-speed catch-tap ONLY if the cruiser physically catches right beside you while you slow down (< 70 km/h, < 3.8 m)
+      if (!this.evading && dist3 < 3.8 && kmh < 70 && kmh > 6 && this.gentleTapCd <= 0) {
+        const pushDir = u.lat < playerLat ? 1 : -1;
+        this.gentleTapCd = GENTLE_TAP_COOLDOWN;
+        this.hooks.onPitNudge?.(pushDir, 0.12);
+      }
+    }
+
+    // If all active units were disabled/wrecked, immediately end pursuit cleanly
+    if (operationalCount === 0 || !closestUnit) {
+      this.breakOff();
+      this.hooks.escaped();
+      return;
+    }
+
+    // Update roadblock smoke/damage timers & shared particle VFX
+    if (this.roadblock?.active) {
+      for (let k = 0; k < this.roadblock.damageSims.length; k++) {
+        this.roadblock.damageSims[k].step(safeDt);
+        this.roadblock.damageRigs[k].updateSmoke(
+          safeDt,
+          this.roadblock.damageSims[k],
+          this.roadblock.carRoots[k],
+          this.vfx,
+        );
+      }
+    }
+    this.vfx?.update(safeDt);
+
+    // Update realistic multi-flash LED strobes + broken/flickering headlights + dim wrecked hazard lights
+    for (const u of this.units) {
+      if (!u.lights) continue;
+      if (!u.active) {
+        updatePoliceLights(u.lights, this.t, false);
+      } else if (u.wrecked) {
+        this.applyWreckedLights(u.lights, this.t);
+      } else {
+        updatePoliceLights(u.lights, this.t, true);
+        if (u.damageRig && u.damageSim.headlightsBroken) {
+          const hf = u.damageRig.headlightFactor(u.damageSim);
+          u.lights.wigWagL.color.multiplyScalar(hf);
+          u.lights.wigWagR.color.multiplyScalar(hf);
         }
-        if (this.pitCd <= 0 && dist3 < 4.2) {
-          const pushDir = u.lat < playerLat ? 1 : -1;
-          this.pitCd = PIT_COOLDOWN;
-          this.pitWarned = false;
-          this.triggerHorn();
-          this.hooks.onPitNudge?.(pushDir, 0.50 + this.heat * 0.06);
-          this.hooks.onAlert?.('🚨 PIT CONTACT · COUNTER-STEER!');
-          this.hooks.onRadio?.(u.callsign, 'PIT contact! Suspect fishtailing — box them in!', false, 'pit_contact');
+      }
+    }
+    if (this.roadblock) {
+      for (let k = 0; k < this.roadblock.lights.length; k++) {
+        const l = this.roadblock.lights[k];
+        if (!this.roadblock.active) {
+          updatePoliceLights(l, this.t, false);
+        } else if (this.roadblock.damageSims[k].totaled) {
+          this.applyWreckedLights(l, this.t);
+        } else {
+          updatePoliceLights(l, this.t, true);
         }
       }
     }
 
-    // Update realistic multi-flash LED strobes + dynamic PointLights on all pursuit units and active roadblock
-    for (const u of this.units) {
-      if (u.lights) updatePoliceLights(u.lights, this.t, u.active);
-    }
-    if (this.roadblock) {
-      for (const l of this.roadblock.lights) updatePoliceLights(l, this.t, this.roadblock.active);
+    // Disciplined Police Tactics & Realistic PA / Radio Pull-Over Orders (when within 35 m, every 14-18 s)
+    if (!this.evading) {
+      if (this.roadblock?.active) {
+        this.tactic = 'ROADBLOCK AHEAD';
+      } else if (minDist < 35) {
+        this.tactic = closeUnitCount >= 2 ? 'BOX IN' : 'PULL OVER';
+        if (this.pullOverRadioCd <= 0) {
+          this.pullOverRadioCd = 14 + Math.random() * 4;
+          const idx = this.pullOverOrderIdx++;
+          if (closeUnitCount >= 2 && idx % 3 === 2) {
+            this.hooks.onRadio?.(
+              closestUnit.callsign,
+              'Unit Four moving alongside to box the suspect in. Do not ram — keep it clean.',
+              true,
+              'boxing_in',
+            );
+          } else if (idx % 2 === 0) {
+            this.hooks.onRadio?.(
+              closestUnit.callsign,
+              'Police! Pull your vehicle over to the side of the road and stop immediately!',
+              true,
+              'pull_over_1',
+            );
+          } else {
+            this.hooks.onRadio?.(
+              closestUnit.callsign,
+              'Driver, this is the police! Slow down and pull over now!',
+              true,
+              'pull_over_2',
+            );
+          }
+        }
+      } else {
+        this.tactic = 'PURSUIT';
+      }
     }
 
-    // Police radio reaction when player genuinely pulls away at very high speed
-    if (!this.evading && minDist > 165 && kmh > 250 && this.t - this.lastPullingAwayRadio > 18) {
+    // Police radio reaction when player genuinely pulls away at very high speed on a straight
+    if (!this.evading && minDist > 165 && kmh > 240 && this.t - this.lastPullingAwayRadio > 18) {
       this.lastPullingAwayRadio = this.t;
       this.hooks.onRadio?.(
-        'UNIT-04',
-        `Suspect is flying at over ${Math.round(kmh)}! Calling intercept units ahead to cut them off!`,
+        closestUnit.callsign,
+        `Suspect is pulling away at over ${Math.round(kmh)}! Calling intercept units ahead!`,
         true,
         'high_speed',
       );
     }
 
-    // Deploy roadblock ahead during sustained pursuit (Heat >= 2 or > 10 s chase) + trigger quick GPS/Radio reroute!
+    // Deploy tactical roadblock ahead during sustained pursuit (Heat >= 2 or > 10 s chase) + trigger quick GPS/Radio reroute!
     if (!this.evading && this.roadblock && !this.roadblock.active && this.roadblockCd <= 0 && kmh > 65 && (this.heat >= 2 || this.t > 10)) {
       this.deployRoadblock(playerS, playerRank, isRace);
     } else if (this.roadblock?.active) {
@@ -1071,7 +1823,7 @@ export class Cops {
         this.roadblockCd = 20.0;
         this.tactic = this.evading ? 'EVADING' : 'PURSUIT';
         this.hooks.onAlert?.(wasPunch ? '✓ PUNCHED THROUGH ROADBLOCK!' : '✓ ROADBLOCK BYPASSED');
-        this.hooks.onRadio?.('UNIT-04', 'Suspect cleared the roadblock, continuing pursuit!', false, 'roadblock_cleared');
+        this.hooks.onRadio?.(closestUnit.callsign, 'Suspect cleared the roadblock, continuing pursuit!', false, 'roadblock_cleared');
         this.hooks.onStreetRadio?.(
           'GPS',
           wasPunch ? '🔥 Front pack punched through the block! Back on main route.' : '✓ Bypass complete — back on main race route!',
@@ -1080,14 +1832,14 @@ export class Cops {
       }
     }
 
-    // Track closest active unit for LOS raycast, HUD distance, and acoustic Doppler stereo siren
+    // Track closest operational unit for LOS raycast, HUD distance, and acoustic Doppler stereo siren
     this.s = closestUnit.s;
     this.speed = closestUnit.speed;
     this.world.copy(closestUnit.world);
     this.minDist = Number.isFinite(minDist) ? minDist : 999;
     this.placeUnits(playerPos);
 
-    // Compute acoustic Doppler ratio & stereo pan for closest active unit
+    // Compute acoustic Doppler ratio & stereo pan for closest operational unit
     const dx = closestUnit.world.x - playerPos.x;
     const dz = closestUnit.world.z - playerPos.z;
     const distSafe = Math.max(0.5, Math.hypot(dx, dz));
@@ -1115,23 +1867,27 @@ export class Cops {
     this.sirenSnapshot.proximity = prox;
     this.sirenSnapshot.dopplerRatio = this.smoothDoppler;
     this.sirenSnapshot.pan = this.smoothPan;
-    this.sirenSnapshot.aggressive = this.minDist < 42 || this.tactic === 'PIT MANEUVER' || !!this.roadblock?.active;
+    this.sirenSnapshot.aggressive =
+      this.minDist < 38 ||
+      this.tactic === 'PULL OVER' ||
+      this.tactic === 'BOX IN' ||
+      !!this.roadblock?.active;
     this.sirenSnapshot.hornPulse = this.hornPulse;
 
-    // Bust meter: dangerous when boxed in (< 15 km/h within 9.5 m for 4.2 s)
+    // Bust meter: busted when pulled over / stopped (< 15 km/h within 9.5 m for 4.2 s)
     if (this.minDist < BUST_GAP && kmh < BUST_SLOW) {
       this.slow += safeDt;
     } else {
       this.slow = Math.max(0, this.slow - safeDt * 1.4);
     }
     if (this.slow >= BUST_HOLD) {
-      this.hooks.onRadio?.('UNIT-04', 'Suspect vehicle pinned and immobilized. Driver in custody, 10-15.', true, 'busted');
+      this.hooks.onRadio?.(closestUnit.callsign, 'Suspect vehicle boxed in and stopped. Driver in custody, 10-15.', true, 'busted');
       this.breakOff();
       this.hooks.bust();
       return;
     }
 
-    // Harder escape: must hold > 275 m clear continuously for 3.8 s to enter EVADING
+    // Escape: hold > 275 m clear continuously for 3.8 s to enter EVADING
     if (this.minDist > ESCAPE_GAP) {
       this.far += safeDt;
       if (!this.evading && this.far >= ESCAPE_HOLD_FAR) {
@@ -1206,7 +1962,8 @@ export class Cops {
     if (teleport) u.prevWorld.copy(u.world);
     const i = this.lane.idx(u.s);
     const r = this.lane.right[i];
-    const yaw = Math.atan2(r.z, -r.x);
+    const roadYaw = Math.atan2(r.z, -r.x);
+    const yaw = roadYaw - u.steerLean - u.yawOff;
     u.yaw = yaw;
     if (u.root) {
       u.root.position.set(u.world.x, u.world.y + 0.02, u.world.z);

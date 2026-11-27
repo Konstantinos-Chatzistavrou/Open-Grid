@@ -67,6 +67,10 @@ const KNOWN_CLIPS = new Set<string>([
   'evading_los',
   'reacquired',
   'busted',
+  'pull_over_1',
+  'pull_over_2',
+  'boxing_in',
+  'unit_disabled',
   // Underground Street Crew / GPS
   'street_cam_warn',
   'street_rb_punch',
@@ -95,6 +99,10 @@ function resolveClipUrl(clipId: string): string {
 /** Automatic keyword -> clipId fallback when callers pass natural radio text without an explicit clipId. */
 function inferClipId(channel: 'police' | 'street', text: string): string | undefined {
   if (channel === 'police') {
+    if (/unit disabled|heavy (crash|vehicle) damage|out of the pursuit/i.test(text)) return 'unit_disabled';
+    if (/moving alongside|do not ram|keep it clean|box the suspect in/i.test(text)) return 'boxing_in';
+    if (/pull your vehicle over|side of the road|stop immediately/i.test(text)) return 'pull_over_1';
+    if (/slow down and pull over|pull over (right )?now|stop the vehicle/i.test(text)) return 'pull_over_2';
     if (/10-15|ten-fifteen|in custody|immobilized|boxed in and stopped/i.test(text)) return 'busted';
     if (/10-22|ten-twenty-two|cancel pursuit|return to patrol|stand down|terminated|slipped the net|evaded/i.test(text)) return 'escaped';
     if (/visual re-?acquired|re-?acquired|got 'em|back in (hot )?pursuit/i.test(text)) return 'reacquired';
