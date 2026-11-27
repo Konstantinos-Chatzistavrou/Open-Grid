@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://open-grid.racing/">
-    <img src="docs/media/banner.svg" alt="Open Grid — Open-Source 240 Hz Motorsport Simulator" width="100%" />
+    <img src="docs/media/banner.svg" alt="Open Grid — Open-Source 400 Hz Motorsport Simulator" width="100%" />
   </a>
 </p>
 
@@ -27,7 +27,7 @@
 <p align="center">
   <a href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Konstantinos-Chatzistavrou/Open-Grid/ci.yml?branch=main&style=flat-square&label=CI" alt="CI Status" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0%20%2F%20CC%20BY--NC-181c24?style=flat-square" alt="License" /></a>
-  <img src="https://img.shields.io/badge/physics-C%2B%2B20%20240%20Hz-ff1111?style=flat-square" alt="C++20 240 Hz Physics" />
+  <img src="https://img.shields.io/badge/physics-C%2B%2B20%20400%20Hz-ff1111?style=flat-square" alt="C++20 400 Hz Physics" />
   <img src="https://img.shields.io/badge/browser-Three.js%20WebGPU%20%2B%20WASM-181c24?style=flat-square" alt="Three.js WebGPU + WASM" />
   <img src="https://img.shields.io/badge/native-Unreal%20Engine%205.8-181c24?style=flat-square" alt="Unreal Engine 5.8" />
   <a href="https://discord.gg/RhKdTvAdf"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
@@ -54,7 +54,7 @@ Desktop Chrome or Edge recommended (keyboard, controller, or force-feedback whee
 
 | Pillar | What Is Shipped Today |
 |---|---|
-| **C++20 Physics Core (`core/`)** | Engine-independent `rs_core` (131 CTests, GCC + MSVC + WASM): Pacejka MF 5.2/6.1 tyres with 24-node deformable carcass ring, 3-zone tyre thermals & pressure, 16-point contact patch, explicit 3D double-wishbone/MacPherson suspension kinematics, per-car transmissions (`manual`, `dct`, `auto_tc`, `sequential`), physics-up Controller Steering Filter (`Off/Sim/Assisted`, wheels always 1:1) & Corner Braking Assist (`Off/Low/High`), driveline torsional compliance, aero/active aero (DRS & airbrake on declared cars), brake thermals/boil, fuel load, dynamic weather, per-panel crash damage, FIA Race Control (`race_control.cpp`), server-authoritative anti-cheat (`authority.cpp`), and Neural Driver + Frenet quintic race AI (`125/125` laps on track across all 25 cars × 5 circuits). See **[docs/physics.md](docs/physics.md)** and **[docs/validation.md](docs/validation.md)**. |
+| **C++20 Physics Core (`core/`)** | Engine-independent `rs_core` (131 CTests, GCC + MSVC + WASM): Pacejka MF 6.2 tyres with 24-node deformable carcass ring, 3-zone tyre thermals & pressure, 16-point contact patch, explicit 3D double-wishbone/MacPherson suspension kinematics, per-car transmissions (`manual`, `dct`, `auto_tc`, `sequential`), physics-up Controller Steering Filter (`Off/Sim/Assisted`, wheels always 1:1) & Corner Braking Assist (`Off/Low/High`), driveline torsional compliance, aero/active aero (DRS & airbrake on declared cars), brake thermals/boil, fuel load, dynamic weather, per-panel crash damage, FIA Race Control (`race_control.cpp`), server-authoritative anti-cheat (`authority.cpp`), and Neural Driver + Frenet quintic race AI (`125/125` laps on track across all 25 cars × 5 circuits). See **[docs/physics.md](docs/physics.md)** and **[docs/validation.md](docs/validation.md)**. |
 | **Unreal Engine 5.8 Target (`ue5/`, `ue5_plugin/`)** | Native `OpenGridPhysics` plugin (`UOpenGridVehicleComponent`, `AsyncVehicleBridge` @ 400–1000 Hz, single-unit `RsCoreUnity.cpp` verified on Windows MSVC every push), `AOpenGridCarPawn`, customization/damage/MetaSound/race/online C++ components, 1-click Editor importer (`tools/ue5/ue5_import_all.py`), 3D Tokyo Night LUTs, and Nanite high-poly car & 14-part modular GLB exporters. See **[docs/ue5_roadmap.md](docs/ue5_roadmap.md)** and **[docs/ue5_first_session.md](docs/ue5_first_session.md)**. |
 | **WebGPU Browser Build (`web/`)** | Three.js r187 (WebGPU with automatic WebGL 2 fallback), Rapier 3D rigid bodies, WebAssembly `rs_core.wasm`, 25 de-branded cars, 5 real-scale 1:1 cities (NYC Midtown, London, Paris, Tokyo, LA), destructible street furniture & building breaches, tactical police AI, 2-player local Split-Screen, Walkable Garage, CS2-style live Auction House, 4K Photo Mode (`[P]`), 5-minute Cinematic Replay (`[T]`), and client-side Race Spotter. |
 | **Live A/B Audio Engine** | Switch live in **Settings** or **Garage** between **43 ear-verified real recorded CC BY 3.0 supercar stems** (Corvette Z06, Mustang, Ferrari 458/F12/812, GT3, Huracán, GT-R, Supra, RX-7, etc.) and our **Thermodynamic Engine-Sim + 192-Tap Exhaust Muffler IR** WebAssembly synth (`engine_audio.cpp`), plus UE 5.8 MetaSound stems (`docs/ue5_audio_metasounds.md`). |

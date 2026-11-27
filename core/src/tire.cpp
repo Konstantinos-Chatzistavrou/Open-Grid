@@ -6,7 +6,7 @@
 namespace rs {
 namespace {
 
-// The Magic Formula itself (Pacejka MF 5.2 / 6.1):
+// The Magic Formula itself (Pacejka MF 6.2):
 //   y(x) = D sin(C atan(B x - E (B x - atan(B x))))
 //   D = peak value, C = shape (how the curve falls after the peak), B = stiffness factor,
 //   E = curvature near the peak (constrained <= 1 so the atan argument is strictly monotonic).
@@ -17,9 +17,9 @@ double mf(double x, double B, double C, double D, double E) {
     return D * std::sin(C * std::atan(bx - e * (bx - std::atan(bx))));
 }
 
-// Cosine Magic Formula used by Pacejka MF 5.2 for weighting functions Gxa, Gyk and pneumatic trail t:
+// Cosine Magic Formula used by Pacejka MF 6.2 for weighting functions Gxa, Gyk and pneumatic trail t:
 //   G(x) = cos(C atan(B x - E (B x - atan(B x))))
-// Uses exact identity cos(atan(t)) = 1 / sqrt(1 + t^2) when C == 1 (rcx1 = rcy1 = 1 in MF 5.2).
+// Uses exact identity cos(atan(t)) = 1 / sqrt(1 + t^2) when C == 1 (rcx1 = rcy1 = 1 in MF 6.2).
 inline double mf_cos(double x, double B, double C, double E) {
     if (x == 0.0) return 1.0;
     const double bx = B * x;
@@ -35,26 +35,26 @@ inline double cos_atan(double u) { return 1.0 / std::sqrt(1.0 + u * u); }
 // Normalised load change dfz = (Fz - Fz0) / Fz0, used for load sensitivity.
 double dfz_of(const TireParams& p, double fz) { return (fz - p.fz0) / std::max(p.fz0, 1.0); }
 
-// Longitudinal slip stiffness K_xk (MF 5.2 eq. 4.E13):
+// Longitudinal slip stiffness K_xk (MF 6.2 eq. 4.E13):
 //   K_xk = Fz (pKx1 + pKx2 dfz) exp(pKx3 dfz)
-//   MF 6.1 pressure: * (1 + pPx1 dpi + pPx2 dpi^2)
+//   MF 6.2 pressure: * (1 + pPx1 dpi + pPx2 dpi^2)
 double kx_of(const TireParams& p, double fz, double dfz, double dpi = 0.0) {
     double factor = std::max(0.2, 1.0 + (p.pkx2 / std::max(p.kx, 1e-6)) * dfz);
     double press = std::max(0.3, 1.0 + p.ppx1 * dpi + p.ppx2 * dpi * dpi);
     return p.kx * fz * factor * std::exp(clamp(p.pkx3 * dfz, -1.0, 1.0)) * press;
 }
 
-// Lateral cornering stiffness K_ya (MF 5.2 eq. 4.E25):
+// Lateral cornering stiffness K_ya (MF 6.2 eq. 4.E25):
 //   K_ya = pKy1 Fz0 sin(2 atan(Fz / (pKy2 Fz0))) (1 - pKy3 |gamma|)
 // Rises with load, then saturates: doubling load does NOT double cornering stiffness.
-//   MF 6.1 pressure: pKy1 Fz0 (1 + pPy1 dpi) sin(2 atan(Fz / (pKy2 Fz0 (1 + pPy2 dpi))))
+//   MF 6.2 pressure: pKy1 Fz0 (1 + pPy1 dpi) sin(2 atan(Fz / (pKy2 Fz0 (1 + pPy2 dpi))))
 double ky_of(const TireParams& p, double fz, double gamma, double dpi = 0.0) {
     double camber_loss = std::max(0.2, 1.0 - p.pky3 * std::abs(gamma));
     double peak_load = p.pky2 * p.fz0 * std::max(0.3, 1.0 + p.ppy2 * dpi);
     return p.pky1 * p.fz0 * std::max(0.3, 1.0 + p.ppy1 * dpi) * std::sin(2.0 * std::atan(fz / peak_load)) * camber_loss;
 }
 
-// Peak friction coefficients with load, camber and pressure sensitivity (MF 6.1 eqs. 4.E13 / 4.E23):
+// Peak friction coefficients with load, camber and pressure sensitivity (MF 6.2 eqs. 4.E13 / 4.E23):
 //   mu_x = pDx1 (1 + pDx2 dfz)(1 + pPx3 dpi + pPx4 dpi^2)(1 - pDx3 gamma^2) lambda_mu
 double mu_x_of(const TireParams& p, double dfz, double gamma, double mu_scale, double dpi) {
     return p.mu_x * std::max(0.2, 1.0 + p.pdx2 * dfz) * std::max(0.5, 1.0 + p.ppx3 * dpi + p.ppx4 * dpi * dpi)
@@ -159,7 +159,7 @@ inline CellForceUnit eval_cell_mf_unit(const TireParams& p, const PatchMFPrecomp
     const double ey = (p.ey + p.pey2 * dfz) * (1.0 + p.pey5 * pre.g2 - (p.pey3 + p.pey4 * gamma) * sign(ay));
     const double fy0 = (ay != 0.0 ? mf(ay, By, p.cy, Dy, ey) : 0.0) + svy;
 
-    // Combined-slip weighting functions Gxa, Gyk + kappa-induced side force SVyk (MF 5.2 eqs. 4.E50-4.E66)
+    // Combined-slip weighting functions Gxa, Gyk + kappa-induced side force SVyk (MF 6.2 eqs. 4.E50-4.E66)
     double gxa = 1.0;
     if (std::abs(raw_alpha) > 1e-7) {
         const double bxa = pre.rbx_g * cos_atan(p.rbx2 * raw_kappa);
@@ -254,7 +254,7 @@ double rolling_resistance_coeff(const TireParams& p, double speed_mps, double dp
 
 double stribeck_friction_factor(const TireParams& p, double slip_speed_mps, double surface_c, double flash_c) {
     // Smooth C-infinity Stribeck static-to-kinetic sliding friction transition (Armstrong-Helouvry 1994;
-    // Persson 2001 Theory of Rubber Friction) coupled with Pacejka MF 6.1 LMUV high-speed decay and
+    // Persson 2001 Theory of Rubber Friction) coupled with Pacejka MF 6.2 LMUV high-speed decay and
     // immediate tread surface / micro-asperity flash thermal greasiness.
     // Normalized to 1.0 at v_ref = p.lmuv_ref_mps (normal cornering) and default optimal surface/flash temps.
     const double vs = std::abs(slip_speed_mps);
@@ -1365,7 +1365,7 @@ void relaxation_lengths(const TireParams& p, double fz, double gamma, double& si
 double mf_pure_fx(const TireParams& p, double kappa, double fz, double mu_scale, double gamma, double dpi) {
     if (fz <= 0) return 0;
     double dfz = dfz_of(p, fz);
-    // Load, camber and pressure sensitivity (MF 6.1 eq. 4.E13). Note: in our config, p.pdx2 is normalised by p.mu_x.
+    // Load, camber and pressure sensitivity (MF 6.2 eq. 4.E13). Note: in our config, p.pdx2 is normalised by p.mu_x.
     double mu = mu_x_of(p, dfz, gamma, mu_scale, dpi);
     double D = mu * fz;
     double K = kx_of(p, fz, dfz, dpi);
@@ -1373,7 +1373,7 @@ double mf_pure_fx(const TireParams& p, double kappa, double fz, double mu_scale,
     double shx = p.phx1 + p.phx2 * dfz;
     double svx = fz * (p.pvx1 + p.pvx2 * dfz) * mu_scale;
     double kx = kappa + shx;
-    // Load-dependent curvature E_x (MF 5.2 eq. 4.E12):
+    // Load-dependent curvature E_x (MF 6.2 eq. 4.E12):
     double ex = (p.ex + p.pex2 * dfz + p.pex3 * dfz * dfz) * (1.0 - p.pex4 * sign(kx));
     return mf(kx, B, p.cx, D, ex) + svx;
 }
@@ -1381,12 +1381,12 @@ double mf_pure_fx(const TireParams& p, double kappa, double fz, double mu_scale,
 double mf_pure_fy(const TireParams& p, double alpha, double fz, double mu_scale, double gamma, double dpi) {
     if (fz <= 0) return 0;
     double dfz = dfz_of(p, fz);
-    // Lateral friction coefficient with load, camber and pressure sensitivity (MF 6.1 eq. 4.E23)
+    // Lateral friction coefficient with load, camber and pressure sensitivity (MF 6.2 eq. 4.E23)
     double mu = mu_y_of(p, dfz, gamma, mu_scale, dpi);
     double D = mu * fz;
     double K = ky_of(p, fz, gamma, dpi);
     double B = K / (p.cy * D + 1e-9);
-    // Camber shifts (camber thrust, MF 5.2 eqs. 4.E27-4.E28):
+    // Camber shifts (camber thrust, MF 6.2 eqs. 4.E27-4.E28):
     double shy = (p.phy1 + p.phy2 * dfz) + p.phy3 * gamma;
     double svy = fz * ((p.pvy1 + p.pvy2 * dfz) + (p.pvy3 + p.pvy4 * dfz) * gamma) * mu_scale;
     double ay = alpha + shy;
@@ -1447,7 +1447,7 @@ double mf_aligning_torque(const TireParams& p, double kappa, double alpha, doubl
     double Dr = fz * p.radius * ((p.qdz6 + p.qdz7 * dfz) + (p.qdz8 + p.qdz9 * dfz) * gamma * press_dr) * mu_scale * std::cos(alpha);
     double mzr = Dr * std::cos(std::atan(Br * alpha_req));
 
-    // 3. Moment arm s of longitudinal force Fx due to camber & lateral carcass deflection (MF 5.2 eq. 4.E76):
+    // 3. Moment arm s of longitudinal force Fx due to camber & lateral carcass deflection (MF 6.2 eq. 4.E76):
     double s = p.radius * (p.ssz1 + p.ssz2 * (fy_no_svyk / std::max(p.fz0, 1.0)) + (p.ssz3 + p.ssz4 * dfz) * gamma);
 
     return -trail * fy_no_svyk + mzr + s * fx;
@@ -1468,7 +1468,7 @@ TireForces evaluate_contact_patch_grid_base(const TireParams& p, double kappa, d
     // 4x4 Multi-Point Contact Patch Brush-Magic Hybrid Solver:
     //   - Pacejka, "Tire and Vehicle Dynamics" (3rd ed.), Ch. 3 (Brush Model adhesion/sliding zones, Winkler foundation)
     //   - Dugoff, Fancher & Segel (1970) combined-slip friction-ellipse saturation
-    //   - Calibrated to the fitted Pacejka MF 5.2 / 6.1 / 6.2 parameters on flat uniform road so measured tire data
+    //   - Calibrated to the fitted Pacejka MF 6.2 parameters on flat uniform road so measured tire data
     //     remains exact while kerbs, partial contact, camber tilt, yaw spin, and uneven rib thermals emerge naturally.
     TireForces out;
     if (fz <= 0.0) return out;
@@ -1768,7 +1768,7 @@ TireForces evaluate_contact_patch_grid_base(const TireParams& p, double kappa, d
         }
     }
 
-    // MF 6.1 turn-slip lateral peak attenuation when spin phi is large (parking / tight hairpins)
+    // MF 6.2 turn-slip lateral peak attenuation when spin phi is large (parking / tight hairpins)
     if (op.phi != 0.0) {
         const double rphi = p.radius * std::abs(op.phi);
         const double byphi = p.pdyp1 * (1.0 + p.pdyp2 * dfz_nom) * std::cos(std::atan(p.pdyp3 * tan_alpha));

@@ -546,7 +546,7 @@ export class Menu {
         <header class="og-topbar">
           <div class="og-brand-wrap">
             <div class="og-logo">OPEN <span>GRID</span></div>
-            <span class="og-badge">240 HZ · WEBGPU · FREE</span>
+            <span class="og-badge">400 HZ · WEBGPU · FREE</span>
           </div>
           <div class="og-status-bar">
             <button class="og-pill ${this.audioEngineMode === 'real_samples' ? 'is-on' : ''}" data-act="audio-engine-toggle" ${dis} title="Switch live between Real Recorded Supercars (CC-BY) and Engine-Sim + Muffler IR (WASM)">${IC.speaker}<span>${this.audioEngineMode === 'real_samples' ? 'Real Cars' : 'Sim + IR'}</span></button>

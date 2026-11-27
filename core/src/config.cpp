@@ -226,7 +226,7 @@ TireParams parse_tire(const json& j, const std::string& ctx) {
         t.qdz6 = num_or(al, "qDz6", t.qdz6); t.qdz7 = num_or(al, "qDz7", t.qdz7); t.qdz8 = num_or(al, "qDz8", t.qdz8); t.qdz9 = num_or(al, "qDz9", t.qdz9);
         t.ssz1 = num_or(al, "sSz1", t.ssz1); t.ssz2 = num_or(al, "sSz2", t.ssz2); t.ssz3 = num_or(al, "sSz3", t.ssz3); t.ssz4 = num_or(al, "sSz4", t.ssz4);
     }
-    if (j.contains("turn_slip")) {   // MF 6.1 turn slip (tools/tir2car.mjs copies it from files that have it)
+    if (j.contains("turn_slip")) {   // MF 6.2 turn slip (tools/tir2car.mjs copies it from files that have it)
         const json& ts = j.at("turn_slip");
         t.pdyp1 = num_or(ts, "pDyp1", t.pdyp1); t.pdyp2 = num_or(ts, "pDyp2", t.pdyp2);
         t.pdyp3 = num_or(ts, "pDyp3", t.pdyp3); t.pdyp4 = num_or(ts, "pDyp4", t.pdyp4); t.pkyp1 = num_or(ts, "pKyp1", t.pkyp1);

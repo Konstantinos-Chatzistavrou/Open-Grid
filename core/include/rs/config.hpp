@@ -9,14 +9,14 @@
 
 namespace rs {
 
-// Pacejka "Magic Formula" coefficients (MF 5.2 / 6.1). Notation follows Pacejka,
+// Pacejka "Magic Formula" coefficients (MF 6.2). Notation follows Pacejka,
 // "Tire and Vehicle Dynamics" (3rd ed.), chapter 4 & 7. See docs/physics.md for the equations.
 struct TireParams {
     double radius = 0.33;             // m, nominal unloaded/reference radius R0
     double inertia = 1.0;             // kg m^2, wheel + tyre + brake disc about the axle
     double fz0 = 4000;                // N, nominal load Fz0 the coefficients refer to
     double vertical_stiffness = 220000; // N/m, radial carcass stiffness C_Fz (effective rolling radius)
-    // longitudinal (pure slip, MF 5.2)
+    // longitudinal (pure slip, MF 6.2)
     double cx = 1.65;                 // shape factor pCx1
     double mu_x = 1.25;               // peak friction coefficient pDx1 at Fz0
     double pdx2 = -0.08;              // load sensitivity of mu: pDx2 (mu drops with load)
@@ -30,7 +30,7 @@ struct TireParams {
     double pkx3 = 0.08;               // exponential load sensitivity of slip stiffness
     double phx1 = 0.0, phx2 = 0.0;    // horizontal shift SHx
     double pvx1 = 0.0, pvx2 = 0.0;    // vertical shift SVx / Fz
-    // lateral (pure slip + camber, MF 5.2)
+    // lateral (pure slip + camber, MF 6.2)
     double cy = 1.3;                  // shape factor pCy1
     double mu_y = 1.2;                // peak lateral friction pDy1 at Fz0, gamma = 0
     double pdy2 = -0.1;               // load sensitivity of lateral mu: pDy2
@@ -47,11 +47,11 @@ struct TireParams {
     double pvy1 = 0.0, pvy2 = 0.0;    // load-dependent lateral vertical shift
     double pvy3 = 0.25;               // camber thrust vertical shift at Fz0
     double pvy4 = -0.08;              // variation of camber thrust vertical shift with dfz
-    // combined slip weighting (MF 5.2: Gxa, Gyk, SVyk)
+    // combined slip weighting (MF 6.2: Gxa, Gyk, SVyk)
     double rbx1 = 12.0, rbx2 = 10.0, rbx3 = 0.0, rcx1 = 1.0, rex1 = -0.05, rex2 = -0.02, rhx1 = 0.0;
     double rby1 = 10.0, rby2 = 10.0, rby3 = 0.0, rby4 = 0.0, rcy1 = 1.0, rey1 = -0.05, rey2 = -0.02, rhy1 = 0.0, rhy2 = 0.0;
     double rvy1 = 0.0, rvy2 = 0.0, rvy3 = -0.15, rvy4 = 14.0, rvy5 = 1.9, rvy6 = 10.0;
-    // self-aligning moment Mz (pneumatic trail t + residual torque Mzr + Fx arm s, MF 5.2)
+    // self-aligning moment Mz (pneumatic trail t + residual torque Mzr + Fx arm s, MF 6.2)
     double qbz1 = 10.5, qbz2 = -1.4, qbz3 = -0.4, qbz4 = 0.0, qbz5 = 0.25;
     double qcz1 = 1.18;
     double qdz1 = 0.11, qdz2 = -0.02, qdz3 = 0.0, qdz4 = -1.0;
@@ -64,7 +64,7 @@ struct TireParams {
     double relax_x = 0.12, relax_y = 0.30;
     double rolling_resistance = 0.012;   // F_rr = (c_rr0 + c_rr2 * (v/30)^2) * Fz
     double rolling_resistance_v2 = 0.001; // speed-dependent rolling hysteresis
-    // MF 6.1 additions
+    // MF 6.2 additions
     // Friction falls with sliding speed (rubber friction, Persson): lambda_mu* = 1 / (1 + LMUV Vs / V0), Vs = |slip
     // velocity|, V0 = 16.7 m/s (LONGVL). The slip curves alone can't tell a 10 km/h slide from a 100 km/h one.
     double lmuv = 0.12;
@@ -75,7 +75,7 @@ struct TireParams {
     double p_nominal_kpa = 220, p_cold_kpa = 188;   // 188 kPa cold -> ~220 kPa with the core at ~80 C
     double ppx1 = -0.3485, ppx2 = 0.37824, ppx3 = -0.09603, ppx4 = 0.06518;
     double ppy1 = -0.6255, ppy2 = -0.06523, ppy3 = -0.16666, ppy4 = 0.2811;
-    // MF 6.1 turn slip (spin): peak lateral force and cornering stiffness drop when the contact patch also rotates
+    // MF 6.2 turn slip (spin): peak lateral force and cornering stiffness drop when the contact patch also rotates
     // (tight turns at low speed, parking). Pacejka's default coefficients.
     double pdyp1 = 0.4, pdyp2 = 0.0, pdyp3 = 0.0, pdyp4 = 0.0, pkyp1 = 1.0;
     // Thermal window: core/surface blend temperature with full grip (C), and the half-width of the window.

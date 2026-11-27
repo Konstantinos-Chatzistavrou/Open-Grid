@@ -3,7 +3,7 @@
   "Version": 1,
   "VersionName": "1.0.0",
   "FriendlyName": "OpenGrid Physics & Tactical AI Core",
-  "Description": "Engine-independent C++ Pacejka MF 6.1 vehicle dynamics, 3-ray curb contact patch, turbo/BOV/N2O drivetrain, tactical police AI, server authority verifier, and SimHub/MoTeC telemetry for Unreal Engine 5.",
+  "Description": "Engine-independent C++ Pacejka MF 6.2 vehicle dynamics, 3-ray curb contact patch, turbo/BOV/N2O drivetrain, tactical police AI, server authority verifier, and SimHub/MoTeC telemetry for Unreal Engine 5.",
   "Category": "Physics",
   "CreatedBy": "OpenGrid",
   "CreatedByURL": "",

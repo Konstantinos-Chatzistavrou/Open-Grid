@@ -609,7 +609,7 @@ async function main() {
   syncForzaWheelRadii();
   // Launch control: hold the throttle on the grid, the start clamps wheelspin for ~1.1 s
   let launchArmed = false, launchUntil = 0, lastLaunchText = '';
-  /** launch ramp input (reused: no object per 240 Hz tick) */
+  /** launch ramp input (reused: no object per 400 Hz tick) */
   const launchIn: RawInput = { steer: 0, throttle: 0, brake: 0, clutch: 0, handbrake: 0, shiftUp: false, shiftDown: false, device: 0, directGear: -99 };
   const launchEl = document.getElementById('launch');
   // In the garage the car's own lamps are nearly off (no headlight blowout in the room): every emissive "light"
@@ -3609,7 +3609,7 @@ async function main() {
       if (remote?.colliders.size) halveRemoteHits(now - (acc - DT) * 1000);
       if (ai.mode !== 'off') ai.afterStep(car.collider, car.body, preV, preW);   // rivals & cruising traffic take their half of a hit (ai.ts)
       if (cops.active || cops.roadblockWorld) cops.afterStep(car.collider, car.body, preV, preW);   // police cruisers share collision impulse & take exact CoreDamageSim damage!
-      stepMs += (performance.now() - t0 - stepMs) * 0.01;   // Rapier cost per 240 Hz step, smoothed
+      stepMs += (performance.now() - t0 - stepMs) * 0.01;   // Rapier cost per 400 Hz step, smoothed
       readBody(physPos, physQuat);
       if (splitActive && p2Car) {
         readP2Body(p2PhysPos, p2PhysQuat);

@@ -1055,7 +1055,7 @@ export class Cops {
     if (!this.active || !this.pw) return false;
     const world = this.pw.world;
     const p = playerBody.translation();
-    const stepDt = Math.max(1 / 400, Math.min(0.05, world.timestep || 1 / 240));
+    const stepDt = Math.max(1 / 400, Math.min(0.05, world.timestep || 1 / 400));
 
     // 1. Check active patrol units within 8 m
     let hitUnit: PatrolUnit | null = null;

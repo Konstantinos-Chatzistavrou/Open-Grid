@@ -147,7 +147,7 @@ coupling is so small that no handling number changed to the third digit.
 - Longitudinal: `D = mu_x (1 + pdx2 dfz) Fz`, `K = kx Fz`, `B = K / (C D)`, `dfz = (Fz - Fz0)/Fz0`.
 - Lateral: `D = mu_y (1 + pdy2 dfz) Fz`, cornering stiffness `K = pKy1 Fz0 sin(2 atan(Fz / (pKy2 Fz0)))`.
 - Load sensitivity (pdx2, pdy2 < 0): mu falls as load rises -> load transfer costs total grip.
-- Combined slip (MF 5.2 weighting): `Fx = Fx0 cos(rCx1 atan(Bxa alpha))`,
+- Combined slip (MF 6.2 weighting): `Fx = Fx0 cos(rCx1 atan(Bxa alpha))`,
   `Bxa = rBx1 cos(atan(rBx2 kappa))`; `Fy = Fy0 cos(rCy1 atan(Byk kappa))`,
   `Byk = rBy1 cos(atan(rBy2 alpha))`.
 - Slip with relaxation lengths (first-order transient):
@@ -158,7 +158,7 @@ coupling is so small that no handling number changed to the third digit.
   relaxation "spring" oscillating when parked. Test: 0.000 m drift in 10 s, holds a 10 % slope.
 - Rolling resistance torque `c_rr Fz r`. Surface grip multiplies mu (asphalt 1.0, kerb 0.92, ...).
 - Everything that used to be listed here as missing is modelled now: tyre temperature, wear and flat spots (`TireCondition`), aligning moment
-  Mz and pneumatic trail (the force-feedback signal), camber and inflation pressure (MF 6.1 / 6.2 terms), turn slip. Their sections are at the end
+  Mz and pneumatic trail (the force-feedback signal), camber and inflation pressure (MF 6.2 terms), turn slip. Their sections are at the end
   of this page; their calibration is described in section 0.
 
 ## 5. Drivetrain

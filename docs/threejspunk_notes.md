@@ -102,6 +102,6 @@ render interpolation alpha. 4 solver iterations.
 | Per-pass resolution scales (bloom 0.5-0.7) | Not yet: worth checking in post.ts (bloom is full-res today) |
 | Shadow map updated every N frames, texel-snapped follow frustum | Not yet: our only shadow is the car headlight spot (1024); could update every 2nd frame |
 | Instanced city with LOD + cell culling + CPU occlusion | Not applicable yet: our city is one glTF; would need the Blender export to emit placements |
-| 120 Hz physics, max 8 steps | We keep 240 Hz (the core's tyre model is tuned for it), max 24 steps |
+| 120 Hz physics, max 8 steps | We run 400 Hz (fixed step, 1000 / 400 / 360 / 240 Hz supported by the core), 0.1 s catch-up cap |
 | 64 px reflection probe, one face per frame | Not applicable: our env map is captured once |
 | Render 3D at 0.85 + upscale pass | Equivalent to our pixel-ratio scale; an FSR/Catmull upscale would look sharper than the browser's bilinear canvas stretch |

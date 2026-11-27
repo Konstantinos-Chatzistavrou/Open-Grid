@@ -8,7 +8,7 @@
 //     commercial tyre software was used, and nothing here is a Simcenter / MF-Tyre result.
 //
 // Tyre model:
-//   - Pacejka Magic Formula (MF 5.2 / 6.1 / 6.2); curve shapes from measured PAC2002 tire datasets
+//   - Pacejka Magic Formula (MF 6.2); curve shapes from measured PAC2002 tire datasets
 //   - 4x4 Multi-Point Contact Patch Grid (Winkler elastic foundation + Pacejka Ch. 3 Brush Model adhesion/sliding
 //     zones, Dugoff 1970 combined-slip saturation, per-point yaw spin & camber conicity, kerb/partial-contact loads)
 //   - Explicit 3-Node Thermal & Pressure Dynamics (3-Rib Surface + WLF Flash <-> Carcass/Belt <-> Inner Cavity Air,
@@ -203,7 +203,7 @@ struct TireCondition {
     /** Williams-Landel-Ferry (WLF) viscoelastic master-curve grip factor at a given rib + flash temperature. */
     double wlf_rib_grip_factor(double rib_surface_c, const TireParams* p = nullptr) const;
     double grip_factor(const TireParams* p = nullptr) const;
-    /** Relative pressure change dpi = (p - p_nom) / p_nom (MF 6.1 / 6.2). */
+    /** Relative pressure change dpi = (p - p_nom) / p_nom (MF 6.2). */
     double dpi(const TireParams& p) const;
 };
 
@@ -211,7 +211,7 @@ struct TireCondition {
 struct TireOperating {
     double slip_speed = 0;        // |v_slip| m/s: Stribeck + LMUV friction transition with sliding speed
     double dpi = 0;               // relative inflation pressure change (p - p_nom) / p_nom
-    double phi = 0;               // turn slip (spin) 1/m: -(yaw rate of the wheel) / V_cx (MF 6.1)
+    double phi = 0;               // turn slip (spin) 1/m: -(yaw rate of the wheel) / V_cx (MF 6.2)
     bool enable_mf62_hybrid = false;          // enables MF 6.2 camber coupling + 3-Rib WLF flash temp + gyroscopic torque
     bool enable_contact_patch_grid = true;    // enables 4x4 multi-point contact patch brush-MF integration
     bool force_full_patch_grid = false;       // bypasses flat-road analytical fast-path to always run all 16 cells
@@ -234,7 +234,7 @@ double contact_patch_half_length(const TireParams& p, double fz, double dpi = 0.
 double rolling_resistance_coeff(const TireParams& p, double speed_mps, double dpi = 0.0);
 
 // Smooth C-infinity Stribeck + Persson/LMUV static-to-kinetic sliding friction multiplier vs sliding speed
-// and tread surface / micro-asperity flash temperature (Armstrong-Helouvry 1994; Persson 2001; Pacejka MF 6.1).
+// and tread surface / micro-asperity flash temperature (Armstrong-Helouvry 1994; Persson 2001; Pacejka MF 6.2).
 double stribeck_friction_factor(const TireParams& p, double slip_speed_mps,
                                 double surface_c = 90.0, double flash_c = 90.0);
 

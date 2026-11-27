@@ -7,7 +7,7 @@ input; handling, damage, AI and race logic stay in the core so both builds feel 
 |---|---|
 | `OpenGrid.uproject` | the project, pinned to UE 5.8; loads the physics plugin from `../ue5_plugin` |
 | `Source/OpenGrid/` | the car pawn (`OpenGridCarPawn`) and game mode (`OpenGridGameMode`) |
-| `Config/` | fixed-step async physics at 240 Hz, Lumen, Enhanced Input |
+| `Config/` | fixed-step async physics at 400 Hz, Lumen, Enhanced Input |
 | `../ue5_plugin/OpenGridPhysics/` | `UOpenGridVehicleComponent`: the core inside Unreal |
 | `../tools/ue5/export_cars_for_ue.mjs` | turns the web car models into Unreal-importable glTF (`Import/`, gitignored) |
 | `THIRD_PARTY_ASSETS.md` | list of assets that may not be committed (they live in `Content/ThirdParty/`) |

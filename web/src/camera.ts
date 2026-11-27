@@ -5,7 +5,7 @@
 // reacts to ACCELERATION (the car pulls away under power, the camera closes in under braking) and
 // to heading changes (the camera swings wide in corners and shows the car rotating).
 //   r'' = k (r_target - r) - c r' - a_car
-// a_car comes from the 240 Hz physics (low-passed there), not from per-frame differences, which
+// a_car comes from the 400 Hz physics (low-passed there), not from per-frame differences, which
 // jump whenever the number of physics ticks per frame changes.
 // On top of the spring (ideas from Threejs-Punk Drive, docs/threejspunk_notes.md):
 // - offset smoothing `o.lerp(target, 1 - exp(-SPRING_STRENGTH dt))` = the framerate-independent

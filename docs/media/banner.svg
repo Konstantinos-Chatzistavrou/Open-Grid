@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="1200" height="320" role="img" aria-label="Open Grid — Open-Source 240 Hz Motorsport Simulator">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="1200" height="320" role="img" aria-label="Open Grid — Open-Source 400 Hz Motorsport Simulator">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#0a0a0c"/>
@@ -46,7 +46,7 @@
   <rect x="398" y="168" width="44" height="4" rx="2" fill="#ff1111"/>
   <rect x="448" y="168" width="22" height="4" rx="2" fill="#f5f7fa" fill-opacity="0.85"/>
   <rect x="476" y="168" width="12" height="4" rx="2" fill="#8e96a4"/>
-  <text x="500" y="175" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="700" letter-spacing="3.2" fill="#b8c0ce">OPEN-SOURCE 240 HZ MOTORSPORT SIM</text>
+  <text x="500" y="175" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="700" letter-spacing="3.2" fill="#b8c0ce">OPEN-SOURCE 400 HZ MOTORSPORT SIM</text>
 
   <!-- Feature ticker bar -->
   <text x="600" y="254" text-anchor="middle" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="600" letter-spacing="3.0" fill="#8e96a4">RACE IN YOUR BROWSER  ·  WEBGPU &amp; UE 5.8  ·  C++20 PHYSICS  ·  25 CARS  ·  REAL-SCALE CITIES</text>

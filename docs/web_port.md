@@ -25,7 +25,7 @@ Verified adapter with the flags: vendor intel, architecture gen-12lp. Without fl
 ## Architecture (mirrors godot_ext)
 - `web/wasm/bridge.cpp`: flat C API, ONE shared double buffer per car. The ONLY place axes are
   converted (three/glTF = Godot mapping: three = (x, z, -y)).
-- `web/src/physics/world.ts`: Rapier world at 240 Hz; chassis = convex hull from `*.visual.json`,
+- `web/src/physics/world.ts`: Rapier world at 400 Hz (`DT = 1/400`); chassis = convex hull from `*.visual.json`,
   mass/inertia from the car config; wheel rays -> core -> force/torque applied at the CG.
 - City collision = glTF nodes named `*-colonly` (Godot convention kept); surface from the name.
 - Rapier gotcha: new colliders are invisible to ray queries until the first `world.step()`. Without
