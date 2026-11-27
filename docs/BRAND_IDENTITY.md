@@ -57,7 +57,15 @@ All three typefaces are **100% open-source (SIL OFL 1.1)**, self-hosted locally 
 
 ---
 
-## 4. Reference Tokens (CSS & UE 5.8)
+## 4. Official Links & Channels
+
+- **Website / Live Build:** `https://open-grid.racing`
+- **Official YouTube:** `https://youtube.com/@open_grid_motorsport`
+- **Source Code:** `https://github.com/Konstantinos-Chatzistavrou/Open-Grid`
+
+---
+
+## 5. Reference Tokens (CSS & UE 5.8)
 
 ```css
 :root {

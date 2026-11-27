@@ -228,6 +228,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
           <p>OpenGrid runs a 240 Hz C++20 Pacejka tyre simulation across 18 real-scale 1:1 cities. For the full cockpit, wheel FFB, street radio &amp; 60 FPS WebGPU experience, open <b>open-grid.racing</b> on PC or Mac.</p>
           <div class="mc-actions">
             <button type="button" class="mc-btn primary" id="mc-share">${copyStatus || '📋 Copy open-grid.racing'}</button>
+            <a class="mc-btn" href="https://youtube.com/@open_grid_motorsport" target="_blank" rel="noopener">▶ YouTube</a>
             <a class="mc-btn" href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid" target="_blank" rel="noopener">GitHub</a>
             ${patreonUrl ? `<a class="mc-btn" href="${esc(patreonUrl)}" target="_blank" rel="noopener">♥ Patreon</a>` : ''}
           </div>

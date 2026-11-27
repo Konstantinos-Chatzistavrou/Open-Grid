@@ -568,7 +568,10 @@ export class Menu {
 
         <footer class="og-foot">
           <div class="dim small-note">⚡ Ultra-Fast Static City Menu (0% 3D GPU overhead) · ${esc(this.gfxNote || 'WebGPU · 240 Hz C++20 Physics')} · ${this.cars.length} Cars · ${cs?.list.length ?? 18} Real-Scale Cities</div>
-          <a class="source-link dim" href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid" target="_blank" rel="noopener">Open Source · Code Apache-2.0 · Assets CC BY-NC 4.0</a>
+          <div class="chips" style="gap:12px">
+            <a class="source-link dim" href="https://youtube.com/@open_grid_motorsport" target="_blank" rel="noopener">▶ YouTube</a>
+            <a class="source-link dim" href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid" target="_blank" rel="noopener">Open Source · Code Apache-2.0 · Assets CC BY-NC 4.0</a>
+          </div>
         </footer>
       </div>`;
   }
