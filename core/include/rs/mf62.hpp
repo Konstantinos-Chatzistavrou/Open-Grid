@@ -3,8 +3,8 @@
 // STATUS (read this before quoting it): a complete, self-contained evaluator of forces, moments, loaded radius and relaxation lengths for one
 // operating point, written against MFeval 4.3.1's MATLAB source. Its output equals the unmodified MFeval's (run under GNU Octave 8.4) on 393 operating
 // points for each of MFeval's three example tyres (MF 5.2, 6.1, 6.2), all columns, 1e-6 relative: see docs/mf62.md for what that does and does not
-// show (Octave not MATLAB, turn slip as unvalidated as MFeval's own). The same comparison runs in CI on committed tyres (test mf62_golden). It is NOT yet
-// driving the vehicle: rs::magic_formula in tire.hpp is still the game's tyre.
+// show (Octave not MATLAB, turn slip as unvalidated as MFeval's own). The same comparison runs in CI on committed tyres (test mf62_golden). Driving the vehicle is
+// OPT-IN per car (TireParams::mf62, car JSON key "mf62_tir", see docs/mf62.md); no shipped car sets it, so rs::magic_formula in tire.hpp is still the game's tyre.
 //
 // Equations: H. B. Pacejka, "Tire and Vehicle Dynamics", 3rd ed. revised (Elsevier, 2012), section 4.3 and appendix 3; I. J. M. Besselink,
 // A. J. C. Schmeitz, H. B. Pacejka, "An improved Magic Formula/Swift tyre model that can handle inflation pressure changes", Vehicle System
@@ -287,6 +287,7 @@ struct Input {
     double vx = 0;        // m/s
     double pressure = 0;  // Pa, 0 = the file's INFLPRES
     double omega = 0;     // rad/s, 0 = estimated from vx and kappa
+    double mu_scale = 1;  // multiplies LMUX and LMUY (the peak friction), 1 = the file as is. NOT an MFeval input: the game uses it for surface, temperature and wear grip.
 };
 
 /** All 30 outputs in MFeval's column order. Slips are echoed as given (kappa after the low-speed reduction), pressure after the file's limits. */

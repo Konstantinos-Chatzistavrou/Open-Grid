@@ -12,15 +12,18 @@ function mfeval_reference(tirFile, casesFile, outFile, fittyp)
 % The output CSV has MFeval's column order, %.17g precision, and NaN where MFeval returned NaN.
   here = fileparts(mfilename('fullpath'));
   isOctave = exist('OCTAVE_VERSION', 'builtin') ~= 0;
+  persistent pkgRootCached
   if isOctave
     % Octave resolves "mfeval.readTIR" to the FUNCTION mfeval.m instead of the +mfeval package (MATLAB does it the other way round), so under
     % Octave only the package is put on the path (a temporary copy of the vendored, unmodified files) and its Solver is called directly: that is
     % all the six-line wrapper mfeval.m does after validating its arguments.
     addpath(fullfile(here, 'octave_shims'));
-    pkgRoot = tempname();
-    mkdir(pkgRoot);
-    copyfile(fullfile(here, 'mfeval', '+mfeval'), fullfile(pkgRoot, '+mfeval'));
-    addpath(pkgRoot);
+    if isempty(pkgRootCached) || ~exist(pkgRootCached, 'dir')
+      pkgRootCached = tempname();
+      mkdir(pkgRootCached);
+      copyfile(fullfile(here, 'mfeval', '+mfeval'), fullfile(pkgRootCached, '+mfeval'));
+      addpath(pkgRootCached);
+    end
   elseif ~exist('mfeval.m', 'file')
     addpath(fullfile(here, 'mfeval'));                    % the vendored, unmodified MFeval sources
   end

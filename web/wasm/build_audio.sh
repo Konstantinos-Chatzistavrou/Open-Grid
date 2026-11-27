@@ -13,6 +13,7 @@ source "$HOME/emsdk/emsdk_env.sh" >/dev/null 2>&1
 srcs=(
   "$core/src/engine_audio.cpp"
   "$core/src/tire.cpp"
+  "$core/src/mf62.cpp"   # tire.cpp / config.cpp reference the opt-in full Magic Formula tyre
   "$core/src/config.cpp"
   "$core/src/kinematics.cpp"
   "$here/audio_bridge.cpp"

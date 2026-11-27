@@ -8,7 +8,9 @@
 #include "rs/mf62.hpp"
 #include <cmath>
 #include <cstdlib>
+#include <algorithm>
 #include <filesystem>
+#include <map>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -363,44 +365,53 @@ void outputs_of(const Params& p, const std::vector<double>& c, double out[30]) {
 
 // Compares rs::mf62 with MFeval's output (one row per case, 30 columns) for one tyre: every column except instKya (it depends on how rows are grouped into a call),
 // 1e-6 relative plus a small absolute floor (lengths from MFeval's iterative radius solves are looser than the closed forms). MFeval's own NaN / Inf are skipped and counted.
-void compare_with_mfeval(const std::string& tag, const Params& p, const std::vector<std::vector<double>>& cases, const std::vector<std::vector<double>>& ref) {
-    auto atol = [](int col) { return (col == 12 || col == 13 || col == 19) ? 1e-7 : (col == 24 ? 1.0 : 1e-9); };
-    test::check((tag + ": the reference has one row per case with 30 columns").c_str(), ref.size() == cases.size() && !ref.empty() && ref[0].size() == 30);
-    if (ref.size() != cases.size()) return;
+struct CompareStats {
     int bad_total = 0, ref_nan = 0, radius_failed_rows = 0;
     int bad_by_col[30] = {0};
     double worst[30] = {0}, worst_rel = 0;
     std::size_t worst_row[30] = {0};
+};
+
+CompareStats compare_core(const Params& p, const std::vector<std::vector<double>>& cases, const std::vector<std::vector<double>>& ref) {
+    auto atol = [](int col) { return (col == 12 || col == 13 || col == 19) ? 1e-7 : (col == 24 ? 1.0 : 1e-9); };
+    CompareStats st;
     for (std::size_t i = 0; i < cases.size(); ++i) {
         double mine[30];
         outputs_of(p, cases[i], mine);
         // MFeval's deflection solve is 0/0 for a tyre without a quadratic load term (Q_FZ2 = 0): MATLAB's max(NaN, 0) then makes rho 0 and Cz Inf. A non-finite Cz marks those rows:
         // rho, Rl and Cz are not compared there (ours solves the linear case).
         const bool radius_failed = !std::isfinite(ref[i][24]);
-        if (radius_failed) ++radius_failed_rows;
+        if (radius_failed) ++st.radius_failed_rows;
         for (int col = 0; col < 30; ++col) {
             if (col == 28) continue;
             if (radius_failed && (col == 13 || col == 19 || col == 24)) continue;
             const double r = ref[i][static_cast<std::size_t>(col)];
-            if (std::isnan(r) || std::isinf(r)) { ++ref_nan; continue; }   // MFeval itself gave no number here
+            if (std::isnan(r) || std::isinf(r)) { ++st.ref_nan; continue; }   // MFeval itself gave no number here
             const double d = std::abs(mine[col] - r), tol = atol(col) + 1e-6 * std::abs(r);
-            if (!(std::isfinite(mine[col]) && d <= tol)) { ++bad_total; ++bad_by_col[col]; }
-            if (std::isfinite(mine[col])) worst_rel = std::max(worst_rel, d / (std::abs(r) + 1e-9));
-            if (!std::isfinite(mine[col])) { worst[col] = 1e300; worst_row[col] = i; }
-            else if (d / tol > worst[col]) { worst[col] = d / tol; worst_row[col] = i; }
+            if (!(std::isfinite(mine[col]) && d <= tol)) { ++st.bad_total; ++st.bad_by_col[col]; }
+            if (std::isfinite(mine[col])) st.worst_rel = std::max(st.worst_rel, d / (std::abs(r) + 1e-9));
+            if (!std::isfinite(mine[col])) { st.worst[col] = 1e300; st.worst_row[col] = i; }
+            else if (d / tol > st.worst[col]) { st.worst[col] = d / tol; st.worst_row[col] = i; }
         }
     }
+    return st;
+}
+
+void compare_with_mfeval(const std::string& tag, const Params& p, const std::vector<std::vector<double>>& cases, const std::vector<std::vector<double>>& ref) {
+    test::check((tag + ": the reference has one row per case with 30 columns").c_str(), ref.size() == cases.size() && !ref.empty() && ref[0].size() == 30);
+    if (ref.size() != cases.size()) return;
+    const CompareStats st = compare_core(p, cases, ref);
     std::printf("         %s: %zu cases, %zu values compared, %d MFeval NaN / Inf values skipped (+ rho / Rl / Cz on %d rows where MFeval's radius solve failed), worst relative deviation %.2e\n", tag.c_str(), cases.size(),
-                cases.size() * 29 - static_cast<std::size_t>(ref_nan) - static_cast<std::size_t>(radius_failed_rows) * 3, ref_nan, radius_failed_rows, worst_rel);
+                cases.size() * 29 - static_cast<std::size_t>(st.ref_nan) - static_cast<std::size_t>(st.radius_failed_rows) * 3, st.ref_nan, st.radius_failed_rows, st.worst_rel);
     for (int col = 0; col < 30; ++col)
-        if (bad_by_col[col]) {
-            const auto& c = cases[worst_row[col]];
+        if (st.bad_by_col[col]) {
+            const auto& c = cases[st.worst_row[col]];
             double mine[30];
             outputs_of(p, c, mine);
             std::printf("         %s %-7s %3d mismatches, worst case line %zu (fz_rel %.2f kappa %.3f alpha %.3f gamma %.3f phit %.2f vx_rel %.3f p_rel %.2f mode %d): mine %.10g, MFeval %.10g\n", tag.c_str(), kColNames[col],
-                        bad_by_col[col], worst_row[col] + 2, c[0], c[1], c[2], c[3], c[4], c[5], c[6], static_cast<int>(c[7]), mine[col], ref[worst_row[col]][static_cast<std::size_t>(col)]);
+                        st.bad_by_col[col], st.worst_row[col] + 2, c[0], c[1], c[2], c[3], c[4], c[5], c[6], static_cast<int>(c[7]), mine[col], ref[st.worst_row[col]][static_cast<std::size_t>(col)]);
         }
-    test::check((tag + ": every output column equals MFeval's (1e-6 relative + a small absolute floor)").c_str(), bad_total == 0);
+    test::check((tag + ": every output column equals MFeval's (1e-6 relative + a small absolute floor)").c_str(), st.bad_total == 0);
 }
 
 // tools/validation/mfeval_reference.m runs the vendored MFeval (MATLAB or GNU Octave) over data/validation/mf62/mf62_cases.csv and writes one CSV per tyre file.
@@ -453,6 +464,67 @@ RS_TEST(mf62_golden) {
         test::check((std::string(s.tag) + ": MFeval's reference output is committed").c_str(), have_ref);
         if (loaded && have_ref) compare_with_mfeval(s.tag, p, cases, ref);
     }
+}
+
+
+// Per-coefficient sweep (tools/validation/mf62_coefficient_sweep.mjs + mfeval_reference_dir.m): one tyre per coefficient, only that coefficient perturbed, MFeval's output on every one.
+// Shows that rs::mf62 follows MFeval for EVERY coefficient, and lists the coefficients MFeval's output does not depend on at all (they cannot be validated). RS_MF62_SWEEP=<folder with tyres/ and refs/>.
+RS_TEST(mf62_coefficient_sweep) {
+    const char* dir = std::getenv("RS_MF62_SWEEP");
+    if (!dir) { std::printf("  [SKIP] RS_MF62_SWEEP not set (needs the sweep tyres and MFeval's output for them, see docs/mf62.md)\n"); return; }
+    std::vector<std::vector<double>> cases;
+    test::check("the case list is readable", read_numeric_csv(test::data_path("validation/mf62/mf62_cases.csv"), cases) && cases.size() > 100);
+    const std::string root(dir);
+    std::map<std::string, std::vector<std::vector<double>>> base_ref;
+    // b52 / b61 / b62: the plain sweep; d52 / d62: the dense second pass (see tools/validation/mf62_coefficient_sweep.mjs)
+    for (const char* b : {"b52", "b61", "b62", "d52", "d62"}) {
+        auto& r = base_ref[b];
+        if (!std::filesystem::exists(root + "/tyres/" + b + "__base.tir")) continue;
+        test::check((std::string(b) + ": the unperturbed base has a reference").c_str(), read_numeric_csv(root + "/refs/" + b + "__base.csv", r));
+    }
+    std::vector<std::string> names;
+    for (const auto& e : std::filesystem::directory_iterator(root + "/tyres")) {
+        if (e.path().extension() == ".tir") names.push_back(e.path().stem().string());
+    }
+    std::sort(names.begin(), names.end());
+    int tested = 0, matched = 0;
+    std::vector<std::string> mismatched, dead;
+    std::map<std::string, int> per_base_live;
+    for (const std::string& name : names) {
+        const std::string base = name.substr(0, 3), key = name.substr(5);
+        if (key == "base") continue;
+        std::vector<std::vector<double>> ref;
+        Params p;
+        std::string err;
+        if (!read_numeric_csv(root + "/refs/" + name + ".csv", ref) || ref.size() != cases.size()) { mismatched.push_back(name + " (no reference)"); continue; }
+        if (!load_tir_file(root + "/tyres/" + name + ".tir", p, err)) { mismatched.push_back(name + " (does not load: " + err + ")"); continue; }
+        ++tested;
+        const CompareStats st = compare_core(p, cases, ref);
+        if (st.bad_total != 0) {
+            int col = 0;
+            while (col < 29 && !st.bad_by_col[col]) ++col;
+            mismatched.push_back(name + " (" + std::to_string(st.bad_total) + " values, first column " + kColNames[col] + ")");
+            continue;
+        }
+        ++matched;
+        // does MFeval's output depend on this coefficient at all?
+        double effect = 0;
+        const auto& b0 = base_ref[base];
+        for (std::size_t i = 0; i < ref.size() && i < b0.size(); ++i)
+            for (int col = 0; col < 30; ++col) {
+                if (col == 28) continue;
+                const double a = ref[i][static_cast<std::size_t>(col)], b = b0[i][static_cast<std::size_t>(col)];
+                if (std::isfinite(a) && std::isfinite(b)) effect = std::max(effect, std::abs(a - b) / (std::abs(b) + 1e-9));
+            }
+        if (effect < 1e-9) dead.push_back(name); else ++per_base_live[base];
+    }
+    std::printf("         %d perturbed tyres compared with MFeval (b52 / d52 = MF 5.2 / PAC2002 base, b61, b62 / d62 = synthetic bases; d = dense): %d match on every column, %d differ; MFeval's output depends on the coefficient in %d b52, %d b61, %d b62, %d d52, %d d62 tyres\n",
+                tested, matched, static_cast<int>(mismatched.size()), per_base_live["b52"], per_base_live["b61"], per_base_live["b62"], per_base_live["d52"], per_base_live["d62"]);
+    for (const auto& m : mismatched) std::printf("         MISMATCH %s\n", m.c_str());
+    std::string dead_list;
+    for (const auto& d : dead) dead_list += d + " ";
+    std::printf("         no effect on MFeval's output in these tyres (%zu): %s\n", dead.size(), dead_list.c_str());
+    test::check("every perturbed tyre equals MFeval's output on every column", mismatched.empty() && tested >= 5);
 }
 
 }  // namespace

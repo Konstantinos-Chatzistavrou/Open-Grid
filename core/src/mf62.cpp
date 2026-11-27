@@ -59,6 +59,7 @@ struct Ctx {
     Star sv;
     Prime pv;
     Incr iv;
+    double mu_scale = 1.0;
     // the "E <= 1" checks of MFeval run only when the use-mode has the limit checks on
     double lim(double e) const { return m.limits_check ? std::min(e, 1.0) : e; }
 };
@@ -160,8 +161,8 @@ void calc_basic_vars(Ctx& c) {
     c.pv.alpha_prime = std::acos(clampd(Vcx / Vc_prime, -1.0, 1.0));                                     // eq. 4.E6
     const double LMUV = 0.0, Amu = 1.0;                                                                  // MFeval: LMUV is not in standard files, Amu = 1 matches TNO
     const double denom = 1.0 + LMUV * Vs / safe_den(p.longvl);
-    c.sv.LMUX_star = p.lmux / denom;                                                                     // eq. 4.E7
-    c.sv.LMUY_star = p.lmuy / denom;
+    c.sv.LMUX_star = p.lmux * c.mu_scale / denom;                                                        // eq. 4.E7 (mu_scale = 1 for MFeval)
+    c.sv.LMUY_star = p.lmuy * c.mu_scale / denom;
     c.pv.LMUX_prime = Amu * c.sv.LMUX_star / (1.0 + (Amu - 1.0) * c.sv.LMUX_star);                       // eq. 4.E8
     c.pv.LMUY_prime = Amu * c.sv.LMUY_star / (1.0 + (Amu - 1.0) * c.sv.LMUY_star);
 }
@@ -529,7 +530,7 @@ Output evaluate_impl(const Params& p, const Input& in, const Modes& modes, doubl
         if (alpha_used) *alpha_used = nan;
         return o;
     }
-    Ctx c{p, modes, {}, {}, {}, {}, {}};
+    Ctx c{p, modes, {}, {}, {}, {}, {}, in.mu_scale};
     parse_inputs(c, in);
     calc_basic_vars(c);
     const Fx0Res fx0 = calc_fx0(c);

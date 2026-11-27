@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include "rs/kinematics.hpp"
+#include "rs/mf62.hpp"
 
 namespace rs {
 
@@ -119,6 +120,11 @@ struct TireParams {
     double mbelt = 5.4;               // kg, steel tread belt mass (MBELT = 5.4 kg for 245/40 R18, scaled by tire width/radius)
     double section_width_m = 0.245;   // m, nominal tire section width (WIDTH)
     double aspect_ratio = 0.40;       // sidewall aspect ratio (ASPECT_RATIO, e.g. 0.40 for 245/40 R18)
+    // OPT-IN full Magic Formula tyre (rs::mf62, validated against MFeval): when set, magic_formula() takes the forces and moments of this tyre property file instead of the
+    // game's own tyre model (flat road only: a kerb / height map falls back to the game's model). The car JSON key "mf62_tir" (path relative to the data folder) fills it in
+    // load_car_config. null (every shipped car) = the game's tyre, bit-identical to before. Experimental: see docs/mf62.md.
+    std::string mf62_tir;
+    std::shared_ptr<const mf62::Params> mf62;
 };
 
 /** Brake disc material archetype: determines friction-vs-temperature curve, specific heat & radiative emissivity. */

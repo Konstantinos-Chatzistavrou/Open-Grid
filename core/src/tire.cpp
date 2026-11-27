@@ -1453,6 +1453,35 @@ double mf_aligning_torque(const TireParams& p, double kappa, double alpha, doubl
     return -trail * fy_no_svyk + mzr + s * fx;
 }
 
+namespace {
+// The three-rib (inner / middle / outer) thermal grip of the flat-road path: where the rib weights come from camber, corner roll, crown and contact shares, the WLF grip of each rib's temperature,
+// the thermal stiffness modulus and the inner-outer grip difference that makes a torque. Moved out of magic_formula_base unchanged so the opt-in rs::mf62 tyre can apply the same thermals.
+struct FlatRibGrip {
+    double effective_rib_mu = 1.0, thermal_stiffness_scale = 1.0, diff_torque_factor = 0.0;
+};
+
+FlatRibGrip flat_rib_grip(const TireParams& p, const TireOperating& op, double gamma, double alpha, double dpi) {
+    FlatRibGrip rg;
+    const TireCondition& tc = *op.condition;
+    const double top_inward = clamp(op.wheel_side_sign * gamma, -0.35, 0.35);
+    const double corner_roll = clamp(-op.wheel_side_sign * alpha * 1.8, -0.45, 0.45);
+    const double crown = dpi > 0.05 ? clamp((dpi - 0.05) * 0.85, 0.0, 0.25) : 0.0;
+    double w_mid = (1.0 + 1.6 * crown) * (0.4 + 1.8 * tc.rib_contact_shares[1]);
+    double w_in  = clamp(1.0 + 3.2 * top_inward - 1.4 * corner_roll - 0.8 * crown, 0.15, 2.4) * (0.4 + 1.8 * tc.rib_contact_shares[0]);
+    double w_out = clamp(1.0 - 3.2 * top_inward + 1.4 * corner_roll - 0.8 * crown, 0.15, 2.4) * (0.4 + 1.8 * tc.rib_contact_shares[2]);
+    const double w_sum = w_in + w_mid + w_out;
+    w_in /= w_sum; w_mid /= w_sum; w_out /= w_sum;
+
+    const double mu_in  = tc.wlf_rib_grip_factor(tc.inner_c, &p);
+    const double mu_mid = tc.wlf_rib_grip_factor(tc.middle_c, &p);
+    const double mu_out = tc.wlf_rib_grip_factor(tc.outer_c, &p);
+    rg.effective_rib_mu = clamp(w_in * mu_in + w_mid * mu_mid + w_out * mu_out, 0.78, 1.05);
+    rg.thermal_stiffness_scale = tc.thermal_stiffness_factor(&p);
+    rg.diff_torque_factor = (w_out * mu_out - w_in * mu_in) * (-op.wheel_side_sign);
+    return rg;
+}
+}  // namespace
+
 namespace detail {
 #if defined(__GNUC__) || defined(__clang__)
 #define RS_TIRE_NOINLINE __attribute__((noinline))
@@ -1857,23 +1886,11 @@ TireForces magic_formula_base(const TireParams& p, double kappa, double tan_alph
     // ---- MF 6.2 + Physical 3-Rib (Inner / Middle / Outer) Contact-Patch & WLF Flash-Temperature Integration
     double rib_diff_torque_factor = 0.0;
     if (op.enable_mf62_hybrid && op.condition) {
-        const TireCondition& tc = *op.condition;
-        const double top_inward = clamp(op.wheel_side_sign * gamma, -0.35, 0.35);
-        const double corner_roll = clamp(-op.wheel_side_sign * alpha * 1.8, -0.45, 0.45);
-        const double crown = dpi > 0.05 ? clamp((dpi - 0.05) * 0.85, 0.0, 0.25) : 0.0;
-        double w_mid = (1.0 + 1.6 * crown) * (0.4 + 1.8 * tc.rib_contact_shares[1]);
-        double w_in  = clamp(1.0 + 3.2 * top_inward - 1.4 * corner_roll - 0.8 * crown, 0.15, 2.4) * (0.4 + 1.8 * tc.rib_contact_shares[0]);
-        double w_out = clamp(1.0 - 3.2 * top_inward + 1.4 * corner_roll - 0.8 * crown, 0.15, 2.4) * (0.4 + 1.8 * tc.rib_contact_shares[2]);
-        const double w_sum = w_in + w_mid + w_out;
-        w_in /= w_sum; w_mid /= w_sum; w_out /= w_sum;
-
-        const double mu_in  = tc.wlf_rib_grip_factor(tc.inner_c, &p);
-        const double mu_mid = tc.wlf_rib_grip_factor(tc.middle_c, &p);
-        const double mu_out = tc.wlf_rib_grip_factor(tc.outer_c, &p);
-        out.effective_rib_mu = clamp(w_in * mu_in + w_mid * mu_mid + w_out * mu_out, 0.78, 1.05);
-        out.thermal_stiffness_scale = tc.thermal_stiffness_factor(&p);
+        const FlatRibGrip rg = flat_rib_grip(p, op, gamma, alpha, dpi);
+        out.effective_rib_mu = rg.effective_rib_mu;
+        out.thermal_stiffness_scale = rg.thermal_stiffness_scale;
         mu_scale *= out.effective_rib_mu;
-        rib_diff_torque_factor = (w_out * mu_out - w_in * mu_in) * (-op.wheel_side_sign);
+        rib_diff_torque_factor = rg.diff_torque_factor;
     }
 
     const double tv_stiff = out.thermal_stiffness_scale;
@@ -1954,6 +1971,40 @@ TireForces evaluate_contact_patch_grid(const TireParams& p, double kappa, double
 
 TireForces magic_formula(const TireParams& p, double kappa, double tan_alpha, double fz, double mu_scale, double gamma,
                          const TireOperating& op) {
+    if (p.mf62 && !op.patch) {
+        // OPT-IN full Magic Formula tyre (TireParams::mf62, rs::mf62 validated against MFeval). The game's slip signs are SAE-like (tan_alpha = -vy / vx gives +Fy, +gamma = top toward +left),
+        // the tyre file's ISO-W ones are not: alpha = -atan(tan_alpha) and gamma = -gamma; Fx, Fy (both + = forward / left) and Mz, Mx pass through. mu_scale (surface, temperature, wear)
+        // scales the file's peak friction together with the game's Stribeck sliding-speed decay and 3-rib thermal grip / stiffness (same helper as the game's own tyre). Not modelled here: the 4x4 patch / kerbs (a height map falls back to the game's tyre), cold glassiness chatter and the adhesion ratio.
+        const double surf_c = op.condition ? op.condition->surface_c : 90.0;
+        const double flash_c = op.condition ? op.condition->flash_c : 90.0;
+        double mu = mu_scale * stribeck_friction_factor(p, op.slip_speed, surf_c, flash_c);
+        double tv_stiff = 1.0, eff_rib_mu = 1.0;
+        if (op.enable_mf62_hybrid && op.condition) {
+            const FlatRibGrip rg = flat_rib_grip(p, op, gamma, std::atan(tan_alpha), op.dpi);
+            mu *= rg.effective_rib_mu;
+            tv_stiff = rg.thermal_stiffness_scale;
+            eff_rib_mu = rg.effective_rib_mu;
+        }
+        mf62::Input in;
+        in.fz = fz;
+        in.kappa = kappa * tv_stiff;
+        in.alpha = -std::atan(tan_alpha * tv_stiff);
+        in.gamma = -gamma;
+        in.vx = op.rolling_speed_mps;
+        in.pressure = p.mf62->nompres * std::max(0.2, 1.0 + op.dpi);
+        in.mu_scale = mu;
+        const mf62::Output o = mf62::evaluate(*p.mf62, in, mf62::modes_from_use_mode(111));
+        TireForces f;
+        f.fx = std::isfinite(o.fx) ? o.fx : 0.0;
+        f.fy = std::isfinite(o.fy) ? o.fy : 0.0;
+        f.mx = std::isfinite(o.mx) ? o.mx : 0.0;
+        f.mz = std::isfinite(o.mz) ? o.mz : 0.0;
+        f.pneumatic_trail = std::isfinite(o.t) ? o.t : 0.0;
+        f.contact_patch_length_m = std::isfinite(o.two_a) ? o.two_a : 0.0;
+        f.effective_rib_mu = eff_rib_mu;
+        f.thermal_stiffness_scale = tv_stiff;
+        return f;
+    }
     if (op.enable_mf62_hybrid && op.condition) {
         const double sh = op.condition->post_peak_shape_scale(&p);
         if (sh != 1.0) {

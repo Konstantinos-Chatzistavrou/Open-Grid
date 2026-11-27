@@ -274,6 +274,7 @@ TireParams parse_tire(const json& j, const std::string& ctx) {
     t.mbelt = num_or(j, "mbelt_kg", t.mbelt);
     t.section_width_m = num_or(j, "section_width_m", t.section_width_m);
     t.aspect_ratio = num_or(j, "aspect_ratio", t.aspect_ratio);
+    if (j.contains("mf62_tir")) t.mf62_tir = j.at("mf62_tir").get<std::string>();
     return t;
 }
 
@@ -529,13 +530,32 @@ CarConfig parse_car_config(const std::string& text) {
     return c;
 }
 
+// An opt-in "mf62_tir" (tyre property file, path relative to the data folder = the folder above the car file) becomes the tyre's rs::mf62 parameters.
+static std::string parent_dir(const std::string& p) {
+    const std::size_t k = p.find_last_of("/\\");
+    return k == std::string::npos ? std::string() : p.substr(0, k);
+}
+
+static void resolve_mf62(TireParams& t, const std::string& data_dir, const std::string& path) {
+    if (t.mf62_tir.empty()) return;
+    mf62::Params p;
+    std::string err;
+    const bool absolute = !t.mf62_tir.empty() && (t.mf62_tir[0] == '/' || t.mf62_tir[0] == '\\' || (t.mf62_tir.size() > 1 && t.mf62_tir[1] == ':'));
+    if (!mf62::load_tir_file(absolute || data_dir.empty() ? t.mf62_tir : data_dir + "/" + t.mf62_tir, p, err)) throw std::runtime_error("car config " + path + ": mf62_tir: " + err);
+    t.mf62 = std::make_shared<const mf62::Params>(p);
+}
+
 CarConfig load_car_config(const std::string& path) {
     std::ifstream f(path);
     if (!f) throw std::runtime_error("car config: cannot open " + path);
     std::stringstream ss;
     ss << f.rdbuf();
     try {
-        return parse_car_config(ss.str());
+        CarConfig c = parse_car_config(ss.str());
+        const std::string data_dir = parent_dir(parent_dir(path));
+        resolve_mf62(c.tire_front, data_dir, path);
+        resolve_mf62(c.tire_rear, data_dir, path);
+        return c;
     } catch (const nlohmann::json::exception& e) {
         throw std::runtime_error(std::string("car config ") + path + ": " + e.what());
     }
