@@ -117,7 +117,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
     </div>
     <div class="mc-pledge">
       <b>FREE HOBBY PROJECT · 100% AD-FREE</b>
-      <p>Every car, all 18 cities, Single Player, Garage, Ranked Splits &amp; Private P2P lobbies are 100% free for everyone. Zero paywalls, zero trials, zero pay-to-win. Optional support via GitHub Sponsors.</p>
+      <p>Every car, all 18 cities, Single Player, Garage, Ranked Splits &amp; Private P2P lobbies are 100% free for everyone. Zero paywalls, zero trials, zero pay-to-win. Optional support via Patreon.</p>
     </div>`;
 
   const renderHotlaps = () => {
@@ -245,7 +245,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
             <a class="mc-btn" href="https://discord.gg/RhKdTvAdf" target="_blank" rel="noopener">💬 Discord</a>
             <a class="mc-btn" href="https://youtube.com/@open_grid_motorsport" target="_blank" rel="noopener">▶ YouTube</a>
             <a class="mc-btn" href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid" target="_blank" rel="noopener">GitHub</a>
-            <a class="mc-btn" href="https://github.com/sponsors/Konstantinos-Chatzistavrou" target="_blank" rel="noopener">♥ Sponsor</a>
+            <a class="mc-btn" href="https://www.patreon.com/Open_Grid" target="_blank" rel="noopener">♥ Patreon</a>
           </div>
         </section>
 

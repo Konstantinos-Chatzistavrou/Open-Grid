@@ -15,7 +15,7 @@
   - **Code**: `Apache-2.0` (compatible with Unreal Engine 5 and open community modding).
   - **Original Models, Data & Docs**: `CC BY-NC 4.0`.
 - **Free Hobby-Project, 100% Ad-Free Online Model**:
-  - **100% Free Everywhere (Zero Paywalls, Zero Trials, Zero Ads):** All 25 cars, all cities, single-player career, Garage, Auction House, 2P Split-Screen, Friends, Private P2P lobbies (`PeerJS` WebRTC), and Community Ranked Splits (`cloud/` on Cloudflare Workers + D1 + Durable Objects free plan, best-effort) cost nothing. Optional **[GitHub Sponsors](https://github.com/sponsors/Konstantinos-Chatzistavrou)** buys no perks. No human-in-the-loop stewarding is promised — race control, fault scoring, and replay checks are automated.
+  - **100% Free Everywhere (Zero Paywalls, Zero Trials, Zero Ads):** All 25 cars, all cities, single-player career, Garage, Auction House, 2P Split-Screen, Friends, Private P2P lobbies (`PeerJS` WebRTC), and Community Ranked Splits (`cloud/` on Cloudflare Workers + D1 + Durable Objects free plan, best-effort) cost nothing. Optional support on **[Patreon](https://www.patreon.com/Open_Grid)** does not unlock anything in the game. No human-in-the-loop stewarding is promised — race control, fault scoring, and replay checks are automated.
 - **Multiplayer Sync (Zero Head-Start Ready Machine)**:
   - Strict **Ready-State** barrier: the host cannot trigger the `3-2-1` countdown until every connected client signals loaded assets. Nobody gets a head start from faster hardware.
 - **Split-Screen**:

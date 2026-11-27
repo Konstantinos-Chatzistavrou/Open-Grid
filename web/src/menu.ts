@@ -610,7 +610,7 @@ export class Menu {
 
               <a class="og-link-item" href="https://discord.gg/RhKdTvAdf" target="_blank" rel="noopener noreferrer">${IC.chat}<span>Discord ↗</span></a>
               <a class="og-link-item" href="https://youtube.com/@open_grid_motorsport" target="_blank" rel="noopener noreferrer">${IC.video}<span>YouTube ↗</span></a>
-              <a class="og-link-item" href="https://github.com/sponsors/Konstantinos-Chatzistavrou" target="_blank" rel="noopener noreferrer">${IC.heart}<span>GitHub Sponsors ↗</span></a>
+              <a class="og-link-item" href="https://www.patreon.com/Open_Grid" target="_blank" rel="noopener noreferrer">${IC.heart}<span>Patreon ↗</span></a>
 
               <a class="og-link-item" href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid" target="_blank" rel="noopener noreferrer">${IC.code}<span>GitHub ↗</span></a>
               <a class="og-link-item" href="/privacy.html" target="_blank" rel="noopener noreferrer">${IC.lock}<span>Privacy ↗</span></a>
@@ -1428,7 +1428,7 @@ export class Menu {
       const netStatus = this.cloud.available ? '✓ 100% Free Community Servers · Zero Ads' : 'Offline / Local';
       const sponsorBar = `<div class="opts" style="margin-bottom:10px;padding:8px 10px;border:1px solid #ffffff1c;border-radius:10px;background:#ffffff08;flex-wrap:wrap;gap:8px">
           <span class="dim small-note">♥ <b>Free Open-Source Hobby Project:</b> Every server, split, championship, hotlap &amp; P2P lobby is 100% free (best-effort community servers, zero ads, no trials). Penalties &amp; replay checks are automated.</span>
-          <a class="chip" style="text-decoration:none;color:#eef2ff" href="https://github.com/sponsors/Konstantinos-Chatzistavrou" target="_blank" rel="noopener noreferrer">♥ GitHub Sponsors</a>
+          <a class="chip" style="text-decoration:none;color:#eef2ff" href="https://www.patreon.com/Open_Grid" target="_blank" rel="noopener noreferrer">♥ Patreon</a>
         </div>`;
       const seriesCards = (this.officialEvents.length ? this.officialEvents : [
         { id: 'rookie_sprint', title: 'OpenGrid Rookie GT Sprint', subtitle: 'Fixed Setup · 20m cadence · Class R+', minLicense: 'R', intervalMin: 20, maxPerSplit: 12, laps: 3, startsInSec: 600, registrants: 0, eligible: true, eventKey: '', myEntry: null },
@@ -2889,10 +2889,10 @@ export class Menu {
       ${authBlock}
       ${this.authNote ? `<div class="pnote ${this.authNote.startsWith('✓') ? '' : 'bad'}">${esc(this.authNote)}</div>` : ''}
       <h3>♥ Support Open Grid (Optional)</h3>
-      <p class="dim small-note">Open Grid is a free, open-source, ad-free hobby project — all cars, cities, online splits, championships, hotlaps &amp; private P2P lobbies are 100% free for everyone. Optional GitHub Sponsors buys no perks and simply helps cover domain &amp; hosting.</p>
+      <p class="dim small-note">Open Grid is a free, open-source, ad-free hobby project — all cars, cities, online splits, championships, hotlaps &amp; private P2P lobbies are 100% free for everyone. Optional Patreon support helps cover domain &amp; hosting.</p>
       <div class="opts" style="flex-wrap:wrap;gap:8px;margin-bottom:8px">
         <span class="pill gold">✓ 100% Free Forever</span>
-        <a class="chip on" style="text-decoration:none;color:#fff" href="https://github.com/sponsors/Konstantinos-Chatzistavrou" target="_blank" rel="noopener noreferrer">♥ Sponsor on GitHub</a>
+        <a class="chip on" style="text-decoration:none;color:#fff" href="https://www.patreon.com/Open_Grid" target="_blank" rel="noopener noreferrer">♥ Support on Patreon</a>
         <a class="chip" style="text-decoration:none;color:#eef2ff" href="https://discord.gg/RhKdTvAdf" target="_blank" rel="noopener noreferrer">💬 Discord</a>
         <a class="chip" style="text-decoration:none;color:#eef2ff" href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid" target="_blank" rel="noopener noreferrer">★ GitHub</a>
         <a class="chip" style="text-decoration:none;color:#eef2ff" href="https://youtube.com/@open_grid_motorsport" target="_blank" rel="noopener noreferrer">▶ YouTube</a>

@@ -5,7 +5,7 @@ The server-authoritative backend for **Open Grid's competitive online network**,
 - **Live instance:** `https://opengrid.opengrid-racing.workers.dev` (region `EEUR`; ready for custom domain `https://api.open-grid.racing` once the `open-grid.racing` zone is added to Cloudflare)
 - **Frontend integration:** Vercel project `opengrid` builds `web/` with `VITE_CLOUD_URL` set to the live Worker URL on every push to `main`.
 - **Licence:** `Apache-2.0` (100% open source; self-hostable by leagues and communities).
-- **Funding Philosophy:** **100% Free Hobby Project & Ad-Free.** All cars, tracks, single player, garage, friends, ranked splits, championships, hotlaps, leagues, and private P2P lobbies are free for every account on the Cloudflare free plan (best-effort). There is no Patreon, no 7-day trial, and no human-in-the-loop stewarding; optional **[GitHub Sponsors](https://github.com/sponsors/Konstantinos-Chatzistavrou)** buys no perks. Legacy pass-gating code in `cloud/` is switched off (`REQUIRE_SUPPORTER_PASS = "0"`).
+- **Funding Philosophy:** **100% Free Hobby Project & Ad-Free.** All cars, tracks, single player, garage, friends, ranked splits, championships, hotlaps, leagues, and private P2P lobbies are free for every account on the Cloudflare free plan (best-effort). There is no 7-day trial and no human-in-the-loop stewarding; optional support is on **[Patreon](https://www.patreon.com/Open_Grid)** and the servers do not check for it. Legacy pass-gating code in `cloud/` is switched off (`REQUIRE_SUPPORTER_PASS = "0"`).
 
 ---
 

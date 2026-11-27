@@ -7,7 +7,8 @@ The goal: the only recurring cost is the **domain name** (about €9 a year). Ev
 | Domain `open-grid.racing` | the web address | yearly registration | about €9 a year |
 | Cloudflare Workers, D1, Durable Objects (`cloud/`) | online backend: accounts, hotlaps, ratings, online rooms | Free | €0 |
 | Vercel | hosts the web build | Hobby (free) | €0 |
-| GitHub | the repository, CI (free for public repositories), Sponsors page | Free | €0 |
+| GitHub | the repository, CI (free for public repositories) | Free | €0 |
+| Patreon | the support page (https://www.patreon.com/Open_Grid) | Free to run; Patreon deducts its own fees from pledges (see its current terms) | €0 fixed |
 | Google, GitHub, Discord sign-in | optional login | OAuth apps | €0 |
 | PeerJS public broker (`0.peerjs.com`) | introduces players for peer to peer parties | community service | €0 |
 
@@ -26,11 +27,13 @@ Free plans stop; they do not bill. The limits below are what the vendors publish
 **Vercel (Hobby plan)**
 - Included each month: 100 GB of data transfer, 1,000,000 CDN requests, 1,000,000 function invocations. ([plan](https://vercel.com/docs/plans/hobby))
 - If a limit is exceeded, that feature pauses for up to 30 days instead of billing. The game itself is a static site, so it uses very little.
-- Vercel's Hobby plan is meant for personal, non-commercial use (see their [Terms of Service](https://vercel.com/terms) and [fair use guidelines](https://vercel.com/docs/limits/fair-use-guidelines)). Open Grid is free, ad-free and non-profit, with optional sponsorship that buys nothing. I could not find a clear statement on whether that counts, so if Vercel ever objects, the web build is plain static files and can move to another free static host in an afternoon.
+- Vercel's Hobby plan is meant for personal, non-commercial use (see their [Terms of Service](https://vercel.com/terms) and [fair use guidelines](https://vercel.com/docs/limits/fair-use-guidelines)). Open Grid is free and ad-free, with an optional Patreon link. I could not find a clear statement on whether that counts, and a link that asks visitors for money is the case most likely to matter: check Vercel's current terms. If Vercel ever objects, the web build is plain static files and can move to another free static host in an afternoon.
 
 **Sign-in providers.** Creating OAuth apps with Google, GitHub and Discord is free. Keep the requested permissions to basic sign-in (identity and name); Google reviews apps that ask for more.
 
-**GitHub.** Public repositories get free Actions minutes. Sponsorships are optional and buy nothing (see [MAINTENANCE.md](MAINTENANCE.md)).
+**GitHub.** Public repositories get free Actions minutes.
+
+**Patreon.** Optional support (see [MAINTENANCE.md](MAINTENANCE.md)); Patreon deducts its own fees from pledges.
 
 **PeerJS public broker.** Run by the PeerJS project, no guarantee. If it is down, parties cannot start; the self-hosted broker in `server/` is the fallback.
 
