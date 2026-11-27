@@ -13,7 +13,7 @@ International (LICENSES/CC-BY-NC-4.0.txt): no commercial use without written per
 
 One part is licensed more openly, so that it can be adopted by anyone, commercial or not, with credit: the conformance suite
 and tyre-validation material (conformance/README.md, conformance/SPEC.md, docs/verify.md, data/validation/mf62/) is licensed
-under Creative Commons Attribution 4.0 International (SPDX CC-BY-4.0, https://creativecommons.org/licenses/by/4.0/). Credit it as:
+under Creative Commons Attribution 4.0 International (SPDX CC-BY-4.0, LICENSES/CC-BY-4.0.txt, https://creativecommons.org/licenses/by/4.0/). Credit it as:
 "OpenGrid conformance suite by Konstantinos Chatzistavrou, https://github.com/Konstantinos-Chatzistavrou/Open-Grid, CC BY 4.0",
 and say if you changed it. LICENSING.md lists which files are which.
 

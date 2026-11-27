@@ -24,10 +24,11 @@ fs.writeFileSync(path.join(out, 'tyre/manifest.json'), JSON.stringify(mf, null, 
 
 fs.copyFileSync(path.join(root, 'tools/validation/mfeval/LICENSE.txt'), path.join(out, 'LICENSES/MFeval-BSD-3.txt'));
 fs.copyFileSync(path.join(root, 'data/tires/LICENSE-projectchrono.txt'), path.join(out, 'LICENSES/ProjectChrono-BSD-3.txt'));
+fs.copyFileSync(path.join(root, 'LICENSES/CC-BY-4.0.txt'), path.join(out, 'LICENSES/CC-BY-4.0.txt'));
 fs.writeFileSync(path.join(out, 'LICENSES.md'), `# Licences in this pack
 
 - **run.mjs**: Apache-2.0, Copyright 2026 Konstantinos Chatzistavrou and the Open Grid contributors.
-- **SPEC.md, README.md, the case list and the synthetic tyres below**: **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/): commercial use allowed, credit required. Credit as:
+- **SPEC.md, README.md, the case list and the synthetic tyres below**: **CC BY 4.0** (LICENSES/CC-BY-4.0.txt, https://creativecommons.org/licenses/by/4.0/): commercial use allowed, credit required. Credit as:
   "OpenGrid conformance suite by Konstantinos Chatzistavrou, https://github.com/Konstantinos-Chatzistavrou/Open-Grid, CC BY 4.0", and say if you changed anything.
 - **The names "Open Grid" / "OpenGrid" and the "OpenGrid Conformant" mark** are not licensed by either licence: see TRADEMARKS.md in the repository.
 - **tyre/files/example_*.tir and the reference output of those tyres**: MFeval's own example tyres and MFeval's output, BSD-3-Clause, Copyright (c) 2020 Marco Furlan Tassara (LICENSES/MFeval-BSD-3.txt). The author does not state where the example tyres' data came from.

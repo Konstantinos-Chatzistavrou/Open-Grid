@@ -5,7 +5,7 @@ This repository holds two kinds of work, under two licences.
 | What | Licence | Full text |
 |---|---|---|
 | **Software**: all source code, shaders, build and processing scripts, HTML / CSS, configuration, JSON schemas | **Apache License 2.0** (SPDX `Apache-2.0`) | [`LICENSE`](LICENSE), [`NOTICE`](NOTICE) |
-| **The conformance suite and tyre-validation material**: `conformance/README.md`, `conformance/SPEC.md`, `docs/verify.md`, `data/validation/mf62/` (the case list and the two synthetic tyres; the recorded MFeval output in `golden/` keeps MFeval's BSD notice and we add no restriction) | **Creative Commons Attribution 4.0 International** (SPDX `CC-BY-4.0`): commercial use allowed, credit required | https://creativecommons.org/licenses/by/4.0/legalcode (a bundled copy of the text is not in `LICENSES/` yet) |
+| **The conformance suite and tyre-validation material**: `conformance/README.md`, `conformance/SPEC.md`, `docs/verify.md`, `data/validation/mf62/` (the case list and the two synthetic tyres; the recorded MFeval output in `golden/` keeps MFeval's BSD notice and we add no restriction) | **Creative Commons Attribution 4.0 International** (SPDX `CC-BY-4.0`): commercial use allowed, credit required | [`LICENSES/CC-BY-4.0.txt`](LICENSES/CC-BY-4.0.txt), https://creativecommons.org/licenses/by/4.0/ |
 | **Everything else we made**: 3D models, textures, materials, car and track data, rival / prop data, documentation, images, text | **Creative Commons Attribution-NonCommercial 4.0 International** (SPDX `CC-BY-NC-4.0`) | [`LICENSES/CC-BY-NC-4.0.txt`](LICENSES/CC-BY-NC-4.0.txt), https://creativecommons.org/licenses/by-nc/4.0/ |
 
 Copyright © 2026 Konstantinos Chatzistavrou and the Open Grid contributors. The names "Open Grid" / "OpenGrid", the logo and the "OpenGrid Conformant" mark are not licensed by any of the above: [`TRADEMARKS.md`](TRADEMARKS.md).
@@ -14,6 +14,7 @@ Copyright © 2026 Konstantinos Chatzistavrou and the Open Grid contributors. The
 
 You may copy, share and adapt the conformance suite's documents and the validation data, **including commercially**, if you **give credit** as
 "OpenGrid conformance suite by Konstantinos Chatzistavrou, https://github.com/Konstantinos-Chatzistavrou/Open-Grid, CC BY 4.0", link the licence, and say whether you changed anything. The conformance runner and the reference adapter are code and stay Apache-2.0.
+`LICENSES/CC-BY-4.0.txt` is the official plain-text licence from https://creativecommons.org/licenses/by/4.0/legalcode.txt, copied unmodified on 2026-11-27 (sha256 `9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411`).
 Material that was published under CC BY-NC 4.0 before this change (the case list and synthetic tyres, 2026-11-27) stays available to whoever already has it under those terms; new copies are CC BY 4.0.
 
 ## What the CC BY-NC 4.0 part means
