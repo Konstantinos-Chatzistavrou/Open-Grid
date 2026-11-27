@@ -8,17 +8,24 @@
 //      - Unit 07 (INTERCEPT): active at Heat 1+ ahead to roll out and box/slow cleanly with safe lateral clearance.
 //      - Unit 11 (BOX): joins at Heat 2+ on the opposite side for clean non-ramming box-in maneuvers.
 //      - Unit 15 (BACKUP): joins at Heat 3+ as a disciplined trail/intercept interceptor.
-//      - NEVER rams or PIT-wrecks the player; maintains >= 2.65 m lateral clearance when alongside and brakes cleanly behind.
+//      - NEVER rams or PIT-wrecks the player; maintains >= 2.75 m lateral clearance when alongside and brakes cleanly behind.
 //   3. Strict 90% Top Speed Cap: every interceptor's top speed is ALWAYS strictly 90% of the player's current car top speed
 //      (further reduced by engine/aero damage when crashed), keeping corners and city streets intense while clean straights reward speed.
-//   4. Intelligent 7-Candidate Multi-Obstacle Path Planner: dynamic Outside -> Apex -> Exit cornering lines, traffic/rival/wreck
-//      overtaking with lateral hysteresis, roadblock avoidance, and strict player personal-space safety bubble.
+//   4. Minimum-Curvature Optimal Racing Line + C2-Continuous Frenet Quintic Trajectory Planner (aiPlanner.ts): smooth cornering lines,
+//      traffic/rival/wreck overtaking with lateral hysteresis, roadblock avoidance, and strict player personal-space safety bubble.
 //   5. Exact-Parity Crash Damage & Durability (CoreDamageSim + VehicleDamageRig + SharedDamageVfx):
 //      police interceptors take the exact same impact math, GPU vertex dents, power/grip loss, broken headlights, hood steam/smoke,
 //      and disable/wreck thresholds as the player car!
 import * as THREE from 'three/webgpu';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { Lane } from './ai';
+import {
+  computeMinCurvatureLine,
+  FrenetPlanner,
+  type FrenetObstacle,
+  type FrenetPlanResult,
+  type OptimalRacingLine,
+} from './aiPlanner';
 import { GROUP_CAR, type PhysicsWorld } from './physics/world';
 import {
   buildPoliceInterceptor,
@@ -50,7 +57,7 @@ const LEAPFROG_BEHIND = 340;   // m behind before a non-lead undamaged unit rede
 const LEAPFROG_AHEAD = 240;    // m ahead to redeploy intercept unit
 const SOUND_SPEED = 340;       // m/s for acoustic Doppler calculation
 const COP_MASS_KG = 1680;      // heavy-duty police interceptor mass (exact CoreDamageSim durability parity)
-const PLAYER_SAFE_LAT = 2.65;  // m minimum lateral clearance alongside the player (strict non-ramming bubble)
+const PLAYER_SAFE_LAT = 2.75;  // m minimum lateral clearance alongside the player (strict non-ramming bubble)
 const GENTLE_TAP_COOLDOWN = 10.5; // s cooldown for tiny low-speed catch bump (<= 0.14 intensity)
 const FALLBACK_PLAYER_MAX_MS = 295 / 3.6;
 
@@ -128,6 +135,8 @@ interface PatrolUnit {
   callsign: string;
   s: number;
   lat: number;
+  latDot: number;
+  latDdot: number;
   speed: number;
   side: 1 | -1;
   role: UnitRole;
@@ -243,10 +252,21 @@ export class Cops {
   private tmpAng = { x: 0, y: 0, z: 0 };
   private roomScratch = { left: 0, right: 0 };
   private obstaclesBuf: RoadObstacle[] = [];
-  private plannerObsBuf: RoadObstacle[] = [];
-  private candLatsBuf: number[] = [0, 0, 0, 0, 0, 0, 0];
+  private optLine: OptimalRacingLine;
+  private frenet = new FrenetPlanner();
+  private frenetObsBuf: FrenetObstacle[] = [];
+  private frenetOut: FrenetPlanResult = {
+    targetLat: 0,
+    nextLat: 0,
+    nextDot: 0,
+    nextDdot: 0,
+    horizonT: 1.35,
+    chosenSide: 0,
+    blockedSpeedCap: Infinity,
+  };
 
   constructor(private lane: Lane, private hooks: CopHooks) {
+    this.optLine = computeMinCurvatureLine(this.lane);
     this.units = [
       this.makeUnit('04', 'UNIT-04', 1.2, 1, 'escort'),
       this.makeUnit('07', 'UNIT-07', -1.8, -1, 'intercept'),
@@ -262,6 +282,8 @@ export class Cops {
       callsign,
       s: 0,
       lat,
+      latDot: 0,
+      latDdot: 0,
       speed: 0,
       side,
       role,
@@ -290,6 +312,8 @@ export class Cops {
   private resetUnitState(u: PatrolUnit) {
     u.damageSim.reset();
     u.damageRig?.clear();
+    u.latDot = 0;
+    u.latDdot = 0;
     u.latV = 0;
     u.yawOff = 0;
     u.yawRate = 0;
@@ -394,6 +418,7 @@ export class Cops {
   setLane(lane: Lane) {
     this.breakOff();
     this.lane = lane;
+    this.optLine = computeMinCurvatureLine(this.lane);
     this.s = 0;
     this.buildCameraData();
     this.buildCameraMeshes();
@@ -1152,43 +1177,6 @@ export class Cops {
     return false;
   }
 
-  /** Signed curvature at arc length s: > 0 means right-hand turn, < 0 means left-hand turn. */
-  private signedCurvatureAt(s: number): number {
-    const nPts = this.lane.n;
-    const ci = this.lane.idx(s);
-    const rPrev = this.lane.right[(ci - 2 + nPts) % nPts];
-    const rNext = this.lane.right[(ci + 2) % nPts];
-    const fwdNextX = rNext.z;
-    const fwdNextZ = -rNext.x;
-    const dot = Math.max(-1, Math.min(1, rPrev.x * rNext.x + rPrev.z * rNext.z));
-    const mag = Math.acos(dot) / 16;
-    const turnDot = fwdNextX * rPrev.x + fwdNextZ * rPrev.z;
-    return turnDot >= 0 ? mag : -mag;
-  }
-
-  /** Dynamic outside -> apex -> exit cornering line offset based on upcoming curvature 20..65 m ahead. */
-  private computeCornerLineLat(s: number, roomLeft: number, roomRight: number): number {
-    const kNear = this.signedCurvatureAt(s + 20);
-    const kMid = this.signedCurvatureAt(s + 40);
-    const kFar = this.signedCurvatureAt(s + 65);
-    const absNear = Math.abs(kNear);
-    const absMid = Math.abs(kMid);
-    const absFar = Math.abs(kFar);
-
-    let normOffset = 0; // -1..+1 of available road half-width (+ = right)
-    if (absNear > 0.0045) {
-      // Entering/clipping the apex: hug the inside of the turn
-      const sign = Math.sign(kNear);
-      normOffset = sign * Math.min(0.68, absNear * 48);
-    } else if (absMid > 0.0045 || absFar > 0.0045) {
-      // Setting up on entry: swing smoothly toward the outside before turning in
-      const dominant = absMid >= absFar ? kMid : kFar;
-      const sign = Math.sign(dominant);
-      normOffset = -sign * Math.min(0.62, Math.abs(dominant) * 44);
-    }
-    return normOffset >= 0 ? normOffset * roomRight : normOffset * roomLeft;
-  }
-
   /** Update wrecked cruiser's dim hazard/flickering lightbar so disabled units look unmistakably knocked out. */
   private applyWreckedLights(rig: PoliceLightRig, tSec: number) {
     updatePoliceLights(rig, tSec, false);
@@ -1218,7 +1206,7 @@ export class Cops {
   /**
    * Main pursuit update:
    *  - Strict 90% top speed cap relative to player car's top speed (`playerMaxSpeedMs * 0.90`)
-   *  - Intelligent 7-candidate multi-obstacle lateral planner + Outside->Apex->Exit cornering line
+   *  - Minimum-Curvature Optimal Racing Line + C2-continuous Frenet quintic polynomial trajectory planner
    *  - Disciplined real-life police tactics (PULL OVER / BOX IN / ROADBLOCK AHEAD; NEVER ramming/PIT-wrecking!)
    *  - Exact-parity damage/smoke/disabled-unit progression
    */
@@ -1304,6 +1292,8 @@ export class Cops {
 
       // ---- Disabled / Wrecked Police Cruiser: coasts/skids to a smoking stop on the street ----
       if (u.wrecked) {
+        u.latDot = 0;
+        u.latDdot = 0;
         u.speed = Math.max(0, u.speed - 4.2 * safeDt);
         let dl = 0;
         if (u.latV !== 0) {
@@ -1379,12 +1369,12 @@ export class Cops {
       const maxBrake = 12.2 * gripScale;
       const cornerMu = 1.12 * gripScale;
 
-      // Multi-point upcoming corner speed lookahead (smooth braking into corners!)
+      // Multi-point upcoming corner speed lookahead along minimum-curvature racing line
       let cornerLimit = unitTopSpeed;
       const lookDists = [0, 14, 30, 50, 70];
       for (let lk = 0; lk < lookDists.length; lk++) {
         const dLook = lookDists[lk];
-        const absK = Math.abs(this.signedCurvatureAt(u.s + dLook));
+        const absK = this.optLine.curvAt(u.s + dLook);
         if (absK > 0.005) {
           const vTurn = Math.sqrt((cornerMu * 9.81) / absK);
           const vAllow = dLook > 0 ? Math.sqrt(vTurn * vTurn + 2 * maxBrake * dLook) : vTurn;
@@ -1422,20 +1412,19 @@ export class Cops {
         targetSpeed = Math.max(0, playerSpeedMs - 2.6);
       }
 
-      // ---- Intelligent 7-Candidate Multi-Obstacle Lateral Path Planner ----
+      // ---- Minimum-Curvature Optimal Racing Line + C2-Continuous Frenet Quintic Trajectory Planner ----
       const ci = this.lane.idx(u.s);
       const rNow = this.lane.right[ci];
       const fwdX = rNow.z;
       const fwdZ = -rNow.x;
 
-      // Dynamic Outside -> Apex -> Exit cornering line
-      const cornerLineLat = this.computeCornerLineLat(u.s, roomLeft, roomRight);
+      const lineLookAhead = Math.min(34, 12 + u.speed * 0.45);
+      const optLineLat = this.optLine.latAt(u.s + lineLookAhead);
 
-      // Disciplined escort / box-in lateral offset (ALWAYS >= 2.65 m clearance alongside player!)
-      let tacticalLat = cornerLineLat;
+      // Disciplined escort / box-in lateral offset (ALWAYS >= 2.75 m clearance alongside player!)
+      let tacticalLat = optLineLat;
       const nearPlayerLong = gapAhead > -28 && gapAhead < 48;
       if (!this.evading && nearPlayerLong) {
-        // Choose side with more road space for escort/box units
         const rightTarget = playerLat + PLAYER_SAFE_LAT + 0.25;
         const leftTarget = playerLat - PLAYER_SAFE_LAT - 0.25;
         const canRight = rightTarget <= roomRight;
@@ -1445,52 +1434,82 @@ export class Cops {
           // Lead escort pulls slightly to the clearer side (never directly riding into bumper)
           escortLat = (u.side > 0 ? canRight : !canLeft) ? rightTarget : leftTarget;
         } else {
-          // Intercept / box unit takes the opposite lane with >= 2.65 m safe clearance
+          // Intercept / box unit takes the opposite lane with >= 2.75 m safe clearance
           escortLat = (u.side < 0 ? canLeft : !canRight) ? leftTarget : rightTarget;
         }
-        // Blend cornering line when > 20 m away; prioritize disciplined escort lane when close
+        // Blend optimal racing line when > 20 m away; prioritize disciplined escort lane when close
         const proxBlend = Math.max(0, Math.min(1, 1 - Math.abs(gapAhead) / 45));
-        tacticalLat = cornerLineLat * (1 - proxBlend * 0.75) + escortLat * (proxBlend * 0.75);
+        tacticalLat = optLineLat * (1 - proxBlend * 0.75) + escortLat * (proxBlend * 0.75);
       }
       const desiredLat = Math.max(-roomLeft, Math.min(roomRight, tacticalLat + u.damageSim.steerPull));
 
-      // Collect all non-player obstacles for this unit (traffic/rivals + other cops + active roadblock cruisers)
-      const obsList = this.plannerObsBuf;
+      // Populate reused FrenetObstacle scratch buffer (zero allocations):
+      // player (strict non-ramming bubble >= 2.75 m), other active/wrecked units, roadblocks, and AI traffic/rivals
+      const fObs = this.frenetObsBuf;
       let obsCount = 0;
-      const pushPlanObs = (x: number, z: number, v: number, lat: number, radius: number, isBlock: boolean) => {
-        if (obsCount < obsList.length) {
-          const o = obsList[obsCount++];
-          o.x = x; o.z = z; o.v = v; o.lat = lat; o.radius = radius; o.isBlock = isBlock;
+      const pushFrenetObs = (
+        ds: number,
+        lat: number,
+        v: number,
+        clearLat: number,
+        isBlock: boolean,
+        isPlayer: boolean,
+      ) => {
+        if (obsCount < fObs.length) {
+          const o = fObs[obsCount++];
+          o.ds = ds;
+          o.lat = lat;
+          o.v = v;
+          o.clearLat = clearLat;
+          o.isBlock = isBlock;
+          o.isPlayer = isPlayer;
         } else {
-          obsList.push({ x, z, v, lat, radius, isBlock });
+          fObs.push({ ds, lat, v, clearLat, isBlock, isPlayer });
           obsCount++;
         }
       };
 
-      if (trafficObstacles) {
-        for (let k = 0; k < trafficObstacles.length; k++) {
-          const to = trafficObstacles[k];
-          pushPlanObs(to.x, to.z, to.v, to.lat, to.radius ?? 1.3, !!to.isBlock);
-        }
+      const obsLookAhead = Math.max(42, 22 + u.speed * 1.9);
+
+      // 1. Player car (strict non-ramming bubble)
+      if (gapAhead > -12 && gapAhead < obsLookAhead) {
+        pushFrenetObs(gapAhead, playerLat, playerSpeedMs, PLAYER_SAFE_LAT, false, true);
       }
+
+      // 2. Other active/wrecked police cruisers
       for (let j = 0; j < this.units.length; j++) {
         if (j === uIdx) continue;
         const ou = this.units[j];
         if (!ou.active) continue;
-        pushPlanObs(ou.world.x, ou.world.z, ou.speed, ou.lat, 1.35, ou.wrecked);
-      }
-      if (this.roadblock?.active) {
-        for (let k = 0; k < this.roadblock.carWorlds.length; k++) {
-          const rw = this.roadblock.carWorlds[k];
-          pushPlanObs(rw.x, rw.z, 0, this.roadblock.carLats[k], 2.15, true);
+        const ds = signedDelta(ou.s, u.s);
+        if (ds > -12 && ds < obsLookAhead) {
+          pushFrenetObs(ds, ou.lat, ou.speed, ou.wrecked ? 2.95 : 2.5, ou.wrecked, false);
         }
       }
-      obsList.length = obsCount;
 
-      // Evaluate 7 candidate lateral positions across [-roomLeft, +roomRight]
-      const span = roomLeft + roomRight;
-      for (let cIdx = 0; cIdx < 7; cIdx++) {
-        this.candLatsBuf[cIdx] = -roomLeft + (span * cIdx) / 6;
+      // 3. Active roadblock cruisers
+      if (this.roadblock?.active) {
+        const rbDs = signedDelta(this.roadblock.s, u.s);
+        if (rbDs > -14 && rbDs < obsLookAhead + 18) {
+          for (let k = 0; k < this.roadblock.carLats.length; k++) {
+            pushFrenetObs(rbDs + ROADBLOCK_LAYOUTS[k].z, this.roadblock.carLats[k], 0, 3.25, true, false);
+          }
+        }
+      }
+
+      // 4. AI racers / civilian street traffic
+      if (trafficObstacles) {
+        for (let k = 0; k < trafficObstacles.length; k++) {
+          const to = trafficObstacles[k];
+          const dx = to.x - u.world.x;
+          const dz = to.z - u.world.z;
+          const ds = dx * fwdX + dz * fwdZ;
+          if (ds > -12 && ds < obsLookAhead) {
+            const obsLat = Number.isFinite(to.lat) ? to.lat : u.lat + (dx * rNow.x + dz * rNow.z);
+            const clearLat = to.isBlock ? 3.1 : Math.max(2.45, (to.radius ?? 1.3) + 1.25);
+            pushFrenetObs(ds, obsLat, to.v, clearLat, !!to.isBlock, false);
+          }
+        }
       }
 
       if (u.overtakeHoldT > 0) {
@@ -1498,94 +1517,42 @@ export class Cops {
         if (u.overtakeHoldT <= 0) u.overtakeSide = 0;
       }
 
-      const lookAhead = Math.max(26, 16 + u.speed * 1.15);
-      let blockingObsAhead = false;
-      let blockingObsLat = u.lat;
-      let blockingObsDs = Infinity;
-      let blockingObsV = unitTopSpeed;
+      const spun = Math.abs(u.yawOff) > 0.6;
+      const sliding = Math.abs(u.latV) > 0.4 || spun;
 
-      // First scan obstacles for direct forward blocking (for braking & overtake hysteresis)
-      for (let k = 0; k < obsCount; k++) {
-        const obs = obsList[k];
-        const dx = obs.x - u.world.x;
-        const dz = obs.z - u.world.z;
-        const ds = dx * fwdX + dz * fwdZ;
-        if (ds > 0 && ds < lookAhead) {
-          const relLat = dx * rNow.x + dz * rNow.z;
-          const obsLat = u.lat + relLat;
-          const clear = (obs.radius ?? 1.3) + (obs.isBlock ? 1.75 : 1.15);
-          if (Math.abs(obsLat - u.lat) < clear && ds < blockingObsDs) {
-            blockingObsAhead = true;
-            blockingObsDs = ds;
-            blockingObsLat = obsLat;
-            blockingObsV = obs.v;
-          }
-        }
-      }
+      const plan = this.frenet.plan(
+        {
+          d0: u.lat,
+          dDot0: sliding ? 0 : u.latDot,
+          dDdot0: sliding ? 0 : u.latDdot,
+          egoV: u.speed,
+          desiredLat,
+          minLat: -roomLeft,
+          maxLat: roomRight,
+          prevSide: u.overtakeHoldT > 0 ? u.overtakeSide : 0,
+          boldness: Math.min(0.88, 0.52 + (this.heat - 1) * 0.08),
+          nonRammingPlayer: true,
+          obstacles: fObs,
+          obstacleCount: obsCount,
+        },
+        safeDt,
+        this.frenetOut,
+      );
 
-      let bestLat = desiredLat;
-      let bestCost = Infinity;
-      for (let cIdx = 0; cIdx < 7; cIdx++) {
-        const candLat = this.candLatsBuf[cIdx];
-        let cost = Math.abs(candLat - desiredLat) * 0.55 + Math.abs(candLat - u.lat) * 0.22;
-
-        // Lateral hysteresis: commit smoothly to chosen overtake side while passing
-        if (blockingObsAhead && u.overtakeHoldT > 0 && u.overtakeSide !== 0) {
-          const onChosenSide = (candLat - blockingObsLat) * u.overtakeSide > 0.5;
-          if (onChosenSide) cost -= 1.6;
-        }
-
-        // Cost against traffic, rivals, other police cruisers, wrecks, and roadblocks
-        for (let k = 0; k < obsCount; k++) {
-          const obs = obsList[k];
-          const dx = obs.x - u.world.x;
-          const dz = obs.z - u.world.z;
-          const ds = dx * fwdX + dz * fwdZ;
-          if (ds < -5.5 || ds > lookAhead) continue;
-          const obsLat = u.lat + (dx * rNow.x + dz * rNow.z);
-          const clearLat = obs.isBlock ? 3.2 : (obs.radius ?? 1.3) + 1.55;
-          const dLat = Math.abs(candLat - obsLat);
-          if (dLat < clearLat) {
-            const overlap = (clearLat - dLat) / clearLat;
-            const prox = 1 / Math.max(3.5, Math.abs(ds));
-            const closing = Math.max(1.0, u.speed - obs.v + 6.0);
-            const blockMul = obs.isBlock ? 3.5 : 1.0;
-            cost += overlap * overlap * prox * closing * 22 * blockMul;
-          }
-        }
-
-        // STRICT NON-RAMMING PERSONAL-SPACE BUBBLE around the player car (>= 2.65 m lateral clearance!)
-        if (gapAhead > -7.5 && gapAhead < 14.0) {
-          const dLatPlayer = Math.abs(candLat - playerLat);
-          if (dLatPlayer < PLAYER_SAFE_LAT) {
-            const pen = (PLAYER_SAFE_LAT - dLatPlayer) / PLAYER_SAFE_LAT;
-            const longWeight = Math.max(0.35, 1 - Math.abs(gapAhead) / 14.5);
-            cost += (12 + pen * 55) * longWeight;
-          }
-        }
-
-        if (cost < bestCost) {
-          bestCost = cost;
-          bestLat = candLat;
-        }
-      }
-
-      if (blockingObsAhead && Math.abs(bestLat - blockingObsLat) > 1.2) {
-        const sideChoice: -1 | 1 = bestLat >= blockingObsLat ? 1 : -1;
+      if (plan.chosenSide !== 0) {
         if (u.overtakeSide === 0 || u.overtakeHoldT <= 0.1) {
-          u.overtakeSide = sideChoice;
+          u.overtakeSide = plan.chosenSide;
         }
-        u.overtakeHoldT = 1.6;
+        u.overtakeHoldT = 1.4;
       }
 
-      // Smooth braking if directly behind a blocking non-player obstacle while changing lanes
-      if (blockingObsAhead && blockingObsDs < 28) {
-        const safeSpeed = Math.max(0, blockingObsV + (blockingObsDs - 8.5) * 0.85);
-        targetSpeed = Math.min(targetSpeed, safeSpeed);
+      // Smooth longitudinal braking cap from Frenet planner when blocked ahead
+      if (Number.isFinite(plan.blockedSpeedCap)) {
+        targetSpeed = Math.min(targetSpeed, plan.blockedSpeedCap);
       }
 
       // STRICT ANTI-REAR-END BRAKING behind the player car so police NEVER ram your rear bumper!
-      if (gapAhead > 0 && gapAhead < 22 && Math.abs(u.lat - playerLat) < 2.55) {
+      if (gapAhead > 0 && gapAhead < 22 && Math.abs(u.lat - playerLat) < 2.65) {
         const followSafe = Math.max(0, playerSpeedMs + (gapAhead - 6.8) * 0.95);
         targetSpeed = Math.min(targetSpeed, followSafe);
       }
@@ -1593,7 +1560,6 @@ export class Cops {
       targetSpeed = Math.min(targetSpeed, cornerLimit, unitTopSpeed);
 
       // Spun-out recovery: brake briefly to gather the cruiser up
-      const spun = Math.abs(u.yawOff) > 0.6;
       if (spun) targetSpeed = 0;
 
       // Longitudinal velocity update (smooth acceleration with aero drag falloff, strictly capped at unitTopSpeed <= 90% player max!)
@@ -1604,16 +1570,27 @@ export class Cops {
       else u.speed += Math.max(dvSpeed, -maxBrake * safeDt);
       u.speed = Math.max(0, Math.min(unitTopSpeed, u.speed));
 
-      // Lateral movement + crash slide physics (mirrors AiTraffic with wall-impact CoreDamageSim!)
-      const sliding = Math.abs(u.latV) > 0.4 || spun;
-      const maxLatRate = sliding ? 0 : Math.min(3.4, 0.45 + u.speed * 0.14);
-      const maxDl = maxLatRate * safeDt;
-      let dl = Math.max(-maxDl, Math.min(maxDl, bestLat - u.lat));
-      const steerRate = dl / safeDt;
+      // C2-continuous Frenet lateral movement + crash slide physics (mirrors AiTraffic with wall-impact CoreDamageSim!)
+      let dl: number;
+      if (sliding) {
+        dl = 0;
+        u.latDot *= Math.exp(-6 * safeDt);
+        u.latDdot = 0;
+      } else {
+        dl = plan.nextLat - u.lat;
+        u.latDot = plan.nextDot;
+        u.latDdot = plan.nextDdot;
+        if (u.speed < 0.5) {
+          const sFac = u.speed / 0.5;
+          dl *= sFac;
+          u.latDot *= sFac;
+          u.latDdot *= sFac;
+        }
+      }
 
-      // Smooth visual heading lean into lane changes / overtakes
+      // Smooth visual heading lean driven by C2-continuous Frenet lateral velocity (u.latDot)
       const targetLean = u.speed > 1.0 && !sliding
-        ? Math.max(-0.26, Math.min(0.26, Math.atan2(steerRate, Math.max(4, u.speed))))
+        ? Math.max(-0.26, Math.min(0.26, Math.atan2(u.latDot, Math.max(4, u.speed))))
         : 0;
       u.steerLean += (targetLean - u.steerLean) * Math.min(1, safeDt * 8);
 
@@ -1629,6 +1606,8 @@ export class Cops {
           const hitDv = Math.abs(u.latV);
           dl = (hitRight ? maxEdge : minEdge) - u.lat;
           u.latV = 0;
+          u.latDot = 0;
+          u.latDdot = 0;
           u.speed *= 0.72;
           // Model space: +X is left, -X is right
           const lx = hitRight ? -0.95 : 0.95;

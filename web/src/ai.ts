@@ -1,7 +1,8 @@
 // AI rivals: cars that race the player round the city route. Kinematic Rapier bodies
-// (kinematicPositionBased) driven by multi-factor racecraft: dynamic outside-apex-exit
-// cornering lines, 7-lane obstacle & overtaking planner, slipstream drafting, inside corner
-// defense, roadblock/wreck avoidance, and exact-parity CoreDamageSim + GPU VehicleDamageRig
+// (kinematicPositionBased) driven by Apache-2.0 Minimum-Curvature Optimal Racing Line,
+// C2-Continuous Frenet Quintic Polynomial Trajectory Planner, physics-based adjustable
+// difficulty (+ Adaptive mode), slipstream drafting, single-move inside corner defense,
+// roadblock/wreck avoidance, and exact-parity CoreDamageSim + GPU VehicleDamageRig
 // crash physics & visuals matching the player's car 1:1.
 //
 // Modes: 'off' (parked out of sight: free roam and online are just you), 'race' (on the grid,
@@ -19,6 +20,17 @@ import { createContactShadow, setupCarMaterials, type CarVisualConfig } from './
 import { assetUrl, loadGLTF } from './scene/loaders';
 import { drawEarly } from './scene/nyc/breach';
 import { CoreDamageSim, SharedDamageVfx, VehicleDamageRig, type RoadObstacle } from './vehicleDamage';
+import {
+  AdaptiveDifficulty,
+  computeMinCurvatureLine,
+  difficultyProfile,
+  FrenetPlanner,
+  type DifficultyProfile,
+  type FrenetObstacle,
+  type FrenetPlanInput,
+  type FrenetPlanResult,
+  type OptimalRacingLine,
+} from './aiPlanner';
 
 /** strength of a rival's clustered headlight beam (SpotLight on WebGPU Clustered Forward+) */
 const AI_BEAM = 340;
@@ -177,9 +189,12 @@ export class Lane {
     return best * STEP;
   }
 
-  /** Speed profile for one driver: corner limits, then braking zones (two backward passes round the loop). */
-  profile(aLat: number, aBrake: number, vmax: number) {
-    const v = this.curv.map((k) => Math.min(vmax, Math.sqrt(aLat / Math.max(1e-5, k))));
+  /** Speed profile from an explicit curvature array: corner limits, then braking zones (backward passes). */
+  profileFromCurv(curvArr: ArrayLike<number>, aLat: number, aBrake: number, vmax: number): number[] {
+    const v = new Array<number>(this.n);
+    for (let i = 0; i < this.n; i++) {
+      v[i] = Math.min(vmax, Math.sqrt(aLat / Math.max(1e-5, curvArr[i])));
+    }
     if (!this.closed && v.length) v[v.length - 1] = 0;
     const passes = this.closed ? 2 : 1;
     const start = this.closed ? this.n - 1 : this.n - 2;
@@ -187,22 +202,20 @@ export class Lane {
       for (let i = start; i >= 0; i--) v[i] = Math.min(v[i], Math.sqrt(v[(i + 1) % this.n] ** 2 + 2 * aBrake * STEP));
     return v;
   }
+
+  /** Speed profile for one driver: corner limits, then braking zones (two backward passes round the loop). */
+  profile(aLat: number, aBrake: number, vmax: number) {
+    return this.profileFromCurv(this.curv, aLat, aBrake, vmax);
+  }
 }
 
 /** rivals' small parts (AiCar.detail) are drawn within this distance of the camera */
 const DETAIL_M = 30;
 
-export type AiRacecraftState = 'race' | 'draft' | 'overtake' | 'defend' | 'avoid';
+/** Frenet quintic trajectory replanning period (25 Hz -> < 0.05 ms total CPU for 5 rivals). */
+const FRENET_REPLAN_DT = 0.04;
 
-interface PlannerObstacle {
-  f: number;
-  lat: number;
-  v: number;
-  radius: number;
-  isCop: boolean;
-  isBlock: boolean;
-  id: number;
-}
+export type AiRacecraftState = 'race' | 'draft' | 'overtake' | 'defend' | 'avoid';
 
 interface AiCar {
   name: string;
@@ -218,6 +231,13 @@ interface AiCar {
   spinners: THREE.Mesh[];
   /** arc length, speed, lateral offset (+ = right of the line), lateral target, preferred line */
   s: number; v: number; lat: number; latTarget: number; line: number;
+  /** smooth C2 Frenet lateral kinematics & 25 Hz quintic plan buffer */
+  latDot: number;
+  latDdot: number;
+  frenetTimer: number;
+  frenetStartDot: number;
+  frenetStartDdot: number;
+  frenetOut: FrenetPlanResult;
   vprof: number[]; aGrip: number;
   spin: number; y: number; yTick: number;
   parked: boolean;
@@ -232,14 +252,16 @@ interface AiCar {
   brakingSkill: number;
   overtakeBoldness: number;
   apexBias: number;
-  /** live racecraft state */
+  /** live racecraft & human pressure mistake state */
   state: AiRacecraftState;
   overtakeSide: -1 | 0 | 1;
   overtakeHoldT: number;
   defendHoldT: number;
   defendCdT: number;
   defendLat: number;
-  overtakeTargetId: number;
+  mistakeTimer: number;
+  mistakeSign: -1 | 0 | 1;
+  mistakeCd: number;
   lineDriftPhase: number;
   collider: RAPIER.Collider;
   prevPos: THREE.Vector3; prevQuat: THREE.Quaternion;
@@ -257,7 +279,30 @@ export class AiTraffic {
   dragCarIdx = -1;
   /** Held during the 3-2-1 drag countdown right beside the player. */
   dragHeld = false;
+  /** Physics-based AI difficulty (60% Rookie .. 110% Alien) + Adaptive mode (zero rubber-banding). */
+  difficultyPct = 88;
+  adaptiveDifficulty = false;
   lane: Lane;
+  optLine: OptimalRacingLine;
+  private diffProfile: DifficultyProfile = difficultyProfile(88);
+  private adaptive = new AdaptiveDifficulty(88);
+  private frenet = new FrenetPlanner();
+  private frenetObs: FrenetObstacle[] = [];
+  private frenetInput: FrenetPlanInput = {
+    d0: 0,
+    dDot0: 0,
+    dDdot0: 0,
+    egoV: 0,
+    desiredLat: 0,
+    minLat: -2,
+    maxLat: 2,
+    prevSide: 0,
+    boldness: 0.5,
+    nonRammingPlayer: false,
+    obstacles: this.frenetObs,
+    obstacleCount: 0,
+  };
+  private leadScratch: number[] = [];
   private damageVfx: SharedDamageVfx | null = null;
   private a = new THREE.Vector3();
   private b = new THREE.Vector3();
@@ -277,14 +322,52 @@ export class AiTraffic {
   private tmpInvQ = new THREE.Quaternion();
   private tmpFwdA = new THREE.Vector3();
   private obstaclesScratch: RoadObstacle[] = [];
-  private plannerObs: PlannerObstacle[] = [];
-  private planResult = { lat: 0, draftBonus: false, blockF: Infinity, blockV: 0, blockIsHard: false, blockLat: 0 };
   private simTime = 0;
   private lastUpdateMs = 0;
   private dt = 1 / 400;
 
   private constructor(private pw: PhysicsWorld, samples: RouteSample[], closed = true) {
     this.lane = new Lane(samples, closed);
+    this.optLine = computeMinCurvatureLine(this.lane);
+  }
+
+  /** Set physics-based AI difficulty (60..110%) and optional Adaptive mode; rebuilds speed profiles immediately. */
+  setDifficulty(pct: number, adaptive = false) {
+    const clamped = Math.max(60, Math.min(110, Math.round(pct || 88)));
+    this.difficultyPct = clamped;
+    this.adaptiveDifficulty = adaptive;
+    this.adaptive.reset(clamped);
+    this.diffProfile = difficultyProfile(clamped);
+    this.rebuildSpeedProfiles();
+  }
+
+  /** Live effective difficulty percentage (tracks adaptive skill when Adaptive mode is enabled). */
+  get effectiveDifficultyPct(): number {
+    return this.adaptiveDifficulty ? this.adaptive.effectivePct : this.difficultyPct;
+  }
+
+  /**
+   * Recompute every rival's cornering + braking speed profile by blending centerline curvature with
+   * the minimum-curvature optimal racing line weighted by `diff.apexAccuracy`, scaled by real tyre
+   * grip utilization (`diff.gripUtil`) and braking limit (`diff.brakeUtil`).
+   */
+  private rebuildSpeedProfiles() {
+    const n = this.lane.n;
+    const diff = this.diffProfile;
+    const wOpt = Math.max(0, Math.min(1, diff.apexAccuracy));
+    const wCen = 1 - wOpt;
+    const blendedCurv = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      blendedCurv[i] = this.lane.curv[i] * wCen + this.optLine.optCurv[i] * wOpt;
+    }
+    for (let i = 0; i < this.cars.length; i++) {
+      const c = this.cars[i] as AiCar & { lim?: CarLimits };
+      const rival = RIVALS[i % RIVALS.length];
+      const lim = c.lim ?? { mu: 1.1, muX: 1.1, power: 250000, mass: 1400, dragArea: 0.7 };
+      const aLat = rival.skill * diff.gripUtil * lim.mu * G;
+      const aBrake = rival.brakingSkill * diff.brakeUtil * lim.muX * G;
+      c.vprof = this.lane.profileFromCurv(blendedCurv, aLat, aBrake, 75);
+    }
   }
 
   /** Must run after the city's colliders are queryable (after the first world.step()). */
@@ -363,12 +446,20 @@ export class AiTraffic {
       const top = 1.0, bottom = 0.15;
       const collider = pw.world.createCollider(RAPIER.ColliderDesc.cuboid(sx / 2, (top - bottom) / 2, sz / 2).setTranslation(cx, (top + bottom) / 2, cz)
         .setFriction(0.3).setRestitution(0).setCollisionGroups(GROUP_CAR), body);
-      const aLat = rival.skill * 0.82 * lim.mu * G;
-      const aBrake = (0.5 * rival.skill + 0.5 * rival.brakingSkill) * 0.88 * lim.muX * G;
       const car: AiCar = {
         name: rival.name, root, model, shadow, body, wheels: spinners.length ? [] : wheels, spinners, light, detail, detailOn: true,
         s: 0, v: 0, lat: rival.line, latTarget: rival.line, line: rival.line,
-        vprof: ai.lane.profile(aLat, aBrake, 75), aGrip: rival.skill * 0.6 * lim.muX * G,   // driven wheels carry ~60 % of the weight
+        latDot: 0, latDdot: 0, frenetTimer: FRENET_REPLAN_DT, frenetStartDot: 0, frenetStartDdot: 0,
+        frenetOut: {
+          targetLat: rival.line,
+          nextLat: rival.line,
+          nextDot: 0,
+          nextDdot: 0,
+          horizonT: 1.35,
+          chosenSide: 0,
+          blockedSpeedCap: Infinity,
+        },
+        vprof: [], aGrip: rival.skill * 0.6 * lim.muX * G,   // driven wheels carry ~60 % of the weight
         spin: 0, y: 0, yTick: 0, parked: false,
         latV: 0, yawOff: 0, yawRate: 0, dmg: 0, wrecked: false,
         damageSim, damageRig,
@@ -383,7 +474,9 @@ export class AiTraffic {
         defendHoldT: 0,
         defendCdT: 0,
         defendLat: 0,
-        overtakeTargetId: -1,
+        mistakeTimer: 0,
+        mistakeSign: 0,
+        mistakeCd: 0,
         lineDriftPhase: i * 1.37 + 0.4,
         collider,
         prevPos: new THREE.Vector3(), prevQuat: new THREE.Quaternion(), pos: new THREE.Vector3(), quat: new THREE.Quaternion(),
@@ -391,6 +484,7 @@ export class AiTraffic {
       (car as AiCar & { lim: CarLimits }).lim = lim;
       ai.cars.push(car);
     }
+    ai.rebuildSpeedProfiles();
     ai.setMode('off');
     return ai;
   }
@@ -398,22 +492,25 @@ export class AiTraffic {
   /** Rebind traffic & rivals to a new city's route during seamless city switching. */
   setRoute(samples: RouteSample[], closed = true) {
     this.lane = new Lane(samples, closed);
+    this.optLine = computeMinCurvatureLine(this.lane);
     this.grid = [];
     this.playerS = 0;
     this.dragCarIdx = -1;
     this.dragHeld = false;
     this.damageVfx?.clear();
     for (let i = 0; i < this.cars.length; i++) {
-      const c = this.cars[i] as AiCar & { lim?: CarLimits };
-      const rival = RIVALS[i % RIVALS.length];
-      const lim = c.lim ?? { mu: 1.1, muX: 1.1 };
-      const aLat = rival.skill * 0.82 * lim.mu * G;
-      const aBrake = (0.5 * rival.skill + 0.5 * rival.brakingSkill) * 0.88 * lim.muX * G;
-      c.vprof = this.lane.profile(aLat, aBrake, 75);
+      const c = this.cars[i];
       c.s = 0;
       c.v = 0;
       c.y = 0;
       c.yTick = 0;
+      c.latDot = 0;
+      c.latDdot = 0;
+      c.frenetTimer = FRENET_REPLAN_DT;
+      c.frenetStartDot = 0;
+      c.frenetStartDdot = 0;
+      c.frenetOut.chosenSide = 0;
+      c.frenetOut.blockedSpeedCap = Infinity;
       c.dmg = 0;
       c.wrecked = false;
       c.damageSim.reset();
@@ -423,8 +520,11 @@ export class AiTraffic {
       c.overtakeHoldT = 0;
       c.defendHoldT = 0;
       c.defendCdT = 0;
-      c.overtakeTargetId = -1;
+      c.mistakeTimer = 0;
+      c.mistakeSign = 0;
+      c.mistakeCd = 0;
     }
+    this.rebuildSpeedProfiles();
     this.setMode('off');
   }
 
@@ -495,10 +595,23 @@ export class AiTraffic {
     this.dragHeld = false;
     this.player.set(0, 0, 0); this.playerV = 0;
     this.damageVfx?.clear();
+    if (this.adaptiveDifficulty) {
+      const prevPct = this.adaptive.effectivePct;
+      this.adaptive.reset(this.difficultyPct);
+      if (prevPct !== this.adaptive.effectivePct) {
+        this.diffProfile = difficultyProfile(this.adaptive.effectivePct);
+        this.rebuildSpeedProfiles();
+      }
+    }
     const cruiseOffsets = [20, 95, 220, 380, -70];
     for (const [i, c] of this.cars.entries()) {
       c.v = 0; c.parked = false; c.spin = 0;
       c.latV = c.yawOff = c.yawRate = c.dmg = 0; c.wrecked = false;
+      c.latDot = c.latDdot = 0;
+      c.frenetStartDot = c.frenetStartDdot = 0;
+      c.frenetTimer = FRENET_REPLAN_DT;
+      c.frenetOut.chosenSide = 0;
+      c.frenetOut.blockedSpeedCap = Infinity;
       c.damageSim.reset();
       c.damageRig.clear();
       c.state = 'race';
@@ -507,10 +620,13 @@ export class AiTraffic {
       c.defendHoldT = 0;
       c.defendCdT = 0;
       c.defendLat = 0;
-      c.overtakeTargetId = -1;
+      c.mistakeTimer = 0;
+      c.mistakeSign = 0;
+      c.mistakeCd = 0;
       if (this.mode === 'race') {
         const g = this.grid[i] ?? { s: 40 + 10 * i, lat: c.line };
         c.s = this.lane.wrap(g.s); c.lat = c.latTarget = g.lat;
+        c.frenetOut.targetLat = c.frenetOut.nextLat = g.lat;
         this.lane.at(c.s, c.lat, c.pos);
         c.y = this.ground(c.pos.x, c.pos.z, c.pos.y + 30) ?? c.pos.y;
         c.pos.y = c.y;
@@ -519,6 +635,7 @@ export class AiTraffic {
         const sOff = cruiseOffsets[i % cruiseOffsets.length] ?? 40 * (i + 1);
         c.s = this.lane.wrap(this.playerS + sOff);
         c.lat = c.latTarget = i % 2 === 0 ? 1.8 : -1.8;
+        c.frenetOut.targetLat = c.frenetOut.nextLat = c.lat;
         c.v = i === 0 ? 0 : 12 + (i % 3) * 2.5; // car #0 waits near the first light for instant drag challenge
         this.lane.at(c.s, c.lat, c.pos);
         c.y = this.ground(c.pos.x, c.pos.z, c.pos.y + 30) ?? c.pos.y;
@@ -539,6 +656,9 @@ export class AiTraffic {
     const c = this.cars[i];
     if (!c) return;
     c.parked = true; c.v = 0; c.s = this.lane.wrap(s);
+    c.latDot = c.latDdot = c.frenetStartDot = c.frenetStartDdot = 0;
+    c.frenetTimer = FRENET_REPLAN_DT;
+    c.frenetOut.blockedSpeedCap = Infinity;
     if (pose) {
       c.pos.copy(pose.pos);
       c.quat.setFromAxisAngle(UP, pose.yaw);
@@ -661,102 +781,93 @@ export class AiTraffic {
   }
 
   /**
-   * Multi-candidate lateral path planner (7 candidates across [-room.left, +room.right]):
-   * Combines dynamic outside->apex->exit cornering lines, side-by-side spatial awareness,
-   * committed overtaking with hysteresis, straight-line slipstream drafting, single-move
-   * inside corner defense, and 115 m roadblock/wreck avoidance.
+   * Populate the zero-allocation Frenet obstacle scratch list, evaluate tactical racecraft
+   * (minimum-curvature optimal racing line, slipstream drafting tow, clean single-move P1/P2
+   * inside corner defense, human pressure bobble), and run the C2-continuous quintic
+   * FrenetPlanner at ~25 Hz (`FRENET_REPLAN_DT`) while smoothly interpolating lateral kinematics
+   * every physics tick.
+   * Returns `true` when the car is tucked in a straight-line slipstream draft (+3.5% accel).
    */
-  private pickSmartLane(
+  private planFrenetLane(
     c: AiCar,
     carIdx: number,
+    laneIdx: number,
     dt: number,
     target: number,
     room: { left: number; right: number },
     isCruise: boolean,
     playerLat: number,
     extraObstacles?: readonly RoadObstacle[],
-  ) {
-    const res = this.planResult;
-    res.draftBonus = false;
-    res.blockF = Infinity;
-    res.blockV = 0;
-    res.blockIsHard = false;
-    res.blockLat = c.lat;
-
-    // Timers
+  ): boolean {
+    const diff = this.diffProfile;
     if (c.overtakeHoldT > 0) c.overtakeHoldT = Math.max(0, c.overtakeHoldT - dt);
     if (c.defendHoldT > 0) c.defendHoldT = Math.max(0, c.defendHoldT - dt);
     if (c.defendCdT > 0) c.defendCdT = Math.max(0, c.defendCdT - dt);
 
-    // --- 1. Dynamic Outside -> Apex -> Exit racing line from signed upcoming curvature ---
-    const kApproach = this.lane.signedCurv(c.s, 20, 65);  // + = right turn, - = left turn
-    const kApex = this.lane.signedCurv(c.s, -4, 22);
-    const kExit = this.lane.signedCurv(c.s, -26, -2);
-    const localCurv = this.lane.curv[this.lane.idx(c.s)];
+    // --- 1. Optimal minimum-curvature racing line + subtle straight-line organic drift ---
+    const localCurv = this.lane.curv[laneIdx];
+    const lookAhead = Math.max(8, Math.min(26, c.v * 0.45));
+    const aheadCurv = this.optLine.curvAt(c.s + lookAhead);
+    const straightFactor = Math.max(0, 1 - Math.min(1, (localCurv + aheadCurv) / 0.012));
 
-    const rightSpan = Math.max(0.5, room.right);
-    const leftSpan = Math.max(0.5, room.left);
-    const sidePos = (norm: number) => (norm >= 0 ? norm * rightSpan : norm * leftSpan);
-
-    // Organic straight-line variation so cars don't run in robotic single-file trains
-    const organicRaw = c.line * 0.55
-      + Math.sin(this.simTime * 0.17 + c.lineDriftPhase) * 1.45
-      + Math.cos(this.simTime * 0.09 + c.lineDriftPhase * 1.7) * 0.65;
-    const organicLat = Math.max(-leftSpan * 0.78, Math.min(rightSpan * 0.78, organicRaw));
-
-    let idealLat: number;
+    let desiredLat: number;
     if (isCruise) {
-      const cruiseLane = carIdx % 2 === 0 ? Math.min(rightSpan * 0.6, 2.0) : -Math.min(leftSpan * 0.6, 2.0);
-      idealLat = cruiseLane + Math.sin(this.simTime * 0.12 + c.lineDriftPhase) * 0.45;
+      const cruiseLane = carIdx % 2 === 0 ? Math.min(room.right * 0.6, 2.0) : -Math.min(room.left * 0.6, 2.0);
+      desiredLat = cruiseLane + Math.sin(this.simTime * 0.12 + c.lineDriftPhase) * 0.45;
     } else {
-      const straightFactor = Math.max(0, 1 - Math.min(1, (Math.abs(kApproach) + Math.abs(kApex) + Math.abs(kExit)) / 0.012));
-      const apexStrength = Math.max(-1, Math.min(1, kApex / 0.013));
-      const entryStrength = Math.max(-1, Math.min(1, kApproach / 0.015));
-      const exitStrength = Math.max(-1, Math.min(1, kExit / 0.015));
-      const apexAmt = Math.abs(apexStrength);
-      // Right-hander (+): entry swings LEFT (-0.55 * left), apex dives RIGHT (+0.68 * apexBias * right), exit unwinds LEFT (-0.48 * left)
-      const outsideTarget = -entryStrength * 0.55 * (1 - apexAmt * 0.85) - exitStrength * 0.48 * (1 - apexAmt);
-      const apexTarget = apexStrength * 0.68 * c.apexBias;
-      const cornerNorm = Math.max(-0.88, Math.min(0.88, apexTarget + outsideTarget));
-      idealLat = sidePos(cornerNorm) * (1 - straightFactor) + organicLat * straightFactor;
+      const optLat = this.optLine.latAt(c.s + lookAhead);
+      const organicDrift = (
+        c.line * 0.35
+        + Math.sin(this.simTime * 0.17 + c.lineDriftPhase) * 1.15
+        + Math.cos(this.simTime * 0.09 + c.lineDriftPhase * 1.7) * 0.5
+      ) * (0.25 + 0.75 * straightFactor) * (1 - 0.55 * diff.apexAccuracy);
+      desiredLat = optLat * diff.apexAccuracy + organicDrift;
+      // Brief wide-apex human bobble when under close corner pressure on lower difficulties
+      if (c.mistakeTimer > 0) {
+        desiredLat += c.mistakeSign * 0.6;
+      }
     }
 
-    // --- 2. Gather nearby obstacles (player, other AI cars, cops & roadblocks) into scratch array ---
-    const obs = this.plannerObs;
+    // --- 2. Gather nearby obstacles (player, other AI cars, police cruisers, wrecks, roadblocks) ---
+    const obs = this.frenetObs;
     let obsCount = 0;
-    const pushObs = (f: number, lat: number, v: number, radius: number, isCop: boolean, isBlock: boolean, id: number) => {
-      if (f < -22 || f > 120) return;
-      if (Math.abs(lat) > Math.max(leftSpan, rightSpan) + 8) return;
+    const maxLatMargin = Math.max(room.left, room.right) + 8;
+    const pushObs = (ds: number, lat: number, v: number, clearLat: number, isBlock: boolean, isPlayer: boolean) => {
+      if (ds < -22 || ds > 120) return;
+      if (Math.abs(lat) > maxLatMargin) return;
       let slot = obs[obsCount];
       if (!slot) {
-        slot = { f: 0, lat: 0, v: 0, radius: 2.1, isCop: false, isBlock: false, id: 0 };
+        slot = { ds: 0, lat: 0, v: 0, clearLat: 2.45, isBlock: false, isPlayer: false };
         obs[obsCount] = slot;
       }
-      slot.f = f; slot.lat = lat; slot.v = v; slot.radius = radius;
-      slot.isCop = isCop; slot.isBlock = isBlock; slot.id = id;
+      slot.ds = ds;
+      slot.lat = lat;
+      slot.v = v;
+      slot.clearLat = clearLat;
+      slot.isBlock = isBlock;
+      slot.isPlayer = isPlayer;
       obsCount++;
     };
 
-    // Player obstacle (id = 0)
+    let carsAhead = 0;
     if (this.player.lengthSq() > 0.01) {
       const pf = this.arcDelta(c.s, this.playerS);
-      pushObs(pf, playerLat, this.playerV, 2.1, false, false, 0);
+      if (pf > 0) carsAhead++;
+      pushObs(pf, playerLat, this.playerV, 2.5, false, true);
     }
 
-    // Other AI cars (id = 1..nCars)
     for (let k = 0; k < this.cars.length; k++) {
       if (k === carIdx) continue;
       const oc = this.cars[k];
       if (!oc.body.isEnabled() || oc.pos.y < -100) continue;
       const of = this.arcDelta(c.s, oc.s);
-      pushObs(of, oc.lat, oc.v, 2.1, false, oc.wrecked || oc.parked, k + 1);
+      if (!oc.wrecked && !oc.parked && of > 0) carsAhead++;
+      pushObs(of, oc.lat, oc.v, 2.45, oc.wrecked || oc.parked, false);
     }
 
-    // Optional external obstacles (police cruisers, roadblocks, wrecks; id = 1000+)
     if (extraObstacles && extraObstacles.length > 0) {
-      const ci = this.lane.idx(c.s);
-      const rVec = this.lane.right[ci];
-      const fx = rVec.z, fz = -rVec.x; // lane forward unit vector
+      const rVec = this.lane.right[laneIdx];
+      const fx = rVec.z, fz = -rVec.x;
       for (let k = 0; k < extraObstacles.length; k++) {
         const eo = extraObstacles[k];
         const dx = eo.x - c.pos.x, dz = eo.z - c.pos.z;
@@ -764,241 +875,137 @@ export class AiTraffic {
         if (dist2 > 125 * 125) continue;
         const projF = dx * fx + dz * fz;
         const dist = Math.sqrt(dist2);
-        // Use Euclidean signed distance beyond 22 m so roadblocks around gentle bends still register accurately
-        const f = Math.abs(projF) < 22 ? projF : (projF >= 0 ? dist : -dist);
-        pushObs(f, eo.lat, eo.v, eo.radius ?? 2.1, !!eo.isCop, !!eo.isBlock, 1000 + k);
+        const ds = Math.abs(projF) < 22 ? projF : (projF >= 0 ? dist : -dist);
+        const clearLat = (eo.radius ?? 2.1) + (eo.isBlock ? 0.95 : eo.isCop ? 0.65 : 0.45);
+        pushObs(ds, eo.lat, eo.v, clearLat, !!eo.isBlock, false);
       }
     }
-    obs.length = obsCount;
 
-    // --- 3. Tactical situation analysis ---
+    // --- 3. Tactical awareness: drafting tow, P1/P2 single-move corner defense, hazards ---
     let hardHazardAhead = false;
-    let leadBlocker: PlannerObstacle | null = null;
-    let leadBlockerF = Infinity;
-    let draftTarget: PlannerObstacle | null = null;
-    let draftF = Infinity;
-    let rearThreat: PlannerObstacle | null = null;
+    let leadBlocker: FrenetObstacle | null = null;
+    let leadBlockerDs = Infinity;
+    let draftTarget: FrenetObstacle | null = null;
+    let draftDs = Infinity;
+    let rearThreat: FrenetObstacle | null = null;
     let anyAlongside = false;
-    let overtakeTargetStillNear = false;
 
     for (let k = 0; k < obsCount; k++) {
-      const o = obs[k];
-      const latGap = Math.abs(o.lat - c.lat);
-      const clearW = o.radius + 0.55;
+      const ob = obs[k];
+      const latGap = Math.abs(ob.lat - c.lat);
 
-      if (o.f >= -6.5 && o.f <= 6.5 && latGap < 3.4) {
+      if (ob.ds >= -6.5 && ob.ds <= 6.5 && latGap < 3.4) {
         anyAlongside = true;
       }
 
-      if (c.overtakeTargetId >= 0 && o.id === c.overtakeTargetId) {
-        // Stay committed until > 7 m past the overtaken car!
-        if (o.f > -7.0 && o.f < 48) overtakeTargetStillNear = true;
+      if (ob.isBlock && ob.ds > 0 && ob.ds < 115 && latGap < ob.clearLat + 1.4) {
+        hardHazardAhead = true;
       }
 
-      // Roadblock or wrecked car up to 115 m ahead
-      if (o.isBlock && o.f > 0 && o.f < 115) {
-        if (latGap < o.radius + 2.2) hardHazardAhead = true;
-        if (o.f < 65 && latGap < clearW && o.f < res.blockF) {
-          res.blockF = o.f; res.blockV = 0; res.blockIsHard = true; res.blockLat = o.lat;
+      if (ob.ds > 0 && ob.ds < 50 && latGap < ob.clearLat + 0.35) {
+        if ((ob.v < target - 0.8 || ob.isBlock) && ob.ds < leadBlockerDs) {
+          leadBlocker = ob;
+          leadBlockerDs = ob.ds;
         }
       }
 
-      // Blocking slower vehicle ahead (0..55 m)
-      if (o.f > 0 && o.f < 55 && latGap < clearW + 0.35) {
-        if ((o.v < target - 0.8 || o.isBlock) && o.f < leadBlockerF) {
-          leadBlocker = o;
-          leadBlockerF = o.f;
-        }
-        if (o.f < 16 + c.v * 0.85 && latGap < clearW && o.f < res.blockF) {
-          res.blockF = o.f; res.blockV = o.v; res.blockIsHard = o.isBlock; res.blockLat = o.lat;
+      // Straight-line slipstream / drafting opportunity (6..30 m ahead)
+      if (!isCruise && !ob.isBlock && localCurv < 0.004 && ob.ds >= 6 && ob.ds <= 30 && ob.v > 12 && latGap < 2.8) {
+        if (ob.ds < draftDs) {
+          draftTarget = ob;
+          draftDs = ob.ds;
         }
       }
 
-      // Slipstream / Drafting opportunity (6..30 m ahead on straights)
-      if (!isCruise && !o.isBlock && localCurv < 0.004 && o.f >= 6 && o.f <= 30 && o.v > 12 && latGap < 2.8) {
-        if (o.f < draftF) {
-          draftTarget = o;
-          draftF = o.f;
-        }
-      }
-
-      // Faster car closing from behind (-18..-5 m) for single-move inside corner defense
-      if (!isCruise && !o.isBlock && o.f >= -18 && o.f <= -5 && o.v > c.v + 1.5 && latGap < 3.6) {
-        if (!rearThreat || o.f > rearThreat.f) rearThreat = o;
+      // Faster challenger closing from behind (-18..-5 m) for clean inside defense
+      if (!isCruise && !ob.isBlock && ob.ds >= -18 && ob.ds <= -5 && ob.v > c.v + 1.5 && latGap < 3.6) {
+        if (!rearThreat || ob.ds > rearThreat.ds) rearThreat = ob;
       }
     }
 
-    // --- 4. Racecraft state transitions ---
-    if (c.overtakeSide !== 0) {
-      // Clear overtake commitment once > 7 m past target and hold timer expired (or target gone)
-      if (!overtakeTargetStillNear && c.overtakeHoldT <= 0 && (!leadBlocker || leadBlockerF > 26)) {
-        c.overtakeSide = 0;
-        c.overtakeTargetId = -1;
-      }
-    }
-
-    let nextState: AiRacecraftState = 'race';
-    if (hardHazardAhead) {
-      nextState = 'avoid';
-      // Hazard overrides overtake hysteresis if needed
-      if (c.overtakeHoldT < 0.6) c.overtakeSide = 0;
-    } else if (c.overtakeSide !== 0) {
-      nextState = 'overtake';
-    } else if (leadBlocker && (leadBlockerF < 12 || leadBlocker.v < target - 1.5 || localCurv >= 0.004)) {
-      // Initiate committed overtake around slower car
-      const passClear = 3.05 - 0.25 * c.overtakeBoldness;
-      const rightPass = leadBlocker.lat + passClear;
-      const leftPass = leadBlocker.lat - passClear;
-      const rightRoom = room.right - leadBlocker.lat;
-      const leftRoom = leadBlocker.lat + room.left;
-      // Late-braking dive bias toward inside of upcoming corner for bold drivers
-      const turnSign = Math.abs(kApproach) > 0.005 ? Math.sign(kApproach) : 0;
-      const diveBias = turnSign * c.overtakeBoldness * 1.1;
-      const canRight = rightPass <= room.right + 0.15;
-      const canLeft = leftPass >= -room.left - 0.15;
-      let chosen: -1 | 1 = rightRoom + diveBias >= leftRoom - diveBias ? 1 : -1;
-      if (canRight && !canLeft) chosen = 1;
-      else if (canLeft && !canRight) chosen = -1;
-      c.overtakeSide = chosen;
-      c.overtakeHoldT = 2.4;
-      c.overtakeTargetId = leadBlocker.id;
-      nextState = 'overtake';
-    } else if (draftTarget && draftF > 12 && !anyAlongside) {
-      nextState = 'draft';
-    } else if (
-      !isCruise
-      && c.defendHoldT > 0
-      && !anyAlongside
-    ) {
-      nextState = 'defend';
-    } else if (
-      !isCruise
-      && rearThreat
-      && !anyAlongside
-      && c.aggression >= 0.45
-      && c.defendCdT <= 0
-      && (Math.abs(kApproach) > 0.0045 || Math.abs(kApex) > 0.0045)
-    ) {
-      // ONE clean defensive move toward the inside of the upcoming corner, leaving at least a car's width on the outside
-      const turnSign = Math.sign(Math.abs(kApex) > Math.abs(kApproach) ? kApex : kApproach);
-      if (turnSign > 0) {
-        // Right turn: inside is +room.right, outside is -room.left (leave >= 2.7 m on outside)
-        c.defendLat = Math.max(-room.left + 2.7, Math.min(room.right - 0.35, room.right * 0.65));
-      } else {
-        // Left turn: inside is -room.left, outside is +room.right (leave >= 2.7 m on outside)
-        c.defendLat = Math.min(room.right - 2.7, Math.max(-room.left + 0.35, -room.left * 0.65));
-      }
-      c.defendHoldT = 2.1;
-      c.defendCdT = 7.0;
-      nextState = 'defend';
-    }
-
-    c.state = nextState;
-
-    // Active slipstream tow bonus (+3.5% acceleration) when tucked directly behind a car on a straight
-    if (draftTarget && Math.abs(c.lat - draftTarget.lat) < 1.85 && localCurv < 0.004) {
-      res.draftBonus = true;
-    }
-
-    // --- 5. Score 7 candidate lateral positions across [-room.left, +room.right] ---
-    const span = room.left + room.right;
-    let bestLat = Math.max(-room.left, Math.min(room.right, c.lat));
-    let bestScore = -Infinity;
-
-    for (let idx = 0; idx < 7; idx++) {
-      const candLat = -room.left + (idx / 6) * span;
-      let score = 0;
-
-      // Racing line / lane affinity + smooth lateral motion preference
-      score -= Math.abs(candLat - idealLat) * (nextState === 'avoid' ? 0.8 : 2.3);
-      score -= Math.abs(candLat - c.lat) * 0.7;
-
-      // Slight buffer from extreme road edges unless needed for passing/avoidance
-      const edgeDist = Math.min(candLat + room.left, room.right - candLat);
-      if (edgeDist < 0.35) score -= (0.35 - edgeDist) * 3.0;
-
-      // Obstacle scoring: clear forward path + strict side-by-side spatial awareness + roadblock/wreck avoidance
-      for (let k = 0; k < obsCount; k++) {
-        const o = obs[k];
-        const latDiff = Math.abs(candLat - o.lat);
-
-        // STRICT side-by-side awareness (-6.5..+6.5 m): NEVER turn into or across a car alongside!
-        if (o.f >= -6.5 && o.f <= 6.5) {
-          if (latDiff < 2.65) {
-            score -= 5000 + (2.65 - latDiff) * 500;
-          } else if (
-            (c.lat < o.lat && candLat > o.lat - 2.65)
-            || (c.lat > o.lat && candLat < o.lat + 2.65)
-          ) {
-            score -= 5000;
-          }
-          continue;
-        }
-
-        // Roadblock & wreck avoidance up to 115 m ahead
-        if (o.isBlock && o.f > 0 && o.f < 115) {
-          const blockW = o.radius + 1.45;
-          if (latDiff < blockW) {
-            const prox = Math.max(0, 1 - o.f / 115);
-            const overlap = 1 - latDiff / blockW;
-            score -= overlap * (1100 + 2800 * prox * prox);
+    const isTop2 = carsAhead <= 1; // P1 (0 ahead) or P2 (1 ahead)
+    if (!isCruise && !hardHazardAhead && !anyAlongside) {
+      if (
+        isTop2
+        && rearThreat
+        && c.defendHoldT <= 0
+        && c.defendCdT <= 0
+        && (c.aggression >= 0.45 || diff.overtakeBoldness >= 0.6)
+      ) {
+        const kApproach = this.lane.signedCurv(c.s, 20, 65);
+        const kApex = this.lane.signedCurv(c.s, -4, 22);
+        if (Math.abs(kApproach) > 0.0045 || Math.abs(kApex) > 0.0045) {
+          // ONE clean defensive move toward the inside of the upcoming corner, leaving >= 2.7 m on the outside
+          const turnSign = Math.sign(Math.abs(kApex) > Math.abs(kApproach) ? kApex : kApproach);
+          if (turnSign > 0) {
+            c.defendLat = Math.max(-room.left + 2.7, Math.min(room.right - 0.35, room.right * 0.65));
           } else {
-            // Reward clean open bypass gap
-            score += 18 * Math.max(0, 1 - o.f / 115);
+            c.defendLat = Math.min(room.right - 2.7, Math.max(-room.left + 0.35, -room.left * 0.65));
           }
-          continue;
-        }
-
-        // Forward path clearance (0..55 m)
-        if (o.f > 0 && o.f < 55) {
-          const clearW = o.radius + 1.0 - 0.2 * c.overtakeBoldness;
-          const speedNeed = Math.max(0.25, (target - o.v) / 13 + (o.f < 16 ? 0.65 : 0)) * (o.isCop ? 1.35 : 1);
-          const prox = Math.max(0, 1 - o.f / 55);
-          if (latDiff < clearW) {
-            score -= (1 - latDiff / clearW) * (110 + 420 * prox) * speedNeed;
-          } else if (o.f < 38 && o.v < target - 1) {
-            // Reward open passing lanes!
-            score += 9 * prox;
-          }
+          c.defendHoldT = 2.1;
+          c.defendCdT = 7.0;
         }
       }
 
-      // Slipstream drafting pull on straights before pulling out to pass
-      if (nextState === 'draft' && draftTarget) {
-        score += 16 * Math.max(0, 1 - Math.abs(candLat - draftTarget.lat) / 2.2);
-      }
-
-      // Committed overtaking hysteresis (prevents left-right oscillation)
-      if (nextState === 'overtake' && c.overtakeSide !== 0) {
-        const refLat = leadBlocker ? leadBlocker.lat : c.lat - c.overtakeSide * 1.5;
-        const rel = candLat - refLat;
-        if (Math.sign(rel) === c.overtakeSide && Math.abs(rel) >= 2.55) {
-          score += 36;
-        } else if (Math.sign(rel) === -c.overtakeSide) {
-          score -= 28;
-        }
-        // Bold late-braking dive to the inside of an approaching corner when clear
-        if (Math.abs(kApproach) > 0.005 && c.overtakeBoldness > 0.65) {
-          const insideSign = Math.sign(kApproach);
-          if (Math.sign(candLat) === insideSign) {
-            score += 11 * c.overtakeBoldness;
-          }
-        }
-      }
-
-      // Single-move inside corner defense
-      if (nextState === 'defend') {
-        score += 26 * Math.max(0, 1 - Math.abs(candLat - c.defendLat) / 2.0);
-      }
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestLat = candLat;
+      if (c.defendHoldT > 0) {
+        desiredLat = c.defendLat;
+      } else if (draftTarget && draftDs > 12 && !leadBlocker) {
+        // Tuck cleanly into the slipstream on a straight before pulling out to pass
+        desiredLat = draftTarget.lat;
       }
     }
 
-    res.lat = Math.max(-room.left, Math.min(room.right, bestLat));
-    return res;
+    desiredLat = Math.max(-room.left, Math.min(room.right, desiredLat));
+
+    // --- 4. Run C2-Continuous Quintic Frenet Planner at 25 Hz & smoothly interpolate lateral kinematics ---
+    if (c.frenetTimer >= FRENET_REPLAN_DT) {
+      c.frenetStartDot = c.latDot;
+      c.frenetStartDdot = c.latDdot;
+      const fi = this.frenetInput;
+      fi.d0 = c.lat;
+      fi.dDot0 = c.latDot;
+      fi.dDdot0 = c.latDdot;
+      fi.egoV = c.v;
+      fi.desiredLat = desiredLat;
+      fi.minLat = -room.left;
+      fi.maxLat = room.right;
+      fi.prevSide = c.overtakeSide;
+      fi.boldness = isCruise ? 0.3 : Math.max(0, Math.min(1, 0.4 * c.overtakeBoldness + 0.6 * diff.overtakeBoldness));
+      fi.nonRammingPlayer = false;
+      fi.obstacles = obs;
+      fi.obstacleCount = obsCount;
+      this.frenet.plan(fi, FRENET_REPLAN_DT, c.frenetOut);
+      c.latTarget = c.frenetOut.targetLat;
+      c.frenetTimer = 0;
+
+      if (c.frenetOut.chosenSide !== 0) {
+        c.overtakeSide = c.frenetOut.chosenSide;
+        c.overtakeHoldT = 1.6;
+      } else if (c.overtakeHoldT <= 0) {
+        c.overtakeSide = 0;
+      }
+    }
+
+    c.frenetTimer += dt;
+    const u = Math.min(1, c.frenetTimer / FRENET_REPLAN_DT);
+    c.latDot = c.frenetStartDot + (c.frenetOut.nextDot - c.frenetStartDot) * u;
+    c.latDdot = c.frenetStartDdot + (c.frenetOut.nextDdot - c.frenetStartDdot) * u;
+
+    // Live racecraft state label (for telemetry / debugging)
+    if (hardHazardAhead) {
+      c.state = 'avoid';
+    } else if (c.overtakeSide !== 0 && leadBlocker) {
+      c.state = 'overtake';
+    } else if (!isCruise && c.defendHoldT > 0 && !anyAlongside) {
+      c.state = 'defend';
+    } else if (!isCruise && draftTarget && draftDs > 12 && !anyAlongside) {
+      c.state = 'draft';
+    } else {
+      c.state = 'race';
+    }
+
+    // Active slipstream tow bonus (+3.5% acceleration) when tucked 6..30 m behind a car on a straight
+    return !!(draftTarget && Math.abs(c.lat - draftTarget.lat) < 1.85 && localCurv < 0.004);
   }
 
   /** One physics tick (before world.step()). player = the player's chassis position. */
@@ -1011,6 +1018,35 @@ export class AiTraffic {
     this.playerS = this.sOf(player, this.playerS);
     const playerLat = this.latOf(this.player, this.playerS);
     const nCars = this.cars.length;
+
+    // Adaptive difficulty: sample median signed player lead vs active non-wrecked rivals (zero fake rubber-banding)
+    if (this.mode === 'race' && !this.held && this.adaptiveDifficulty && this.player.lengthSq() > 0.01) {
+      const leads = this.leadScratch;
+      let lc = 0;
+      for (let k = 0; k < nCars; k++) {
+        const rc = this.cars[k];
+        if (!rc.body.isEnabled() || rc.parked || rc.wrecked || rc.pos.y < -100) continue;
+        leads[lc++] = this.arcDelta(rc.s, this.playerS);
+      }
+      if (lc > 0) {
+        // Insertion sort tiny array (<= 5 rivals) with zero allocations
+        for (let a = 1; a < lc; a++) {
+          const v = leads[a];
+          let b = a - 1;
+          while (b >= 0 && leads[b] > v) {
+            leads[b + 1] = leads[b];
+            b--;
+          }
+          leads[b + 1] = v;
+        }
+        const mid = lc >> 1;
+        const playerLeadM = lc % 2 === 1 ? leads[mid] : 0.5 * (leads[mid - 1] + leads[mid]);
+        if (this.adaptive.sample(dt, playerLeadM)) {
+          this.diffProfile = difficultyProfile(this.adaptive.effectivePct);
+          this.rebuildSpeedProfiles();
+        }
+      }
+    }
 
     for (let carIdx = 0; carIdx < nCars; carIdx++) {
       const c = this.cars[carIdx];
@@ -1062,49 +1098,71 @@ export class AiTraffic {
         const distPlayer = Math.hypot(c.pos.x - player.x, c.pos.z - player.z);
         const sideBySide = distPlayer < 14 && this.playerV < 6.5;
         target = driven && !spun ? (sideBySide ? 0 : Math.min(target, cruiseV)) : 0;
-      } else if (this.mode === 'race') {
-        // mild catch-up: a rival far ahead of the player eases off, one far behind pushes (up to 7 %)
-        const gap = this.arcDelta(this.playerS, c.s);
-        target *= 1 - 0.07 * Math.max(-1, Math.min(1, gap / 250));
+      } else if (this.mode === 'race' && driven && !spun) {
+        // Realistic human pressure mistakes on lower difficulties (never catastrophic, never rubber-banded)
+        if (c.mistakeTimer > 0) c.mistakeTimer = Math.max(0, c.mistakeTimer - dt);
+        if (c.mistakeCd > 0) c.mistakeCd = Math.max(0, c.mistakeCd - dt);
+        if (
+          this.diffProfile.mistakeRate > 0
+          && c.mistakeTimer <= 0
+          && c.mistakeCd <= 0
+          && this.player.lengthSq() > 0.01
+        ) {
+          const pGap = Math.abs(this.arcDelta(c.s, this.playerS));
+          if (pGap < 14 && this.lane.curv[i] > 0.008 && Math.random() < this.diffProfile.mistakeRate * dt) {
+            c.mistakeTimer = 0.7;
+            c.mistakeCd = 6.0;
+            const sCurv = this.lane.signedCurv(c.s, -4, 22);
+            c.mistakeSign = sCurv >= 0 ? -1 : 1; // run slightly wide toward outside of the turn
+          }
+        }
+        if (c.mistakeTimer > 0) {
+          target *= 0.94;
+        }
       }
 
       const room = this.lane.roomInto(c.s, this.roomScratch);
       let draftBonus = false;
       if (driven && !spun) {
-        const plan = this.pickSmartLane(c, carIdx, dt, target, room, isCruise, playerLat, extraObstacles);
-        draftBonus = plan.draftBonus;
-        // Smooth target tracking so lateral changes feel natural and decisive
-        const blendRate = c.state === 'avoid' ? 14 : c.state === 'overtake' ? 9 : 6;
-        c.latTarget += (plan.lat - c.latTarget) * Math.min(1, dt * blendRate);
-        c.latTarget = Math.max(-room.left, Math.min(room.right, c.latTarget));
-
-        // Modulate speed cleanly when blocked directly in our lane (slower car or hard roadblock/wreck)
-        if (plan.blockF < Infinity) {
-          if (plan.blockIsHard) {
-            const safeV = Math.sqrt(Math.max(0, (plan.blockF - 6.5) * 2 * 7.5 * gripScale));
-            target = Math.min(target, safeV);
-          } else if (Math.abs(c.lat - plan.blockLat) < 2.25) {
-            target = Math.min(target, Math.max(0, plan.blockV + c.push * 1.4 + (plan.blockF - (7.8 - 3.0 * c.push)) * 0.85));
-          }
+        draftBonus = this.planFrenetLane(c, carIdx, i, dt, target, room, isCruise, playerLat, extraObstacles);
+        // Clean longitudinal speed cap when directly boxed in behind a slower vehicle or hard block
+        if (c.frenetOut.blockedSpeedCap < Infinity) {
+          target = Math.min(target, c.frenetOut.blockedSpeedCap);
         }
       } else {
         c.latTarget = Math.max(-room.left, Math.min(room.right, c.lat));
+        c.latDot = c.latDdot = c.frenetStartDot = c.frenetStartDdot = 0;
+        c.frenetTimer = FRENET_REPLAN_DT;
+        c.frenetOut.blockedSpeedCap = Infinity;
       }
 
-      // Longitudinal dynamics: exact-parity powerScale, gripScale, dragScale + 3.5% straight-line draft boost
+      // Longitudinal dynamics: exact-parity powerScale, gripScale, dragScale + diffProfile.accelUtil + 3.5% straight-line draft tow
       const lim = (c as AiCar & { lim: CarLimits }).lim;
       const drag = (0.5 * 1.2 * lim.dragArea * dragScale * c.v * c.v) / lim.mass;
       const effPower = lim.power * powerScale * (draftBonus ? 1.035 : 1.0);
       const effGrip = c.aGrip * gripScale;
-      const acc = Math.max(0.2 * powerScale, Math.min(effGrip, effPower / (lim.mass * Math.max(3, c.v))) - drag);
-      const brakeDecel = driven ? 11.2 * gripScale : 3.5;
+      const accelUtil = isCruise ? 1.0 : this.diffProfile.accelUtil;
+      const acc = Math.max(0.2 * powerScale, (Math.min(effGrip, effPower / (lim.mass * Math.max(3, c.v))) - drag) * accelUtil);
+      const brakeDecel = driven ? Math.max(11.2, lim.muX * G) * gripScale : 3.5;
       c.v = target > c.v ? Math.min(target, c.v + acc * dt) : Math.max(target, c.v - brakeDecel * dt);
 
-      // Lateral dynamics: responsive cornering/overtaking + subtle asymmetric front-wheel steerPull bias
+      // Lateral dynamics: silky-smooth C2 Frenet velocity integration + subtle asymmetric front-wheel steerPull bias
       const sliding = Math.abs(c.latV) > 0.4 || spun || !driven;
-      const maxLatRate = c.state === 'avoid' ? 4.1 : c.state === 'overtake' ? 3.2 : 2.75;
-      const maxLat = sliding ? 0 : Math.min(maxLatRate, 0.3 + c.v * 0.15) * Math.sqrt(gripScale) * dt;
-      let dl = Math.max(-maxLat, Math.min(maxLat, c.latTarget - c.lat));
+      if (sliding) {
+        c.latDot = c.latDdot = c.frenetStartDot = c.frenetStartDdot = 0;
+        c.frenetTimer = FRENET_REPLAN_DT;
+      }
+      const lowSpeedScale = Math.min(1, c.v / 1.0);
+      let dl = sliding ? 0 : c.latDot * Math.sqrt(gripScale) * lowSpeedScale * dt;
+      if (!sliding) {
+        if (dl > 0 && c.lat + dl > room.right) {
+          dl = Math.max(0, room.right - c.lat);
+          if (c.latDot > 0) c.latDot = 0;
+        } else if (dl < 0 && c.lat + dl < -room.left) {
+          dl = Math.min(0, -room.left - c.lat);
+          if (c.latDot < 0) c.latDot = 0;
+        }
+      }
       if (driven && !spun && c.v > 2 && c.damageSim.steerPull !== 0) {
         dl += c.damageSim.steerPull * Math.min(1, c.v / 18) * 1.1 * dt;
       }
@@ -1127,6 +1185,7 @@ export class AiTraffic {
         }
         dl = edge - c.lat;
         c.latV = 0;
+        c.latDot = c.latDdot = 0;
       }
 
       if (c.yawRate !== 0 || c.yawOff !== 0) {
@@ -1206,8 +1265,8 @@ export class AiTraffic {
             const relFwd = Math.abs(a.v - b.v);
             dvHit = Math.max(0, relLat) * 0.65 + relFwd * 0.14;
             const shove = Math.max(1.2, Math.min(7.5, dvHit + 0.8));
-            if (!a.parked) a.latV -= sgnL * shove * 0.5;
-            if (!b.parked) b.latV += sgnL * shove * 0.5;
+            if (!a.parked) { a.latV -= sgnL * shove * 0.5; a.latDot = a.latDdot = 0; }
+            if (!b.parked) { b.latV += sgnL * shove * 0.5; b.latDot = b.latDdot = 0; }
             const lever = Math.max(-1, Math.min(1, df / 2.2));
             a.yawRate -= sgnL * lever * shove * 0.18;
             b.yawRate += sgnL * lever * shove * 0.18;

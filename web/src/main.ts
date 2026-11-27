@@ -667,6 +667,7 @@ async function main() {
   const aiCount = Math.max(0, Math.min(5, num('ai', 5)));
   if (aiCount > 0) say('Loading rivals…');
   const ai = await AiTraffic.create(scene, pw, defaultCfg, route.samples, aiCount, params.get('blackcar') === '1', physics.vela_gt ?? physics[catalog[0].id], route.closed !== false);
+  ai.setDifficulty(sel.aiDiff, sel.aiAdaptive);
   ai.onWreck = (name) => { hud.toast('RIVAL OUT', `${name} WRECKED`); };
   if (garage) try {
     const parked: THREE.Object3D[] = [];
@@ -1552,6 +1553,7 @@ async function main() {
     city: (id) => { void switchCity(id); },
     cities: () => ({ list: CITIES, current: cityInfo.id }),
     gfx: (g2) => { void applyGfx(g2); },
+    onAiDifficulty: (pct, adaptive) => { ai.setDifficulty(pct, adaptive); },
     resume: () => resume(),
     restart: () => { menu.show('none'); if (raceLaps() > 0) void beginRace(); else { resetCar(); setState('race'); audio.muted = false; prev = performance.now(); } },
     quit: (to) => quitSession(party ? 'lobby' : to),

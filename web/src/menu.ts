@@ -30,6 +30,7 @@ import { PARTY_BONUS_MUL, type RetentionStore } from './retention';
 import { checkSplitScreen, type SplitLayout } from './splitScreen';
 import { MOD_CATALOG, loadModHub, toggleModSub, type ModHubStore } from './modHub';
 import { ACADEMY_LESSONS, WEEKLY_CALENDAR, loadCompletedLessons, todayCalendarEvent, type AcademyLesson, type CalendarEvent } from './careerEvents';
+import { AI_DIFFICULTY_PRESETS, difficultyProfile } from './aiPlanner';
 
 type GaragePillar = 'rides' | 'style' | 'perf' | 'driver';
 
@@ -168,6 +169,7 @@ export interface MenuHooks {
   launchCalendar?(ev: CalendarEvent): void;
   specClassToggle?(on: boolean): void;
   sanctionedToggle?(on: boolean): void;
+  onAiDifficulty?(pct: number, adaptive: boolean): void;
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -574,6 +576,32 @@ export class Menu {
       </div>`;
   }
 
+  private aiDiffUi(): string {
+    const sel = this.sel;
+    const pct = Math.max(60, Math.min(110, Math.round(sel.aiDiff || 88)));
+    const dp = difficultyProfile(pct);
+    const nonAdaptive = AI_DIFFICULTY_PRESETS.filter((p) => p.id !== 'adaptive');
+    const activeId = sel.aiAdaptive
+      ? 'adaptive'
+      : nonAdaptive.reduce((best, p) => (Math.abs(p.pct - pct) < Math.abs(best.pct - pct) ? p : best), nonAdaptive[0]).id;
+    const chips = AI_DIFFICULTY_PRESETS.map(
+      (p) => `<button class="chip ${activeId === p.id ? 'on' : ''}" data-act="ai-preset" data-v="${p.id}" title="${esc(p.desc)}">${esc(p.label)}</button>`,
+    ).join('');
+    const valLabel = sel.aiAdaptive ? `ADAPTIVE (START ${pct}%)` : `${pct}%`;
+    const spec = `Grip ${Math.round(dp.gripUtil * 100)}% · Reaction ${Math.round(dp.reactionSec * 1000)} ms · Optimal Line ${Math.round(dp.apexAccuracy * 100)}%`;
+    return `<div class="opts" style="flex-direction:column;align-items:stretch;gap:6px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span class="dim">AI DIFFICULTY</span>
+        <div class="chips">${chips}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <input id="ai-diff-slider" type="range" min="60" max="110" step="2" value="${pct}" style="flex:1;min-width:140px;accent-color:#f59e0b" />
+        <span class="pill ${sel.aiAdaptive ? 'gold' : ''}" id="ai-diff-val">${valLabel}</span>
+      </div>
+      <div class="dim small-note" id="ai-diff-desc">${spec}</div>
+    </div>`;
+  }
+
   private settings() {
     const a = this.assists, inSession = this.settingsFrom === 'pause';
     const chip = (act: string, v: string, label: string, on: boolean) => `<button class="chip ${on ? 'on' : ''}" data-act="${act}" data-v="${v}">${label}</button>`;
@@ -598,6 +626,7 @@ export class Menu {
       <h3>Race rules</h3>
       <div class="chips">${chip('realism', '1', 'Full Realism', this.sel.realism)}${chip('realism', '0', 'Respawns', !this.sel.realism)}</div>
       <div class="dim note">${this.sel.realism ? RULES.realism : RULES.respawn}</div>
+      ${this.aiDiffUi()}
       <h3>Graphics</h3>
       <div class="chips">${g('auto', 'Auto')}${g('max', 'Max')}${g('ultra', 'Ultra')}${g('high', 'High')}${g('medium', 'Medium')}${g('low', 'Low')}${g('potato', 'Potato')}</div>
       <div class="dim note">${esc(this.gfxNote || 'Auto tunes resolution and effects for this device once.')}</div>`;
@@ -1255,7 +1284,7 @@ export class Menu {
       <div class="mode-cards">
         <div class="mcard">
           <div class="mcard-top"><span class="micon">01</span><b>Race Event</b><span class="dim">${this.sanctionedMode ? '☀ Sanctioned Day Circuit · FIA Rules' : '🌙 Midnight Street Underground · Tactical Cops'}</span></div>
-          <p class="dim">${this.sanctionedMode ? 'Daytime sanctioned championship racing: closed road, zero cops, zero civilian traffic, pure motorsport pace & FIA track rules.' : 'High-stakes midnight street races where hardcore physics and tactical police AI (PIT maneuvers & roadblocks) matter. Heat & outlaw payouts live here.'}</p>
+          <p class="dim">${this.sanctionedMode ? 'Daytime sanctioned championship racing: closed road, zero cops, zero civilian traffic, pure motorsport pace & FIA track rules.' : 'High-stakes midnight street races where hardcore physics and tactical police AI (roadblocks & pull-over pursuits) matter. Heat & outlaw payouts live here.'}</p>
           <div class="opts"><span class="dim">DISCIPLINE</span><button class="chip ${!this.sanctionedMode ? 'on' : ''}" data-act="sanctioned" data-v="0">🌙 Underground Night Street</button><button class="chip ${this.sanctionedMode ? 'on' : ''}" data-act="sanctioned" data-v="1">☀ Sanctioned Day Circuit</button></div>
           ${this.sanctionedMode ? '<div class="opts"><span class="pill gold">🏁 SANCTIONED · NO COPS · NO TRAFFIC</span><span class="dim small-note">Closed circuit discipline for pure sim &amp; hotlap mastery</span></div>' : `<div class="opts"><span class="dim">COPS</span>${cur?.mandatoryCops
             ? `<span class="pill gold">🚨 PATROLLED DISTRICT · ALWAYS ON</span><span class="dim small-note">${esc(cur.patrolNote)}</span>`
@@ -1264,6 +1293,7 @@ export class Menu {
           ${(() => { const r = repairCostOf(conditionOf(this.maint, sel.car), this.maint.insured); return r.pct > 0 ? `<div class="opts"><span class="pill gold">🔧 ${r.pct}% SAVED DAMAGE</span><button class="chip" data-act="repair-car">Repair (${r.xp} XP)</button></div>` : ''; })()}
           <div class="opts"><span class="dim">RULES</span><span class="pill ${sel.realism ? 'gold' : ''}">${sel.realism ? 'FULL REALISM' : 'RESPAWNS'}</span><span class="dim small-note">change on main menu</span></div>
           <div class="opts"><span class="dim">SPEC CLASS</span><button class="chip ${this.specClass ? 'on' : ''}" data-act="spec-class" data-v="1">🏆 Equal Spec Car</button><button class="chip ${!this.specClass ? 'on' : ''}" data-act="spec-class" data-v="0">Open Tune</button><span class="dim small-note">${this.specClass ? 'All upgrades locked to identical stock spec (pure driver skill)' : 'Bring your tuned Garage build'}</span></div>
+          ${this.aiDiffUi()}
           <div class="opts"><span class="dim">LAPS</span>${laps}</div>
           <button class="primary huge" data-act="start-race">Start Race · ${sel.laps} Lap${sel.laps > 1 ? 's' : ''}</button>
         </div>
@@ -2066,6 +2096,21 @@ export class Menu {
       case 'mod': { const m = { ...modsOf(sel) }; m[b.dataset.k as ModKey] = Number(v); sel.mods[sel.car] = m; this.save(); this.render(); break; }
       case 'laps': sel.laps = Number(v); this.save(); this.render(); break;
       case 'copmode': sel.copMode = v === '1'; this.save(); this.render(); break;
+      case 'ai-preset': {
+        if (v === 'adaptive') {
+          sel.aiAdaptive = true;
+        } else {
+          const preset = AI_DIFFICULTY_PRESETS.find((p) => p.id === v);
+          if (preset) {
+            sel.aiAdaptive = false;
+            sel.aiDiff = preset.pct;
+          }
+        }
+        this.save();
+        this.hooks.onAiDifficulty?.(sel.aiDiff, sel.aiAdaptive);
+        this.render();
+        break;
+      }
       case 'start-race': sel.mode = 'race'; this.setCareer('sp'); this.save(); this.hooks.play('race'); break;
       case 'start-free': sel.mode = 'free'; this.setCareer('sp'); this.save(); this.hooks.play('free'); break;
       case 'split-layout': this.splitLayout = v === 'vertical' ? 'vertical' : 'horizontal'; this.render(); break;
@@ -2339,10 +2384,35 @@ export class Menu {
     if (t.id === 'lg-pass') this.leaguePassDraft = t.value;
     if (t.id === 'lg-jcode') this.leagueJoinCode = cleanCode(t.value);
     if (t.id === 'lg-jpass') this.leagueJoinPass = t.value;
+    if (t.id === 'ai-diff-slider') {
+      const pct = Math.max(60, Math.min(110, Math.round(Number(t.value) || 88)));
+      this.sel.aiDiff = pct;
+      this.sel.aiAdaptive = false;
+      const valEl = document.getElementById('ai-diff-val');
+      if (valEl) {
+        valEl.textContent = `${pct}%`;
+        valEl.classList.remove('gold');
+      }
+      const descEl = document.getElementById('ai-diff-desc');
+      if (descEl) {
+        const dp = difficultyProfile(pct);
+        descEl.textContent = `Grip ${Math.round(dp.gripUtil * 100)}% · Reaction ${Math.round(dp.reactionSec * 1000)} ms · Optimal Line ${Math.round(dp.apexAccuracy * 100)}%`;
+      }
+      this.hooks.onAiDifficulty?.(this.sel.aiDiff, this.sel.aiAdaptive);
+      return;
+    }
     if (t.type === 'range') this.ctl?.slide(t);
   }
   private change(e: Event) {
     const t = e.target as HTMLInputElement;
     if (t.id === 'custom') { this.save(); this.render(); }
+    if (t.id === 'ai-diff-slider') {
+      const pct = Math.max(60, Math.min(110, Math.round(Number(t.value) || 88)));
+      this.sel.aiDiff = pct;
+      this.sel.aiAdaptive = false;
+      this.save();
+      this.hooks.onAiDifficulty?.(this.sel.aiDiff, this.sel.aiAdaptive);
+      this.render();
+    }
   }
 }
