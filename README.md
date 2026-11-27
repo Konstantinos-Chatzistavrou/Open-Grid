@@ -11,7 +11,9 @@ Open-source, non-profit street & circuit racing simulator built around an engine
 
 **[Play live at open-grid.racing](https://open-grid.racing/)** · **[Official YouTube (@open_grid_motorsport)](https://youtube.com/@open_grid_motorsport)**
 
-Desktop Chrome or Edge recommended (keyboard, controller, or force-feedback wheel); phones open the lightweight OpenGrid Companion PWA (`Add to Home Screen`).
+Desktop Chrome or Edge recommended (keyboard, controller, or force-feedback wheel); phones and tablets get the same game in a lighter touch mode ([docs/platforms.md](docs/platforms.md)).
+
+> **An independent open-source hobby project.** Built for the love of racing and maintained in spare time: free, non-profit, ad-free. Issues and pull requests are welcome and are read when time allows; online services are best-effort. Details in [docs/MAINTENANCE.md](docs/MAINTENANCE.md).
 
 <!-- Media: drop the files into docs/media/ (shot list: docs/media/SHOTLIST.md), then delete this comment's markers.
 [![30-second gameplay video](docs/media/trailer_poster.jpg)](docs/media/trailer.mp4)
@@ -32,7 +34,7 @@ Desktop Chrome or Edge recommended (keyboard, controller, or force-feedback whee
 | **Unreal Engine 5.8 Target (`ue5/`, `ue5_plugin/`)** | Native `OpenGridPhysics` plugin (`UOpenGridVehicleComponent`, `AsyncVehicleBridge` @ 400–1000 Hz, single-unit `RsCoreUnity.cpp` verified on Windows MSVC every push), `AOpenGridCarPawn`, customization/damage/MetaSound/race/online C++ components, 1-click Editor importer (`tools/ue5/ue5_import_all.py`), 3D Tokyo Night LUTs, and Nanite high-poly car & 14-part modular GLB exporters. See **[docs/ue5_roadmap.md](docs/ue5_roadmap.md)** and **[docs/ue5_first_session.md](docs/ue5_first_session.md)**. |
 | **WebGPU Browser Build (`web/`)** | Three.js r187 (WebGPU with automatic WebGL 2 fallback), Rapier 3D rigid bodies, WebAssembly `rs_core.wasm`, 25 de-branded cars, 5 real-scale 1:1 cities (NYC Midtown, London, Paris, Tokyo, LA), destructible street furniture & building breaches, tactical police AI, 2-player local Split-Screen, Walkable Garage, CS2-style live Auction House, 4K Photo Mode (`[P]`), 5-minute Cinematic Replay (`[T]`), and client-side Race Spotter. |
 | **Live A/B Audio Engine** | Switch live in **Settings** or **Garage** between **43 ear-verified real recorded CC BY 3.0 supercar stems** (Corvette Z06, Mustang, Ferrari 458/F12/812, GT3, Huracán, GT-R, Supra, RX-7, etc.) and our **Thermodynamic Engine-Sim + 192-Tap Exhaust Muffler IR** WebAssembly synth (`engine_audio.cpp`), plus UE 5.8 MetaSound stems (`docs/ue5_audio_metasounds.md`). |
-| **Competitive Online Network (`cloud/`)** | Live at `https://opengrid.opengrid-racing.workers.dev` (custom domain ready: `api.open-grid.racing`) on Cloudflare Workers + D1 + Durable Objects (**100% ad-free, non-profit Patreon-funded** for official servers; base game, cars, tracks, SP, garage & private P2P lobbies are **free forever**). Features real Email+Password PBKDF2-SHA256 login, Glicko-2 Driver Rating (DR), Fault-Aware Safety Rating (SR `0.00–4.99` with `0x Victim Shield`), License Ladder (`R → PRO`), Scheduled Official SOF Splits, Seasonal Championships (best 8 of 12 rounds), Restorative Protests (automatic victim DR/SR refunds), Season Disconnect Jokers, Global Hotlap Leaderboards, Endurance Teams, Hosted Private Leagues, PeerJS WebRTC P2P voice chat, and a free GitHub Actions C++20 deterministic replay verifier (`opengrid_replay_verifier`). See **[cloud/README.md](cloud/README.md)**. |
+| **Competitive Online Network (`cloud/`)** | Live at `https://opengrid.opengrid-racing.workers.dev` (custom domain ready: `api.open-grid.racing`) on Cloudflare Workers + D1 + Durable Objects (**100% ad-free, free and best-effort** on the Cloudflare free plan; base game, cars, tracks, SP, garage & private P2P lobbies are **free forever**). Features real Email+Password PBKDF2-SHA256 login, Glicko-2 Driver Rating (DR), Fault-Aware Safety Rating (SR `0.00–4.99` with `0x Victim Shield`), License Ladder (`R → PRO`), Scheduled Official SOF Splits, Seasonal Championships (best 8 of 12 rounds), Restorative Protests (automatic victim DR/SR refunds), Season Disconnect Jokers, Global Hotlap Leaderboards, Endurance Teams, Hosted Private Leagues, PeerJS WebRTC P2P voice chat, and a free GitHub Actions C++20 deterministic replay verifier (`opengrid_replay_verifier`). See **[cloud/README.md](cloud/README.md)**. |
 | **Standalone Package & Bots (`packages/vehicle-physics/`)** | `open-grid-physics`: drop-in WebAssembly vehicle physics package for any JS/TS engine, plus a headless **[Bot API](docs/bots.md)** running at 100× real time. |
 
 Help wanted: drivers on wheels to test force feedback ([testing program](docs/testing_program.md), [FFB test plan](docs/ffb_test_plan.md)), 3D artists, UE 5.8 contributors, and bot writers. Start with [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -137,11 +139,11 @@ The last device touched drives; switch seamlessly between keyboard, gamepad, ste
 
 ## Multiplayer & Non-Profit Online Network
 
-Open Grid separates **free-forever base play & private P2P** from **managed official competitive servers**:
+Open Grid separates **free-forever base play & private P2P** from the **community ranked network** (free and best-effort, see [docs/MAINTENANCE.md](docs/MAINTENANCE.md)):
 
 - **Free Forever (Zero Ads, Zero Hostage Content):** All 25 cars, all 5 cities, Single Player career, Testing Mode, Walkable Garage, Auction House, 2P Split-Screen, Friends, and **Private P2P Parties** (up to 16 players in Free Roam / 12 in Race Events over WebRTC PeerJS, with `[Z]` Push-to-Talk & proximity Car Meet voice chat). You can also self-host the PeerJS broker (`server/`).
-- **Official Competitive Network (`cloud/` on Cloudflare Workers + D1, 100% Ad-Free):**
-  - **7-Day Free Online Trial** included automatically on every account, then funded by a **non-profit Patreon Supporter Pass** (handles VAT/renewals automatically via HMAC-MD5 webhooks + 1-click OAuth2 Connect — zero ads anywhere).
+- **Community Ranked Network (`cloud/` on Cloudflare Workers + D1, 100% Ad-Free):**
+  - **Free for every account.** Sign in as a guest, or with Google, GitHub or Discord. There is no paid tier; donations are optional and buy no perks. The optional Supporter Pass code stays in `cloud/` but is switched off (`REQUIRE_SUPPORTER_PASS = "0"`).
   - **Dual Rating & Licenses:** Glicko-2 Driver Rating (`DR 800–3500`, Grade `E → S`), Fault-Aware Safety Rating (`SR 0.00–4.99` with `0x Victim Shield`), License Ladder (`R → D → C → B → A → PRO`), Bad-Sport Quarantine splits, and **Season Disconnect Jokers**.
   - **Scheduled Official Series & SOF Splits:** Automated recurring splits (Rookie GT Sprint 20m, GT3 World Championship 45m, Hypercar Pro 60m, Multiclass Endurance 120m), balanced Strength-of-Field seeding, and seasonal championships (car lock + best 8 of 12 rounds).
   - **Restorative Protests & Anti-Cheat:** Upheld steward protests automatically refund lost victim DR & SR and quarantine intentional wreckers; top-3 replays are verified off-device by our C++20 `opengrid_replay_verifier` on free GitHub Actions.
@@ -193,6 +195,7 @@ Every push and scheduled run validates the codebase automatically:
 - **[docs/ue5_audio_metasounds.md](docs/ue5_audio_metasounds.md)** — MetaSounds patch wiring & 48 kHz/24-bit audio stems
 - **[docs/MODDING.md](docs/MODDING.md)** & **[docs/adding_a_car.md](docs/adding_a_car.md)** — Open car modding pipeline & validator
 - **[cloud/README.md](cloud/README.md)** & **[docs/design/multiplayer-anti-cheat.md](docs/design/multiplayer-anti-cheat.md)** — Online backend API, Patreon setup, capacity math & anti-cheat
+- **[docs/MAINTENANCE.md](docs/MAINTENANCE.md)** — What to expect from this hobby project: support, online services, accounts, what is not promised
 - **[docs/PROJECT_MEMORY.md](docs/PROJECT_MEMORY.md)** — Developer handoff & operational architecture reference
 
 ---

@@ -5,7 +5,7 @@ The server-authoritative backend for **Open Grid's competitive online network**,
 - **Live instance:** `https://opengrid.opengrid-racing.workers.dev` (region `EEUR`; ready for custom domain `https://api.open-grid.racing` once the `open-grid.racing` zone is added to Cloudflare)
 - **Frontend integration:** Vercel project `opengrid` builds `web/` with `VITE_CLOUD_URL` set to the live Worker URL on every push to `main`.
 - **Licence:** `Apache-2.0` (100% open source; self-hostable by leagues and communities).
-- **Monetization Philosophy:** **100% Non-Profit & Ad-Free.** All cars, tracks, single player, garage, friends, and private P2P lobbies are free forever. Official managed ranked servers are funded via a **Patreon Supporter Pass** (7-day free trial included automatically on every new account).
+- **Monetization Philosophy:** **100% Non-Profit & Ad-Free.** All cars, tracks, single player, garage, friends, and private P2P lobbies are free forever. Ranked features are free for every account and run best-effort on the Cloudflare free plan. The optional **Patreon Supporter Pass** code (7-day trial, then a paid pass) is kept but switched off: set `REQUIRE_SUPPORTER_PASS = "1"` in `wrangler.toml` `[vars]` to bring the paywall back.
 
 ---
 

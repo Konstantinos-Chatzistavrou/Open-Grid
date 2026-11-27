@@ -44,7 +44,10 @@ const PROTEST_TYPES = new Set(['intentional_wreck', 'unsafe_rejoin', 'blocking',
 const byName = (env: Env, u: string) => env.DB.prepare('SELECT * FROM accounts WHERE username = ? COLLATE NOCASE').bind(u).first<AccountRow>();
 const byEmail = (env: Env, e: string) => env.DB.prepare('SELECT * FROM accounts WHERE email = ? COLLATE NOCASE').bind(e).first<AccountRow>();
 
-function requireActiveSub(acct: AccountRow): Response | null {
+function requireActiveSub(acct: AccountRow, env: Env): Response | null {
+  // Hobby-project default: ranked splits, championships and protests are free for everyone.
+  // Set REQUIRE_SUPPORTER_PASS = "1" in wrangler.toml [vars] to bring the 7-day-trial paywall back.
+  if (env.REQUIRE_SUPPORTER_PASS !== '1') return null;
   if (isSubscriptionActive(acct.sub_tier, acct.sub_expires_at)) return null;
   return json({
     error: 'Your 7-day free trial ended. Official ranked splits, championships, and restorative protests are funded by our non-profit Patreon Pass (100% ad-free). Single-player, garage, cars, tracks, and private P2P lobbies remain free forever!',
@@ -586,7 +589,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
   // ---- Hosted Private Leagues (Create & Join — requires active Online Pass) ----
   if (path === '/v1/leagues' && req.method === 'POST') {
-    const subErr = requireActiveSub(acct);
+    const subErr = requireActiveSub(acct, env);
     if (subErr) return subErr;
     const b = await req.json<{ name?: string; description?: string; password?: string; laps?: number; realism?: boolean; bop?: boolean; route?: string; maxDrivers?: number }>();
     const name = String(b.name ?? '').trim().slice(0, 40);
@@ -617,7 +620,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
 
   if (path === '/v1/leagues/join' && req.method === 'POST') {
-    const subErr = requireActiveSub(acct);
+    const subErr = requireActiveSub(acct, env);
     if (subErr) return subErr;
     const b = await req.json<{ code?: string; joinCode?: string; password?: string }>();
     const code = String(b.joinCode ?? b.code ?? '').trim().toUpperCase().slice(0, 16);
@@ -637,7 +640,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
   // ---- Scheduled Official Series Registration & Balanced SOF Split Seeding ----
   if (path === '/v1/schedule/register' && req.method === 'POST') {
-    const subErr = requireActiveSub(acct);
+    const subErr = requireActiveSub(acct, env);
     if (subErr) return subErr;
     if (acct.banned) return json({ error: 'This account is barred from official ranked racing.' }, 403);
     const b = await req.json<{ seriesId?: string; car?: string }>();
@@ -668,7 +671,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
 
   if (path === '/v1/schedule/seed' && req.method === 'POST') {
-    const subErr = requireActiveSub(acct);
+    const subErr = requireActiveSub(acct, env);
     if (subErr) return subErr;
     const b = await req.json<{ eventKey?: string }>();
     const eventKey = String(b.eventKey ?? '');
@@ -703,7 +706,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
 
   if (path === '/v1/protests' && req.method === 'POST') {
-    const subErr = requireActiveSub(acct);
+    const subErr = requireActiveSub(acct, env);
     if (subErr) return subErr;
     const b = await req.json<{ raceId?: string; accused?: string; incidentType?: string; lap?: number; corner?: string; notes?: string; replayClip?: string }>();
     const raceId = String(b.raceId ?? '').slice(0, 40);
@@ -720,7 +723,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
   // ---- Season Disconnect Joker (LMU-inspired unforced disconnect DR/SR shield!) ----
   if (path === '/v1/joker' && req.method === 'POST') {
-    const subErr = requireActiveSub(acct);
+    const subErr = requireActiveSub(acct, env);
     if (subErr) return subErr;
     if ((acct.jokers_left ?? 0) <= 0) return json({ error: 'No season Disconnect Jokers remaining.' }, 400);
     const b = await req.json<{ raceId?: string }>();
@@ -742,7 +745,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
   // ---- Verified Global Hotlap / Time Trial Submission ----
   if (path === '/v1/hotlap' && req.method === 'POST') {
-    const subErr = requireActiveSub(acct);
+    const subErr = requireActiveSub(acct, env);
     if (subErr) return subErr;
     if (acct.banned) return json({ error: 'Account barred from official leaderboards.' }, 403);
     const b = await req.json<{ track?: string; car?: string; weather?: string; lapMs?: number; trackLengthM?: number; sectors?: number[]; telemetryHash?: string; ghostData?: string }>();
@@ -777,7 +780,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
 
   if (path === '/v1/teams' && req.method === 'POST') {
-    const subErr = requireActiveSub(acct);
+    const subErr = requireActiveSub(acct, env);
     if (subErr) return subErr;
     const b = await req.json<{ name?: string; tag?: string }>();
     const name = String(b.name ?? '').trim().slice(0, 32);

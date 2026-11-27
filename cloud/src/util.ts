@@ -21,6 +21,8 @@ export interface Env {
   /** Minimum monthly pledge in USD cents for OpenGrid Pro (default 500 = $5) and Team Pro (default 1000 = $10) */
   PATREON_PRO_CENTS?: string;
   PATREON_TEAM_CENTS?: string;
+  /** "1" brings the 7-day-trial + Supporter Pass paywall back for ranked features; anything else (default) keeps them free */
+  REQUIRE_SUPPORTER_PASS?: string;
   /** Optional 1-click OAuth2 sign-in providers (buttons auto-hide in UI until secrets are configured) */
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;

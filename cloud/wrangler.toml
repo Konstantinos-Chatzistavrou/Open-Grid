@@ -24,3 +24,6 @@ new_sqlite_classes = ["RaceRoom"]
 [vars]
 # web origins allowed to call the service (comma separated)
 ALLOWED_ORIGINS = "*"   # the API uses bearer tokens (no cookies), so any web origin may call it
+# Ranked splits, championships and protests are free for everyone (hobby project, best-effort).
+# Set to "1" only if a paid Supporter Pass is ever brought back.
+REQUIRE_SUPPORTER_PASS = "0"
