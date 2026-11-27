@@ -1,0 +1,19 @@
+{
+  "reference": {
+    "name": "MFeval 4.3.1 (Marco Furlan, BSD-3), unmodified, run under GNU Octave 8.4",
+    "note": "MFeval is the MATLAB implementation of Pacejka's Magic Formula 5.2 / 6.1 / 6.2 matched by its author to the TNO MF-Tyre 6.1.2.1 solver where that solver differs from the book. The golden files are its output, one process per operating point."
+  },
+  "cases": "../../data/validation/mf62/mf62_cases.csv",
+  "cases_count": 393,
+  "tolerance": { "rtol": 1e-6, "note": "plus an absolute floor per column in run.mjs (1e-9; 1e-7 for Re, rho, Rl; 1 N/m for Cz); the reference's own NaN / Inf cells are skipped" },
+  "tyres": [
+    { "tag": "audi_pac2002", "version": "5.2", "tir": "../../data/tires/audi_245_40R18_pac2002.tir", "golden": "../../data/validation/mf62/golden/audi_pac2002_mfeval.csv", "note": "Project Chrono Audi 245/40 R18, PAC2002, BSD-3; the file has no FITTYP: treat PROPERTY_FILE_FORMAT 'PAC2002' as FITTYP 21" },
+    { "tag": "opengrid_mf61_synthetic", "version": "6.1", "tir": "../../data/validation/mf62/tyres/opengrid_mf61_synthetic.tir", "golden": "../../data/validation/mf62/golden/opengrid_mf61_synthetic_mfeval.csv", "note": "synthetic: the Chrono Audi coefficients plus 6.x terms chosen by OpenGrid, not a measurement" },
+    { "tag": "opengrid_mf62_synthetic", "version": "6.2", "tir": "../../data/validation/mf62/tyres/opengrid_mf62_synthetic.tir", "golden": "../../data/validation/mf62/golden/opengrid_mf62_synthetic_mfeval.csv", "note": "synthetic, as above, with the MF 6.2 loaded-radius terms" },
+    { "tag": "example_MagicFormula52_Parameters", "version": "5.2", "tir": "../../tools/validation/mfeval/doc/examples/MagicFormula52_Parameters.tir", "golden": "../../data/validation/mf62/golden/example_MagicFormula52_Parameters_mfeval.csv", "note": "MFeval's own example tyre (BSD-3 with the toolbox)" },
+    { "tag": "example_MagicFormula61_Parameters", "version": "6.1", "tir": "../../tools/validation/mfeval/doc/examples/MagicFormula61_Parameters.tir", "golden": "../../data/validation/mf62/golden/example_MagicFormula61_Parameters_mfeval.csv", "note": "MFeval's own example tyre" },
+    { "tag": "example_MagicFormula62_Parameters", "version": "6.2", "tir": "../../tools/validation/mfeval/doc/examples/MagicFormula62_Parameters.tir", "golden": "../../data/validation/mf62/golden/example_MagicFormula62_Parameters_mfeval.csv", "note": "MFeval's own example tyre, FITTYP 62" },
+    { "tag": "example_PacejkaBook_Defaults", "version": "6.1", "tir": "../../tools/validation/mfeval/doc/examples/PacejkaBook_Defaults.tir", "golden": "../../data/validation/mf62/golden/example_PacejkaBook_Defaults_mfeval.csv", "note": "MFeval's example with the book's default coefficients; Q_FZ2 = 0, so the reference's rho / Rl / Cz are not finite there and are skipped" },
+    { "tag": "example_FSAE_Defaults", "version": "6.1", "tir": "../../tools/validation/mfeval/doc/examples/FSAE_Defaults.tir", "golden": "../../data/validation/mf62/golden/example_FSAE_Defaults_mfeval.csv", "note": "MFeval's example FSAE tyre; Q_FZ2 = 0, as above" }
+  ]
+}

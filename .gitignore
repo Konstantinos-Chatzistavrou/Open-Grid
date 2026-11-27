@@ -84,3 +84,4 @@ __pycache__/
 
 # EPA import cache (downloaded CSVs, not data to commit)
 data/validation/.cache/
+/dist/
