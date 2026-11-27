@@ -3,8 +3,8 @@
 // STATUS (read this before quoting it): a complete, self-contained evaluator of forces, moments, loaded radius and relaxation lengths for one
 // operating point, written against MFeval 4.3.1's MATLAB source. Its output equals the unmodified MFeval's (run under GNU Octave 8.4) on 393 operating
 // points for each of MFeval's three example tyres (MF 5.2, 6.1, 6.2), all columns, 1e-6 relative: see docs/mf62.md for what that does and does not
-// show (three tyres, Octave not MATLAB, turn slip as unvalidated as MFeval's own). It is NOT yet driving the vehicle: rs::magic_formula in tire.hpp
-// is still the game's tyre.
+// show (Octave not MATLAB, turn slip as unvalidated as MFeval's own). The same comparison runs in CI on committed tyres (test mf62_golden). It is NOT yet
+// driving the vehicle: rs::magic_formula in tire.hpp is still the game's tyre.
 //
 // Equations: H. B. Pacejka, "Tire and Vehicle Dynamics", 3rd ed. revised (Elsevier, 2012), section 4.3 and appendix 3; I. J. M. Besselink,
 // A. J. C. Schmeitz, H. B. Pacejka, "An improved Magic Formula/Swift tyre model that can handle inflation pressure changes", Vehicle System

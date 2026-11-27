@@ -326,7 +326,8 @@ double calc_my(const Ctx& c, double Fx) {
     return My;
 }
 
-struct Mz0Ints { double alphar, alphat, Dr, Cr, Br, Dt, Ct, Bt, Et, Kya_prime; };
+// Cr = zeta7 can be complex in MFeval (acos of a ratio beyond +-1); it is kept as real + imaginary part and only Re cos(Cr * x) = cos(re x) cosh(im x) is used.
+struct Mz0Ints { double alphar, alphat, Dr, Cr, CrIm, Br, Dt, Ct, Bt, Et, Kya_prime; };
 
 Mz0Ints calc_mz0(const Ctx& c, const Fy0Res& fy0) {
     const Params& p = c.p;
@@ -344,7 +345,7 @@ Mz0Ints calc_mz0(const Ctx& c, const Fy0Res& fy0) {
     const double Dt = (p.qdz1 + p.qdz2 * dfz) * (1.0 - p.ppz1 * dpi) * (1.0 + p.qdz3 * gamma + p.qdz4 * gamma * gamma) * Fz * (R0 / Fz0p) * p.ltr * zeta5;   // A60
     const double Et = c.lim((p.qez1 + p.qez2 * dfz + p.qez3 * dfz * dfz) * (1.0 + (p.qez4 + p.qez5 * g_star) * (2.0 / kPi) * std::atan(Bt * Ct * alphat)));   // 4.E44
 
-    double zeta0 = 1.0, zeta2 = 1.0, zeta6 = 1.0, zeta7 = 1.0, zeta8 = 1.0;
+    double zeta0 = 1.0, zeta2 = 1.0, zeta6 = 1.0, zeta7 = 1.0, zeta7_im = 0.0, zeta8 = 1.0;
     if (c.m.turn_slip) {                                                                                 // eqs. 4.91 - 4.103 and the TNO manual's zeta7 / zeta8
         zeta0 = 0.0;
         zeta2 = c.ip.zeta2;
@@ -360,10 +361,23 @@ Mz0Ints calc_mz0(const Ctx& c, const Fy0Res& fy0) {
         const double Drp = (DDrp == 0.0 || !std::isfinite(BDrp)) ? 0.0 : DDrp * std::sin(CDrp * std::atan(BDrp * R0 * phit));
         const double Gyk = calc_fy(c, c.ip, fy0.fy0, fy0.muy).gyk;
         const double Mzp90 = Mzp_inf * (2.0 / kPi) * std::atan(p.qcrp2 * R0 * std::abs(phit)) * Gyk;     // 4.103
-        // DEVIATION: with phit = 0 MFeval computes acos(0/0) = NaN and returns NaN for Mz. Without spin the turn-slip effect must vanish: zeta7 = 1.
-        // For |ratio| > 1 MFeval's acos is complex and real() keeps the real part (0 or pi): clamping gives the same.
-        if (std::abs(Drp) < 1e-12 && std::abs(Mzp90) < 1e-12) zeta7 = 1.0;
-        else zeta7 = (2.0 / kPi) * std::acos(clampd(Mzp90 / safe_den(std::abs(Drp), 1e-300), -1.0, 1.0));
+        // zeta7 = (2/pi) acos(Mzp90 / |Drp|), as MFeval. For |ratio| > 1 MATLAB's acos is complex (acos(x > 1) = i acosh x, acos(x < -1) = pi - i acosh |x|) and the
+        // aligning moment keeps only the real part of cos(zeta7 x): cos(re) cosh(im). DEVIATIONS (MFeval gives NaN / Inf): no spin and no load (0/0) means no turn-slip effect, zeta7 = 1;
+        // a non-finite ratio falls back to the clamped real value.
+        const double ratio = Mzp90 / std::abs(Drp);
+        if (std::abs(Drp) < 1e-12 && std::abs(Mzp90) < 1e-12) {
+            zeta7 = 1.0;
+        } else if (!std::isfinite(ratio)) {
+            zeta7 = (2.0 / kPi) * std::acos(ratio > 0 ? 1.0 : -1.0);
+        } else if (ratio > 1.0) {
+            zeta7 = 0.0;
+            zeta7_im = (2.0 / kPi) * std::log(ratio + std::sqrt(ratio * ratio - 1.0));
+        } else if (ratio < -1.0) {
+            zeta7 = 2.0;
+            zeta7_im = -(2.0 / kPi) * std::log(-ratio + std::sqrt(ratio * ratio - 1.0));
+        } else {
+            zeta7 = (2.0 / kPi) * std::acos(ratio);
+        }
         zeta8 = 1.0 + Drp;
     }
     const double Dr = Fz * R0 *
@@ -372,7 +386,7 @@ Mz0Ints calc_mz0(const Ctx& c, const Fy0Res& fy0) {
                           c.sv.LMUY_star * sign0(Vcx) * std::cos(a_star) + zeta8 - 1.0;                    // 4.E47
     const double Br = (p.qbz9 * p.lky / c.sv.LMUY_star + p.qbz10 * fy0.By * fy0.Cy) * zeta6;             // 4.E45
     const double Cr = zeta7;                                                                             // 4.E46
-    return {alphar, alphat, Dr, Cr, Br, Dt, Ct, Bt, Et, Kya_prime};
+    return {alphar, alphat, Dr, Cr, zeta7_im, Br, Dt, Ct, Bt, Et, Kya_prime};
 }
 
 struct MzRes { double mz, t, mzr; };
@@ -383,7 +397,8 @@ MzRes calc_mz(const Ctx& c, const Mz0Ints& m, double Kxk, double Fy, double Fx, 
     const double alphar_eq = std::atan(std::sqrt(sq(std::tan(m.alphar)) + ratio_sq)) * sign0(m.alphar);   // Besselink A54
     const double alphat_eq = std::atan(std::sqrt(sq(std::tan(m.alphat)) + ratio_sq)) * sign0(m.alphat);   // A55
     const double s = R0 * (p.ssz1 + p.ssz2 * (Fy / Fz0) + (p.ssz3 + p.ssz4 * dfz) * gamma) * p.ls;       // A56 (Fz0, not Fz0')
-    double Mzr = m.Dr * std::cos(m.Cr * std::atan(m.Br * alphar_eq));                                    // 4.E75
+    const double xr = std::atan(m.Br * alphar_eq);
+    double Mzr = m.Dr * std::cos(m.Cr * xr) * std::cosh(m.CrIm * xr);                                    // 4.E75, real part (Cr may be complex)
     // Fy' = Gyk(phit = 0) Fy0(gamma = 0): Fy0 re-run with gamma = 0 but the SAME use-mode (turn slip stays on, as in MFeval); Gyk with zeta2 = 1 and the real gamma
     Ctx c0 = c;
     c0.pp.gamma = 0.0;

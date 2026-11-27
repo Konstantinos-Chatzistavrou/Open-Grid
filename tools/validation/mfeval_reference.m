@@ -1,7 +1,8 @@
-function mfeval_reference(tirFile, casesFile, outFile)
+function mfeval_reference(tirFile, casesFile, outFile, fittyp)
 % MFEVAL_REFERENCE  Run MFeval on the operating points of data/validation/mf62/mf62_cases.csv and write its 30 output columns to a CSV.
 %
 %   mfeval_reference('MagicFormula62_Parameters.tir', 'mf62_cases.csv', 'mf62_ref.csv')
+%   mfeval_reference('audi_245_40R18_pac2002.tir', 'mf62_cases.csv', 'audi_ref.csv', 21)   % optional 4th argument: FITTYP for files that have none (Project Chrono PAC2002)
 %
 % Works in MATLAB (with MFeval installed, or tools/validation/mfeval on the path) and in GNU Octave (the shims in tools/validation/octave_shims
 % are added to the path automatically). Apache-2.0, part of OpenGrid; MFeval itself is BSD 3-Clause (tools/validation/mfeval/LICENSE.txt).
@@ -24,6 +25,9 @@ function mfeval_reference(tirFile, casesFile, outFile)
     addpath(fullfile(here, 'mfeval'));                    % the vendored, unmodified MFeval sources
   end
   par = mfeval.readTIR(tirFile);
+  if nargin > 3
+    par.FITTYP = fittyp;
+  end
   if isOctave
     solver = mfeval.Solver;
   end

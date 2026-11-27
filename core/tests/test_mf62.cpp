@@ -348,16 +348,62 @@ bool read_numeric_csv(const std::string& path, std::vector<std::vector<double>>&
     return true;
 }
 
+const char* const kColNames[30] = {"Fx", "Fy", "Fz", "Mx", "My", "Mz", "kappa", "alpha", "gamma", "phit", "Vx", "P", "Re", "rho", "2a", "t", "mux", "muy", "omega", "Rl", "2b", "Mzr",
+                                   "Cx", "Cy", "Cz", "Kya", "sigmax", "sigmay", "instKya", "Kxk"};
+
+void outputs_of(const Params& p, const std::vector<double>& c, double out[30]) {
+    Input in;
+    in.fz = c[0] * p.fnomin; in.kappa = c[1]; in.alpha = c[2]; in.gamma = c[3]; in.phit = c[4]; in.vx = c[5] * p.longvl; in.pressure = c[6] * p.nompres;
+    const Output o = evaluate(p, in, modes_from_use_mode(static_cast<int>(c[7])));
+    const double v[30] = {o.fx, o.fy, o.fz, o.mx, o.my, o.mz, o.kappa, o.alpha, o.gamma, o.phit, o.vx, o.pressure, o.re, o.rho, o.two_a, o.t, o.mux, o.muy, o.omega, o.rl, o.two_b, o.mzr,
+                          o.cx, o.cy, o.cz, o.kya, o.sigmax, o.sigmay, 0.0, o.kxk};
+    for (int i = 0; i < 30; ++i) out[i] = v[i];
+}
+
+// Compares rs::mf62 with MFeval's output (one row per case, 30 columns) for one tyre: every column except instKya (it depends on how rows are grouped into a call),
+// 1e-6 relative plus a small absolute floor (lengths from MFeval's iterative radius solves are looser than the closed forms). MFeval's own NaN / Inf are skipped and counted.
+void compare_with_mfeval(const std::string& tag, const Params& p, const std::vector<std::vector<double>>& cases, const std::vector<std::vector<double>>& ref) {
+    auto atol = [](int col) { return (col == 12 || col == 13 || col == 19) ? 1e-7 : (col == 24 ? 1.0 : 1e-9); };
+    test::check((tag + ": the reference has one row per case with 30 columns").c_str(), ref.size() == cases.size() && !ref.empty() && ref[0].size() == 30);
+    if (ref.size() != cases.size()) return;
+    int bad_total = 0, ref_nan = 0;
+    int bad_by_col[30] = {0};
+    double worst[30] = {0}, worst_rel = 0;
+    std::size_t worst_row[30] = {0};
+    for (std::size_t i = 0; i < cases.size(); ++i) {
+        double mine[30];
+        outputs_of(p, cases[i], mine);
+        for (int col = 0; col < 30; ++col) {
+            if (col == 28) continue;
+            const double r = ref[i][static_cast<std::size_t>(col)];
+            if (std::isnan(r) || std::isinf(r)) { ++ref_nan; continue; }   // MFeval itself gave no number here
+            const double d = std::abs(mine[col] - r), tol = atol(col) + 1e-6 * std::abs(r);
+            if (!(std::isfinite(mine[col]) && d <= tol)) { ++bad_total; ++bad_by_col[col]; }
+            if (std::isfinite(mine[col])) worst_rel = std::max(worst_rel, d / (std::abs(r) + 1e-9));
+            if (!std::isfinite(mine[col])) { worst[col] = 1e300; worst_row[col] = i; }
+            else if (d / tol > worst[col]) { worst[col] = d / tol; worst_row[col] = i; }
+        }
+    }
+    std::printf("         %s: %zu cases, %zu values compared, %d MFeval NaN / Inf values skipped, worst relative deviation %.2e\n", tag.c_str(), cases.size(), cases.size() * 29 - static_cast<std::size_t>(ref_nan), ref_nan, worst_rel);
+    for (int col = 0; col < 30; ++col)
+        if (bad_by_col[col]) {
+            const auto& c = cases[worst_row[col]];
+            double mine[30];
+            outputs_of(p, c, mine);
+            std::printf("         %s %-7s %3d mismatches, worst case line %zu (fz_rel %.2f kappa %.3f alpha %.3f gamma %.3f phit %.2f vx_rel %.3f p_rel %.2f mode %d): mine %.10g, MFeval %.10g\n", tag.c_str(), kColNames[col],
+                        bad_by_col[col], worst_row[col] + 2, c[0], c[1], c[2], c[3], c[4], c[5], c[6], static_cast<int>(c[7]), mine[col], ref[worst_row[col]][static_cast<std::size_t>(col)]);
+        }
+    test::check((tag + ": every output column equals MFeval's (1e-6 relative + a small absolute floor)").c_str(), bad_total == 0);
+}
+
+// tools/validation/mfeval_reference.m runs the vendored MFeval (MATLAB or GNU Octave) over data/validation/mf62/mf62_cases.csv and writes one CSV per tyre file.
+// This variant uses MFeval's own example tyres, which are not in the repository: RS_MF62_FIXTURES = their folder, RS_MF62_REFERENCE = folder with <tag>_mfeval.csv (mf52, mf61, mf62).
 RS_TEST(mf62_vs_mfeval) {
     const char* tir_dir = std::getenv("RS_MF62_FIXTURES");
     const char* ref_dir = std::getenv("RS_MF62_REFERENCE");
-    if (!tir_dir || !ref_dir) { std::printf("  [SKIP] RS_MF62_FIXTURES / RS_MF62_REFERENCE not set (needs MFeval's output, see docs/mf62.md)\n"); return; }
+    if (!tir_dir || !ref_dir) { std::printf("  [SKIP] RS_MF62_FIXTURES / RS_MF62_REFERENCE not set (needs MFeval's example tyres and output, see docs/mf62.md)\n"); return; }
     std::vector<std::vector<double>> cases;
     test::check("the case list is readable", read_numeric_csv(test::data_path("validation/mf62/mf62_cases.csv"), cases) && cases.size() > 100);
-    static const char* names[30] = {"Fx", "Fy", "Fz", "Mx", "My", "Mz", "kappa", "alpha", "gamma", "phit", "Vx", "P", "Re", "rho", "2a", "t", "mux", "muy", "omega", "Rl", "2b", "Mzr",
-                                    "Cx", "Cy", "Cz", "Kya", "sigmax", "sigmay", "instKya", "Kxk"};
-    // absolute tolerance per column (relative 1e-6 on top): lengths from MFeval's iterative radius solves are looser than the closed forms
-    auto atol = [](int col) { return (col == 12 || col == 13 || col == 19) ? 1e-7 : (col == 24 ? 1.0 : 1e-9); };
     const struct { const char* file; const char* tag; } sets[] = {{"MagicFormula52_Parameters.tir", "mf52"}, {"MagicFormula61_Parameters.tir", "mf61"}, {"MagicFormula62_Parameters.tir", "mf62"}};
     for (const auto& s : sets) {
         std::vector<std::vector<double>> ref;
@@ -366,47 +412,30 @@ RS_TEST(mf62_vs_mfeval) {
         Params p;
         std::string err;
         if (!load_tir_file(std::string(tir_dir) + "/" + s.file, p, err)) { test::check((std::string(s.tag) + ": tyre file loads").c_str(), false); continue; }
-        test::check((std::string(s.tag) + ": reference has one row per case with 30 columns").c_str(), ref.size() == cases.size() && !ref.empty() && ref[0].size() == 30);
-        if (ref.size() != cases.size()) continue;
-        int bad_total = 0, ref_nan = 0, evaluated = 0;
-        double worst_rel = 0;
-        int bad_by_col[30] = {0};
-        double worst[30] = {0};
-        std::size_t worst_row[30] = {0};
-        for (std::size_t i = 0; i < cases.size(); ++i) {
-            const auto& c = cases[i];
-            Input in;
-            in.fz = c[0] * p.fnomin; in.kappa = c[1]; in.alpha = c[2]; in.gamma = c[3]; in.phit = c[4]; in.vx = c[5] * p.longvl; in.pressure = c[6] * p.nompres;
-            const Output o = evaluate(p, in, modes_from_use_mode(static_cast<int>(c[7])));
-            const double mine[30] = {o.fx, o.fy, o.fz, o.mx, o.my, o.mz, o.kappa, o.alpha, o.gamma, o.phit, o.vx, o.pressure, o.re, o.rho, o.two_a, o.t, o.mux, o.muy, o.omega, o.rl, o.two_b, o.mzr,
-                                     o.cx, o.cy, o.cz, o.kya, o.sigmax, o.sigmay, 0.0, o.kxk};
-            ++evaluated;
-            for (int col = 0; col < 30; ++col) {
-                if (col == 28) continue;                                       // instKya depends on how the rows are grouped into one call
-                const double r = ref[i][static_cast<std::size_t>(col)];
-                if (std::isnan(r) || std::isinf(r)) { ++ref_nan; continue; }   // MFeval itself gave no number here
-                const double d = std::abs(mine[col] - r), tol = atol(col) + 1e-6 * std::abs(r);
-                const bool ok = std::isfinite(mine[col]) && d <= tol;
-                if (std::isfinite(mine[col])) worst_rel = std::max(worst_rel, d / (std::abs(r) + 1e-9));
-                if (!ok) { ++bad_total; ++bad_by_col[col]; }
-                if (!std::isfinite(mine[col])) { worst[col] = 1e300; worst_row[col] = i; }
-                else if (d / tol > worst[col]) { worst[col] = d / tol; worst_row[col] = i; }
-            }
-        }
-        std::printf("         %s: %d cases, %d values compared, %d MFeval NaN / Inf values skipped, worst relative deviation %.2e\n", s.tag, evaluated, evaluated * 29 - ref_nan, ref_nan, worst_rel);
-        for (int col = 0; col < 30; ++col)
-            if (bad_by_col[col]) {
-                const auto& c = cases[worst_row[col]];
-                std::printf("         %s %-7s %3d mismatches, worst case %zu (fz_rel %.2f kappa %.3f alpha %.3f gamma %.3f phit %.2f vx_rel %.3f p_rel %.2f mode %d): mine %.10g, MFeval %.10g\n", s.tag, names[col],
-                            bad_by_col[col], worst_row[col] + 2, c[0], c[1], c[2], c[3], c[4], c[5], c[6], static_cast<int>(c[7]),
-                            [&] { Input in; in.fz = c[0] * p.fnomin; in.kappa = c[1]; in.alpha = c[2]; in.gamma = c[3]; in.phit = c[4]; in.vx = c[5] * p.longvl; in.pressure = c[6] * p.nompres;
-                                  const Output o = evaluate(p, in, modes_from_use_mode(static_cast<int>(c[7])));
-                                  const double m[30] = {o.fx, o.fy, o.fz, o.mx, o.my, o.mz, o.kappa, o.alpha, o.gamma, o.phit, o.vx, o.pressure, o.re, o.rho, o.two_a, o.t, o.mux, o.muy, o.omega, o.rl, o.two_b, o.mzr,
-                                                        o.cx, o.cy, o.cz, o.kya, o.sigmax, o.sigmay, 0.0, o.kxk};
-                                  return m[col]; }(),
-                            ref[worst_row[col]][static_cast<std::size_t>(col)]);
-            }
-        test::check((std::string(s.tag) + ": every output column equals MFeval's (tolerance 1e-6 relative + a small absolute floor)").c_str(), bad_total == 0);
+        compare_with_mfeval(s.tag, p, cases, ref);
+    }
+}
+
+// The same comparison on tyres that ARE in the repository, against MFeval's output committed in data/validation/mf62/golden/: runs everywhere (CI included), no MATLAB needed.
+//   audi_pac2002: the Project Chrono Audi 245/40 R18 PAC2002 tyre (data/tires, BSD-3), a real fitted MF 5.2-family tyre, FITTYP 21;
+//   opengrid_mf61_synthetic, opengrid_mf62_synthetic: that tyre's coefficients plus MF 6.x coefficients chosen by us (tools/validation/make_mf6x_tyres.mjs), NOT measurements.
+// Regenerate the reference with tools/validation/mfeval_reference.m (docs/mf62.md).
+RS_TEST(mf62_golden) {
+    std::vector<std::vector<double>> cases;
+    test::check("the case list is readable", read_numeric_csv(test::data_path("validation/mf62/mf62_cases.csv"), cases) && cases.size() > 100);
+    const struct { const char* tir; const char* ref; const char* tag; Version v; } sets[] = {
+        {"tires/audi_245_40R18_pac2002.tir", "validation/mf62/golden/audi_pac2002_mfeval.csv", "audi_pac2002", Version::Mf52},
+        {"validation/mf62/tyres/opengrid_mf61_synthetic.tir", "validation/mf62/golden/opengrid_mf61_synthetic_mfeval.csv", "synthetic_mf61", Version::Mf61},
+        {"validation/mf62/tyres/opengrid_mf62_synthetic.tir", "validation/mf62/golden/opengrid_mf62_synthetic_mfeval.csv", "synthetic_mf62", Version::Mf62}};
+    for (const auto& s : sets) {
+        Params p;
+        std::string err;
+        const bool loaded = load_tir_file(test::data_path(s.tir), p, err);
+        test::check((std::string(s.tag) + ": tyre file loads as the expected version").c_str(), loaded && p.version() == s.v);
+        std::vector<std::vector<double>> ref;
+        const bool have_ref = read_numeric_csv(test::data_path(s.ref), ref);
+        test::check((std::string(s.tag) + ": MFeval's reference output is committed").c_str(), have_ref);
+        if (loaded && have_ref) compare_with_mfeval(s.tag, p, cases, ref);
     }
 }
 
