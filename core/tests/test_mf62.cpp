@@ -300,11 +300,12 @@ RS_TEST(mf62_modes_and_edges) {
     test::check("MF 5.2 and MF 6.1 files with the same pure-slip coefficients give the same Fx0", near_rel(run(p52, 4000, 0.08, 0).fx, run(make(61), 4000, 0.08, 0).fx, 1e-9, 1e-6));
 }
 
-// The three property files of MFeval.jl's tests (MF 5.2, 6.1, 6.2), whose origin is not stated: used locally only, NOT in the repository.
-// RS_MF62_FIXTURES=<folder holding MagicFormula52_Parameters.tir, MagicFormula61_Parameters.tir, MagicFormula62_Parameters.tir>
+// MFeval's own MF 5.2, 6.1 and 6.2 example tyres (vendored with MFeval, tools/validation/mfeval/doc/examples, BSD-3-Clause): they load, evaluate finite, and have plausible grip.
+// RS_MF62_FIXTURES=<folder> uses another folder holding files of the same names.
 RS_TEST(mf62_local_fixtures) {
-    const char* dir = std::getenv("RS_MF62_FIXTURES");
-    if (!dir) { std::printf("  [SKIP] RS_MF62_FIXTURES is not set (local-only property files)\n"); return; }
+    const char* env_dir = std::getenv("RS_MF62_FIXTURES");
+    const std::string dir_s = env_dir ? std::string(env_dir) : std::string(RS_DATA_DIR) + "/../tools/validation/mfeval/doc/examples";
+    const char* dir = dir_s.c_str();
     const struct { const char* file; Version v; } sets[] = {{"MagicFormula52_Parameters.tir", Version::Mf52}, {"MagicFormula61_Parameters.tir", Version::Mf61}, {"MagicFormula62_Parameters.tir", Version::Mf62}};
     for (const auto& s : sets) {
         Params p;
@@ -331,7 +332,7 @@ RS_TEST(mf62_local_fixtures) {
 
 // ---- comparison with MFeval's own output ------------------------------------------------------------------------------------------
 // tools/validation/mfeval_reference.m runs the vendored MFeval (MATLAB or GNU Octave) over data/validation/mf62/mf62_cases.csv and writes one CSV per
-// tyre file. RS_MF62_FIXTURES = folder with the .tir files, RS_MF62_REFERENCE = folder with <tag>_mfeval.csv (tags mf52, mf61, mf62), see docs/mf62.md.
+// tyre file. RS_MF62_REFERENCE = folder with <tag>_mfeval.csv (tags mf52, mf61, mf62) from a fresh MFeval run; RS_MF62_FIXTURES optionally another folder of tyre files (default: the vendored examples).
 bool read_numeric_csv(const std::string& path, std::vector<std::vector<double>>& rows) {
     std::ifstream in(path);
     if (!in) return false;
@@ -366,15 +367,20 @@ void compare_with_mfeval(const std::string& tag, const Params& p, const std::vec
     auto atol = [](int col) { return (col == 12 || col == 13 || col == 19) ? 1e-7 : (col == 24 ? 1.0 : 1e-9); };
     test::check((tag + ": the reference has one row per case with 30 columns").c_str(), ref.size() == cases.size() && !ref.empty() && ref[0].size() == 30);
     if (ref.size() != cases.size()) return;
-    int bad_total = 0, ref_nan = 0;
+    int bad_total = 0, ref_nan = 0, radius_failed_rows = 0;
     int bad_by_col[30] = {0};
     double worst[30] = {0}, worst_rel = 0;
     std::size_t worst_row[30] = {0};
     for (std::size_t i = 0; i < cases.size(); ++i) {
         double mine[30];
         outputs_of(p, cases[i], mine);
+        // MFeval's deflection solve is 0/0 for a tyre without a quadratic load term (Q_FZ2 = 0): MATLAB's max(NaN, 0) then makes rho 0 and Cz Inf. A non-finite Cz marks those rows:
+        // rho, Rl and Cz are not compared there (ours solves the linear case).
+        const bool radius_failed = !std::isfinite(ref[i][24]);
+        if (radius_failed) ++radius_failed_rows;
         for (int col = 0; col < 30; ++col) {
             if (col == 28) continue;
+            if (radius_failed && (col == 13 || col == 19 || col == 24)) continue;
             const double r = ref[i][static_cast<std::size_t>(col)];
             if (std::isnan(r) || std::isinf(r)) { ++ref_nan; continue; }   // MFeval itself gave no number here
             const double d = std::abs(mine[col] - r), tol = atol(col) + 1e-6 * std::abs(r);
@@ -384,7 +390,8 @@ void compare_with_mfeval(const std::string& tag, const Params& p, const std::vec
             else if (d / tol > worst[col]) { worst[col] = d / tol; worst_row[col] = i; }
         }
     }
-    std::printf("         %s: %zu cases, %zu values compared, %d MFeval NaN / Inf values skipped, worst relative deviation %.2e\n", tag.c_str(), cases.size(), cases.size() * 29 - static_cast<std::size_t>(ref_nan), ref_nan, worst_rel);
+    std::printf("         %s: %zu cases, %zu values compared, %d MFeval NaN / Inf values skipped (+ rho / Rl / Cz on %d rows where MFeval's radius solve failed), worst relative deviation %.2e\n", tag.c_str(), cases.size(),
+                cases.size() * 29 - static_cast<std::size_t>(ref_nan) - static_cast<std::size_t>(radius_failed_rows) * 3, ref_nan, radius_failed_rows, worst_rel);
     for (int col = 0; col < 30; ++col)
         if (bad_by_col[col]) {
             const auto& c = cases[worst_row[col]];
@@ -397,11 +404,13 @@ void compare_with_mfeval(const std::string& tag, const Params& p, const std::vec
 }
 
 // tools/validation/mfeval_reference.m runs the vendored MFeval (MATLAB or GNU Octave) over data/validation/mf62/mf62_cases.csv and writes one CSV per tyre file.
-// This variant uses MFeval's own example tyres, which are not in the repository: RS_MF62_FIXTURES = their folder, RS_MF62_REFERENCE = folder with <tag>_mfeval.csv (mf52, mf61, mf62).
+// This variant compares with a FRESH MFeval run (e.g. after a change to mf62.cpp or a new case list) on MFeval's vendored example tyres: RS_MF62_REFERENCE = folder with <tag>_mfeval.csv (mf52, mf61, mf62).
 RS_TEST(mf62_vs_mfeval) {
-    const char* tir_dir = std::getenv("RS_MF62_FIXTURES");
+    const char* env_tir = std::getenv("RS_MF62_FIXTURES");
+    const std::string tir_s = env_tir ? std::string(env_tir) : std::string(RS_DATA_DIR) + "/../tools/validation/mfeval/doc/examples";
+    const char* tir_dir = tir_s.c_str();
     const char* ref_dir = std::getenv("RS_MF62_REFERENCE");
-    if (!tir_dir || !ref_dir) { std::printf("  [SKIP] RS_MF62_FIXTURES / RS_MF62_REFERENCE not set (needs MFeval's example tyres and output, see docs/mf62.md)\n"); return; }
+    if (!ref_dir) { std::printf("  [SKIP] RS_MF62_REFERENCE not set (a fresh MFeval run's output; the committed output is checked by mf62_golden, see docs/mf62.md)\n"); return; }
     std::vector<std::vector<double>> cases;
     test::check("the case list is readable", read_numeric_csv(test::data_path("validation/mf62/mf62_cases.csv"), cases) && cases.size() > 100);
     const struct { const char* file; const char* tag; } sets[] = {{"MagicFormula52_Parameters.tir", "mf52"}, {"MagicFormula61_Parameters.tir", "mf61"}, {"MagicFormula62_Parameters.tir", "mf62"}};
@@ -426,7 +435,14 @@ RS_TEST(mf62_golden) {
     const struct { const char* tir; const char* ref; const char* tag; Version v; } sets[] = {
         {"tires/audi_245_40R18_pac2002.tir", "validation/mf62/golden/audi_pac2002_mfeval.csv", "audi_pac2002", Version::Mf52},
         {"validation/mf62/tyres/opengrid_mf61_synthetic.tir", "validation/mf62/golden/opengrid_mf61_synthetic_mfeval.csv", "synthetic_mf61", Version::Mf61},
-        {"validation/mf62/tyres/opengrid_mf62_synthetic.tir", "validation/mf62/golden/opengrid_mf62_synthetic_mfeval.csv", "synthetic_mf62", Version::Mf62}};
+        {"validation/mf62/tyres/opengrid_mf62_synthetic.tir", "validation/mf62/golden/opengrid_mf62_synthetic_mfeval.csv", "synthetic_mf62", Version::Mf62},
+        // MFeval's own example tyres, vendored with it under its BSD-3-Clause licence (tools/validation/mfeval/doc/examples)
+        {"../tools/validation/mfeval/doc/examples/MagicFormula52_Parameters.tir", "validation/mf62/golden/example_MagicFormula52_Parameters_mfeval.csv", "example_mf52", Version::Mf52},
+        {"../tools/validation/mfeval/doc/examples/MagicFormula61_Parameters.tir", "validation/mf62/golden/example_MagicFormula61_Parameters_mfeval.csv", "example_mf61", Version::Mf61},
+        {"../tools/validation/mfeval/doc/examples/MagicFormula62_Parameters.tir", "validation/mf62/golden/example_MagicFormula62_Parameters_mfeval.csv", "example_mf62", Version::Mf62},
+        {"../tools/validation/mfeval/doc/examples/PacejkaBook_Defaults.tir", "validation/mf62/golden/example_PacejkaBook_Defaults_mfeval.csv", "example_book_defaults", Version::Mf61},
+        {"../tools/validation/mfeval/doc/examples/FSAE_Defaults.tir", "validation/mf62/golden/example_FSAE_Defaults_mfeval.csv", "example_fsae_defaults", Version::Mf61}};
+    // Model_Unstable.tir (VERTICAL_STIFFNESS = 0, PKX1 = 0: an invalid tyre by design) is vendored but not compared: MFeval itself returns NaN for Re, 2a, 2b, sigma and Cz on it, and a garbage omega.
     for (const auto& s : sets) {
         Params p;
         std::string err;

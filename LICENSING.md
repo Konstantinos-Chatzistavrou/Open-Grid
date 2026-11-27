@@ -56,7 +56,8 @@ these files.
 - **Fitted tyre file** `data/tires/audi_245_40R18_pac2002.tir`: Project Chrono, **BSD-3-Clause**
   (`data/tires/LICENSE-projectchrono.txt`).
 - **MFeval 4.3.1** (Magic Formula 5.2 / 6.1 / 6.2 evaluator, MATLAB), `tools/validation/mfeval/`, the six source files vendored unmodified: **BSD-3-Clause**, Copyright (c) 2020, Marco Furlan Tassara
-  (`tools/validation/mfeval/LICENSE.txt`; text reproduced below). Only the reference for validating the tyre evaluator; not part of the game, and not covered by the licences above.
+  (`tools/validation/mfeval/LICENSE.txt`; text reproduced below). Also the six example tyre files that ship in the same package (`tools/validation/mfeval/doc/examples/*.tir`), under that same licence;
+  the package does not say where their data comes from. Only the reference for validating the tyre evaluator; not part of the game, and not covered by the licences above.
 - **`data/validation/mf62/`**: the case list and the two synthetic MF 6.1 / 6.2 tyre files are ours (CC BY-NC 4.0) except that the synthetic tyres contain the coefficients of the Project Chrono Audi 245/40 R18
   PAC2002 tyre (BSD-3-Clause, Copyright (c) 2016 Project Chrono Development Team, notice in each file header and `data/tires/LICENSE-projectchrono.txt`); `golden/*.csv` are MFeval's numeric output for those tyres
   (generated with `tools/validation/mfeval_reference.m`), and are measurements of nothing: they only record what MFeval returns.
