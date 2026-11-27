@@ -56,13 +56,14 @@ fx0    Fx         255     15       49.77 ( 0.66 % of peak)      156.4      7
 fy0    Fy         765     18       60.86 ( 0.85 % of peak)        193    150  (iteration limit)
 ```
 
-- **rms error / % of peak**: how far the fitted curve is from your points, per stage. On the noisy synthetic demo it is 0.7 to 1.4 % of the peak (the noise itself is 1 %).
+- **rms error / % of peak**: how far the fitted curve is from your points, per stage. On the noisy synthetic demo it is 0.6 to 1.5 % of the peak (the noise itself is 1 %).
 - **barely determined by this data**: the data hardly changes the fit when that coefficient moves (for example a camber term when camber barely varies): its value is the starting guess, not a result.
 - **on a bound**: the optimiser pushed a coefficient to the edge of its physical range: the data is odd, the signs are wrong, or the template is far from the tyre.
 - **iteration limit**: not converged; the fit is usable but run it again with cleaner data or a closer template.
 - **notes**: what the data does not cover. Camber, pressure and aligning-moment coefficients that the data cannot determine are NOT fitted and keep the template's values; the output file says so in its header.
 
-The file's limits (slip, camber, load) are widened to span your data, because the fit runs with the limits on exactly as the tyre is used.
+The file's limits (slip, camber, load) are widened to span your data, because the fit runs with the limits on exactly as the tyre is used. The template's scaling factors (`LFZO`, `LMUX`, `LKY`, ... : the Chrono
+files use them, `LFZO` between 0.37 and 1.76) are reset to 1, so `FNOMIN` is the nominal load you gave and the report lists what was reset.
 
 ## 4. From the tyre file to a car
 
@@ -100,13 +101,13 @@ Synthetic only. Truth = a Chrono tyre, fit started from another tyre of a differ
 | | Fx | Fy | Mz | combined Fx / Fy | peak force | initial cornering stiffness |
 |---|---|---|---|---|---|---|
 | template alone, no fit | 46 | 31 | 27 | 41 / 41 | 33 to 47 | 69 |
-| fit, noise-free (Audi, started from the truck tyre) | 0.3 | 0.4 | 0.8 | 0.2 / 0.5 | 0.3 | 0.05 |
-| fit, 1 % noise | 0.3 | 0.4 | 0.8 | 0.3 / 0.6 | 0.3 | 0.4 |
-| worst of four tyre pairs, noise-free | 0.9 | 0.6 | 0.8 | 0.7 / 1.0 | 1.7 | 3.5 |
+| fit, noise-free (Audi, started from the truck tyre) | 0.0 | 0.6 | 1.0 | 0.1 / 0.7 | 0.5 | 0.1 |
+| fit, 1 % noise | 0.1 | 0.6 | 1.0 | 0.2 / 0.8 | 0.4 | 0.4 |
+| worst of four tyre pairs, noise-free | 0.9 | 0.6 | 1.0 | 0.7 / 1.0 | 1.7 | 3.5 |
 
 What these numbers do not say:
 
-- **The coefficients are not unique.** Many coefficient sets give nearly the same curves; the fit matches the curves (0.5 % of the peak on exact synthetic data), not necessarily the coefficients that generated them. Never read a
+- **The coefficients are not unique.** Many coefficient sets give nearly the same curves; the fit matches the curves (0.6 to 1 % of the peak on exact synthetic data), not necessarily the coefficients that generated them. Never read a
   fitted coefficient as a physical property.
 - **Real data is harder** than a model's own output: it has errors that no Magic Formula reproduces, and rig-to-rig differences. Expect larger errors and check the plots of your own data against the fitted curve.
 - **Not fitted:** overturning moment Mx, rolling resistance My, turn slip, the aligning moment of combined slip, and anything a stage had no data for.

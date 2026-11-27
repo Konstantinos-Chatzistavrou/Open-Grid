@@ -193,6 +193,7 @@ int vehicle_cmd(const std::string& car, const std::string& dir) {
     const double R = 50.0, v_circle = 40.0 / 3.6, v_brake = 100.0 / 3.6;
     {
         std::ofstream j(dir + "/spec.json");
+        if (!j) { std::fprintf(stderr, "cannot write into %s: the output directory must exist (mkdir -p it first)\n", dir.c_str()); return 1; }
         char buf[1500];
         std::snprintf(buf, sizeof buf,
                       "{\n  \"name\": \"%s\",\n  \"mass_kg\": %.3f,\n  \"weight_front\": %.5f,\n  \"wheelbase_m\": %.4f,\n  \"tyre_mu_long_peak\": %.4f,\n  \"tyre_mu_lat_peak\": %.4f,\n  \"peak_power_kw\": %.3f,\n"

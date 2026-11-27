@@ -502,6 +502,17 @@ Result fit(const mf62::Params& tyre, const std::vector<Sample>& data, const Opti
     mf62::Params& cur = res.params;
     const mf62::Modes modes = mf62::modes_from_use_mode(111);
 
+    // -- the template's scaling factors (LFZO, LMUX, LKY, ...) rescale its coefficients: the measured data defines this tyre, so they go back to 1 (FNOMIN is then the nominal load and a coefficient is what it says)
+    {
+        const mf62::Params defaults;
+        std::string changed;
+        for (const auto& [key, mem] : coeff_table()) {
+            const bool scale_factor = key.size() >= 2 && key.size() <= 5 && key[0] == 'L' && key != "LONGVL" && defaults.*mem == 1.0;
+            if (scale_factor && cur.*mem != 1.0) { changed += (changed.empty() ? "" : ", ") + key + " (" + std::to_string(cur.*mem).substr(0, 6) + ")"; cur.*mem = 1.0; }
+        }
+        if (!changed.empty()) res.notes.push_back("the template's scaling factors were reset to 1 so that FNOMIN is the nominal load: " + changed);
+    }
+
     // -- what the data covers
     std::vector<double> loads;
     double kmin = 0, kmax = 0, amin = 0, amax = 0, gmin = 0, gmax = 0, fzmin = 1e300, fzmax = 0, pmin = 1e300, pmax = 0;
