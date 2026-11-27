@@ -3,6 +3,9 @@
 name = "opengrid"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
+workers_dev = true
+# Uncomment once the open-grid.racing zone is added to this Cloudflare account:
+# routes = [{ pattern = "api.open-grid.racing", zone_name = "open-grid.racing", custom_domain = true }]
 
 [[d1_databases]]
 binding = "DB"

@@ -44,7 +44,7 @@ Numbers cannot tell us how the car feels. We need sim racers with wheels and ped
 drive similar real cars on track.
 
 **Setup.** The game runs in a browser (Chrome or Edge on Windows/macOS; live demo:
-https://racing-game-brown-six.vercel.app/). Wheels connect through the Gamepad API; force feedback where the browser
+https://open-grid.racing/). Wheels connect through the Gamepad API; force feedback where the browser
 supports it.
 
 **Protocol for a session (20-30 min):**

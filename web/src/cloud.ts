@@ -38,7 +38,9 @@ export interface ScheduleResponse { season: string; adFree: boolean; events: Off
 
 const KEY = 'nr.cloud.v1';
 const envUrl = (import.meta as unknown as { env?: Record<string, string | boolean | undefined> }).env ?? {};
-const BASE = String(envUrl.VITE_CLOUD_URL ?? (envUrl.DEV ? 'http://127.0.0.1:8787' : '')).replace(/\/$/, '');
+const isLocalHost = typeof location !== 'undefined' && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname);
+const defaultProdBase = isLocalHost ? '' : 'https://opengrid.opengrid-racing.workers.dev';
+const BASE = String(envUrl.VITE_CLOUD_URL ?? (envUrl.DEV ? 'http://127.0.0.1:8787' : defaultProdBase)).replace(/\/$/, '');
 
 export interface Friend { username: string; level: number; license?: string; dr?: number; online: boolean; party: string | null; seenAgo?: number | null }
 export interface Friends { friends: Friend[]; incoming: string[]; outgoing: string[] }

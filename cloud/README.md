@@ -2,7 +2,7 @@
 
 The server-authoritative backend for **Open Grid's competitive online network**, running on **Cloudflare Workers + D1 + SQLite-backed Durable Objects (Free Plan, $0/month fixed cost)**.
 
-- **Live instance:** `https://opengrid.opengrid-racing.workers.dev` (region `EEUR`)
+- **Live instance:** `https://opengrid.opengrid-racing.workers.dev` (region `EEUR`; ready for custom domain `https://api.open-grid.racing` once the `open-grid.racing` zone is added to Cloudflare)
 - **Frontend integration:** Vercel project `opengrid` builds `web/` with `VITE_CLOUD_URL` set to the live Worker URL on every push to `main`.
 - **Licence:** `Apache-2.0` (100% open source; self-hostable by leagues and communities).
 - **Monetization Philosophy:** **100% Non-Profit & Ad-Free.** All cars, tracks, single player, garage, friends, and private P2P lobbies are free forever. Official managed ranked servers are funded via a **Patreon Supporter Pass** (7-day free trial included automatically on every new account).
@@ -98,8 +98,8 @@ Required Cloudflare secrets (`wrangler secret put <NAME>`):
 
 Patreon activation (when your Patreon page is created):
 1. Set `PATREON_URL = "https://www.patreon.com/<your-page>"` in `wrangler.toml` `[vars]` (optional: `PATREON_PRO_CENTS = "500"`, `PATREON_TEAM_CENTS = "1000"`, `PATREON_CAMPAIGN_ID`).
-2. In Patreon Developer Portal → **Webhooks**, register `https://opengrid.opengrid-racing.workers.dev/v1/patreon/webhook` for `members:pledge:create`, `members:pledge:update`, `members:pledge:delete`, then run `npx wrangler secret put PATREON_WEBHOOK_SECRET`.
-3. *(Optional OAuth2)* Register a Patreon OAuth Client with redirect URI `https://opengrid.opengrid-racing.workers.dev/v1/patreon/callback`, set `PATREON_CLIENT_ID` in `wrangler.toml`, and run `npx wrangler secret put PATREON_CLIENT_SECRET`.
+2. In Patreon Developer Portal → **Webhooks**, register `https://api.open-grid.racing/v1/patreon/webhook` for `members:pledge:create`, `members:pledge:update`, `members:pledge:delete`, then run `npx wrangler secret put PATREON_WEBHOOK_SECRET`.
+3. *(Optional OAuth2)* Register a Patreon OAuth Client with redirect URI `https://api.open-grid.racing/v1/patreon/callback`, set `PATREON_CLIENT_ID` in `wrangler.toml`, and run `npx wrangler secret put PATREON_CLIENT_SECRET`.
 
 ---
 
