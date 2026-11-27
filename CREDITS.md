@@ -132,6 +132,10 @@ represents or is endorsed by any real manufacturer.
   Team, BSD-3-Clause (`data/tires/LICENSE-projectchrono.txt`). Stored unchanged as `data/tires/audi_245_40R18_pac2002.tir`;
   converted into every car's tyre curves by `tools/tir2car.mjs` (sign conventions changed to ours, left-tyre-only and
   mirror-asymmetric terms zeroed, peak friction and stiffness scaled per car).
+- **Magic Formula 5.2 / 6.1 / 6.2 tyre evaluator**: `core/src/mf62.cpp` implements the equations of H. B. Pacejka, *Tire and Vehicle Dynamics*, 3rd ed. revised (Elsevier 2012), and of I. J. M. Besselink, A. J. C. Schmeitz,
+  H. B. Pacejka, "An improved Magic Formula/Swift tyre model that can handle inflation pressure changes", Vehicle System Dynamics 48 (2010) 337-352, with the TNO-solver corrections of **MFeval** (Marco Furlan Tassara,
+  BSD-3-Clause, https://mfeval.wordpress.com/; MATLAB source vendored unmodified in `tools/validation/mfeval/` as the validation reference). Cross-referenced against "MFeval.jl - High-Performance Pacejka Magic Formula
+  Tyre Model Implementation" (MIT, https://github.com/matheusft/MFeval_julia). Notices in `LICENSING.md`; details and status in `docs/mf62.md`.
 - **Reference vehicle parameters** (Audi sedan: 1550 kg, inertia, 2.776 m wheelbase, 245/40R18 tyre, engine torque map,
   brakes; G500 SUV: 2354 kg, inertia, 2.85 m wheelbase, tyre/suspension data), from Project Chrono
   (https://github.com/projectchrono/chrono/tree/e166f3e5a1383741e86cf1e195a46eba4a66473d/data/vehicle), Copyright (c) 2016,

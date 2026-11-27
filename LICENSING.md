@@ -55,6 +55,11 @@ these files.
   **BSD-3-Clause** (`LICENSE-projectchrono.txt`). Meshes, textures and the OpenCRG roads are not imported (docs/chrono-data.md).
 - **Fitted tyre file** `data/tires/audi_245_40R18_pac2002.tir`: Project Chrono, **BSD-3-Clause**
   (`data/tires/LICENSE-projectchrono.txt`).
+- **MFeval 4.3.1** (Magic Formula 5.2 / 6.1 / 6.2 evaluator, MATLAB), `tools/validation/mfeval/`, the six source files vendored unmodified: **BSD-3-Clause**, Copyright (c) 2020, Marco Furlan Tassara
+  (`tools/validation/mfeval/LICENSE.txt`; text reproduced below). Only the reference for validating the tyre evaluator; not part of the game, and not covered by the licences above.
+- **`core/src/mf62.cpp` / `core/include/rs/mf62.hpp`** (our MF 5.2 / 6.1 / 6.2 evaluator) are Apache-2.0 code **written against MFeval's source**, so MFeval's BSD notice applies to them as well (below). Its
+  first cross-reference, MFeval.jl (**MIT**, Copyright (c) 2026 MFeval.jl contributors, https://github.com/matheusft/MFeval_julia), asks to be cited as "MFeval.jl - High-Performance Pacejka Magic Formula Tyre
+  Model Implementation": done here and in `CREDITS.md`.
 - **Basis Universal transcoder**, `web/public/libs/basis/`: Apache-2.0.
 - Libraries loaded at run time (three.js MIT, Rapier Apache-2.0, meshoptimizer MIT, PeerJS MIT) keep their licences.
 
@@ -92,3 +97,69 @@ been CC BY-NC 4.0 throughout.
 New contributions are accepted under the same split: code under Apache-2.0, everything else under CC BY-NC 4.0.
 GPL-family code (GPL / LGPL / AGPL) cannot be added to the code; MIT / BSD / Apache-2.0 / ISC / zlib / CC0 code can
 (keep its notice in `CREDITS.md`).
+
+## Third-party notices for the tyre evaluator
+
+MFeval, `tools/validation/mfeval/LICENSE.txt` (BSD 3-Clause), which also governs `core/src/mf62.cpp` and `core/include/rs/mf62.hpp` as works written against it:
+
+```
+Copyright (c) 2020, Marco Furlan Tassara
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution
+
+* Neither the name of  nor the names of its
+  contributors may be used to endorse or promote products derived from this
+  software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+MFeval.jl, https://github.com/matheusft/MFeval_julia (MIT), used as a first cross-reference while writing `mf62.cpp`:
+
+```
+MIT License
+
+Copyright (c) 2026 MFeval.jl contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+ATTRIBUTION REQUIREMENT:
+When using this software in research, publications, or derivative works, please
+provide appropriate credit by citing:
+"MFeval.jl - High-Performance Pacejka Magic Formula Tyre Model Implementation"
+and include a reference to this repository.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
