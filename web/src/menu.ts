@@ -2889,7 +2889,7 @@ export class Menu {
       ${authBlock}
       ${this.authNote ? `<div class="pnote ${this.authNote.startsWith('✓') ? '' : 'bad'}">${esc(this.authNote)}</div>` : ''}
       <h3>♥ Support Open Grid (Optional)</h3>
-      <p class="dim small-note">Open Grid is a free, open-source, ad-free hobby project — all cars, cities, online splits, championships, hotlaps &amp; private P2P lobbies are 100% free for everyone. Optional Patreon support helps cover domain &amp; hosting.</p>
+      <p class="dim small-note">Open Grid is a free, open-source, ad-free hobby project — all cars, cities, online splits, championships, hotlaps &amp; private P2P lobbies are 100% free for everyone. Optional Patreon support helps cover domain &amp; hosting and gets you a supporter role in the Discord.</p>
       <div class="opts" style="flex-wrap:wrap;gap:8px;margin-bottom:8px">
         <span class="pill gold">✓ 100% Free Forever</span>
         <a class="chip on" style="text-decoration:none;color:#fff" href="https://www.patreon.com/Open_Grid" target="_blank" rel="noopener noreferrer">♥ Support on Patreon</a>

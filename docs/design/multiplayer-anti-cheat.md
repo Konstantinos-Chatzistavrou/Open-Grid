@@ -153,7 +153,7 @@ The following competitive and anti-cheat systems are now **deployed live** on `h
    - Headless C++20 CLI (`core/tools/opengrid_replay_verifier.cpp`) runs `rs::AuthorityServerSim` (400 Hz physics) and `rs::AntiBotAnalyzer` (steering-lock, 240 Hz sawtooth macro, zero-latency reflex detection) via `.github/workflows/replay_verifier.yml` (`tools/verify_replays.mjs`) for `$0/month`.
 4. **100% Free Hobby-Project Model (Zero Ads, Zero Paywalls, Zero Trials)**:
    - Base game, all 25 cars, cities, SP, Garage, Private P2P parties (PeerJS poses + WebRTC voice chat), and Community Ranked Splits (`cloud/` free plan, best-effort) are 100% free for every player.
-   - Optional **[Patreon](https://www.patreon.com/Open_Grid)** support helps the project; nothing in the game is gated behind it.
+   - Optional **[Patreon](https://www.patreon.com/Open_Grid)** support helps the project and gives recognition and a Discord supporter role; nothing in the game is gated behind it.
 5. **Saved Next Wires**:
    - Wire `web/src/main.ts` collision/offtrack events into `ranked.incident(...)` and upload tick logs when `rankedRes.you.replay === true`.
    - Community-hostable `rs_core` (`AuthorityServerSim`) dedicated servers for the UE 5.8 build.
