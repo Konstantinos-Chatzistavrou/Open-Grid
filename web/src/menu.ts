@@ -31,6 +31,7 @@ import { checkSplitScreen, type SplitLayout } from './splitScreen';
 import { MOD_CATALOG, loadModHub, toggleModSub, type ModHubStore } from './modHub';
 import { ACADEMY_LESSONS, WEEKLY_CALENDAR, loadCompletedLessons, todayCalendarEvent, type AcademyLesson, type CalendarEvent } from './careerEvents';
 import { AI_DIFFICULTY_PRESETS, difficultyProfile } from './aiPlanner';
+import { renderQrSvg } from './qrSvg';
 
 type GaragePillar = 'rides' | 'style' | 'perf' | 'driver';
 
@@ -229,6 +230,23 @@ export class Menu {
   private friendNote = '';
   private authEmail = '';
   private authPass = '';
+  private authTotp = '';
+  private authNeeds2fa = false;
+  private authForgotOpen = false;
+  private authResetEmail = '';
+  private authResetCode = '';
+  private authResetPass = '';
+  private recoveryCodes: string[] = [];
+  private totpSetup: { secret: string; otpauthUri: string } | null = null;
+  private totpVerifyCode = '';
+  private totpDisableOpen = false;
+  private totpDisableCode = '';
+  private pwPanelOpen = false;
+  private pwCur = '';
+  private pwNew = '';
+  private delPanelOpen = false;
+  private delPass = '';
+  private delConfirm = '';
   authNote = '';
   private authBusy = false;
   officialEvents: OfficialSeriesEvent[] = [];
@@ -2012,6 +2030,57 @@ export class Menu {
         break;
       case 'auth-register': void this.submitAuth('register'); break;
       case 'auth-login': void this.submitAuth('login'); break;
+      case 'auth-2fa-login-cancel':
+        this.authNeeds2fa = false;
+        this.authTotp = '';
+        this.authNote = '';
+        this.render();
+        break;
+      case 'auth-forgot-toggle':
+        this.authForgotOpen = !this.authForgotOpen;
+        if (this.authForgotOpen && !this.authResetEmail && this.authEmail) this.authResetEmail = this.authEmail;
+        if (this.authForgotOpen) { this.authNeeds2fa = false; this.authTotp = ''; }
+        this.authNote = '';
+        this.render();
+        break;
+      case 'auth-forgot-send': void this.submitForgotPassword(); break;
+      case 'auth-reset-submit': void this.submitResetPassword(); break;
+      case 'auth-copy-codes': this.copyRecoveryCodes(); break;
+      case 'auth-dismiss-codes':
+        this.recoveryCodes = [];
+        this.render();
+        break;
+      case 'auth-2fa-setup': void this.start2faSetup(); break;
+      case 'auth-2fa-enable': void this.submitEnable2fa(); break;
+      case 'auth-2fa-cancel':
+        this.totpSetup = null;
+        this.totpVerifyCode = '';
+        this.render();
+        break;
+      case 'auth-2fa-disable-toggle':
+        this.totpDisableOpen = !this.totpDisableOpen;
+        this.totpDisableCode = '';
+        if (this.totpDisableOpen) { this.totpSetup = null; this.pwPanelOpen = false; this.delPanelOpen = false; }
+        this.render();
+        break;
+      case 'auth-2fa-disable-submit': void this.submitDisable2fa(); break;
+      case 'auth-pw-toggle':
+        this.pwPanelOpen = !this.pwPanelOpen;
+        this.pwCur = '';
+        this.pwNew = '';
+        if (this.pwPanelOpen) { this.totpSetup = null; this.totpDisableOpen = false; this.delPanelOpen = false; }
+        this.render();
+        break;
+      case 'auth-pw-submit': void this.submitChangePassword(); break;
+      case 'auth-recovery-regen': void this.submitRegenerateRecoveryCodes(); break;
+      case 'auth-delete-toggle':
+        this.delPanelOpen = !this.delPanelOpen;
+        this.delPass = '';
+        this.delConfirm = '';
+        if (this.delPanelOpen) { this.totpSetup = null; this.totpDisableOpen = false; this.pwPanelOpen = false; }
+        this.render();
+        break;
+      case 'auth-delete-submit': void this.submitDeleteAccount(); break;
       case 'auth-oauth': {
         const prov = v as OAuthProvider;
         if (prov === 'google' || prov === 'github' || prov === 'discord') void this.startOAuthLogin(prov);
@@ -2246,21 +2315,56 @@ export class Menu {
     if (action === 'add' && this.friendNote.startsWith('✓')) this.friendDraft = '';
     this.render();
   }
+  private resetSecurityPanels() {
+    this.authNeeds2fa = false;
+    this.authTotp = '';
+    this.authForgotOpen = false;
+    this.authResetCode = '';
+    this.authResetPass = '';
+    this.totpSetup = null;
+    this.totpVerifyCode = '';
+    this.totpDisableOpen = false;
+    this.totpDisableCode = '';
+    this.pwPanelOpen = false;
+    this.pwCur = '';
+    this.pwNew = '';
+    this.delPanelOpen = false;
+    this.delPass = '';
+    this.delConfirm = '';
+  }
+
   private async submitAuth(kind: 'register' | 'login') {
     if (this.authBusy || !this.cloud.available) return;
     this.authBusy = true;
-    this.authNote = kind === 'register' ? 'Saving account…' : 'Signing in…';
+    this.authNote = kind === 'register' ? 'Saving account…' : (this.authNeeds2fa ? 'Verifying 2FA code…' : 'Signing in…');
     this.render();
     try {
-      const p = kind === 'register'
-        ? await this.cloud.registerEmail(this.authEmail, this.authPass, this.identity.claimed ? undefined : (this.unameDraft ?? this.sel.name))
-        : await this.cloud.loginEmail(this.authEmail, this.authPass);
-      this.mp.profile = p;
-      if (p.username) { this.sel.name = p.username; this.save(); }
-      this.authPass = '';
-      this.authNote = kind === 'register' ? `✓ Account saved for ${p.email ?? this.authEmail} — works across Web & UE 5.8!` : `✓ Welcome back, ${p.name}!`;
-      void this.mp.refresh();
-      void this.identity.sync(p);
+      if (kind === 'register') {
+        const res = await this.cloud.registerEmail(this.authEmail, this.authPass, this.identity.claimed ? undefined : (this.unameDraft ?? this.sel.name));
+        this.mp.profile = res.profile;
+        if (res.profile.username) { this.sel.name = res.profile.username; this.save(); }
+        this.authPass = '';
+        this.resetSecurityPanels();
+        if (res.recoveryCodes?.length) this.recoveryCodes = res.recoveryCodes;
+        this.authNote = `✓ Account saved for ${res.profile.email ?? this.authEmail} — works across Web & UE 5.8!`;
+        void this.mp.refresh();
+        void this.identity.sync(res.profile);
+      } else {
+        const res = await this.cloud.loginEmail(this.authEmail, this.authPass, this.authNeeds2fa ? this.authTotp.trim() : undefined);
+        if (res.requires2fa) {
+          this.authNeeds2fa = true;
+          this.authTotp = '';
+          this.authNote = 'Enter the 6-digit code from your authenticator app (or an 8-character backup code).';
+        } else {
+          this.mp.profile = res.profile;
+          if (res.profile.username) { this.sel.name = res.profile.username; this.save(); }
+          this.authPass = '';
+          this.resetSecurityPanels();
+          this.authNote = `✓ Welcome back, ${res.profile.name}!`;
+          void this.mp.refresh();
+          void this.identity.sync(res.profile);
+        }
+      }
     } catch (e) {
       this.authNote = (e as Error).message || 'Authentication failed.';
     } finally {
@@ -2269,12 +2373,209 @@ export class Menu {
     }
   }
 
+  private async submitForgotPassword() {
+    if (this.authBusy || !this.cloud.available) return;
+    const email = this.authResetEmail.trim();
+    if (!email) { this.authNote = 'Enter your account email address first.'; this.render(); return; }
+    this.authBusy = true;
+    this.authNote = 'Requesting password reset code…';
+    this.render();
+    try {
+      const r = await this.cloud.forgotPassword(email);
+      this.authNote = r.message
+        ? (r.emailSent ? `✓ ${r.message}` : r.message)
+        : (r.emailSent ? '✓ Reset code sent! Check your email inbox.' : 'Enter one of your saved 8-character recovery codes below to reset your password.');
+    } catch (e) {
+      this.authNote = (e as Error).message || 'Could not request password reset.';
+    } finally {
+      this.authBusy = false;
+      this.render();
+    }
+  }
+
+  private async submitResetPassword() {
+    if (this.authBusy || !this.cloud.available) return;
+    const email = this.authResetEmail.trim();
+    const code = this.authResetCode.trim();
+    const pw = this.authResetPass;
+    if (!email || !code || !pw) {
+      this.authNote = 'Enter your email, reset/recovery code, and new password (8+ chars).';
+      this.render();
+      return;
+    }
+    this.authBusy = true;
+    this.authNote = 'Resetting password…';
+    this.render();
+    try {
+      const res = await this.cloud.resetPassword(email, code, pw);
+      this.mp.profile = res.profile;
+      if (res.profile.username) { this.sel.name = res.profile.username; this.save(); }
+      this.authEmail = email;
+      this.authPass = '';
+      this.resetSecurityPanels();
+      this.authNote = `✓ Password reset! Signed in as ${res.profile.name}.`;
+      void this.mp.refresh();
+      void this.identity.sync(res.profile);
+    } catch (e) {
+      this.authNote = (e as Error).message || 'Password reset failed.';
+    } finally {
+      this.authBusy = false;
+      this.render();
+    }
+  }
+
+  private async start2faSetup() {
+    if (this.authBusy || !this.cloud.available) return;
+    this.authBusy = true;
+    this.authNote = 'Generating 2FA secret…';
+    this.render();
+    try {
+      this.totpDisableOpen = false;
+      this.pwPanelOpen = false;
+      this.delPanelOpen = false;
+      this.totpSetup = await this.cloud.setup2fa();
+      this.totpVerifyCode = '';
+      this.authNote = 'Scan the QR code in your authenticator app (generated locally in your browser) and enter the 6-digit code.';
+    } catch (e) {
+      this.authNote = (e as Error).message || 'Could not start 2FA setup.';
+    } finally {
+      this.authBusy = false;
+      this.render();
+    }
+  }
+
+  private async submitEnable2fa() {
+    if (this.authBusy || !this.cloud.available) return;
+    const code = this.totpVerifyCode.trim();
+    if (!code) { this.authNote = 'Enter the 6-digit code from your authenticator app.'; this.render(); return; }
+    this.authBusy = true;
+    this.authNote = 'Verifying 2FA code…';
+    this.render();
+    try {
+      const res = await this.cloud.enable2fa(code);
+      if (res.profile) this.mp.profile = res.profile;
+      else if (this.mp.profile) this.mp.profile = { ...this.mp.profile, totpEnabled: true };
+      this.totpSetup = null;
+      this.totpVerifyCode = '';
+      if (res.backupCodes?.length) this.recoveryCodes = res.backupCodes;
+      this.authNote = '✓ Authenticator 2FA enabled! Save your 8 backup codes below.';
+      void this.mp.refresh();
+    } catch (e) {
+      this.authNote = (e as Error).message || 'Invalid 2FA code.';
+    } finally {
+      this.authBusy = false;
+      this.render();
+    }
+  }
+
+  private async submitDisable2fa() {
+    if (this.authBusy || !this.cloud.available) return;
+    const code = this.totpDisableCode.trim();
+    if (!code) { this.authNote = 'Enter your 6-digit authenticator code or a backup code.'; this.render(); return; }
+    this.authBusy = true;
+    this.authNote = 'Disabling 2FA…';
+    this.render();
+    try {
+      const res = await this.cloud.disable2fa(code);
+      if (res.profile) this.mp.profile = res.profile;
+      else if (this.mp.profile) this.mp.profile = { ...this.mp.profile, totpEnabled: false };
+      this.totpDisableOpen = false;
+      this.totpDisableCode = '';
+      this.authNote = '✓ Authenticator 2FA disabled.';
+      void this.mp.refresh();
+    } catch (e) {
+      this.authNote = (e as Error).message || 'Could not disable 2FA.';
+    } finally {
+      this.authBusy = false;
+      this.render();
+    }
+  }
+
+  private async submitChangePassword() {
+    if (this.authBusy || !this.cloud.available) return;
+    const hasPw = Boolean(this.mp.profile?.hasPassword);
+    if (hasPw && !this.pwCur) { this.authNote = 'Enter your current password.'; this.render(); return; }
+    if (this.pwNew.length < 8) { this.authNote = 'New password must be at least 8 characters.'; this.render(); return; }
+    this.authBusy = true;
+    this.authNote = hasPw ? 'Updating password…' : 'Setting password…';
+    this.render();
+    try {
+      await this.cloud.changePassword(hasPw ? this.pwCur : '', this.pwNew);
+      if (this.mp.profile) this.mp.profile = { ...this.mp.profile, hasPassword: true };
+      this.pwPanelOpen = false;
+      this.pwCur = '';
+      this.pwNew = '';
+      this.authNote = '✓ Password updated! Your session token was securely rotated.';
+    } catch (e) {
+      this.authNote = (e as Error).message || 'Could not update password.';
+    } finally {
+      this.authBusy = false;
+      this.render();
+    }
+  }
+
+  private async submitRegenerateRecoveryCodes() {
+    if (this.authBusy || !this.cloud.available) return;
+    this.authBusy = true;
+    this.authNote = 'Generating fresh recovery codes…';
+    this.render();
+    try {
+      const res = await this.cloud.regenerateRecoveryCodes();
+      this.recoveryCodes = res.recoveryCodes ?? [];
+      this.authNote = '✓ Generated 8 new one-time recovery codes (previous codes invalidated).';
+    } catch (e) {
+      this.authNote = (e as Error).message || 'Could not regenerate recovery codes.';
+    } finally {
+      this.authBusy = false;
+      this.render();
+    }
+  }
+
+  private async submitDeleteAccount() {
+    if (this.authBusy || !this.cloud.available) return;
+    if (this.delConfirm.trim() !== 'DELETE') {
+      this.authNote = 'Type DELETE in all caps to confirm permanent account deletion.';
+      this.render();
+      return;
+    }
+    this.authBusy = true;
+    this.authNote = 'Deleting account…';
+    this.render();
+    try {
+      await this.cloud.deleteAccount(this.delConfirm.trim(), this.delPass || undefined);
+      this.mp.profile = null;
+      this.authEmail = '';
+      this.authPass = '';
+      this.recoveryCodes = [];
+      this.resetSecurityPanels();
+      this.authNote = '✓ Account permanently deleted on this service.';
+    } catch (e) {
+      this.authNote = (e as Error).message || 'Could not delete account.';
+    } finally {
+      this.authBusy = false;
+      this.render();
+    }
+  }
+
+  private copyRecoveryCodes() {
+    if (!this.recoveryCodes.length) return;
+    const text = this.recoveryCodes.join('\n');
+    const done = (ok: boolean) => {
+      this.authNote = ok ? '✓ Copied all 8 recovery codes to clipboard.' : 'Select and copy the codes manually.';
+      this.render();
+    };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => done(true), () => done(false));
+    else done(false);
+  }
+
   private async submitLogout() {
     if (this.authBusy) return;
     this.authBusy = true;
     await this.cloud.logout();
     this.mp.profile = null;
     this.authPass = '';
+    this.recoveryCodes = [];
+    this.resetSecurityPanels();
     this.authNote = 'Signed out on this device.';
     this.authBusy = false;
     this.render();
@@ -2318,20 +2619,123 @@ export class Menu {
       this.oauthProviders.github ? `<button class="small og-oauth github" data-act="auth-oauth" data-v="github" ${this.authBusy ? 'disabled' : ''}>⌥ · Continue with GitHub</button>` : '',
       this.oauthProviders.discord ? `<button class="small og-oauth discord" data-act="auth-oauth" data-v="discord" ${this.authBusy ? 'disabled' : ''}>💬 · Continue with Discord</button>` : '',
     ].filter(Boolean).join('');
-    const authBlock = !online ? '<div class="dim note">Email login activates automatically once connected to the OpenGrid cloud backend.</div>'
+    const cardStyle = 'margin-top:10px;padding:12px 14px;border-radius:10px;background:#0A0A0A;border:1px solid rgba(255,255,255,.14)';
+    const recoveryCodesCard = this.recoveryCodes.length > 0 ? `<div style="${cardStyle};border-color:rgba(255,17,17,.55)">
+      <div style="font-weight:700;color:#fbbf24;margin-bottom:4px">🛡 Save these 8 one-time recovery/backup codes somewhere safe — shown once!</div>
+      <p class="dim small-note" style="margin:0 0 8px">Each code can recover your account or bypass 2FA once if you lose access to your authenticator.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:6px;margin-bottom:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px">
+        ${this.recoveryCodes.map((c) => `<code style="padding:5px 8px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);text-align:center;letter-spacing:.08em;user-select:all">${esc(c)}</code>`).join('')}
+      </div>
+      <div class="opts" style="gap:8px">
+        <button class="small primary" data-act="auth-copy-codes">📋 Copy Codes</button>
+        <button class="small" data-act="auth-dismiss-codes">Dismiss</button>
+      </div>
+    </div>` : '';
+    let securityPanel = '';
+    if (mp?.email) {
+      if (this.totpSetup) {
+        let qrMarkup = '';
+        try { qrMarkup = renderQrSvg(this.totpSetup.otpauthUri, 168); } catch { qrMarkup = ''; }
+        securityPanel = `<div style="${cardStyle}">
+          <div style="font-weight:700;margin-bottom:6px">🔐 Set Up Authenticator 2FA</div>
+          <p class="dim small-note" style="margin:0 0 10px">Scan this QR code with Google Authenticator, Authy, Bitwarden, or 1Password (generated 100% locally in your browser — your secret never leaves your device).</p>
+          <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-bottom:10px">
+            ${qrMarkup ? `<div style="padding:6px;background:#fff;border-radius:8px;line-height:0;flex:0 0 auto">${qrMarkup}</div>` : ''}
+            <div style="min-width:200px;flex:1">
+              <div class="dim small-note" style="margin-bottom:4px">Manual setup key (Base32):</div>
+              <code style="display:block;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all;user-select:all;margin-bottom:8px">${esc(this.totpSetup.secret)}</code>
+              <div class="joinrow" style="flex-wrap:wrap;gap:6px">
+                <input id="auth-2fa-verify" type="text" inputmode="numeric" maxlength="10" value="${esc(this.totpVerifyCode)}" placeholder="6-digit code" autocomplete="one-time-code" style="max-width:150px" />
+                <button class="small primary" data-act="auth-2fa-enable" ${this.authBusy ? 'disabled' : ''}>Verify &amp; Enable 2FA</button>
+                <button class="small" data-act="auth-2fa-cancel" ${this.authBusy ? 'disabled' : ''}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      } else if (this.totpDisableOpen) {
+        securityPanel = `<div style="${cardStyle}">
+          <div style="font-weight:700;margin-bottom:6px">🔓 Disable Authenticator 2FA</div>
+          <p class="dim small-note" style="margin:0 0 8px">Enter your current 6-digit authenticator code (or a backup code) to turn off 2FA.</p>
+          <div class="joinrow" style="flex-wrap:wrap;gap:6px">
+            <input id="auth-2fa-disable-code" type="text" inputmode="numeric" maxlength="16" value="${esc(this.totpDisableCode)}" placeholder="6-digit or backup code" autocomplete="one-time-code" style="max-width:190px" />
+            <button class="small primary" data-act="auth-2fa-disable-submit" ${this.authBusy ? 'disabled' : ''}>Confirm Disable 2FA</button>
+            <button class="small" data-act="auth-2fa-disable-toggle" ${this.authBusy ? 'disabled' : ''}>Cancel</button>
+          </div>
+        </div>`;
+      } else if (this.pwPanelOpen) {
+        securityPanel = `<div style="${cardStyle}">
+          <div style="font-weight:700;margin-bottom:6px">🔑 ${mp.hasPassword ? 'Change Password' : 'Set Account Password'}</div>
+          <div class="joinrow" style="flex-wrap:wrap;gap:6px">
+            ${mp.hasPassword ? `<input id="auth-pw-cur" type="password" value="${esc(this.pwCur)}" placeholder="Current password" autocomplete="current-password" />` : ''}
+            <input id="auth-pw-new" type="password" value="${esc(this.pwNew)}" placeholder="New password (8+ chars)" autocomplete="new-password" />
+            <button class="small primary" data-act="auth-pw-submit" ${this.authBusy ? 'disabled' : ''}>Update Password</button>
+            <button class="small" data-act="auth-pw-toggle" ${this.authBusy ? 'disabled' : ''}>Cancel</button>
+          </div>
+        </div>`;
+      } else if (this.delPanelOpen) {
+        securityPanel = `<div style="${cardStyle};border-color:rgba(255,17,17,.6)">
+          <div style="font-weight:700;color:#ff4d4d;margin-bottom:4px">⚠ Permanently Delete Account</div>
+          <p class="dim small-note" style="margin:0 0 8px">This permanently erases your Open Grid cloud profile, cars, Driver Rating, Safety Rating, friends &amp; login credentials. This cannot be undone.</p>
+          <div class="joinrow" style="flex-wrap:wrap;gap:6px">
+            ${mp.hasPassword ? `<input id="auth-del-pass" type="password" value="${esc(this.delPass)}" placeholder="Current password" autocomplete="current-password" />` : ''}
+            <input id="auth-del-confirm" type="text" value="${esc(this.delConfirm)}" placeholder="Type DELETE to confirm" autocomplete="off" spellcheck="false" />
+            <button class="small" style="background:#FF1111;border-color:#FF1111;color:#fff;font-weight:700" data-act="auth-delete-submit" ${this.authBusy ? 'disabled' : ''}>Permanently Delete Account</button>
+            <button class="small" data-act="auth-delete-toggle" ${this.authBusy ? 'disabled' : ''}>Cancel</button>
+          </div>
+        </div>`;
+      }
+    }
+    const auth2faChallenge = this.authNeeds2fa ? `<div style="${cardStyle};border-color:rgba(255,17,17,.45)">
+      <div style="font-weight:700;margin-bottom:6px">🔐 Two-Factor Authentication Required</div>
+      <div class="joinrow" style="flex-wrap:wrap;gap:6px">
+        <input id="auth-totp" type="text" inputmode="numeric" maxlength="16" value="${esc(this.authTotp)}" placeholder="6-digit 2FA or backup code" autocomplete="one-time-code" style="max-width:210px" />
+        <button class="primary" data-act="auth-login" ${this.authBusy ? 'disabled' : ''}>Verify 2FA &amp; Log In</button>
+        <button class="small" data-act="auth-2fa-login-cancel" ${this.authBusy ? 'disabled' : ''}>Cancel</button>
+      </div>
+    </div>` : '';
+    const authForgotCard = this.authForgotOpen ? `<div style="${cardStyle}">
+      <div style="font-weight:700;margin-bottom:4px">🔑 Reset Password</div>
+      <p class="dim small-note" style="margin:0 0 8px">Request a reset code by email or use one of your saved 8-character recovery codes.</p>
+      <div class="joinrow" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">
+        <input id="auth-reset-email" type="email" value="${esc(this.authResetEmail)}" placeholder="Account email address" autocomplete="email" />
+        <button class="small" data-act="auth-forgot-send" ${this.authBusy ? 'disabled' : ''}>Send Reset Code</button>
+      </div>
+      <div class="joinrow" style="flex-wrap:wrap;gap:6px">
+        <input id="auth-reset-code" type="text" value="${esc(this.authResetCode)}" placeholder="Reset or recovery code" autocomplete="one-time-code" spellcheck="false" />
+        <input id="auth-reset-pass" type="password" value="${esc(this.authResetPass)}" placeholder="New password (8+ chars)" autocomplete="new-password" />
+        <button class="primary" data-act="auth-reset-submit" ${this.authBusy ? 'disabled' : ''}>Reset Password &amp; Sign In</button>
+        <button class="small" data-act="auth-forgot-toggle" ${this.authBusy ? 'disabled' : ''}>Cancel</button>
+      </div>
+    </div>` : '';
+    const authBlock = !online ? '<div class="dim note">Email login activates automatically once connected to the Open Grid cloud backend.</div>'
       : mp?.email ? `<div class="opts" style="flex-wrap:wrap;gap:8px">
           <span class="pill gold">✓ SIGNED IN · ${esc(mp.email)}</span>
           <span class="pill">CLASS ${esc(mp.license ?? 'R')} · DR ${Math.round(mp.dr ?? 1500)} · SR ${(mp.sr ?? 2.5).toFixed(2)}</span>
+          <span class="pill ${mp.totpEnabled ? 'gold' : ''}">${mp.totpEnabled ? '✓ 2FA ON' : '2FA OFF'}</span>
           <button class="small" data-act="auth-logout" ${this.authBusy ? 'disabled' : ''}>Sign Out</button>
-        </div>`
-      : `<p class="dim small-note">Save your career, cars, Driver Rating, License &amp; Online Pass across browsers and UE 5.8 (upgrades your current guest account in-place with zero progress lost).</p>
+        </div>
+        ${recoveryCodesCard}
+        <h3 style="margin-top:14px">🛡 Account Security</h3>
+        <div class="opts" style="flex-wrap:wrap;gap:6px">
+          ${mp.totpEnabled
+            ? `<button class="small" data-act="auth-2fa-disable-toggle" ${this.authBusy ? 'disabled' : ''}>🔓 Disable 2FA</button>`
+            : `<button class="small" data-act="auth-2fa-setup" ${this.authBusy ? 'disabled' : ''}>🔐 Enable 2FA (Authenticator)</button>`}
+          <button class="small" data-act="auth-pw-toggle" ${this.authBusy ? 'disabled' : ''}>🔑 ${mp.hasPassword ? 'Change Password' : 'Set Password'}</button>
+          <button class="small" data-act="auth-recovery-regen" ${this.authBusy ? 'disabled' : ''}>🛡 New Recovery Codes</button>
+          <button class="small" style="border-color:rgba(255,17,17,.5);color:#ff6b6b" data-act="auth-delete-toggle" ${this.authBusy ? 'disabled' : ''}>⚠ Delete Account</button>
+        </div>
+        ${securityPanel}`
+      : `<p class="dim small-note">Save your career, cars, Driver Rating, License &amp; Friends across browsers and UE 5.8 (upgrades your current guest account in-place with zero progress lost).</p>
         ${oauthBtns ? `<div class="chips" style="margin:8px 0 10px;gap:8px">${oauthBtns}</div>` : ''}
         <div class="joinrow" style="flex-wrap:wrap;gap:6px">
           <input id="auth-email" type="email" value="${esc(this.authEmail)}" placeholder="Email address" autocomplete="email" />
           <input id="auth-pass" type="password" value="${esc(this.authPass)}" placeholder="Password (8+ chars)" autocomplete="current-password" />
           <button class="primary" data-act="auth-register" ${this.authBusy ? 'disabled' : ''}>Save / Sign Up</button>
           <button class="small" data-act="auth-login" ${this.authBusy ? 'disabled' : ''}>Log In</button>
-        </div>`;
+          <button class="small" style="opacity:.8" data-act="auth-forgot-toggle" ${this.authBusy ? 'disabled' : ''}>Forgot password?</button>
+        </div>
+        ${auth2faChallenge}
+        ${authForgotCard}`;
     const friendsBlock = !online ? `<div class="dim note">${esc(id.friendsNote || 'Friends need the online service, which is not set up for this build.')}</div>` : `
       <div class="joinrow"><input id="fadd" type="text" maxlength="${USERNAME_MAX}" value="${esc(this.friendDraft)}" placeholder="Add a friend by username" spellcheck="false" autocomplete="off" autocapitalize="off" />
         <button class="primary" data-act="friend-add" ${id.claimed ? '' : 'disabled'}>Add</button></div>
@@ -2342,8 +2746,8 @@ export class Menu {
       <div class="members">${f.friends.map(friend).join('') || '<div class="dim note">No friends yet. Share your username, or add theirs above.</div>'}</div>
       ${outgoing ? `<h3>Sent</h3><div class="members">${outgoing}</div>` : ''}`;
     return `<div class="lobby-screen"><div class="card lobby-card profile-card">
-      <div class="lobby-head"><button data-act="profile-back" class="back-btn">← Back</button><div><div class="kicker">OPENGRID DRIVER PROFILE</div><h2>${esc(this.sel.name)}</h2></div></div>
-      <h3>🔐 OpenGrid Account Login</h3>
+      <div class="lobby-head"><button data-act="profile-back" class="back-btn">← Back</button><div><div class="kicker">OPEN GRID DRIVER PROFILE</div><h2>${esc(this.sel.name)}</h2></div></div>
+      <h3>🔐 Open Grid Account Login</h3>
       ${authBlock}
       ${this.authNote ? `<div class="pnote ${this.authNote.startsWith('✓') ? '' : 'bad'}">${esc(this.authNote)}</div>` : ''}
       <h3>♥ Support Open Grid (Optional)</h3>
@@ -2379,6 +2783,16 @@ export class Menu {
     if (t.id === 'fadd') this.friendDraft = t.value;
     if (t.id === 'auth-email') this.authEmail = t.value;
     if (t.id === 'auth-pass') this.authPass = t.value;
+    if (t.id === 'auth-totp') this.authTotp = t.value;
+    if (t.id === 'auth-reset-email') this.authResetEmail = t.value;
+    if (t.id === 'auth-reset-code') this.authResetCode = t.value;
+    if (t.id === 'auth-reset-pass') this.authResetPass = t.value;
+    if (t.id === 'auth-2fa-verify') this.totpVerifyCode = t.value;
+    if (t.id === 'auth-2fa-disable-code') this.totpDisableCode = t.value;
+    if (t.id === 'auth-pw-cur') this.pwCur = t.value;
+    if (t.id === 'auth-pw-new') this.pwNew = t.value;
+    if (t.id === 'auth-del-pass') this.delPass = t.value;
+    if (t.id === 'auth-del-confirm') this.delConfirm = t.value;
     if (t.id === 'team-name') this.teamNameDraft = t.value;
     if (t.id === 'team-tag') this.teamTagDraft = t.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
     if (t.id === 'lg-name') this.leagueNameDraft = t.value;

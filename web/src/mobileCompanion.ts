@@ -63,6 +63,14 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
     ? `✓ Signed in with ${cloud.oauthSignedInProvider[0].toUpperCase() + cloud.oauthSignedInProvider.slice(1)}!`
     : '';
   let authBusy = false;
+  let authEmailDraft = '';
+  let authPassDraft = '';
+  let authTotpDraft = '';
+  let authNeeds2fa = false;
+  let forgotOpen = false;
+  let resetEmailDraft = '';
+  let resetCodeDraft = '';
+  let resetPassDraft = '';
 
   const fetchHotlaps = async () => {
     hotlaps = null; hotlapErr = ''; render();
@@ -158,7 +166,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
       const st = profile.stats ?? { starts: 0, wins: 0, podiums: 0, poles: 0, incidents: 0, corners: 0 };
       return `<div class="mc-section">
         <div class="mc-prof-head">
-          <div><span class="mc-k">OPENGRID DRIVER</span><h3>${esc(profile.username || profile.name)}</h3><small>${esc(profile.email)}</small></div>
+          <div><span class="mc-k">OPEN GRID DRIVER${profile.totpEnabled ? ' · ✓ 2FA ON' : ''}</span><h3>${esc(profile.username || profile.name)}</h3><small>${esc(profile.email)}</small></div>
           <span class="mc-lic">CLASS ${esc(lic)}</span>
         </div>
         <div class="mc-stats">
@@ -180,15 +188,27 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
     ].filter(Boolean).join('');
     return `<div class="mc-section">
       <div class="mc-card">
-        <span class="mc-k">OPENGRID CLOUD COMPANION</span>
+        <span class="mc-k">OPEN GRID CLOUD COMPANION</span>
         <b>Check Your DR, SR &amp; License</b>
         <p>Sign in with Google, GitHub, Discord, or your Open Grid Email &amp; Password to check your live ratings, license class, and career stats on mobile.</p>
         ${oauthBtns ? `<div class="mc-oauth-col">${oauthBtns}</div>` : ''}
         <form id="mc-login-form" class="mc-form">
-          <input type="email" id="mc-email" placeholder="Email address" required autocomplete="email" />
-          <input type="password" id="mc-pass" placeholder="Password" required autocomplete="current-password" />
-          <button type="submit" class="mc-btn primary" ${authBusy ? 'disabled' : ''}>${authBusy ? 'Signing In…' : 'Sign In with Email'}</button>
+          <input type="email" id="mc-email" value="${esc(authEmailDraft)}" placeholder="Email address" required autocomplete="email" />
+          <input type="password" id="mc-pass" value="${esc(authPassDraft)}" placeholder="Password" required autocomplete="current-password" />
+          ${authNeeds2fa ? `<input type="text" id="mc-totp" inputmode="numeric" maxlength="16" value="${esc(authTotpDraft)}" placeholder="6-digit 2FA or backup code" required autocomplete="one-time-code" />` : ''}
+          <button type="submit" class="mc-btn primary" ${authBusy ? 'disabled' : ''}>${authBusy ? 'Signing In…' : (authNeeds2fa ? 'Verify 2FA & Sign In' : 'Sign In with Email')}</button>
         </form>
+        <div style="margin-top:8px;display:flex;justify-content:flex-end">
+          <button type="button" class="mc-escape" id="mc-forgot-toggle" style="font-size:12px">${forgotOpen ? 'Hide password reset' : 'Forgot password?'}</button>
+        </div>
+        ${forgotOpen ? `<form id="mc-reset-form" class="mc-form" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.1)">
+          <span class="mc-k">RESET PASSWORD</span>
+          <input type="email" id="mc-reset-email" value="${esc(resetEmailDraft)}" placeholder="Account email address" required autocomplete="email" />
+          <button type="button" class="mc-btn" id="mc-forgot-send" ${authBusy ? 'disabled' : ''}>Send Reset Code</button>
+          <input type="text" id="mc-reset-code" value="${esc(resetCodeDraft)}" placeholder="Email reset or 8-char recovery code" required autocomplete="one-time-code" />
+          <input type="password" id="mc-reset-pass" value="${esc(resetPassDraft)}" placeholder="New password (8+ chars)" required autocomplete="new-password" />
+          <button type="submit" class="mc-btn primary" ${authBusy ? 'disabled' : ''}>${authBusy ? 'Resetting…' : 'Reset Password & Sign In'}</button>
+        </form>` : ''}
         ${authMsg ? `<div class="mc-note">${esc(authMsg)}</div>` : ''}
       </div>
     </div>`;
@@ -294,16 +314,87 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
       };
     });
 
+    root.querySelector<HTMLInputElement>('#mc-email')?.addEventListener('input', (e) => { authEmailDraft = (e.target as HTMLInputElement).value; });
+    root.querySelector<HTMLInputElement>('#mc-pass')?.addEventListener('input', (e) => { authPassDraft = (e.target as HTMLInputElement).value; });
+    root.querySelector<HTMLInputElement>('#mc-totp')?.addEventListener('input', (e) => { authTotpDraft = (e.target as HTMLInputElement).value; });
+    root.querySelector<HTMLInputElement>('#mc-reset-email')?.addEventListener('input', (e) => { resetEmailDraft = (e.target as HTMLInputElement).value; });
+    root.querySelector<HTMLInputElement>('#mc-reset-code')?.addEventListener('input', (e) => { resetCodeDraft = (e.target as HTMLInputElement).value; });
+    root.querySelector<HTMLInputElement>('#mc-reset-pass')?.addEventListener('input', (e) => { resetPassDraft = (e.target as HTMLInputElement).value; });
+
     root.querySelector('#mc-login-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const email = (root.querySelector('#mc-email') as HTMLInputElement)?.value.trim();
-      const pass = (root.querySelector('#mc-pass') as HTMLInputElement)?.value;
+      const email = ((root.querySelector('#mc-email') as HTMLInputElement)?.value ?? authEmailDraft).trim();
+      const pass = (root.querySelector('#mc-pass') as HTMLInputElement)?.value ?? authPassDraft;
+      const totp = ((root.querySelector('#mc-totp') as HTMLInputElement)?.value ?? authTotpDraft).trim();
+      authEmailDraft = email;
+      authPassDraft = pass;
+      authTotpDraft = totp;
       if (!email || !pass) return;
       authBusy = true; authMsg = ''; render();
       try {
-        profile = await cloud.loginEmail(email, pass);
+        const res = await cloud.loginEmail(email, pass, authNeeds2fa ? totp : undefined);
+        if (res.requires2fa) {
+          authNeeds2fa = true;
+          authTotpDraft = '';
+          authMsg = 'Enter the 6-digit code from your authenticator app (or an 8-char backup code).';
+        } else {
+          profile = res.profile;
+          authNeeds2fa = false;
+          authPassDraft = '';
+          authTotpDraft = '';
+          forgotOpen = false;
+          authMsg = '';
+        }
       } catch (err) {
         authMsg = err instanceof Error ? err.message : 'Login failed.';
+      }
+      authBusy = false;
+      render();
+    });
+
+    root.querySelector('#mc-forgot-toggle')?.addEventListener('click', () => {
+      forgotOpen = !forgotOpen;
+      if (forgotOpen && !resetEmailDraft && authEmailDraft) resetEmailDraft = authEmailDraft;
+      authMsg = '';
+      render();
+    });
+
+    root.querySelector('#mc-forgot-send')?.addEventListener('click', async () => {
+      const email = ((root.querySelector('#mc-reset-email') as HTMLInputElement)?.value ?? resetEmailDraft).trim();
+      resetEmailDraft = email;
+      if (!email || authBusy) { authMsg = 'Enter your account email first.'; render(); return; }
+      authBusy = true; authMsg = 'Requesting reset code…'; render();
+      try {
+        const r = await cloud.forgotPassword(email);
+        authMsg = r.message || (r.emailSent ? '✓ Reset code sent! Check your email.' : 'Enter a saved 8-char recovery code below.');
+      } catch (err) {
+        authMsg = err instanceof Error ? err.message : 'Could not send reset code.';
+      }
+      authBusy = false;
+      render();
+    });
+
+    root.querySelector('#mc-reset-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = ((root.querySelector('#mc-reset-email') as HTMLInputElement)?.value ?? resetEmailDraft).trim();
+      const code = ((root.querySelector('#mc-reset-code') as HTMLInputElement)?.value ?? resetCodeDraft).trim();
+      const pw = (root.querySelector('#mc-reset-pass') as HTMLInputElement)?.value ?? resetPassDraft;
+      resetEmailDraft = email;
+      resetCodeDraft = code;
+      resetPassDraft = pw;
+      if (!email || !code || !pw || authBusy) return;
+      authBusy = true; authMsg = 'Resetting password…'; render();
+      try {
+        const res = await cloud.resetPassword(email, code, pw);
+        profile = res.profile;
+        authNeeds2fa = false;
+        forgotOpen = false;
+        authPassDraft = '';
+        resetCodeDraft = '';
+        resetPassDraft = '';
+        authMsg = '✓ Password reset & signed in!';
+      } catch (err) {
+        authMsg = err instanceof Error ? err.message : 'Password reset failed.';
       }
       authBusy = false;
       render();
@@ -313,6 +404,8 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
     root.querySelector('#mc-logout')?.addEventListener('click', async () => {
       await cloud.logout();
       profile = null;
+      authNeeds2fa = false;
+      authTotpDraft = '';
       render();
     });
 

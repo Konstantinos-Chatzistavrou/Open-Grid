@@ -25,6 +25,7 @@ import { emailError, hashPassword, hmacSha256Hex, normalizeEmail, passwordError,
 import { DEFAULT_PRO_MIN_CENTS, DEFAULT_TEAM_MIN_CENTS, hmacMd5Hex, parsePatreonIdentity, parsePatreonWebhook } from './patreon';
 import { buildOAuthAuthorizeUrl, enabledOAuthProviders, exchangeOAuthCode, isOAuthProvider, oauthCreds, sanitizeReturnTo } from './oauth';
 import { paceOf } from './pace';
+import { buildOtpAuthUri, generateBackupCodes, generateBase32Secret, normalizeBackupCode, verifyTotp } from './totp';
 import {
   OFFICIAL_SERIES, TRIAL_DURATION_MS, computeRestorativeVerdict, currentSeasonId,
   getSeriesById, isSubscriptionActive, licenseRank, nextEventForSeries, seedBalancedSplits,
@@ -39,10 +40,44 @@ const RENAME_MS = 30 * 24 * 3600 * 1000;
 const ONLINE_MS = 150_000;
 const MAX_FRIENDS = 200;
 const MAX_LOGIN_ATTEMPTS_15M = 10;
+const MAX_FORGOT_ATTEMPTS_15M = 5;
+const MAX_RESET_ATTEMPTS_15M = 10;
+const RESET_CODE_TTL_MS = 15 * 60_000;
 const PROTEST_TYPES = new Set(['intentional_wreck', 'unsafe_rejoin', 'blocking', 'ramming', 'chat_abuse']);
 
 const byName = (env: Env, u: string) => env.DB.prepare('SELECT * FROM accounts WHERE username = ? COLLATE NOCASE').bind(u).first<AccountRow>();
 const byEmail = (env: Env, e: string) => env.DB.prepare('SELECT * FROM accounts WHERE email = ? COLLATE NOCASE').bind(e).first<AccountRow>();
+
+async function hashBackupCodes(codes: string[]): Promise<string[]> {
+  return Promise.all(codes.map((c) => sha256(normalizeBackupCode(c))));
+}
+
+function parseBackupHashes(raw?: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string' && x.length > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function consumeBackupCode(
+  rawJson: string | null | undefined,
+  candidateCode: string,
+): Promise<{ matched: boolean; remainingJson: string }> {
+  const norm = normalizeBackupCode(candidateCode);
+  const hashes = parseBackupHashes(rawJson);
+  if (!norm || hashes.length === 0) return { matched: false, remainingJson: JSON.stringify(hashes) };
+  const candidateHash = await sha256(norm);
+  let matchIdx = -1;
+  for (let i = 0; i < hashes.length; i++) {
+    if (timingSafeEqualHex(hashes[i], candidateHash) && matchIdx === -1) matchIdx = i;
+  }
+  if (matchIdx === -1) return { matched: false, remainingJson: JSON.stringify(hashes) };
+  const next = hashes.slice(0, matchIdx).concat(hashes.slice(matchIdx + 1));
+  return { matched: true, remainingJson: JSON.stringify(next) };
+}
 
 function requireActiveSub(acct: AccountRow, env: Env): Response | null {
   // Hobby-project default: ranked splits, championships and protests are free for everyone.
@@ -198,6 +233,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     }
 
     const { hash, salt } = await hashPassword(pw);
+    const recoveryCodes = generateBackupCodes(8);
+    const backupJson = JSON.stringify(await hashBackupCodes(recoveryCodes));
     const now = Date.now();
     // If caller already has a guest Bearer account without an email, upgrade it in place so they keep all progress!
     const existing = await accountOf(req, env);
@@ -206,10 +243,10 @@ async function route(req: Request, env: Env): Promise<Response> {
       const uFinal = reqUsername || existing.username;
       const nFinal = uFinal ?? existing.name;
       await env.DB.prepare(
-        'UPDATE accounts SET email = ?, password_hash = ?, password_salt = ?, token_hash = ?, username = COALESCE(?, username), name = ?, username_at = COALESCE(username_at, ?) WHERE id = ?',
-      ).bind(email, hash, salt, await sha256(newToken), reqUsername || null, nFinal, reqUsername ? now : null, existing.id).run();
+        'UPDATE accounts SET email = ?, password_hash = ?, password_salt = ?, token_hash = ?, backup_codes_json = ?, username = COALESCE(?, username), name = ?, username_at = COALESCE(username_at, ?) WHERE id = ?',
+      ).bind(email, hash, salt, await sha256(newToken), backupJson, reqUsername || null, nFinal, reqUsername ? now : null, existing.id).run();
       const fresh = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(existing.id).first<AccountRow>();
-      return json({ id: existing.id, token: newToken, upgraded: true, profile: profileOf(fresh!) });
+      return json({ id: existing.id, token: newToken, upgraded: true, recoveryCodes, profile: profileOf(fresh!) });
     }
 
     const net = await netOf(req, env), today = day(now);
@@ -219,17 +256,17 @@ async function route(req: Request, env: Env): Promise<Response> {
     const dispName = reqUsername || `Driver ${id.slice(0, 4).toUpperCase()}`;
     await env.DB.batch([
       env.DB.prepare(
-        'INSERT INTO accounts (id, token_hash, name, username, username_at, created, net, email, password_hash, password_salt, sub_tier, sub_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      ).bind(id, await sha256(token), dispName, reqUsername || null, reqUsername ? now : null, now, net, email, hash, salt, 'trial', now + TRIAL_DURATION_MS),
+        'INSERT INTO accounts (id, token_hash, name, username, username_at, created, net, email, password_hash, password_salt, backup_codes_json, sub_tier, sub_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      ).bind(id, await sha256(token), dispName, reqUsername || null, reqUsername ? now : null, now, net, email, hash, salt, backupJson, 'trial', now + TRIAL_DURATION_MS),
       env.DB.prepare('INSERT INTO signups (net, day, n) VALUES (?, ?, 1) ON CONFLICT (net, day) DO UPDATE SET n = n + 1').bind(net, today),
     ]);
     const fresh = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(id).first<AccountRow>();
-    return json({ id, token, upgraded: false, profile: profileOf(fresh!) });
+    return json({ id, token, upgraded: false, recoveryCodes, profile: profileOf(fresh!) });
   }
 
   // ---- Public OAuth2 Provider Discovery (UI only shows buttons for configured providers) ----
   if (path === '/v1/auth/providers' && req.method === 'GET') {
-    return json(enabledOAuthProviders(env));
+    return json({ ...enabledOAuthProviders(env), emailReset: Boolean(env.RESEND_API_KEY) });
   }
 
   // ---- Start 1-Click OAuth2 Login (Google / GitHub / Discord) ----
@@ -355,14 +392,14 @@ async function route(req: Request, env: Env): Promise<Response> {
     return Response.redirect(dest, 302);
   }
 
-  // ---- Real Email + Password Login (brute-force protected, rotates bearer token) ----
+  // ---- Real Email + Password Login (brute-force protected, TOTP 2FA / Backup Code aware, rotates bearer token) ----
   if (path === '/v1/auth/login' && req.method === 'POST') {
     const net = await netOf(req, env);
     const winMin = Math.floor(Date.now() / (15 * 60_000));
     const att = await env.DB.prepare('SELECT n FROM auth_attempts WHERE net = ? AND window_min = ?').bind(net, winMin).first<{ n: number }>();
     if ((att?.n ?? 0) >= MAX_LOGIN_ATTEMPTS_15M) return json({ error: 'Too many login attempts. Try again in 15 minutes.' }, 429);
 
-    const b = await req.json<{ email?: string; password?: string }>();
+    const b = await req.json<{ email?: string; password?: string; totpCode?: string }>();
     const email = normalizeEmail(b.email), pw = String(b.password ?? '');
     const row = email ? await byEmail(env, email) : null;
     const ok = row && row.password_hash && row.password_salt ? await verifyPassword(pw, row.password_hash, row.password_salt) : false;
@@ -370,9 +407,133 @@ async function route(req: Request, env: Env): Promise<Response> {
       await env.DB.prepare('INSERT INTO auth_attempts (net, window_min, n) VALUES (?, ?, 1) ON CONFLICT (net, window_min) DO UPDATE SET n = n + 1').bind(net, winMin).run();
       return json({ error: 'Invalid email or password.' }, 401);
     }
+
+    let nextBackupJson: string | null = null;
+    if (row.totp_enabled && row.totp_secret) {
+      const code = String(b.totpCode ?? '').trim();
+      if (!code) return json({ requires2fa: true });
+      const totpOk = await verifyTotp(row.totp_secret, code);
+      if (!totpOk) {
+        const backup = await consumeBackupCode(row.backup_codes_json, code);
+        if (!backup.matched) {
+          await env.DB.prepare('INSERT INTO auth_attempts (net, window_min, n) VALUES (?, ?, 1) ON CONFLICT (net, window_min) DO UPDATE SET n = n + 1').bind(net, winMin).run();
+          return json({ error: 'Invalid 2FA or backup code.' }, 401);
+        }
+        nextBackupJson = backup.remainingJson;
+      }
+    }
+
     const token = randomId(32);
-    await env.DB.prepare('UPDATE accounts SET token_hash = ?, seen = ? WHERE id = ?').bind(await sha256(token), Date.now(), row.id).run();
-    return json({ id: row.id, token, profile: profileOf(row) });
+    if (nextBackupJson !== null) {
+      await env.DB.prepare('UPDATE accounts SET token_hash = ?, seen = ?, backup_codes_json = ? WHERE id = ?')
+        .bind(await sha256(token), Date.now(), nextBackupJson, row.id).run();
+    } else {
+      await env.DB.prepare('UPDATE accounts SET token_hash = ?, seen = ? WHERE id = ?')
+        .bind(await sha256(token), Date.now(), row.id).run();
+    }
+    const fresh = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(row.id).first<AccountRow>();
+    return json({ id: row.id, token, profile: profileOf(fresh!) });
+  }
+
+  // ---- Forgot Password (Public, rate-limited 5/15m per net; anti-enumeration HTTP 200) ----
+  if (path === '/v1/auth/forgot-password' && req.method === 'POST') {
+    const netKey = `fp:${await netOf(req, env)}`;
+    const winMin = Math.floor(Date.now() / (15 * 60_000));
+    const att = await env.DB.prepare('SELECT n FROM auth_attempts WHERE net = ? AND window_min = ?').bind(netKey, winMin).first<{ n: number }>();
+    if ((att?.n ?? 0) >= MAX_FORGOT_ATTEMPTS_15M) return json({ error: 'Too many password reset requests. Try again in 15 minutes.' }, 429);
+    await env.DB.prepare('INSERT INTO auth_attempts (net, window_min, n) VALUES (?, ?, 1) ON CONFLICT (net, window_min) DO UPDATE SET n = n + 1').bind(netKey, winMin).run();
+
+    const b = await req.json<{ email?: string }>().catch(() => ({ email: undefined }));
+    const email = normalizeEmail(b.email);
+    const hasResend = Boolean(env.RESEND_API_KEY);
+    if (email && !emailError(email) && hasResend) {
+      const acct = await byEmail(env, email);
+      if (acct) {
+        const resetCode = generateBackupCodes(1)[0];
+        const resetHash = await sha256(normalizeBackupCode(resetCode));
+        const expiresAt = Date.now() + RESET_CODE_TTL_MS;
+        await env.DB.prepare('UPDATE accounts SET reset_token_hash = ?, reset_token_expires = ? WHERE id = ?')
+          .bind(resetHash, expiresAt, acct.id).run();
+        const from = env.RESEND_FROM || 'Open Grid <noreply@open-grid.racing>';
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${env.RESEND_API_KEY}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            from,
+            to: [email],
+            subject: 'Open Grid Password Reset Code',
+            text: `Your Open Grid password reset code is: ${resetCode}\n\nThis code expires in 15 minutes. If you did not request a password reset, you can safely ignore this email.`,
+            html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#0d1017;color:#eef2ff;border-radius:12px"><h2 style="margin:0 0 12px">Open Grid Password Reset</h2><p style="margin:0 0 16px;color:#cbd5e1">Use this 15-minute reset code to set a new password for your Open Grid account:</p><div style="font-family:monospace;font-size:28px;font-weight:700;letter-spacing:4px;padding:14px 18px;background:#161b26;border:1px solid #ffffff22;border-radius:8px;text-align:center;color:#38bdf8">${resetCode}</div><p style="margin:16px 0 0;font-size:13px;color:#94a3b8">This code expires in 15 minutes. If you did not request this, you can safely ignore this message.</p></div>`,
+          }),
+        }).catch(() => null);
+      }
+    }
+    return json({
+      ok: true,
+      emailSent: hasResend,
+      message: hasResend
+        ? 'If an account exists for that email, a 15-minute reset code has been sent.'
+        : 'Email relay is not enabled yet — enter a saved Recovery/Backup Code below, or sign in with your linked Google, GitHub, or Discord account.',
+    });
+  }
+
+  // ---- Reset Password via 15-min Email Reset Code OR Saved One-Time Recovery/Backup Code ----
+  if (path === '/v1/auth/reset-password' && req.method === 'POST') {
+    const netKey = `rp:${await netOf(req, env)}`;
+    const winMin = Math.floor(Date.now() / (15 * 60_000));
+    const att = await env.DB.prepare('SELECT n FROM auth_attempts WHERE net = ? AND window_min = ?').bind(netKey, winMin).first<{ n: number }>();
+    if ((att?.n ?? 0) >= MAX_RESET_ATTEMPTS_15M) return json({ error: 'Too many reset attempts. Try again in 15 minutes.' }, 429);
+
+    const b = await req.json<{ email?: string; resetCode?: string; newPassword?: string }>();
+    const email = normalizeEmail(b.email);
+    const eErr = emailError(email);
+    if (eErr) return json({ error: eErr }, 400);
+    const newPw = String(b.newPassword ?? '');
+    const pErr = passwordError(newPw);
+    if (pErr) return json({ error: pErr }, 400);
+    const rawCode = String(b.resetCode ?? '').trim();
+    const normCode = normalizeBackupCode(rawCode);
+    if (!normCode) return json({ error: 'Enter a reset or recovery code.' }, 400);
+
+    const acct = await byEmail(env, email);
+    const now = Date.now();
+    let matched = false;
+    let updatedBackupJson: string | null = null;
+
+    if (acct) {
+      const candidateHash = await sha256(normCode);
+      if (acct.reset_token_hash && (acct.reset_token_expires ?? 0) > now && timingSafeEqualHex(acct.reset_token_hash, candidateHash)) {
+        matched = true;
+      } else {
+        const backup = await consumeBackupCode(acct.backup_codes_json, rawCode);
+        if (backup.matched) {
+          matched = true;
+          updatedBackupJson = backup.remainingJson;
+        }
+      }
+    }
+
+    if (!acct || !matched) {
+      await env.DB.prepare('INSERT INTO auth_attempts (net, window_min, n) VALUES (?, ?, 1) ON CONFLICT (net, window_min) DO UPDATE SET n = n + 1').bind(netKey, winMin).run();
+      return json({ error: 'Invalid or expired reset / recovery code.' }, 401);
+    }
+
+    const { hash, salt } = await hashPassword(newPw);
+    const token = randomId(32);
+    if (updatedBackupJson !== null) {
+      await env.DB.prepare(
+        'UPDATE accounts SET password_hash = ?, password_salt = ?, token_hash = ?, reset_token_hash = NULL, reset_token_expires = 0, backup_codes_json = ?, seen = ? WHERE id = ?',
+      ).bind(hash, salt, await sha256(token), updatedBackupJson, now, acct.id).run();
+    } else {
+      await env.DB.prepare(
+        'UPDATE accounts SET password_hash = ?, password_salt = ?, token_hash = ?, reset_token_hash = NULL, reset_token_expires = 0, seen = ? WHERE id = ?',
+      ).bind(hash, salt, await sha256(token), now, acct.id).run();
+    }
+    const fresh = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(acct.id).first<AccountRow>();
+    return json({ ok: true, id: acct.id, token, profile: profileOf(fresh!) });
   }
 
   // ---- Verifier / Steward Key Routes (GitHub Actions replay verifier + Restorative Stewarding) ----
@@ -545,6 +706,96 @@ async function route(req: Request, env: Env): Promise<Response> {
     await env.DB.prepare('UPDATE accounts SET password_hash = ?, password_salt = ?, token_hash = ? WHERE id = ?')
       .bind(hash, salt, await sha256(token), acct.id).run();
     return json({ ok: true, id: acct.id, token });
+  }
+
+  // ---- Pure WebCrypto TOTP Authenticator 2FA Setup / Enable / Disable ----
+  if (path === '/v1/auth/2fa/setup' && req.method === 'POST') {
+    const secret = generateBase32Secret();
+    await env.DB.prepare('UPDATE accounts SET totp_pending_secret = ? WHERE id = ?').bind(secret, acct.id).run();
+    const label = acct.email || acct.username || acct.id;
+    return json({ secret, otpauthUri: buildOtpAuthUri('Open Grid', label, secret) });
+  }
+
+  if (path === '/v1/auth/2fa/enable' && req.method === 'POST') {
+    const b = await req.json<{ code?: string }>();
+    if (!acct.totp_pending_secret) return json({ error: 'No pending 2FA setup. Start setup first.' }, 400);
+    const ok = await verifyTotp(acct.totp_pending_secret, String(b.code ?? ''));
+    if (!ok) return json({ error: 'Invalid 6-digit authenticator code.' }, 400);
+    const backupCodes = generateBackupCodes(8);
+    const backupJson = JSON.stringify(await hashBackupCodes(backupCodes));
+    await env.DB.prepare(
+      'UPDATE accounts SET totp_secret = ?, totp_pending_secret = NULL, totp_enabled = 1, backup_codes_json = ? WHERE id = ?',
+    ).bind(acct.totp_pending_secret, backupJson, acct.id).run();
+    const fresh = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(acct.id).first<AccountRow>();
+    return json({ ok: true, backupCodes, profile: profileOf(fresh!) });
+  }
+
+  if (path === '/v1/auth/2fa/disable' && req.method === 'POST') {
+    const b = await req.json<{ code?: string; password?: string }>();
+    let updatedBackupJson: string | null = null;
+    if (acct.totp_enabled) {
+      let authorized = false;
+      const rawCode = String(b.code ?? '').trim();
+      if (rawCode && acct.totp_secret) {
+        if (await verifyTotp(acct.totp_secret, rawCode)) {
+          authorized = true;
+        } else {
+          const backup = await consumeBackupCode(acct.backup_codes_json, rawCode);
+          if (backup.matched) {
+            authorized = true;
+            updatedBackupJson = backup.remainingJson;
+          }
+        }
+      }
+      if (!authorized && b.password && acct.password_hash && acct.password_salt) {
+        authorized = await verifyPassword(String(b.password), acct.password_hash, acct.password_salt);
+      }
+      if (!authorized) {
+        return json({ error: 'Valid 2FA code, backup code, or account password is required.' }, 401);
+      }
+    }
+    if (updatedBackupJson !== null) {
+      await env.DB.prepare(
+        'UPDATE accounts SET totp_secret = NULL, totp_pending_secret = NULL, totp_enabled = 0, backup_codes_json = ? WHERE id = ?',
+      ).bind(updatedBackupJson, acct.id).run();
+    } else {
+      await env.DB.prepare(
+        'UPDATE accounts SET totp_secret = NULL, totp_pending_secret = NULL, totp_enabled = 0 WHERE id = ?',
+      ).bind(acct.id).run();
+    }
+    const fresh = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(acct.id).first<AccountRow>();
+    return json({ ok: true, profile: profileOf(fresh!) });
+  }
+
+  if (path === '/v1/auth/recovery-codes' && req.method === 'POST') {
+    const recoveryCodes = generateBackupCodes(8);
+    const backupJson = JSON.stringify(await hashBackupCodes(recoveryCodes));
+    await env.DB.prepare('UPDATE accounts SET backup_codes_json = ? WHERE id = ?').bind(backupJson, acct.id).run();
+    return json({ ok: true, recoveryCodes });
+  }
+
+  // ---- Self-Service Permanent Account Deletion ----
+  if (path === '/v1/auth/delete' && req.method === 'POST') {
+    const b = await req.json<{ confirm?: string; password?: string }>();
+    if (String(b.confirm ?? '').trim().toUpperCase() !== 'DELETE') {
+      return json({ error: 'Type DELETE to confirm permanent account deletion.' }, 400);
+    }
+    if (acct.password_hash && acct.password_salt) {
+      const ok = await verifyPassword(String(b.password ?? ''), acct.password_hash, acct.password_salt);
+      if (!ok) return json({ error: 'Current password is incorrect.' }, 401);
+    }
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM oauth_identities WHERE account_id = ?').bind(acct.id),
+      env.DB.prepare('DELETE FROM friends WHERE a = ? OR b = ?').bind(acct.id, acct.id),
+      env.DB.prepare('DELETE FROM series_entries WHERE account = ?').bind(acct.id),
+      env.DB.prepare('DELETE FROM championship_standings WHERE account = ?').bind(acct.id),
+      env.DB.prepare('DELETE FROM hotlaps WHERE account = ?').bind(acct.id),
+      env.DB.prepare('DELETE FROM team_members WHERE account = ?').bind(acct.id),
+      env.DB.prepare('DELETE FROM league_members WHERE account = ?').bind(acct.id),
+      env.DB.prepare('DELETE FROM wager_escrows WHERE challenger = ? OR opponent = ?').bind(acct.id, acct.id),
+      env.DB.prepare('DELETE FROM accounts WHERE id = ?').bind(acct.id),
+    ]);
+    return json({ ok: true });
   }
 
   if (path === '/v1/subscription' && req.method === 'GET') {

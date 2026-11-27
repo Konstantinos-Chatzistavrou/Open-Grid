@@ -9,11 +9,11 @@ import type { Custom } from './custom-data';
 export type LicenseClass = 'R' | 'D' | 'C' | 'B' | 'A' | 'PRO';
 export type SubTier = 'none' | 'trial' | 'pro' | 'team_pro';
 export type OAuthProvider = 'google' | 'github' | 'discord';
-export interface OAuthProvidersStatus { google: boolean; github: boolean; discord: boolean }
+export interface OAuthProvidersStatus { google: boolean; github: boolean; discord: boolean; emailReset?: boolean }
 
 export interface Profile {
   id: string; name: string; username: string | null; usernameAt: number | null; xp: number; credits: number;
-  email?: string | null; hasPassword?: boolean;
+  email?: string | null; hasPassword?: boolean; totpEnabled?: boolean;
   cars: string[]; mods: Record<string, Mods>; skins: string[];
   looks: Record<string, Custom>;
   saveVersion?: number;
@@ -105,17 +105,73 @@ export class Cloud {
   }
 
   /** Real email + password registration (upgrades current guest account in-place so zero progress is lost!). */
-  async registerEmail(email: string, password: string, username?: string): Promise<Profile> {
-    const j = await this.call<{ id: string; token: string; profile: Profile }>('POST', '/v1/auth/register', { email, password, username }, true);
+  async registerEmail(email: string, password: string, username?: string): Promise<{ profile: Profile; recoveryCodes?: string[] }> {
+    const j = await this.call<{ id: string; token: string; profile: Profile; recoveryCodes?: string[] }>('POST', '/v1/auth/register', { email, password, username }, true);
     this.saveAcct(j.id, j.token);
-    return j.profile;
+    return { profile: j.profile, recoveryCodes: Array.isArray(j.recoveryCodes) ? j.recoveryCodes : undefined };
   }
 
-  /** Real email + password login from any browser, PC, or UE 5.8 client. */
-  async loginEmail(email: string, password: string): Promise<Profile> {
-    const j = await this.call<{ id: string; token: string; profile: Profile }>('POST', '/v1/auth/login', { email, password }, true);
+  /** Real email + password login from any browser, PC, or UE 5.8 client (with optional 2FA TOTP or backup code). */
+  async loginEmail(email: string, password: string, totpCode?: string): Promise<{ requires2fa: true } | { requires2fa: false; profile: Profile }> {
+    const body = totpCode ? { email, password, totpCode } : { email, password };
+    const j = await this.call<{ requires2fa?: boolean; id?: string; token?: string; profile?: Profile }>('POST', '/v1/auth/login', body, true);
+    if (j.requires2fa) return { requires2fa: true };
+    if (!j.id || !j.token || !j.profile) throw new Error('Invalid login response.');
     this.saveAcct(j.id, j.token);
-    return j.profile;
+    return { requires2fa: false, profile: j.profile };
+  }
+
+  /** Change or set account password (rotates bearer token on success). */
+  async changePassword(currentPassword: string, newPassword: string): Promise<{ ok: boolean }> {
+    const j = await this.call<{ ok?: boolean; id?: string; token?: string }>('POST', '/v1/auth/password', { currentPassword, newPassword });
+    if (j.token && (j.id || this.acct?.id)) this.saveAcct(j.id ?? this.acct!.id, j.token);
+    return { ok: Boolean(j.ok ?? true) };
+  }
+
+  /** Begin optional TOTP Authenticator 2FA setup (returns Base32 secret + otpauth URI rendered locally as SVG QR). */
+  async setup2fa(): Promise<{ secret: string; otpauthUri: string }> {
+    return this.call<{ secret: string; otpauthUri: string }>('POST', '/v1/auth/2fa/setup', {});
+  }
+
+  /** Verify first 6-digit TOTP code to enable 2FA and receive 8 one-time backup codes. */
+  async enable2fa(code: string): Promise<{ ok: boolean; backupCodes: string[]; profile: Profile }> {
+    return this.call<{ ok: boolean; backupCodes: string[]; profile: Profile }>('POST', '/v1/auth/2fa/enable', { code });
+  }
+
+  /** Disable 2FA using an active 6-digit authenticator/backup code or account password. */
+  async disable2fa(code?: string, password?: string): Promise<{ ok: boolean; profile: Profile }> {
+    return this.call<{ ok: boolean; profile: Profile }>('POST', '/v1/auth/2fa/disable', {
+      ...(code ? { code } : {}),
+      ...(password ? { password } : {}),
+    });
+  }
+
+  /** Regenerate 8 fresh one-time account recovery / backup codes (invalidates previous codes). */
+  async regenerateRecoveryCodes(): Promise<{ ok: boolean; recoveryCodes: string[] }> {
+    return this.call<{ ok: boolean; recoveryCodes: string[] }>('POST', '/v1/auth/recovery-codes', {});
+  }
+
+  /** Request a password reset code by email (falls back to offline recovery codes if email delivery isn't configured). */
+  async forgotPassword(email: string): Promise<{ ok: boolean; emailSent: boolean; message: string }> {
+    return this.call<{ ok: boolean; emailSent: boolean; message: string }>('POST', '/v1/auth/forgot-password', { email }, true);
+  }
+
+  /** Complete password reset using an emailed reset code or one-time recovery code (signs in immediately). */
+  async resetPassword(email: string, resetCode: string, newPassword: string): Promise<{ ok: boolean; profile: Profile }> {
+    const j = await this.call<{ ok?: boolean; id: string; token: string; profile: Profile }>('POST', '/v1/auth/reset-password', { email, resetCode, newPassword }, true);
+    this.saveAcct(j.id, j.token);
+    return { ok: Boolean(j.ok ?? true), profile: j.profile };
+  }
+
+  /** Permanently delete the signed-in account and clear local credentials. */
+  async deleteAccount(confirm: string, password?: string): Promise<{ ok: boolean }> {
+    const j = await this.call<{ ok?: boolean }>('POST', '/v1/auth/delete', {
+      confirm,
+      ...(password ? { password } : {}),
+    });
+    this.acct = null;
+    try { localStorage.removeItem(KEY); } catch { /* blocked */ }
+    return { ok: Boolean(j.ok ?? true) };
   }
 
   async logout(): Promise<void> {
@@ -128,14 +184,14 @@ export class Cloud {
 
   /** Discover which 1-click OAuth providers (Google, GitHub, Discord) are active on the cloud server. */
   async authProviders(): Promise<OAuthProvidersStatus> {
-    if (!this.base) return { google: false, github: false, discord: false };
+    if (!this.base) return { google: false, github: false, discord: false, emailReset: false };
     try {
       const r = await fetch(`${this.base}/v1/auth/providers`);
-      if (!r.ok) return { google: false, github: false, discord: false };
+      if (!r.ok) return { google: false, github: false, discord: false, emailReset: false };
       const j = await r.json() as Partial<OAuthProvidersStatus>;
-      return { google: Boolean(j.google), github: Boolean(j.github), discord: Boolean(j.discord) };
+      return { google: Boolean(j.google), github: Boolean(j.github), discord: Boolean(j.discord), emailReset: Boolean(j.emailReset) };
     } catch {
-      return { google: false, github: false, discord: false };
+      return { google: false, github: false, discord: false, emailReset: false };
     }
   }
 

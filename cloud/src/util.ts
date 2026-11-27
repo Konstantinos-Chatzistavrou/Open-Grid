@@ -30,6 +30,9 @@ export interface Env {
   GITHUB_CLIENT_SECRET?: string;
   DISCORD_CLIENT_ID?: string;
   DISCORD_CLIENT_SECRET?: string;
+  /** Optional Resend API key for 15-min password reset emails (leave unset to use $0/mo Recovery Codes) */
+  RESEND_API_KEY?: string;
+  RESEND_FROM?: string;
   ALLOWED_ORIGINS?: string;
   /** local tests only (.dev.vars): honour the x-test-ip header to simulate players on different networks */
   ALLOW_TEST_IP?: string;
@@ -42,6 +45,8 @@ export interface AccountRow {
   looks: string;
   save_version?: number; save_prefs?: string; avatar_gear?: string;
   email?: string | null; password_hash?: string | null; password_salt?: string | null; email_verified?: number;
+  totp_secret?: string | null; totp_pending_secret?: string | null; totp_enabled?: number | null;
+  backup_codes_json?: string | null; reset_token_hash?: string | null; reset_token_expires?: number | null;
   sub_tier?: string; sub_expires_at?: number; billing_customer_id?: string | null;
   dr?: number; dr_rd?: number; sr?: number; license?: string; mpr_races?: number;
   rolling_cpi?: number; bad_sport?: number; clean_streak?: number; jokers_left?: number;
@@ -102,7 +107,7 @@ export const profileOf = (a: AccountRow) => {
   const subExpiresAt = a.sub_expires_at ?? 0;
   return {
     id: a.id, name: a.username ?? a.name, username: a.username, usernameAt: a.username_at, xp: a.xp, credits: a.credits,
-    email: a.email ?? null, hasPassword: !!a.password_hash,
+    email: a.email ?? null, hasPassword: Boolean(a.password_hash), totpEnabled: Boolean(a.totp_enabled),
     cars: JSON.parse(a.cars) as string[], mods: JSON.parse(a.mods), skins: JSON.parse(a.skins) as string[],
     looks: JSON.parse(a.looks ?? '{}') as Record<string, unknown>,
     saveVersion: a.save_version ?? 1,

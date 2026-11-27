@@ -8,6 +8,10 @@ import { emailError, hashPassword, hmacSha256Hex, normalizeEmail, passwordError,
 import { hmacMd5Hex, md5Hex, parsePatreonIdentity, parsePatreonWebhook } from '../src/patreon.ts';
 import { buildOAuthAuthorizeUrl, enabledOAuthProviders, sanitizeReturnTo } from '../src/oauth.ts';
 import {
+  base32Decode, base32Encode, buildOtpAuthUri, generateBackupCodes,
+  generateBase32Secret, generateTotp, normalizeBackupCode, verifyTotp,
+} from '../src/totp.ts';
+import {
   OFFICIAL_SERIES, TRIAL_DURATION_MS, applyDropWeeks, calcChampionshipPoints,
   computeRestorativeVerdict, computeSof, driverGradeOf, evaluateSafetyAndLicense,
   isSubscriptionActive, nextEventForSeries, seedBalancedSplits, updateDriverRatings,
@@ -226,6 +230,46 @@ await test('OAuth2 provider discovery, authorize URLs, and safe returnTo allowli
   assert.ok(ghUrl.startsWith('https://github.com/login/oauth/authorize?') && ghUrl.includes('user%3Aemail'));
   const dUrl = buildOAuthAuthorizeUrl('discord', 'cid_d', 'https://api.open-grid.racing/v1/auth/oauth/discord/callback', 'st3');
   assert.ok(dUrl.startsWith('https://discord.com/api/oauth2/authorize?') && dUrl.includes('identify+email'));
+});
+
+// 8. Pure WebCrypto RFC 6238 TOTP 2FA + One-Time Recovery/Backup Codes
+await test('RFC 6238 TOTP test vector, ±1 step window, otpauth URI & backup codes format', async () => {
+  const rfcSecret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'; // ASCII "12345678901234567890"
+  const rawBytes = new TextEncoder().encode('12345678901234567890');
+  assert.equal(base32Encode(rawBytes), rfcSecret);
+  assert.deepEqual(base32Decode('gezdgnbv-gy3tqojq gezdgnbv gy3tqojq='), rawBytes);
+
+  // Official RFC 6238 SHA-1 test vector at t = 59s -> 6-digit TOTP === '287082'
+  assert.equal(await generateTotp(rfcSecret, 59_000), '287082');
+
+  // verifyTotp exact step, formatting tolerance, and ±1 step window (rejects ±2 steps)
+  assert.equal(await verifyTotp(rfcSecret, '287082', 1, 59_000), true);
+  assert.equal(await verifyTotp(rfcSecret, '287 082', 1, 59_000), true);
+  assert.equal(await verifyTotp(rfcSecret, '287-082', 1, 59_000), true);
+  assert.equal(await verifyTotp(rfcSecret, '287082', 1, 59_000 + 30_000), true);  // +1 step
+  assert.equal(await verifyTotp(rfcSecret, '287082', 1, 59_000 - 30_000), true);  // -1 step
+  assert.equal(await verifyTotp(rfcSecret, '287082', 1, 59_000 + 60_000), false); // +2 steps rejected
+  assert.equal(await verifyTotp(rfcSecret, '000000', 1, 59_000), false);
+  assert.equal(await verifyTotp(rfcSecret, '12345', 1, 59_000), false);
+
+  // Generated Base32 secret round-trips and builds standard otpauth:// URI
+  const randSecret = generateBase32Secret();
+  assert.equal(randSecret.length, 32);
+  assert.match(randSecret, /^[A-Z2-7]{32}$/);
+  const uri = buildOtpAuthUri('Open Grid', 'driver@open-grid.racing', randSecret);
+  assert.equal(
+    uri,
+    `otpauth://totp/Open%20Grid:${encodeURIComponent('driver@open-grid.racing')}?secret=${randSecret}&issuer=Open%20Grid&algorithm=SHA1&digits=6&period=30`,
+  );
+
+  // 8 unambiguous XXXX-XXXX recovery/backup codes (no 0/O/1/I/L)
+  const codes = generateBackupCodes(8);
+  assert.equal(codes.length, 8);
+  assert.equal(new Set(codes).size, 8);
+  for (const c of codes) {
+    assert.match(c, /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}$/);
+    assert.equal(normalizeBackupCode(c.toLowerCase()), c.replace('-', ''));
+  }
 });
 
 console.log(`\nALL ${passed} OpenGrid Competitive Online Moat tests PASSED`);
