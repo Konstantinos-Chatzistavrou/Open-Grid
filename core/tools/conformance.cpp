@@ -2,6 +2,7 @@
 //
 //   rs_conformance tyre <tyre.tir> <cases.csv> <out.csv>      evaluate every case with rs::mf62 and write MFeval's 30 output columns
 //   rs_conformance vehicle <car.json> <outdir>                 run the standard manoeuvres on a car and write spec.json + the logs conformance/run.mjs judges
+//   rs_conformance tyre-summary <tyre.tir> <cases.csv>         JSON facts about a tyre file (geometry, peak grip, cornering stiffness, finite cases): the tyre registry's numbers
 //
 // A different simulation implements the same two interfaces in its own language (conformance/SPEC.md) and is judged by the same runner, with no dependency on this code.
 #include <algorithm>
@@ -58,6 +59,48 @@ int tyre_cmd(const std::string& tir, const std::string& cases, const std::string
         ++rows;
     }
     std::printf("wrote %d rows to %s\n", rows, out.c_str());
+    return 0;
+}
+
+// rs_conformance tyre-summary <tyre.tir> <cases.csv>: JSON facts about a tyre file, computed by rs::mf62 (the registry page shows these, not claims): geometry, peak grip and cornering stiffness at the
+// nominal load (slips swept with the file's limits off), and how many of the conformance cases give finite Fx, Fy and Mz.
+int tyre_summary_cmd(const std::string& tir, const std::string& cases) {
+    std::string text, err, ctext;
+    mf62::Params p;
+    if (!slurp(tir, text) || !mf62::parse_tir(text, p, err)) { std::printf("{\"ok\":false,\"error\":\"%s\"}\n", err.empty() ? "cannot read the file" : err.c_str()); return 1; }
+    const mf62::Modes free_modes = mf62::modes_from_use_mode(211);
+    auto at = [&](double kappa, double alpha, double fz) {
+        mf62::Input in;
+        in.fz = fz; in.kappa = kappa; in.alpha = alpha; in.vx = p.longvl;
+        return mf62::evaluate(p, in, free_modes);
+    };
+    double mux = 0, muy = 0;
+    int arg_x = 0, arg_y = 0;
+    for (int i = 1; i <= 500; ++i) {   // slip ratio up to 1.0 and slip angle up to 1.0 rad
+        const double fx = std::abs(at(i * 0.002, 0.0, p.fnomin).fx) / p.fnomin, fy = std::abs(at(0.0, i * 0.002, p.fnomin).fy) / p.fnomin;
+        if (fx > mux) { mux = fx; arg_x = i; }
+        if (fy > muy) { muy = fy; arg_y = i; }
+    }
+    const bool interior = arg_x < 490 && arg_y < 490;   // false: the peak is at the end of the sweep, so the number is a lower bound
+    const double da = 0.002, kya = std::abs(at(0.0, da, p.fnomin).fy - at(0.0, -da, p.fnomin).fy) / (2 * da);
+    int total = 0, finite = 0;
+    if (slurp(cases, ctext)) {
+        std::istringstream in(ctext);
+        std::string line;
+        std::getline(in, line);
+        while (std::getline(in, line)) {
+            double c[8];
+            if (line.empty() || std::sscanf(line.c_str(), "%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf", &c[0], &c[1], &c[2], &c[3], &c[4], &c[5], &c[6], &c[7]) != 8) continue;
+            mf62::Input i;
+            i.fz = c[0] * p.fnomin; i.kappa = c[1]; i.alpha = c[2]; i.gamma = c[3]; i.phit = c[4]; i.vx = c[5] * p.longvl; i.pressure = c[6] * p.nompres;
+            const mf62::Output o = mf62::evaluate(p, i, mf62::modes_from_use_mode(static_cast<int>(c[7])));
+            ++total;
+            if (std::isfinite(o.fx) && std::isfinite(o.fy) && std::isfinite(o.mz)) ++finite;
+        }
+    }
+    std::printf("{\"ok\":true,\"fittyp\":%d,\"fnomin_n\":%.6g,\"unloaded_radius_m\":%.6g,\"width_m\":%.6g,\"aspect_ratio\":%.6g,\"rim_radius_m\":%.6g,\"nompres_pa\":%.6g,\"peak_mu_x\":%.4f,\"peak_mu_y\":%.4f,"
+                "\"cornering_stiffness_n_per_rad\":%.1f,\"peak_inside_sweep\":%s,\"cases_total\":%d,\"cases_finite\":%d}\n",
+                p.fittyp, p.fnomin, p.unloaded_radius, p.width, p.aspect_ratio, p.rim_radius, p.nompres, mux, muy, kya, interior ? "true" : "false", total, finite);
     return 0;
 }
 
@@ -220,6 +263,7 @@ int vehicle_cmd(const std::string& car, const std::string& dir) {
 int main(int argc, char** argv) {
     if (argc >= 5 && std::string(argv[1]) == "tyre") return tyre_cmd(argv[2], argv[3], argv[4]);
     if (argc >= 4 && std::string(argv[1]) == "vehicle") return vehicle_cmd(argv[2], argv[3]);
-    std::fprintf(stderr, "usage: rs_conformance tyre <tyre.tir> <cases.csv> <out.csv>\n       rs_conformance vehicle <car.json> <outdir>\n");
+    if (argc >= 4 && std::string(argv[1]) == "tyre-summary") return tyre_summary_cmd(argv[2], argv[3]);
+    std::fprintf(stderr, "usage: rs_conformance tyre <tyre.tir> <cases.csv> <out.csv>\n       rs_conformance vehicle <car.json> <outdir>\n       rs_conformance tyre-summary <tyre.tir> <cases.csv>\n");
     return 2;
 }

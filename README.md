@@ -24,6 +24,10 @@
     &nbsp;&middot;&nbsp;
     <a href="docs/verify.md">Verify the physics</a>
     &nbsp;&middot;&nbsp;
+    <a href="docs/whats_in_the_box.md">What's in the box</a>
+    &nbsp;&middot;&nbsp;
+    <a href="web/public/registry/index.html">Tyre registry</a>
+    &nbsp;&middot;&nbsp;
     <a href="PARTNERS.md">Partner with us</a>
   </strong>
 </p>

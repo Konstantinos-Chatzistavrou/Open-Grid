@@ -1,0 +1,18 @@
+{
+  "id": "opengrid-synthetic-mf61",
+  "name": "Open Grid synthetic MF 6.1",
+  "size": "245/40 R18",
+  "class": "synthetic",
+  "file": "../../../data/validation/mf62/tyres/opengrid_mf61_synthetic.tir",
+  "contributor": {
+    "name": "Konstantinos Chatzistavrou (Open Grid)",
+    "url": "https://github.com/Konstantinos-Chatzistavrou/Open-Grid"
+  },
+  "licence": "CC-BY-4.0 AND BSD-3-Clause",
+  "copyright": "Open Grid additions: CC BY 4.0, credit Konstantinos Chatzistavrou, https://github.com/Konstantinos-Chatzistavrou/Open-Grid. Contains Project Chrono coefficients: Copyright (c) 2016, Project Chrono Development Team (BSD-3-Clause).",
+  "notice_file": "../../../data/tires/LICENSE-projectchrono.txt",
+  "provenance": "synthetic",
+  "source": "The Project Chrono Audi 245/40 R18 coefficients plus MF 6.x coefficients chosen by Open Grid (tools/validation/make_mf6x_tyres.mjs). Not a measurement of any tyre.",
+  "notes": "Conformance-suite tyre: it exercises the MF 6.x equations; it describes no real tyre.",
+  "added": "2026-11-27"
+}

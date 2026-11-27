@@ -8,6 +8,7 @@ Apache License 2.0 whether or not you talk to anyone: you do not need to partner
 - A Magic Formula 5.2 / 6.1 / 6.2 tyre evaluator whose numbers equal MFeval's on eight tyres, and a per-coefficient sweep that exercises all 228 coefficients (`docs/mf62.md`).
 - A tyre fitter (command line, and a browser page at `/lab/` that needs no install) and a car generator with a sanity checker (`docs/getting_started.md`).
 - A conformance suite that any simulation, in any language, can run: tyres against MFeval, vehicles against the physics their own numbers imply (`conformance/`).
+- A tyre registry (`registry/`): tyre files with their provenance, licence and solver-computed facts, open for contributions.
 - An engine-independent C++20 core with a browser (WebAssembly) host and an Unreal Engine 5.8 plugin.
 
 ## What the maintainer is open to talking about

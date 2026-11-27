@@ -1,0 +1,18 @@
+{
+  "id": "mfeval-example-mf52",
+  "name": "MFeval example: MF 5.2",
+  "size": "",
+  "class": "race car",
+  "file": "../../../tools/validation/mfeval/doc/examples/MagicFormula52_Parameters.tir",
+  "contributor": {
+    "name": "Marco Furlan Tassara (MFeval)",
+    "url": "https://www.mathworks.com/matlabcentral/fileexchange/63618-mfeval"
+  },
+  "licence": "BSD-3-Clause",
+  "copyright": "Copyright (c) 2020, Marco Furlan Tassara",
+  "notice_file": "../../../tools/validation/mfeval/LICENSE.txt",
+  "provenance": "unknown",
+  "source": "Example tyre shipped inside the MFeval 4.3.1 package, under its licence. The author does not say where the data comes from.",
+  "notes": "Used as a reference tyre by the conformance suite.",
+  "added": "2026-11-27"
+}

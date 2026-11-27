@@ -1,0 +1,18 @@
+{
+  "id": "chrono-polaris-29x9-14",
+  "name": "Polaris 29x9-14 (PAC2002)",
+  "size": "29x9-14",
+  "class": "off-road",
+  "file": "../../../data/tires/polaris_pac2002.tir",
+  "contributor": {
+    "name": "Project Chrono Development Team",
+    "url": "https://github.com/projectchrono/chrono"
+  },
+  "licence": "BSD-3-Clause",
+  "copyright": "Copyright (c) 2016, Project Chrono Development Team",
+  "notice_file": "../../../data/tires/LICENSE-projectchrono.txt",
+  "provenance": "published-model",
+  "source": "Project Chrono vehicle data (https://github.com/projectchrono/chrono, pinned commit e166f3e5a1383741e86cf1e195a46eba4a66473d). Chrono publishes model parameters with its examples, not measurements: some are estimates or placeholders (docs/chrono-data.md lists what was found).",
+  "notes": "Its header says it came from a passenger-car template.",
+  "added": "2026-11-27"
+}

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenGrid Tyre Registry: Magic Formula tyre files with provenance and licence</title>
+<meta name="description" content="Pacejka Magic Formula tyre files (.tir) with their provenance, licence and facts computed by a solver checked against MFeval.">
+<link rel="icon" href="data:,"><link rel="stylesheet" href="../lab/lab.css">
+<style>.badge{display:inline-block;padding:1px 9px;font:500 11px "JetBrains Mono",monospace;border:1px solid var(--seam2)}.p-measured,.p-fitted-from-measurements{color:#22C55E;border-color:#22C55E66}.p-published-model{color:#F59E0B;border-color:#F59E0B66}.p-synthetic{color:#38BDF8;border-color:#38BDF866}.p-unknown{color:#8E96A4}
+.sub{color:var(--muted);font-size:12px;font-family:"Barlow",sans-serif;font-weight:400;margin-top:2px;max-width:46ch}td{vertical-align:top}a.dl{color:var(--ice);font:500 13px "JetBrains Mono",monospace}input.q{background:var(--raised);color:var(--ink);border:1px solid var(--seam2);padding:10px 12px;font:500 14px "JetBrains Mono",monospace;width:100%;max-width:420px;border-radius:0}</style></head>
+<body><header class="top"><div class="wordmark">OPEN<span>GRID</span></div><div class="page">Tyre Registry</div></header>
+<main><section class="hero"><h1>Tyre files you can check.</h1>
+<p>Pacejka Magic Formula tyre files (<code>.tir</code>) with <b>where each came from</b>, <b>its licence</b> and <b>facts computed by a solver that is checked against MFeval</b>. Every file is free to download; the licence column says whether you may use it commercially.</p>
+<p class="status">Honest status: 20 entries, <b>0 from measurements</b>. None of them is a measurement we can vouch for: they are published model parameters, example files of unknown origin and synthetic test tyres. Measured open tyre data is scarce: this registry exists to collect it, with credit. Facts (peak grip, stiffness) come from the solver, not from the contributor; provenance and licence are declared by the contributor.</p></section>
+<section class="card"><div class="row"><input class="q" id="q" placeholder="filter: name, size, provenance, licence…" aria-label="filter"><span class="busy" id="n"></span></div>
+<div class="tablewrap" style="margin-top:14px"><table id="t"><thead><tr><th>tyre</th><th>provenance</th><th>licence</th><th class="r">model</th><th class="r">peak grip x / y</th><th class="r">nominal load N</th><th class="r">cornering stiffness N/rad</th><th>file</th></tr></thead><tbody>
+<tr data-q="road tyre 235/60 r16 (pac2002) 235/60 r16 road car published-model bsd-3-clause">
+  <td><b>Road tyre 235/60 R16 (PAC2002)</b><div class="sub">235/60 R16 · road car</div></td>
+  <td><span class="badge p-published-model" title="model parameters published by someone else, not a measurement we can vouch for">published-model</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">1.17 / 1.01</td><td class="r">4850</td><td class="r">84817</td>
+  <td><a class="dl" href="tyres/chrono-235-60r16.tir" download>.tir</a></td></tr>
+<tr data-q="audi 245/40 r18 (pac2002) 245/40 r18 road car published-model bsd-3-clause">
+  <td><b>Audi 245/40 R18 (PAC2002)</b><div class="sub">245/40 R18 · road car</div><div class="sub">Byte-identical to sedan_pac2002.tir in data/tires/.</div></td>
+  <td><span class="badge p-published-model" title="model parameters published by someone else, not a measurement we can vouch for">published-model</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">1.14 / 0.97</td><td class="r">4850</td><td class="r">76796</td>
+  <td><a class="dl" href="tyres/chrono-audi-245-40r18.tir" download>.tir</a></td></tr>
+<tr data-q="city bus 315/80 r22.5 (pac2002) 315/80 r22.5 bus / truck published-model bsd-3-clause">
+  <td><b>City bus 315/80 R22.5 (PAC2002)</b><div class="sub">315/80 R22.5 · bus / truck</div><div class="sub">Header: an ADAMS/Car example for a typical truck tyre.</div></td>
+  <td><span class="badge p-published-model" title="model parameters published by someone else, not a measurement we can vouch for">published-model</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">0.78 / 0.72</td><td class="r">35000</td><td class="r">197794</td>
+  <td><a class="dl" href="tyres/chrono-citybus-315-80r22-5.tir" download>.tir</a></td></tr>
+<tr data-q="classic car 185/80 r14 (pac2002) 185/80 r14 road car published-model bsd-3-clause">
+  <td><b>Classic car 185/80 R14 (PAC2002)</b><div class="sub">185/80 R14 · road car</div></td>
+  <td><span class="badge p-published-model" title="model parameters published by someone else, not a measurement we can vouch for">published-model</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">1.09 / 0.91</td><td class="r">3800</td><td class="r">45163</td>
+  <td><a class="dl" href="tyres/chrono-classic-185-80r14.tir" download>.tir</a></td></tr>
+<tr data-q="fed-alpha 335/65 r22.5 at 40 psi 335/65 r22.5 heavy truck published-model bsd-3-clause">
+  <td><b>FED-Alpha 335/65 R22.5 at 40 psi</b><div class="sub">335/65 R22.5 · heavy truck</div><div class="sub">One of four inflation pressures of the same tyre. Exported by a fitting tool (header: FM_EXPORT_TIR, MF-TYRE 5.0, 2010); its RAW_FILES field is empty, so the data it was fitted from is not identified.</div></td>
+  <td><span class="badge p-published-model" title="model parameters published by someone else, not a measurement we can vouch for">published-model</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">0.98 / 0.70</td><td class="r">16929</td><td class="r">189400</td>
+  <td><a class="dl" href="tyres/chrono-feda-335-65r22-5-40psi.tir" download>.tir</a></td></tr>
+<tr data-q="fed-alpha 335/65 r22.5 at 60 psi 335/65 r22.5 heavy truck published-model bsd-3-clause">
+  <td><b>FED-Alpha 335/65 R22.5 at 60 psi</b><div class="sub">335/65 R22.5 · heavy truck</div><div class="sub">One of four inflation pressures of the same tyre. Exported by a fitting tool (header: FM_EXPORT_TIR, MF-TYRE 5.0, 2010); its RAW_FILES field is empty, so the data it was fitted from is not identified.</div></td>
+  <td><span class="badge p-published-model" title="model parameters published by someone else, not a measurement we can vouch for">published-model</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">0.93 / 0.72</td><td class="r">21674</td><td class="r">192126</td>
+  <td><a class="dl" href="tyres/chrono-feda-335-65r22-5-60psi.tir" download>.tir</a></td></tr>
+<tr data-q="fed-alpha 335/65 r22.5 at 70 psi 335/65 r22.5 heavy truck published-model bsd-3-clause">
+  <td><b>FED-Alpha 335/65 R22.5 at 70 psi</b><div class="sub">335/65 R22.5 · heavy truck</div><div class="sub">One of four inflation pressures of the same tyre. Exported by a fitting tool (header: FM_EXPORT_TIR, MF-TYRE 5.0, 2010); its RAW_FILES field is empty, so the data it was fitted from is not identified.</div></td>
+  <td><span class="badge p-published-model" title="model parameters published by someone else, not a measurement we can vouch for">published-model</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">0.91 / 0.74</td><td class="r">24046</td><td class="r">187354</td>
+  <td><a class="dl" href="tyres/chrono-feda-335-65r22-5-70psi.tir" download>.tir</a></td></tr>
+<tr data-q="fed-alpha 335/65 r22.5 at 95 psi 335/65 r22.5 heavy truck published-model bsd-3-clause">
+  <td><b>FED-Alpha 335/65 R22.5 at 95 psi</b><div class="sub">335/65 R22.5 · heavy truck</div><div class="sub">One of four inflation pressures of the same tyre. Exported by a fitting tool (header: FM_EXPORT_TIR, MF-TYRE 5.0, 2010); its RAW_FILES field is empty, so the data it was fitted from is not identified.</div></td>
+  <td><span class="badge p-published-model" title="model parameters published by someone else, not a measurement we can vouch for">published-model</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">&ge; 0.84 / 0.80</td><td class="r">29912</td><td class="r">199004</td>
+  <td><a class="dl" href="tyres/chrono-feda-335-65r22-5-95psi.tir" download>.tir</a></td></tr>
+<tr data-q="generic tyre, hmmwv description (pac2002) 37x12.5r16.5 heavy truck published-model bsd-3-clause">
+  <td><b>Generic tyre, HMMWV description (PAC2002)</b><div class="sub">37x12.5R16.5 · heavy truck</div><div class="sub">Same description as the HMMWV file; kept as shipped.</div></td>
+  <td><span class="badge p-published-model" title="model parameters published by someone else, not a measurement we can vouch for">published-model</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">0.60 / 0.68</td><td class="r">35000</td><td class="r">170386</td>
+  <td><a class="dl" href="tyres/chrono-generic-hmmwv.tir" download>.tir</a></td></tr>
+<tr data-q="hmmwv 37x12.5r16.5 (pac2002) 37x12.5r16.5 heavy truck published-model bsd-3-clause">
+  <td><b>HMMWV 37x12.5R16.5 (PAC2002)</b><div class="sub">37x12.5R16.5 · heavy truck</div></td>
+  <td><span class="badge p-published-model" title="model parameters published by someone else, not a measurement we can vouch for">published-model</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">0.60 / 0.68</td><td class="r">35000</td><td class="r">170386</td>
+  <td><a class="dl" href="tyres/chrono-hmmwv-37x12-5r16-5.tir" download>.tir</a></td></tr>
+<tr data-q="polaris 29x9-14 (pac2002) 29x9-14 off-road published-model bsd-3-clause">
+  <td><b>Polaris 29x9-14 (PAC2002)</b><div class="sub">29x9-14 · off-road</div><div class="sub">Its header says it came from a passenger-car template.</div></td>
+  <td><span class="badge p-published-model" title="model parameters published by someone else, not a measurement we can vouch for">published-model</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">0.94 / 0.79</td><td class="r">4000</td><td class="r">27281</td>
+  <td><a class="dl" href="tyres/chrono-polaris-29x9-14.tir" download>.tir</a></td></tr>
+<tr data-q="suv 265/70 r18 (pac2002) 265/70 r18 suv published-model bsd-3-clause">
+  <td><b>SUV 265/70 R18 (PAC2002)</b><div class="sub">265/70 R18 · SUV</div><div class="sub">Its header says it came from a passenger-car template.</div></td>
+  <td><span class="badge p-published-model" title="model parameters published by someone else, not a measurement we can vouch for">published-model</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">1.19 / 1.03</td><td class="r">4000</td><td class="r">79977</td>
+  <td><a class="dl" href="tyres/chrono-suv-265-70r18.tir" download>.tir</a></td></tr>
+<tr data-q="uaz bus 225/75 r16 (pac2002) 225/75 r16 van / light truck published-model bsd-3-clause">
+  <td><b>UAZ bus 225/75 R16 (PAC2002)</b><div class="sub">225/75 R16 · van / light truck</div></td>
+  <td><span class="badge p-published-model" title="model parameters published by someone else, not a measurement we can vouch for">published-model</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">1.18 / 1.02</td><td class="r">4000</td><td class="r">76674</td>
+  <td><a class="dl" href="tyres/chrono-uaz-225-75r16.tir" download>.tir</a></td></tr>
+<tr data-q="mfeval example: the pacejka book's default coefficients  generic unknown bsd-3-clause">
+  <td><b>MFeval example: the Pacejka book's default coefficients</b><div class="sub">generic</div><div class="sub">Used as a reference tyre by the conformance suite. Q_FZ2 = 0, so MFeval's own radius outputs are not finite for it.</div></td>
+  <td><span class="badge p-unknown" title="where the data comes from is not stated">unknown</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 6.1</td><td class="r">1.00 / 1.00</td><td class="r">4000</td><td class="r">47990</td>
+  <td><a class="dl" href="tyres/mfeval-example-book.tir" download>.tir</a></td></tr>
+<tr data-q="mfeval example: fsae defaults  formula student unknown bsd-3-clause">
+  <td><b>MFeval example: FSAE defaults</b><div class="sub">formula student</div><div class="sub">Used as a reference tyre by the conformance suite. Q_FZ2 = 0, so MFeval's own radius outputs are not finite for it.</div></td>
+  <td><span class="badge p-unknown" title="where the data comes from is not stated">unknown</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 6.1</td><td class="r">2.50 / 3.00</td><td class="r">1000</td><td class="r">35993</td>
+  <td><a class="dl" href="tyres/mfeval-example-fsae.tir" download>.tir</a></td></tr>
+<tr data-q="mfeval example: mf 5.2  race car unknown bsd-3-clause">
+  <td><b>MFeval example: MF 5.2</b><div class="sub">race car</div><div class="sub">Used as a reference tyre by the conformance suite.</div></td>
+  <td><span class="badge p-unknown" title="where the data comes from is not stated">unknown</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 5.2</td><td class="r">0.90 / 0.82</td><td class="r">9417</td><td class="r">70980</td>
+  <td><a class="dl" href="tyres/mfeval-example-mf52.tir" download>.tir</a></td></tr>
+<tr data-q="mfeval example: mf 6.1  race car unknown bsd-3-clause">
+  <td><b>MFeval example: MF 6.1</b><div class="sub">race car</div><div class="sub">Used as a reference tyre by the conformance suite.</div></td>
+  <td><span class="badge p-unknown" title="where the data comes from is not stated">unknown</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 6.1</td><td class="r">1.23 / 0.99</td><td class="r">6752</td><td class="r">137256</td>
+  <td><a class="dl" href="tyres/mfeval-example-mf61.tir" download>.tir</a></td></tr>
+<tr data-q="mfeval example: mf 6.2  race car unknown bsd-3-clause">
+  <td><b>MFeval example: MF 6.2</b><div class="sub">race car</div><div class="sub">Used as a reference tyre by the conformance suite.</div></td>
+  <td><span class="badge p-unknown" title="where the data comes from is not stated">unknown</span></td>
+  <td>BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 6.2</td><td class="r">1.23 / 0.99</td><td class="r">6752</td><td class="r">137256</td>
+  <td><a class="dl" href="tyres/mfeval-example-mf62.tir" download>.tir</a></td></tr>
+<tr data-q="open grid synthetic mf 6.1 245/40 r18 synthetic synthetic cc-by-4.0 and bsd-3-clause">
+  <td><b>Open Grid synthetic MF 6.1</b><div class="sub">245/40 R18 · synthetic</div><div class="sub">Conformance-suite tyre: it exercises the MF 6.x equations; it describes no real tyre.</div></td>
+  <td><span class="badge p-synthetic" title="generated by software: it describes no real tyre">synthetic</span></td>
+  <td>CC-BY-4.0 AND BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 6.1</td><td class="r">1.14 / 0.97</td><td class="r">4850</td><td class="r">76796</td>
+  <td><a class="dl" href="tyres/opengrid-synthetic-mf61.tir" download>.tir</a></td></tr>
+<tr data-q="open grid synthetic mf 6.2 245/40 r18 synthetic synthetic cc-by-4.0 and bsd-3-clause">
+  <td><b>Open Grid synthetic MF 6.2</b><div class="sub">245/40 R18 · synthetic</div><div class="sub">Conformance-suite tyre: it exercises the MF 6.x equations; it describes no real tyre.</div></td>
+  <td><span class="badge p-synthetic" title="generated by software: it describes no real tyre">synthetic</span></td>
+  <td>CC-BY-4.0 AND BSD-3-Clause<div class="sub">commercial use allowed, credit required</div></td>
+  <td class="r">MF 6.2</td><td class="r">1.14 / 0.97</td><td class="r">4850</td><td class="r">76796</td>
+  <td><a class="dl" href="tyres/opengrid-synthetic-mf62.tir" download>.tir</a></td></tr>
+</tbody></table></div>
+<p class="hint">Peak grip is the largest |F| / Fz at the nominal load over a slip sweep (to 1.0) with the file's limits off (&ge; marks a peak at the end of the sweep: a lower bound); cornering stiffness is dFy/dalpha at zero slip. Provenance: <b>measured</b> and <b>fitted-from-measurements</b> need the measurement described; <b>published-model</b> is someone else's model parameters; <b>synthetic</b> describes no real tyre; <b>unknown</b> means the origin is not stated.
+Each downloaded file carries its provenance, licence and notice as comment lines at the top.</p></section>
+<section class="card slim"><h2>Add yours</h2><p class="hint">A tyre file, a short <code>entry.json</code> (provenance, source, licence, who to credit) and a pull request: <code>registry/README.md</code>. Fit one from your own measurements in the <a href="../lab/index.html" style="color:var(--ice)">Tyre Lab</a>. Open licences only; the checker refuses entries without provenance or notice.</p></section></main>
+<script>const q=document.getElementById('q'),rows=[...document.querySelectorAll('#t tbody tr')],n=document.getElementById('n');function f(){const v=q.value.toLowerCase().trim();let k=0;for(const r of rows){const s=!v||r.dataset.q.includes(v);r.hidden=!s;k+=s}n.textContent=k+' of '+rows.length}q.addEventListener('input',f);f();</script></body></html>

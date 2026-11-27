@@ -189,5 +189,8 @@ if(RS_BUILD_TESTS)
     add_test(NAME car_pipeline COMMAND ${RS_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/../tools/test_car_pipeline.mjs $<TARGET_FILE:rs_carcheck>)
     # the conformance suite (conformance/): the reference adapter through its own judges, plus deliberately broken inputs that must be rejected
     add_test(NAME conformance_selftest COMMAND ${RS_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/../conformance/run.mjs selftest --adapter $<TARGET_FILE:rs_conformance>)
+    # the tyre registry (registry/): every entry is valid, and the checker refuses each kind of bad entry
+    add_test(NAME registry_check COMMAND ${RS_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/../tools/registry/build.mjs --check --adapter $<TARGET_FILE:rs_conformance>)
+    add_test(NAME registry_test COMMAND ${RS_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/../tools/registry/test_registry.mjs $<TARGET_FILE:rs_conformance>)
   endif()
 endif()

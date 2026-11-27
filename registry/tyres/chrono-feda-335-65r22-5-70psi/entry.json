@@ -1,0 +1,18 @@
+{
+  "id": "chrono-feda-335-65r22-5-70psi",
+  "name": "FED-Alpha 335/65 R22.5 at 70 psi",
+  "size": "335/65 R22.5",
+  "class": "heavy truck",
+  "file": "../../../data/tires/feda_335_65R22_5_70psi.tir",
+  "contributor": {
+    "name": "Project Chrono Development Team",
+    "url": "https://github.com/projectchrono/chrono"
+  },
+  "licence": "BSD-3-Clause",
+  "copyright": "Copyright (c) 2016, Project Chrono Development Team",
+  "notice_file": "../../../data/tires/LICENSE-projectchrono.txt",
+  "provenance": "published-model",
+  "source": "Project Chrono vehicle data (https://github.com/projectchrono/chrono, pinned commit e166f3e5a1383741e86cf1e195a46eba4a66473d). Chrono publishes model parameters with its examples, not measurements: some are estimates or placeholders (docs/chrono-data.md lists what was found).",
+  "notes": "One of four inflation pressures of the same tyre. Exported by a fitting tool (header: FM_EXPORT_TIR, MF-TYRE 5.0, 2010); its RAW_FILES field is empty, so the data it was fitted from is not identified.",
+  "added": "2026-11-27"
+}
