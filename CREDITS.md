@@ -293,3 +293,8 @@ CC0 1.0 (no credit required; listed with thanks):
   - **Ferrari 458 Speciale with Novitec exhaust - engine and exhaust sound (YouTube qlNhpCLAJR4).opus** by Supercars67 (YouTube) (https://commons.wikimedia.org/wiki/File:Ferrari_458_Speciale_with_Novitec_exhaust_-_engine_and_exhaust_sound_(YouTube_qlNhpCLAJR4).opus), CC BY 3.0.
   - **Shelby GT350 - engine and exhaust sound (YouTube tZyiN61fTHI).opus** by Triple A Dogs (YouTube) (https://commons.wikimedia.org/wiki/File:Shelby_GT350_-_engine_and_exhaust_sound_(YouTube_tZyiN61fTHI).opus), CC BY 3.0.
   - **Shelby GT500 (2012) - engine and exhaust sound (YouTube Zc3gxBIXnXU).opus** by LUNI Classic Cars (YouTube) (https://commons.wikimedia.org/wiki/File:Shelby_GT500_(2012)_-_engine_and_exhaust_sound_(YouTube_Zc3gxBIXnXU).opus), CC BY 3.0.
+
+## Fonts (SIL Open Font License 1.1)
+- **Barlow & Barlow Condensed** (`web/public/fonts/Barlow*.woff2`) by Jeremy Tribby, SIL OFL 1.1.
+- **JetBrains Mono** (`web/public/fonts/JetBrainsMono-*.woff2`, licence in `web/public/fonts/LICENSE-JetBrainsMono-OFL.txt`) by JetBrains s.r.o., https://github.com/JetBrains/JetBrainsMono, SIL OFL 1.1.
+- **Roboto** (`web/public/fonts/roboto-*.woff2`, licence in `web/public/fonts/LICENSE-Roboto-OFL.txt`) by Christian Robertson / Google, SIL OFL 1.1.

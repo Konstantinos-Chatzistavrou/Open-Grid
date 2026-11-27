@@ -177,6 +177,7 @@ Every push and scheduled run validates the codebase automatically:
 
 ### Key Documentation Index
 
+- **[docs/BRAND_IDENTITY.md](docs/BRAND_IDENTITY.md)** — Official brand palette (`#0A0A0A` Carbon Black, `#FF1111` Racing Red, Crisp White, Cool Titanium Gray) & Pit-Wall Motorsport typography (`Barlow Condensed` + `Barlow` + `JetBrains Mono`)
 - **[docs/DESIGN.md](docs/DESIGN.md)** — Master game design & architecture blueprint
 - **[docs/physics.md](docs/physics.md)** & **[docs/validation.md](docs/validation.md)** — Physics equations, game-model flags, validated vs. uncalibrated items
 - **[docs/ue5_roadmap.md](docs/ue5_roadmap.md)** & **[docs/ue5_first_session.md](docs/ue5_first_session.md)** — UE 5.8 migration boundary & 1-click Editor import guide
