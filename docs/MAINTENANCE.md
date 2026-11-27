@@ -19,8 +19,8 @@ Open Grid is an **independent, open-source hobby project**, built for the love o
 
 - **Free and best-effort.** The online backend (`cloud/`) runs on the Cloudflare Workers free plan. If it hits the free limits, is being changed, or is simply down, online features pause and single player keeps working.
 - **Private P2P lobbies** are casual and unranked, and there is no trusted server, so cheating cannot be fully prevented there.
-- **Ranked splits, ratings, championships and protests** are free for every account while the service runs. They are community features run on a best-effort basis, not a guaranteed competitive service. Ratings and seasons may be reset or changed.
-- **Support the project:** donations are optional, buy no perks, and create no obligations either way.
+- **Ranked splits, ratings, championships and hotlaps** are free for every account while the service runs. They are automated community features run on a best-effort basis, not a guaranteed live service — there is no human stewarding team (penalties, fault scoring, and replay checks are automated). Ratings and seasons may be reset or changed.
+- **Support the project:** optional **[GitHub Sponsors](https://github.com/sponsors/Konstantinos-Chatzistavrou)** only (no Patreon, no trials, no paid tiers). Sponsorships are optional, buy no perks, and create no obligations either way.
 - **Run your own.** Everything needed to host your own league or servers is in the repo (`cloud/` for the backend, `server/` for the PeerJS broker). Community-run leagues are welcome. Forks must use their own name and logo (see [LICENSING.md](../LICENSING.md)).
 
 ## Accounts

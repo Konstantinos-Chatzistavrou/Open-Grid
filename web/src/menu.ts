@@ -472,9 +472,7 @@ export class Menu {
     const lic = mp?.license ?? 'R';
     const dr = Math.round(mp?.dr ?? 1500);
     const sr = (mp?.sr ?? 2.5).toFixed(2);
-    const subBadge = !this.cloud.available ? 'Offline'
-      : mp?.subTier === 'pro' || mp?.subTier === 'team_pro' ? '🧡 Patreon Pro'
-      : mp?.subActive ? `✓ ${this.patreonInfo?.daysLeft ?? 7}d Trial` : '🧡 Get Pass';
+    const netBadge = this.cloud.available ? 'FREE ONLINE' : 'Offline';
     const todayEv = todayCalendarEvent();
     const aidsOff = assistsOffCount(this.assists);
 
@@ -493,13 +491,13 @@ export class Menu {
         <header class="og-topbar">
           <div class="og-brand-wrap">
             <div class="og-logo">OPEN<span>GRID</span></div>
-            <span class="og-badge">100% AD-FREE · NON-PROFIT</span>
+            <span class="og-badge">100% FREE · AD-FREE · OPEN SOURCE</span>
             ${curCity ? `<button class="chip og-city-pill" data-act="play" ${dis} title="Change city or event">📍 ${esc(curCity.name)} · ${esc(curCity.district)}</button>` : ''}
           </div>
           <div class="og-status-bar">
             <button class="chip ${this.audioEngineMode === 'real_samples' ? 'on' : ''}" data-act="audio-engine-toggle" ${dis} title="Switch live between Real Recorded Supercars (CC-BY) and Engine-Sim + Muffler IR (WASM)">🔊 ${this.audioEngineMode === 'real_samples' ? 'Real Cars' : 'Sim + IR'}</button>
             <button class="chip ${this.spotterOn ? 'on' : ''}" data-act="spotter" data-v="${this.spotterOn ? '0' : '1'}" ${dis} title="Toggle iRacing-style Race Spotter">📻 Spotter ${this.spotterOn ? 'ON' : 'OFF'}</button>
-            <button class="chip og-rank-pill" data-act="lobby" ${dis} title="Open Official Ranked Network">🏆 ${esc(lic)} · DR ${dr} · SR ${sr} · ${esc(subBadge)}</button>
+            <button class="chip og-rank-pill" data-act="lobby" ${dis} title="Open Free Community Multiplayer">🏆 ${esc(lic)} · DR ${dr} · SR ${sr} · ${esc(netBadge)}</button>
             <button class="me-chip og-me" data-act="profile-open" ${dis}>
               <span class="avatar">${helmetSvg(skinOf(this.sel.skin), 26)}</span>
               <b>${esc(this.identity.name)}</b>
@@ -519,11 +517,11 @@ export class Menu {
           <section class="og-nav-col">
             <div class="og-tiles">
               ${card('play', '01', 'PLAY & EVENTS', 'Sanctioned Day Circuits · Underground Night Street Races · Free Roam · 2P Split-Screen · Driving Academy', 'SINGLE & 2P', 'hero')}
-              ${card('lobby', '02', 'ONLINE & RANKED', 'Official Scheduled SOF Splits · Glicko-2 DR & 0x Victim Shield SR · Championships · Global Hotlaps · Teams · Leagues · P2P Voice', this.party ? `IN PARTY ${esc(this.party.code)}` : 'LIVE CLOUD', 'online')}
+              ${card('lobby', '02', 'ONLINE & RANKED', 'Free Community Splits · Automated Glicko-2 DR & 0x Victim Shield SR · Championships · Global Hotlaps · Teams · Leagues · P2P Voice', this.party ? `IN PARTY ${esc(this.party.code)}` : 'FREE SERVERS', 'online')}
               ${card('garage-open', '03', 'GARAGE & CO-OP', '25 Cars · Bodykits · Engine Swaps · Live Dyno · Walkable Showroom · 👥 Invite Friends to Watch You Mod Live', '3D SHOWROOM')}
               ${card('shop-open', '04', 'AUCTION & MODS', 'CS2-Style Live Supply/Demand Market · Salvage & Pre-Swapped Flips · Float Wear Grades · Community Mod Hub', fmt(this.career.credits))}
               ${card('settings-open', '05', 'SETTINGS & ASSISTS', 'Controller Steering Filter · Braking Assist Ladder · Audio A/B · Race Spotter · Graphics · SimHub / MoTeC · Wheels & FFB', `${this.assists.preset.toUpperCase()} · ${aidsOff}/7 OFF`)}
-              ${card('profile-open', '06', 'PROFILE & PATREON', 'Email + Password Cloud Account · Non-Profit Patreon Server Pass · Friends List & Instant Party Join', mp?.email ? '✓ SYNCED' : 'SAVE ACCOUNT')}
+              ${card('profile-open', '06', 'PROFILE & FRIENDS', 'Google, GitHub, Discord & Email Cloud Login · Friends List & Instant Party Join · Optional GitHub Sponsors', mp?.email ? '✓ SYNCED' : 'SAVE ACCOUNT')}
             </div>
 
             <div class="og-quick-strip">
@@ -1348,15 +1346,11 @@ export class Menu {
       const drGrade = mp?.drGrade ?? 'C';
       const sr = (mp?.sr ?? 2.5).toFixed(2);
       const jokers = mp?.jokersLeft ?? 2;
-      const subLabel = !this.cloud.available ? 'Offline / Local'
-        : mp?.subTier === 'pro' || mp?.subTier === 'team_pro' ? `🧡 ${mp.subTier === 'team_pro' ? 'Team Pro' : 'OpenGrid Pro'} (Patreon · Ad-Free)`
-        : mp?.subActive ? `✓ 7-Day Free Trial (${this.patreonInfo?.daysLeft ?? 7}d left)` : 'Patreon Pass Required for Official Ranked';
-      const patreonBar = this.cloud.available ? `<div class="opts" style="margin-bottom:10px;padding:8px 10px;border:1px solid #ff6b3d44;border-radius:10px;background:#ff6b3d12;flex-wrap:wrap;gap:8px">
-          <span class="dim small-note">🧡 <b>Non-Profit Server Pass (100% Ad-Free):</b> Base game, cars, tracks, SP &amp; Private P2P stay free forever. Patreon (${this.patreonInfo?.proMinUsd ? `$${this.patreonInfo.proMinUsd}/mo` : 'supporter tier'}) covers our official online servers &amp; stewarding.</span>
-          ${this.patreonInfo?.patreonUrl ? `<a class="small primary" style="text-decoration:none;display:inline-flex;align-items:center;padding:5px 10px;border-radius:6px" href="${esc(this.patreonInfo.patreonUrl)}" target="_blank" rel="noopener noreferrer">🧡 Subscribe on Patreon</a>` : ''}
-          ${this.patreonInfo?.patreonOAuthEnabled ? `<button class="small primary" data-act="patreon-connect">${this.patreonInfo.patreonConnected || mp?.patreonLinked ? '✓ Patreon Linked (Re-sync)' : '🔗 Connect Patreon'}</button>` : ''}
-          <button class="small" data-act="patreon-refresh">↻ Refresh Pass</button>
-        </div>` : '';
+      const netStatus = this.cloud.available ? '✓ 100% Free Community Servers · Zero Ads' : 'Offline / Local';
+      const sponsorBar = `<div class="opts" style="margin-bottom:10px;padding:8px 10px;border:1px solid #ffffff1c;border-radius:10px;background:#ffffff08;flex-wrap:wrap;gap:8px">
+          <span class="dim small-note">♥ <b>Free Open-Source Hobby Project:</b> Every server, split, championship, hotlap &amp; P2P lobby is 100% free (best-effort community servers, zero ads, no trials). Penalties &amp; replay checks are automated.</span>
+          <a class="chip" style="text-decoration:none;color:#eef2ff" href="https://github.com/sponsors/Konstantinos-Chatzistavrou" target="_blank" rel="noopener noreferrer">♥ GitHub Sponsors</a>
+        </div>`;
       const seriesCards = (this.officialEvents.length ? this.officialEvents : [
         { id: 'rookie_sprint', title: 'OpenGrid Rookie GT Sprint', subtitle: 'Fixed Setup · 20m cadence · Class R+', minLicense: 'R', intervalMin: 20, maxPerSplit: 12, laps: 3, startsInSec: 600, registrants: 0, eligible: true, eventKey: '', myEntry: null },
         { id: 'gt3_championship', title: 'OpenGrid GT3 World Championship', subtitle: 'BoP Equalized · 45m cadence · SOF Splits · Class D+', minLicense: 'D', intervalMin: 45, maxPerSplit: 16, laps: 5, startsInSec: 1800, registrants: 0, eligible: false, eventKey: '', myEntry: null },
@@ -1372,31 +1366,31 @@ export class Menu {
           <div class="chips" style="margin-top:8px">
             ${reg && ev.eventKey
               ? `<button class="small primary" data-act="official-join" data-v="${esc(ev.eventKey)}">▶ Enter SOF Split</button>`
-              : `<button class="small primary" data-act="official-reg" data-v="${esc(ev.id)}" ${!this.cloud.available || !ev.eligible ? 'disabled' : ''}>${ev.eligible ? '🏁 Register for Official Split' : `🔒 Needs Class ${esc(ev.minLicense)}`}</button>`}
+              : `<button class="small primary" data-act="official-reg" data-v="${esc(ev.id)}" ${!this.cloud.available || !ev.eligible ? 'disabled' : ''}>${ev.eligible ? '🏁 Register for Split' : `🔒 Needs Class ${esc(ev.minLicense)}`}</button>`}
           </div>
         </div>`;
       }).join('');
       return `<div class="lobby-screen"><div class="card lobby-card">
-        <div class="lobby-head"><div class="chips"><button data-act="home" class="back-btn">← Main Menu</button><button data-act="modes" class="back-btn">Modes</button></div><div><div class="kicker">OPENGRID OFFICIAL NETWORK · 100% AD-FREE</div><h2>Multiplayer</h2></div></div>
+        <div class="lobby-head"><div class="chips"><button data-act="home" class="back-btn">← Main Menu</button><button data-act="modes" class="back-btn">Modes</button></div><div><div class="kicker">OPENGRID COMMUNITY NETWORK · 100% FREE &amp; AD-FREE</div><h2>Multiplayer</h2></div></div>
         ${nameRow}
         <div class="opts" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
           <span class="pill gold">LICENSE CLASS ${esc(lic)}</span>
           <span class="pill">DR ${dr} (${esc(drGrade)})</span>
           <span class="pill">SR ${sr} / 4.99</span>
           <span class="pill">🛡 Jokers: ${jokers}</span>
-          <span class="pill ${mp?.subActive ? 'gold' : ''}">${esc(subLabel)}</span>
+          <span class="pill ${this.cloud.available ? 'gold' : ''}">${esc(netStatus)}</span>
           ${mp?.badSport ? '<span class="pill" style="border-color:#ff4757;color:#ff4757">⚠ BAD-SPORT QUARANTINE</span>' : ''}
           ${this.cloud.available ? '<button class="small" data-act="official-refresh">↻ Refresh</button>' : ''}
         </div>
-        ${patreonBar}
+        ${sponsorBar}
         <div class="chips" style="margin-bottom:12px">
-          <button class="chip ${this.lobbyTab === 'splits' ? 'on' : ''}" data-act="lobby-tab" data-v="splits">🏁 Official Splits</button>
+          <button class="chip ${this.lobbyTab === 'splits' ? 'on' : ''}" data-act="lobby-tab" data-v="splits">🏁 Scheduled Splits</button>
           <button class="chip ${this.lobbyTab === 'champs' ? 'on' : ''}" data-act="lobby-tab" data-v="champs">🏆 Championships</button>
           <button class="chip ${this.lobbyTab === 'hotlaps' ? 'on' : ''}" data-act="lobby-tab" data-v="hotlaps">⏱ Global Hotlaps</button>
           <button class="chip ${this.lobbyTab === 'leagues' ? 'on' : ''}" data-act="lobby-tab" data-v="leagues">🤝 Teams &amp; Leagues</button>
         </div>
         ${this.lobbyTab === 'splits' ? `
-          <h3>🏁 Official Scheduled Splits ${this.officialSeason ? `<small class="dim">Season ${esc(this.officialSeason)} · Fault-Aware 0x Victim Shield · Restorative Protests</small>` : ''}</h3>
+          <h3>🏁 Community Scheduled Splits ${this.officialSeason ? `<small class="dim">Season ${esc(this.officialSeason)} · Automated Fault-Aware 0x Victim Shield · 100% Free</small>` : ''}</h3>
           <div class="shop-cars">${seriesCards}</div>
           ${this.officialNote ? `<div class="pnote ${this.officialNote.startsWith('✓') ? '' : 'bad'}">${esc(this.officialNote)}</div>` : ''}
           <h3 style="margin-top:16px">Private Parties &amp; P2P (Free Forever)</h3>
@@ -1410,7 +1404,7 @@ export class Menu {
               <button class="primary" data-act="pjoin" ${this.partyBusy ? 'disabled' : ''}>Join</button></div></div>
           </div>`
         : this.lobbyTab === 'champs' ? `
-          <h3>🏆 Official Season Championships <small class="dim">SOF-weighted points · Best 8 of 12 rounds</small></h3>
+          <h3>🏆 Season Championships <small class="dim">SOF-weighted points · Best 8 of 12 rounds</small></h3>
           <div class="chips" style="margin-bottom:10px">
             ${([['rookie_sprint', 'Rookie GT Sprint'], ['gt3_championship', 'GT3 World Champ'], ['hypercar_pro', 'Hypercar Pro'], ['endurance_special', 'Endurance']] as const).map(([id, lbl]) =>
               `<button class="chip ${this.champSeries === id ? 'on' : ''}" data-act="champ-series" data-v="${id}">${lbl}</button>`).join('')}
@@ -1544,17 +1538,12 @@ export class Menu {
     const ord = (n: number) => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
     const table = ranked.length > 1 ? `<div class="standings">${ranked.map((s, i) => `<div class="srow ${s.you ? 'you' : ''}">
         <span class="spos">${i + 1}</span><b>${esc(s.name)}</b><span class="dim">${s.best > 0 ? formatLap(s.best) : ''}</span><span class="sgap">${gap(s)}</span>${!s.you && !s.ai ? `<button class="small" data-act="report-open" data-v="${esc(s.name)}" title="Report hate speech livery/plate, griefing, or cheating">🚩</button>` : ''}</div>`).join('')}</div>` : '';
-    const reportBar = this.reportTarget ? `<div class="pnote"><b>⚖ Steward Protest / Report ${esc(this.reportTarget)}:</b>
-      ${this.rankedRes?.raceId ? `
-        <button class="small primary" data-act="protest-send" data-k="intentional_wreck" data-v="${esc(this.reportTarget)}">⚖ Intentional Wreck (Refunds DR/SR)</button>
-        <button class="small primary" data-act="protest-send" data-k="unsafe_rejoin" data-v="${esc(this.reportTarget)}">⚖ Unsafe Rejoin</button>
-        <button class="small primary" data-act="protest-send" data-k="ramming" data-v="${esc(this.reportTarget)}">⚖ Ramming</button>
-        <button class="small primary" data-act="protest-send" data-k="blocking" data-v="${esc(this.reportTarget)}">⚖ Blocking</button>` : ''}
+    const reportBar = this.reportTarget ? `<div class="pnote"><b>🚩 Flag ${esc(this.reportTarget)} (Automated Log):</b>
       <button class="small" data-act="report-send" data-k="hate_livery_plate" data-v="${esc(this.reportTarget)}">Hate Speech Livery/Plate</button>
-      <button class="small" data-act="report-send" data-k="cheating" data-v="${esc(this.reportTarget)}">Cheating</button>
+      <button class="small" data-act="report-send" data-k="cheating" data-v="${esc(this.reportTarget)}">Suspected Cheating</button>
       <button class="small" data-act="report-cancel">Cancel</button></div>` : (this.protestNote ? `<div class="pnote ${this.protestNote.startsWith('✓') ? '' : 'bad'}">${esc(this.protestNote)}</div>` : '');
     const maintLines: string[] = [];
-    if (r.penaltySec && r.penaltySec > 0) maintLines.push(`⚠ Steward Time Penalties: +${r.penaltySec.toFixed(1)}s added to finish time`);
+    if (r.penaltySec && r.penaltySec > 0) maintLines.push(`⚠ Race Control Time Penalties: +${r.penaltySec.toFixed(1)}s added to finish time`);
     if (r.towFeeXp) maintLines.push(`🚛 Tow Truck Fee (Totaled): -${r.towFeeXp} XP${r.insured ? ' (50% Insured)' : ''}`);
     if (r.damagePct && r.damagePct > 0) maintLines.push(`🔧 Saved Car Damage: ${r.damagePct}% · Est. Repair ${r.repairBillXp ?? 0} XP${r.insured ? ' (-50% Insured)' : ''} — repair in Garage`);
     const maintHtml = maintLines.length ? `<div class="pnote bad">${maintLines.map(esc).join('<br>')}</div>` : '';
@@ -1652,7 +1641,7 @@ export class Menu {
       case 'laylow': this.hooks.layLow?.(); break;
       case 'garage-open': this.garageHideUi = false; this.garageNote = ''; this.show('garage'); this.hooks.preview(); break;
       case 'home': this.show('title'); break;
-      case 'profile-open': this.profileFrom = this.screen === 'profile' ? this.profileFrom : this.screen; this.unameDraft = null; this.unameNote = ''; this.friendNote = ''; this.show('profile'); if (!this.patreonInfo) this.hooks.refreshSchedule?.(); break;
+      case 'profile-open': this.profileFrom = this.screen === 'profile' ? this.profileFrom : this.screen; this.unameDraft = null; this.unameNote = ''; this.friendNote = ''; this.show('profile'); break;
       case 'profile-back': this.show(this.profileFrom); break;
       case 'uname-save': void this.saveName(); break;
       case 'friend-add': void this.friendAct(this.friendDraft, 'add'); break;
@@ -2312,14 +2301,14 @@ export class Menu {
       <h3>🔐 OpenGrid Account Login</h3>
       ${authBlock}
       ${this.authNote ? `<div class="pnote ${this.authNote.startsWith('✓') ? '' : 'bad'}">${esc(this.authNote)}</div>` : ''}
-      ${online ? `<h3>🧡 Non-Profit Patreon Online Pass</h3>
-      <p class="dim small-note">Use the same email as your Patreon account (or link Patreon below) to automatically unlock official ranked splits, championships &amp; restorative protests. Base game, cars, tracks, SP &amp; Private P2P are always 100% free and ad-free.</p>
+      <h3>♥ Support Open Grid (Optional)</h3>
+      <p class="dim small-note">Open Grid is a free, open-source, ad-free hobby project — all cars, cities, online splits, championships, hotlaps &amp; private P2P lobbies are 100% free for everyone. Optional GitHub Sponsors buys no perks and simply helps cover domain &amp; hosting.</p>
       <div class="opts" style="flex-wrap:wrap;gap:8px;margin-bottom:8px">
-        <span class="pill ${mp?.subActive ? 'gold' : ''}">${mp?.subTier === 'pro' || mp?.subTier === 'team_pro' ? `🧡 Active (${esc(mp.subTier)})` : mp?.subActive ? '✓ 7-Day Free Trial' : 'Pass Inactive'}</span>
-        ${this.patreonInfo?.patreonUrl ? `<a class="small primary" style="text-decoration:none;display:inline-flex;align-items:center;padding:5px 10px;border-radius:6px" href="${esc(this.patreonInfo.patreonUrl)}" target="_blank" rel="noopener noreferrer">🧡 Open Patreon</a>` : ''}
-        ${this.patreonInfo?.patreonOAuthEnabled ? `<button class="small primary" data-act="patreon-connect">${mp?.patreonLinked ? '✓ Patreon Linked' : '🔗 Connect Patreon'}</button>` : ''}
-        <button class="small" data-act="patreon-refresh">↻ Refresh Pass</button>
-      </div>` : ''}
+        <span class="pill gold">✓ 100% Free Forever</span>
+        <a class="chip on" style="text-decoration:none;color:#fff" href="https://github.com/sponsors/Konstantinos-Chatzistavrou" target="_blank" rel="noopener noreferrer">♥ Sponsor on GitHub</a>
+        <a class="chip" style="text-decoration:none;color:#eef2ff" href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid" target="_blank" rel="noopener noreferrer">★ GitHub</a>
+        <a class="chip" style="text-decoration:none;color:#eef2ff" href="https://youtube.com/@open_grid_motorsport" target="_blank" rel="noopener noreferrer">▶ YouTube</a>
+      </div>
       <h3>Username</h3>
       <p class="dim">Friends add you by it; it shows on the race leaderboard, over your car and on your number plate (up to ${PLATE_MAX} characters).
         ${online ? 'You can change it once every 30 days.' : ''}</p>

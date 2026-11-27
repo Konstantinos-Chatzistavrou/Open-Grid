@@ -548,6 +548,22 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
 
   if (path === '/v1/subscription' && req.method === 'GET') {
+    const requirePass = env.REQUIRE_SUPPORTER_PASS === '1';
+    if (!requirePass) {
+      return json({
+        tier: 'free', active: true, expiresAt: 0, daysLeft: 0, adFree: true, nonProfit: true,
+        sponsorUrl: 'https://github.com/sponsors/Konstantinos-Chatzistavrou',
+        patreonUrl: null,
+        patreonConnected: false,
+        patreonOAuthEnabled: false,
+        benefits: [
+          '100% Free & Ad-Free Open-Source Hobby Project — zero trials, zero paywalls',
+          'Free Community Scheduled SOF Splits, Championships, Hotlaps, Teams & Private Leagues (best-effort free servers)',
+          'Automated Glicko-2 DR, Fault-Aware Safety Rating (0x Victim Shield) & C++20 Replay Anti-Cheat',
+          'Optional GitHub Sponsors helps cover domain & hosting (buys no perks)',
+        ],
+      });
+    }
     const tier = acct.sub_tier ?? 'trial';
     const exp = acct.sub_expires_at ?? 0;
     const active = isSubscriptionActive(tier, exp);
@@ -556,19 +572,18 @@ async function route(req: Request, env: Env): Promise<Response> {
     const patreonOAuthEnabled = Boolean(env.PATREON_CLIENT_ID && env.PATREON_CLIENT_SECRET);
     return json({
       tier, active, expiresAt: exp, daysLeft, adFree: true, nonProfit: true,
+      sponsorUrl: 'https://github.com/sponsors/Konstantinos-Chatzistavrou',
       patreonUrl: env.PATREON_URL || null,
       patreonConnected: Boolean(acct.billing_customer_id?.startsWith('patreon:')),
       patreonOAuthEnabled,
       proMinUsd: opts.proMinCents / 100,
       teamMinUsd: opts.teamMinCents / 100,
       benefits: [
-        '100% Non-Profit & Ad-Free: Patreon funds our official online servers & D1 cloud database',
-        'Scheduled 20m / 45m / 60m SOF Splits & License Ladder (R -> PRO)',
-        'Official Multi-Week Championships & Multiclass Endurance Teams',
-        'Fault-Aware Safety Rating (0x Victim Shield) & Restorative Protests (DR/SR Refunds)',
-        'Season Disconnect Jokers & C++20 Verified Global Hotlap Leaderboards',
+        '100% Non-Profit & Ad-Free',
+        'Scheduled SOF Splits & License Ladder (R -> PRO)',
+        'Season Championships & Endurance Teams',
+        'Fault-Aware Safety Rating (0x Victim Shield) & Global Hotlaps',
         'Hosted Private Leagues & Custom Rules',
-        'Zero Hostage Content: All Cars, Tracks, SP & Private P2P Stay Free Forever',
       ],
     });
   }

@@ -53,7 +53,6 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
   let tab: TabId = cloud.oauthSignedInProvider ? 'profile' : 'overview';
   let track = 'nyc';
   let copyStatus = '';
-  let patreonUrl = '';
   let oauthProviders: OAuthProvidersStatus = { google: false, github: false, discord: false };
   let hotlaps: { username: string; car: string; lap_ms: number }[] | null = null;
   let hotlapErr = '';
@@ -95,8 +94,6 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
     if (!cloud.id) return;
     try {
       profile = await cloud.me();
-      const sub = await cloud.subscription().catch(() => null);
-      if (sub?.patreonUrl) patreonUrl = sub.patreonUrl;
       render();
     } catch { /* guest or expired */ }
   };
@@ -105,14 +102,14 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
     <div class="mc-cards">
       <div class="mc-card"><span class="mc-k">01 · PHYSICS</span><b>240 Hz C++20 Sim Core</b><p>Pacejka MF 5.2/6.1 tyres with 3-zone thermals, 3D suspension kinematics, active aero &amp; WebHID wheel force feedback.</p></div>
       <div class="mc-card"><span class="mc-k">02 · WORLD</span><b>18 Real-Scale 1:1 Cities</b><p>New York, Tokyo, London, Paris, Singapore, Chicago, Madrid, Crete Imbros Pass &amp; more — zero U-turn street circuits.</p></div>
-      <div class="mc-card"><span class="mc-k">03 · ONLINE</span><b>Official SOF Splits &amp; DR/SR</b><p>Glicko-2 Driver Rating, Fault-Aware Safety Rating (0x Victim Shield), License Ladder (R → PRO) &amp; Restorative Protests.</p></div>
+      <div class="mc-card"><span class="mc-k">03 · ONLINE</span><b>Free Community Splits &amp; DR/SR</b><p>Glicko-2 Driver Rating, Automated Fault-Aware Safety Rating (0x Victim Shield), License Ladder (R → PRO) &amp; Global Hotlaps.</p></div>
       <div class="mc-card"><span class="mc-k">04 · STREETS</span><b>Speed-Cam Cops &amp; Street Radio</b><p>Roadside radar cameras dispatch CH-04 police scanner pursuits, GPS roadblock reroutes &amp; 5 km proximity CB radio.</p></div>
       <div class="mc-card"><span class="mc-k">05 · GARAGE</span><b>24 Cars &amp; Live Co-Op Showroom</b><p>Bodykits, engine swaps, live dyno, CS2-style live Auction House &amp; invite friends to watch you modify your car live.</p></div>
       <div class="mc-card"><span class="mc-k">06 · OPEN</span><b>Open source</b><p>The physics core and the game are Apache-2.0 on GitHub, and 100% ad-free.</p></div>
     </div>
     <div class="mc-pledge">
-      <b>NON-PROFIT PROMISE · 100% AD-FREE</b>
-      <p>Every car, all 18 cities, Single Player, Garage &amp; Private P2P lobbies stay free forever. Zero pay-to-win. Official ranked servers include a 7-day free trial and are funded purely by community Patreon support.</p>
+      <b>FREE HOBBY PROJECT · 100% AD-FREE</b>
+      <p>Every car, all 18 cities, Single Player, Garage, Ranked Splits &amp; Private P2P lobbies are 100% free for everyone. Zero paywalls, zero trials, zero pay-to-win. Optional support via GitHub Sponsors.</p>
     </div>`;
 
   const renderHotlaps = () => {
@@ -159,9 +156,6 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
       const dr = Math.round(profile.dr ?? 1500);
       const sr = (profile.sr ?? 2.5).toFixed(2);
       const st = profile.stats ?? { starts: 0, wins: 0, podiums: 0, poles: 0, incidents: 0, corners: 0 };
-      const pass = profile.subTier === 'pro' || profile.subTier === 'team_pro'
-        ? `PATREON ${profile.subTier === 'team_pro' ? 'TEAM PRO' : 'PRO'}`
-        : profile.subActive ? '7-DAY FREE TRIAL' : 'FREE TIER';
       return `<div class="mc-section">
         <div class="mc-prof-head">
           <div><span class="mc-k">OPENGRID DRIVER</span><h3>${esc(profile.username || profile.name)}</h3><small>${esc(profile.email)}</small></div>
@@ -170,7 +164,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
         <div class="mc-stats">
           <div><span>DRIVER RATING</span><b>${dr}</b><em>Grade ${esc(profile.drGrade ?? 'C')}</em></div>
           <div><span>SAFETY RATING</span><b>${sr}</b><em>/ 4.99 · ${profile.cleanStreak ?? 0} clean</em></div>
-          <div><span>ONLINE PASS</span><b>${esc(pass)}</b><em>${profile.jokersLeft ?? 2} jokers left</em></div>
+          <div><span>ONLINE ACCESS</span><b>100% FREE</b><em>${profile.jokersLeft ?? 2} jokers left</em></div>
           <div><span>CAREER</span><b>${st.wins}W / ${st.podiums}P</b><em>${st.starts} starts · ${profile.credits.toLocaleString()} Cr</em></div>
         </div>
         <div class="mc-actions" style="margin-top:12px">
@@ -188,7 +182,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
       <div class="mc-card">
         <span class="mc-k">OPENGRID CLOUD COMPANION</span>
         <b>Check Your DR, SR &amp; License</b>
-        <p>Sign in with Google, GitHub, Discord, or your Open Grid Email &amp; Password to check your live ratings, Patreon pass status, and career stats on mobile.</p>
+        <p>Sign in with Google, GitHub, Discord, or your Open Grid Email &amp; Password to check your live ratings, license class, and career stats on mobile.</p>
         ${oauthBtns ? `<div class="mc-oauth-col">${oauthBtns}</div>` : ''}
         <form id="mc-login-form" class="mc-form">
           <input type="email" id="mc-email" placeholder="Email address" required autocomplete="email" />
@@ -230,7 +224,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
             <button type="button" class="mc-btn primary" id="mc-share">${copyStatus || '📋 Copy open-grid.racing'}</button>
             <a class="mc-btn" href="https://youtube.com/@open_grid_motorsport" target="_blank" rel="noopener">▶ YouTube</a>
             <a class="mc-btn" href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid" target="_blank" rel="noopener">GitHub</a>
-            ${patreonUrl ? `<a class="mc-btn" href="${esc(patreonUrl)}" target="_blank" rel="noopener">♥ Patreon</a>` : ''}
+            <a class="mc-btn" href="https://github.com/sponsors/Konstantinos-Chatzistavrou" target="_blank" rel="noopener">♥ Sponsor</a>
           </div>
         </section>
 
@@ -307,8 +301,6 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
       authBusy = true; authMsg = ''; render();
       try {
         profile = await cloud.loginEmail(email, pass);
-        const sub = await cloud.subscription().catch(() => null);
-        if (sub?.patreonUrl) patreonUrl = sub.patreonUrl;
       } catch (err) {
         authMsg = err instanceof Error ? err.message : 'Login failed.';
       }

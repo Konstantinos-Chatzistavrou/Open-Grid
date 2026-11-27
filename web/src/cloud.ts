@@ -170,7 +170,7 @@ export class Cloud {
   report(raceId: string, player: string, why: string) { return this.call<{ ok: true }>('POST', '/v1/report', { raceId, player, why }); }
   replay(raceId: string, data: string) { return this.call<{ ok: true }>('POST', `/v1/replay/${encodeURIComponent(raceId)}`, { data }); }
 
-  // ---- Competitive OpenGrid Online Network (Non-Profit Patreon Funded · 100% Ad-Free) ----
+  // ---- Free Community OpenGrid Online Network (100% Ad-Free · Best-Effort Free Servers) ----
   subscription() {
     return this.call<{
       tier: SubTier; active: boolean; expiresAt: number; daysLeft: number; adFree: boolean; nonProfit?: boolean;

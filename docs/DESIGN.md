@@ -14,9 +14,8 @@
 - **License**:
   - **Code**: `Apache-2.0` (compatible with Unreal Engine 5 and open community modding).
   - **Original Models, Data & Docs**: `CC BY-NC 4.0`.
-- **Non-Profit, 100% Ad-Free Online Model**:
-  - **Free Forever (Zero Hostage Content):** All 25 cars, all 5 cities, single-player career, Garage, Auction House, 2P Split-Screen, Friends, and Private P2P lobbies (`PeerJS` WebRTC) never require payment or ads.
-  - **Official Ranked Network (`cloud/`):** Funded by a non-profit **Patreon Supporter Pass** (7-day free trial included, zero ads) covering Cloudflare Workers + D1 + Durable Objects, official SOF splits, championships, restorative stewarding, and future UE 5.8 dedicated servers.
+- **Free Hobby-Project, 100% Ad-Free Online Model**:
+  - **100% Free Everywhere (Zero Paywalls, Zero Trials, Zero Ads):** All 25 cars, all cities, single-player career, Garage, Auction House, 2P Split-Screen, Friends, Private P2P lobbies (`PeerJS` WebRTC), and Community Ranked Splits (`cloud/` on Cloudflare Workers + D1 + Durable Objects free plan, best-effort) cost nothing. Optional **[GitHub Sponsors](https://github.com/sponsors/Konstantinos-Chatzistavrou)** buys no perks. No human-in-the-loop stewarding is promised — race control, fault scoring, and replay checks are automated.
 - **Multiplayer Sync (Zero Head-Start Ready Machine)**:
   - Strict **Ready-State** barrier: the host cannot trigger the `3-2-1` countdown until every connected client signals loaded assets. Nobody gets a head start from faster hardware.
 - **Split-Screen**:
@@ -37,8 +36,8 @@ Built to deliver fair, structured competitive racing without paywalls or ads (`c
   - **License Progression (`R → D → C → B → A → PRO`):** MPR race requirements, fast-track promotions, and **Bad-Sport Quarantine** (`splitNo = -1`) isolating habitual rammers until they complete consecutive clean corners.
 - **Scheduled Official Series & Balanced SOF Splits**:
   - Recurring cadence (`Rookie GT Sprint` 20m, `GT3 World Championship` 45m, `Hypercar Pro` 60m, `Multiclass Endurance` 120m) with automatic SOF split seeding and seasonal drop-week championships (best 8 of 12 rounds).
-- **Restorative Protests & Season Disconnect Jokers**:
-  - Upheld steward protests automatically **refund 100% of lost victim DR & SR** from the race ledger and quarantine intentional wreckers.
+- **Automated Fault Scoring & Season Disconnect Jokers**:
+  - Automated `0x Victim Shield` collision evaluation and Bad-Sport Quarantine (`splitNo = -1`) run with zero human stewards required.
   - Each driver receives **2 Season Disconnect Jokers** to protect their rating against unfair internet drops.
 - **FIA Race Control (`core/src/race_control.cpp`)**:
   - Green, Local Yellow, Blue, Black, Meatball (severe damage), FCY/Safety Car flags, track-limit slowdowns, pit-lane speed limiter/service timers, and `EnduranceStintTracker` for live pit-box driver swaps.
@@ -94,4 +93,4 @@ Built to deliver fair, structured competitive racing without paywalls or ads (`c
   - **SimHub UDP (Port 20777)**: 311-byte Forza/SimHub Dash V2 stream (`tools/simhub_udp_bridge.mjs`).
   - **MoTeC i2 Pro Export (`.ld` + `.ldx`)**: Resampled, bounded multi-channel telemetry logs from Pause / Results.
 - **Localization & Accessibility**:
-  - UE5 StringTable-compatible `data/i18n/` (EN, DE, ES, FR, JA), Protanopia / Deuteranopia / Tritanopia colorblind palettes, `85%–130%` HUD scaling, full keyboard/pad/wheel remapping, and in-game Player Report / Restorative Protest tools.
+  - UE5 StringTable-compatible `data/i18n/` (EN, DE, ES, FR, JA), Protanopia / Deuteranopia / Tritanopia colorblind palettes, `85%–130%` HUD scaling, full keyboard/pad/wheel remapping, and automated in-game race-control penalties.

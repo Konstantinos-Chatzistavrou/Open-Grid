@@ -1849,10 +1849,6 @@ async function main() {
         menu.officialEvents = s.events;
         if (menu.screen === 'lobby') menu.render();
       }).catch((e: Error) => { menu.officialNote = e.message; if (menu.screen === 'lobby') menu.render(); });
-      void cloud.subscription().then((sub) => {
-        menu.patreonInfo = sub;
-        if (menu.screen === 'lobby' || menu.screen === 'profile') menu.render();
-      }).catch(() => {});
     },
     connectPatreon: () => {
       if (!cloud.available) return;
@@ -2213,10 +2209,6 @@ async function main() {
   menu.spotterOn = spotter.enabled;
   (g.__game as Record<string, unknown>).penalties = penalties;
   if (cloud.available) {
-    void cloud.subscription().then((sub) => {
-      menu.patreonInfo = sub;
-      if (menu.screen === 'title' || menu.screen === 'lobby' || menu.screen === 'profile') menu.render();
-    }).catch(() => {});
     void cloud.authProviders().then((p) => {
       menu.oauthProviders = p;
       if (menu.screen === 'profile') menu.render();

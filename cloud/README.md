@@ -5,7 +5,7 @@ The server-authoritative backend for **Open Grid's competitive online network**,
 - **Live instance:** `https://opengrid.opengrid-racing.workers.dev` (region `EEUR`; ready for custom domain `https://api.open-grid.racing` once the `open-grid.racing` zone is added to Cloudflare)
 - **Frontend integration:** Vercel project `opengrid` builds `web/` with `VITE_CLOUD_URL` set to the live Worker URL on every push to `main`.
 - **Licence:** `Apache-2.0` (100% open source; self-hostable by leagues and communities).
-- **Monetization Philosophy:** **100% Non-Profit & Ad-Free.** All cars, tracks, single player, garage, friends, and private P2P lobbies are free forever. Ranked features are free for every account and run best-effort on the Cloudflare free plan. The optional **Patreon Supporter Pass** code (7-day trial, then a paid pass) is kept but switched off: set `REQUIRE_SUPPORTER_PASS = "1"` in `wrangler.toml` `[vars]` to bring the paywall back.
+- **Funding Philosophy:** **100% Free Hobby Project & Ad-Free.** All cars, tracks, single player, garage, friends, ranked splits, championships, hotlaps, leagues, and private P2P lobbies are free for every account on the Cloudflare free plan (best-effort). There is no Patreon, no 7-day trial, and no human-in-the-loop stewarding; optional **[GitHub Sponsors](https://github.com/sponsors/Konstantinos-Chatzistavrou)** buys no perks. Legacy pass-gating code in `cloud/` is switched off (`REQUIRE_SUPPORTER_PASS = "0"`).
 
 ---
 
@@ -83,26 +83,21 @@ For local `.dev.vars` (never committed): `ALLOW_TEST_IP=1`, `IP_SALT=dev-salt`, 
 
 ---
 
-## Production Deployment & Patreon Setup (`$0/month`)
+## Production Deployment & OAuth2 Setup (`$0/month`)
 
 ```bash
 cd cloud
 npx wrangler login
-npm run db:remote            # applies migrations 0001..0006 on remote D1
+npm run db:remote            # applies migrations 0001..0007 on remote D1
 npm run deploy               # deploys Worker + Durable Objects
 ```
 
 Required Cloudflare secrets (`wrangler secret put <NAME>`):
 - `IP_SALT` — random salt for anonymous network hashing
-- `VERIFIER_KEY` — shared secret for GitHub Actions `opengrid_replay_verifier` & steward protest resolution
-
-Patreon activation (when your Patreon page is created):
-1. Set `PATREON_URL = "https://www.patreon.com/<your-page>"` in `wrangler.toml` `[vars]` (optional: `PATREON_PRO_CENTS = "500"`, `PATREON_TEAM_CENTS = "1000"`, `PATREON_CAMPAIGN_ID`).
-2. In Patreon Developer Portal → **Webhooks**, register `https://opengrid.opengrid-racing.workers.dev/v1/patreon/webhook` (or `https://api.open-grid.racing/v1/patreon/webhook`) for `members:pledge:create`, `members:pledge:update`, `members:pledge:delete`, then run `npx wrangler secret put PATREON_WEBHOOK_SECRET`.
-3. *(Optional OAuth2)* Register a Patreon OAuth Client with redirect URI `https://opengrid.opengrid-racing.workers.dev/v1/patreon/callback`, set `PATREON_CLIENT_ID`, and run `npx wrangler secret put PATREON_CLIENT_SECRET`.
+- `VERIFIER_KEY` — shared secret for GitHub Actions `opengrid_replay_verifier`
 
 ### 1-Click OAuth2 Login (Google, GitHub & Discord — $0/mo, Zero Dependencies)
-Buttons automatically appear on **Desktop Profile** and the **Mobile Companion** as soon as each provider's secrets are configured via `wrangler secret put`:
+Buttons automatically appear on **Desktop Profile** and the **Mobile Companion** as soon as each provider's secrets are configured via `wrangler secret put` (or `node tools/setup_oauth.mjs`):
 - **Google** (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`): Callback `https://opengrid.opengrid-racing.workers.dev/v1/auth/oauth/google/callback` (scopes: `openid email profile`)
 - **GitHub** (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`): Callback `https://opengrid.opengrid-racing.workers.dev/v1/auth/oauth/github/callback` (scopes: `read:user user:email`)
 - **Discord** (`DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`): Callback `https://opengrid.opengrid-racing.workers.dev/v1/auth/oauth/discord/callback` (scopes: `identify email`)
@@ -114,4 +109,4 @@ All three support **in-place guest account upgrade** (keeps cars, credits, DR/SR
 ## Saved Follow-Up Wires (Planned Next Pass)
 1. Hook live collision/offtrack events in `web/src/main.ts` into `ranked.incident(...)` (the `RaceRoom` already scores them).
 2. Wire top-3 replay input-log upload in `web/src/main.ts` when `rankedRes.you.replay === true` (backend + C++20 verifier already live).
-3. Add a lightweight `tools/steward.mjs` CLI to review and resolve open Restorative Protests from the terminal, plus downloadable 3D Ghost Car playback from `hotlaps.ghost_data`.
+3. Add downloadable 3D Ghost Car playback from `hotlaps.ghost_data`.
