@@ -93,6 +93,7 @@ jobs:
           npm ci
           npm run build
           npm run test:gate
+          npm run test:lab
       - name: Typecheck & Test Cloudflare Worker Backend
         working-directory: cloud
         run: |

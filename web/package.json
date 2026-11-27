@@ -11,7 +11,8 @@
     "test:e2e": "node tools/e2e_playwright.mjs",
     "test:gate": "node tools/test_gate.mjs",
     "audit:cars": "node tools/audit_all_cars.mjs",
-    "meshlets": "node tools/meshlet-cli.mjs"
+    "meshlets": "node tools/meshlet-cli.mjs",
+    "test:lab": "node tools/test_lab.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",

@@ -1,6 +1,6 @@
 // Apache-2.0 - rs_tirfit: fit a Magic Formula tyre property file (.tir) to measured tyre curves (see rs/tirfit.hpp and docs/own_tyre_data.md).
 //
-//   rs_tirfit <data.csv> --template <tyre.tir> --out <fitted.tir> [--report report.json] [--set KEY=VALUE]... [--angle-sign -1] [--no-aligning] [--no-combined] [--name text]
+//   rs_tirfit <data.csv> --template <tyre.tir> --out <fitted.tir> [--report report.json] [--set KEY=VALUE]... [--angle-sign -1] [--no-aligning] [--no-combined] [--name text] [--notice licence.txt]
 //
 // data.csv: one row per measured point, header names as in rs/tirfit.hpp (fz, kappa, alpha | alpha_deg, gamma | gamma_deg, vx, pressure | pressure_kpa, fx, fy, mz, mx), forces in N, moments in N m,
 // signs as in the tyre-file convention (--angle-sign -1 for SAE-signed angles). The template supplies the geometry, the nominal load and every coefficient the data cannot determine:
@@ -33,7 +33,7 @@ std::string base_name(const std::string& p) {
 int main(int argc, char** argv) {
     using namespace rs;
     if (argc < 2) {
-        std::fprintf(stderr, "usage: rs_tirfit <data.csv> --template <tyre.tir> --out <fitted.tir> [--report report.json] [--set KEY=VALUE]... [--angle-sign -1] [--no-aligning] [--no-combined] [--name text]\n       rs_tirfit --make-demo <truth.tir> <out.csv> [noise]\n");
+        std::fprintf(stderr, "usage: rs_tirfit <data.csv> --template <tyre.tir> --out <fitted.tir> [--report report.json] [--set KEY=VALUE]... [--angle-sign -1] [--no-aligning] [--no-combined] [--name text] [--notice licence.txt]\n       rs_tirfit --make-demo <truth.tir> <out.csv> [noise]\n");
         return 2;
     }
     if (std::string(argv[1]) == "--make-demo") {
@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
         std::printf("wrote %zu synthetic rows to %s\n", rows.size(), argv[3]);
         return 0;
     }
-    std::string csv_path = argv[1], template_path, out_path, report_path, name;
+    std::string csv_path = argv[1], template_path, out_path, report_path, name, notice_path;
     double angle_sign = 1.0;
     tirfit::Options opt;
     std::vector<std::pair<std::string, double>> sets;
@@ -60,6 +60,7 @@ int main(int argc, char** argv) {
         else if (a == "--out") out_path = next();
         else if (a == "--report") report_path = next();
         else if (a == "--name") name = next();
+        else if (a == "--notice") notice_path = next();
         else if (a == "--angle-sign") angle_sign = std::atof(next().c_str()) < 0 ? -1.0 : 1.0;
         else if (a == "--no-aligning") opt.fit_aligning = false;
         else if (a == "--no-combined") opt.fit_combined = false;
@@ -102,14 +103,22 @@ int main(int argc, char** argv) {
     std::vector<std::string> header = {
         "Fitted by rs_tirfit (OpenGrid) from " + base_name(csv_path) + (name.empty() ? "" : " (" + name + ")") + ", starting from the template " + base_name(template_path) + ".",
         "A least-squares fit to the supplied data, NOT a manufacturer's file: valid only inside the data's range of load, slip and camber (the limits below were set from it).",
-        "Coefficients the data did not determine keep the template's values; the licence of the template's numbers still applies to those.",
-        "Every comment line BELOW this header (descriptions, copyright and licence notices) belongs to the template tyre and describes IT, not the fitted tyre; the notices are kept on purpose.",
+        "Coefficients the data did not determine keep the template's values; the template's licence still applies to those numbers (a notice follows below if --notice was given).",
+        "Comment lines further below belong to the template tyre and describe IT, not the fitted tyre.",
     };
     for (const auto& s : res.stages) {
         char buf[200];
         if (s.ran) std::snprintf(buf, sizeof buf, "stage %s (%s): %d rows, rms %.4g (%.2f %% of peak)", s.name.c_str(), s.channel.c_str(), s.rows, s.rms, s.rms_percent_of_peak);
         else std::snprintf(buf, sizeof buf, "stage %s (%s): not fitted (%s)", s.name.c_str(), s.channel.c_str(), s.note.c_str());
         header.push_back(buf);
+    }
+    if (!notice_path.empty()) {
+        std::string notice;
+        if (!slurp(notice_path, notice)) { std::fprintf(stderr, "cannot read --notice %s\n", notice_path.c_str()); return 1; }
+        header.push_back("Licence notice of the template (supplied with --notice):");
+        std::istringstream ns(notice);
+        std::string nl;
+        while (std::getline(ns, nl)) { if (!nl.empty() && nl.back() == '\r') nl.pop_back(); header.push_back(nl); }
     }
     const std::string out = tirfit::write_tir(tmpl_text, before, res.params, res.fitted_keys, header);
     std::ofstream(out_path, std::ios::binary) << out;

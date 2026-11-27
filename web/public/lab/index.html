@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenGrid Tyre Lab: fit a Magic Formula tyre file in your browser</title>
+<meta name="description" content="Fit a Pacejka Magic Formula tyre file (.tir) to your tyre measurements in the browser. The solver is checked against MFeval; nothing is uploaded.">
+<meta name="theme-color" content="#0A0A0A">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="lab.css">
+</head>
+<body>
+<header class="top">
+  <div class="wordmark" aria-label="OpenGrid">OPEN<span>GRID</span></div>
+  <div class="page">Tyre Lab</div>
+</header>
+
+<main>
+  <section class="hero">
+    <h1>Fit a tyre file to your measurements.</h1>
+    <p>Pacejka Magic Formula 5.2 / 6.1 / 6.2, the same solver that is checked against MFeval on every commit, compiled to WebAssembly. It runs in this tab: <b>nothing is uploaded</b>.</p>
+    <p class="status">Status: checked on <b>synthetic</b> data only (curves generated from known tyres, fitted from a different tyre and judged on points it never saw). Not yet shown on measured tyre data. A fit is only as good as the data.</p>
+  </section>
+
+  <section class="card" id="s1">
+    <h2><span class="n">1</span>Your data</h2>
+    <p class="hint">A table, one row per measured point. Columns: <code>fz</code> (N, positive) <code>kappa</code> <code>alpha</code> (rad, or <code>alpha_deg</code>) <code>gamma</code> <code>fx</code> <code>fy</code> <code>mz</code>; units in the header are honoured (<code>SA [deg]</code>, <code>P [kPa]</code>). Signs as in the tyre file.</p>
+    <div class="row">
+      <label class="btn ghost" for="file">Choose a CSV…</label><input id="file" type="file" accept=".csv,.txt,.tsv" hidden>
+      <button class="btn ghost" id="demo" type="button">Use synthetic demo data</button>
+      <label class="check"><input type="checkbox" id="sae"> angles are SAE-signed (positive slip angle gives positive Fy)</label>
+    </div>
+    <div class="summary" id="summary" aria-live="polite">No data yet.</div>
+  </section>
+
+  <section class="card" id="s2">
+    <h2><span class="n">2</span>Template tyre</h2>
+    <p class="hint">Supplies the geometry, the nominal load and every coefficient your data cannot determine. Give your tyre's real size and nominal load.</p>
+    <div class="row">
+      <label class="field wide">Template<select id="tmpl"></select></label>
+    </div>
+    <div class="grid" id="geo"></div>
+    <div class="row opts">
+      <label class="check"><input type="checkbox" id="aligning" checked> fit the aligning moment (Mz)</label>
+      <label class="check"><input type="checkbox" id="combined" checked> fit combined slip</label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <button class="btn cta" id="fit" type="button" disabled>Fit tyre</button>
+      <span id="busy" class="busy" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <section id="results" hidden>
+    <div class="card">
+      <h2>Fit report</h2>
+      <div id="notes"></div>
+      <div class="tablewrap"><table id="stages"><thead><tr><th>stage</th><th>channel</th><th class="r">rows</th><th class="r">coefficients</th><th class="r">rms error</th><th class="r">% of peak</th><th>flags</th></tr></thead><tbody></tbody></table></div>
+      <p class="hint">Coefficients are <b>not unique</b>: many sets give nearly the same curves. The fit matches the curves, not necessarily the coefficients that generated them; never read a coefficient as a physical property.</p>
+      <div class="row">
+        <button class="btn cta" id="download" type="button">Download .tir</button>
+        <button class="btn ghost" id="copy" type="button">Copy report (JSON)</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Your data against the fit</h2>
+      <div class="legend" id="legend"></div>
+      <div class="plots">
+        <figure><canvas id="p0" width="520" height="340"></canvas><figcaption>Fx over slip ratio</figcaption></figure>
+        <figure><canvas id="p1" width="520" height="340"></canvas><figcaption>Fy over slip angle</figcaption></figure>
+        <figure><canvas id="p2" width="520" height="340"></canvas><figcaption>Mz over slip angle</figcaption></figure>
+      </div>
+      <p class="hint">Dots: your data. Solid: the fitted tyre. Dashed: the template before the fit. Each colour is one load; camber near zero.</p>
+    </div>
+  </section>
+
+  <section class="card slim">
+    <h2>What this is not</h2>
+    <p class="hint">Not a manufacturer's tyre file: it describes your data, inside the range of load, slip and camber you measured. Not fitted: overturning moment, rolling resistance, turn slip, the aligning moment of combined slip, and anything your data did not cover (those coefficients keep the template's values and its licence).
+    Source, tests and the car pipeline: <code>docs/getting_started.md</code>. Code Apache-2.0; template tyres are Project Chrono data (BSD-3).</p>
+  </section>
+</main>
+<script type="module" src="lab.js"></script>
+</body>
+</html>

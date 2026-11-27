@@ -37,7 +37,8 @@ What the data must contain for each part of the fit (the report says which parts
 cmake --build core/build --target rs_tirfit_cli              # builds core/build/rs_tirfit
 core/build/rs_tirfit my_tyre.csv --template data/tires/audi_245_40R18_pac2002.tir --out my_tyre.tir \
     --set UNLOADED_RADIUS=0.31 --set WIDTH=0.225 --set ASPECT_RATIO=0.45 --set RIM_RADIUS=0.2286 \
-    --set NOMPRES=220000 --set INFLPRES=220000 --set FNOMIN=4000 --report my_tyre_fit.json --name "my tyre, test rig X"
+    --set NOMPRES=220000 --set INFLPRES=220000 --set FNOMIN=4000 --report my_tyre_fit.json --name "my tyre, test rig X" \
+    --notice data/tires/LICENSE-projectchrono.txt
 ```
 
 `--template` supplies the geometry, the nominal load and every coefficient the data cannot determine: give the real size with `--set` (anything `rs::mf62` reads: `UNLOADED_RADIUS`, `WIDTH`, `ASPECT_RATIO`, `RIM_RADIUS`,
@@ -116,5 +117,6 @@ What these numbers do not say:
 
 ## 6. Licences
 
-`rs_tirfit` is Apache-2.0. A fitted file starts from a template: coefficients the data did not determine are the template's numbers and its notices stay in the file (the Chrono tyres in `data/tires/` are BSD-3, see
-`LICENSING.md`). Your measurements are yours; check the licence of any dataset you did not measure yourself before you publish a tyre fitted from it.
+`rs_tirfit` is Apache-2.0. A fitted file starts from a template: coefficients the data did not determine are the template's numbers, so the template's licence still applies to them. The Chrono tyres in `data/tires/` are BSD-3 and
+their `.tir` files carry no notice themselves (it is in `data/tires/LICENSE-projectchrono.txt`), so for a fit started from one of them pass `--notice data/tires/LICENSE-projectchrono.txt`: the text is written into the file as comments
+(the Tyre Lab page does this for its built-in templates). Your measurements are yours; check the licence of any dataset you did not measure yourself before you publish a tyre fitted from it.

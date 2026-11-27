@@ -1,0 +1,57 @@
+@font-face { font-family: "Barlow"; font-weight: 400; src: url("../fonts/Barlow-400.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Barlow"; font-weight: 600; src: url("../fonts/Barlow-600.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Barlow Condensed"; font-weight: 900; font-style: italic; src: url("../fonts/BarlowCondensed-900i.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Barlow Condensed"; font-weight: 700; src: url("../fonts/BarlowCondensed-700.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; font-weight: 500; src: url("../fonts/JetBrainsMono-500.woff2") format("woff2"); font-display: swap; }
+:root { --bg: #0A0A0A; --surface: #111317; --raised: #181B21; --red: #FF1111; --red-hover: #FF3333; --ink: #F5F7FA; --muted: #8E96A4; --seam: #FFFFFF1A; --seam2: #FFFFFF33; --green: #22C55E; --amber: #F59E0B; --ice: #38BDF8; }
+* { box-sizing: border-box; }
+html { background: var(--bg); color: var(--ink); font: 400 16px/1.5 "Barlow", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+body { margin: 0; }
+code { font: 500 0.88em "JetBrains Mono", ui-monospace, monospace; color: var(--ice); }
+.top { display: flex; align-items: baseline; gap: 18px; padding: 18px max(24px, calc((100% - 1040px) / 2)); border-bottom: 1px solid var(--seam); }
+.wordmark { font: italic 900 28px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.02em; }
+.wordmark span { color: var(--red); }
+.page { font: 700 18px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+main { max-width: 1040px; margin: 0 auto; padding: 8px 24px 64px; }
+.hero { padding: 40px 0 16px; }
+h1 { font: 700 44px/1.05 "Barlow Condensed", sans-serif; letter-spacing: 0.01em; text-transform: uppercase; margin: 0 0 12px; }
+h2 { font: 700 22px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 12px; display: flex; align-items: center; gap: 12px; }
+.n { display: inline-grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--seam2); color: var(--muted); font: 700 15px/1 "Barlow Condensed", sans-serif; }
+.hero p { max-width: 70ch; margin: 0 0 10px; color: #CBD5E1; }
+.status { color: var(--muted) !important; font-size: 14px; border-left: 2px solid var(--amber); padding-left: 12px; }
+.card { background: var(--surface); border: 1px solid var(--seam); padding: 22px 24px; margin-top: 16px; }
+.card.slim { background: transparent; }
+.hint { color: var(--muted); font-size: 14px; margin: 0 0 14px; max-width: 90ch; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+.row.opts { margin-top: 14px; }
+.btn { appearance: none; border: 1px solid var(--seam2); background: transparent; color: var(--ink); font: 700 15px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.1em; text-transform: uppercase; padding: 13px 20px; cursor: pointer; transition: background 0.12s, border-color 0.12s; }
+.btn.ghost:hover { background: var(--raised); border-color: #FFFFFF55; }
+.btn.cta { background: var(--red); border-color: var(--red); color: #fff; }
+.btn.cta:hover:not(:disabled) { background: var(--red-hover); border-color: var(--red-hover); }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--ice); outline-offset: 2px; }
+.check { color: #CBD5E1; font-size: 14px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.check input { accent-color: var(--red); width: 16px; height: 16px; }
+.summary { margin-top: 14px; padding: 12px 14px; background: var(--raised); border: 1px solid var(--seam); font: 500 13px/1.6 "JetBrains Mono", monospace; color: #CBD5E1; min-height: 46px; }
+.summary.err { color: #FCA5A5; border-color: #FF111155; }
+.field { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font: 700 13px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.12em; text-transform: uppercase; }
+.field.wide { min-width: 340px; }
+select, input[type=number] { background: var(--raised); color: var(--ink); border: 1px solid var(--seam2); padding: 10px 12px; font: 500 14px "JetBrains Mono", monospace; border-radius: 0; width: 100%; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; margin-top: 16px; }
+.busy { color: var(--muted); font: 500 13px "JetBrains Mono", monospace; }
+.tablewrap { overflow-x: auto; }
+table { width: 100%; min-width: 560px; border-collapse: collapse; margin: 6px 0 14px; font: 500 13px "JetBrains Mono", monospace; }
+th { text-align: left; font: 700 13px "Barlow Condensed", sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--seam2); }
+td { padding: 9px 10px; border-bottom: 1px solid var(--seam); color: #E2E8F0; }
+.r { text-align: right; }
+td.flags { color: var(--muted); font-size: 12px; white-space: normal; max-width: 360px; }
+.pill { display: inline-block; padding: 1px 8px; font-size: 11px; border: 1px solid var(--seam2); margin-right: 6px; }
+.pill.warn { color: var(--amber); border-color: #F59E0B66; }
+#notes p { margin: 0 0 6px; font-size: 14px; color: #CBD5E1; padding-left: 12px; border-left: 2px solid var(--seam2); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 12px; font: 500 12px "JetBrains Mono", monospace; color: #CBD5E1; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.plots { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+figure { margin: 0; background: var(--bg); border: 1px solid var(--seam); padding: 10px; }
+figcaption { font: 700 13px "Barlow Condensed", sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+canvas { width: 100%; height: auto; display: block; }
+@media (max-width: 640px) { h1 { font-size: 34px; } .card { padding: 18px 16px; } .field.wide { min-width: 0; width: 100%; } }

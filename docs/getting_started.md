@@ -20,8 +20,11 @@ Put your measured points in a table (`fz, kappa, alpha, gamma, fx, fy, mz`, unit
 core/build/rs_tirfit --make-demo data/tires/audi_245_40R18_pac2002.tir tyre_data.csv 0.01
 core/build/rs_tirfit tyre_data.csv --template data/tires/hmmwv_pac2002.tir --out my_tyre.tir --report fit.json \
     --set UNLOADED_RADIUS=0.344 --set WIDTH=0.245 --set ASPECT_RATIO=0.4 --set RIM_RADIUS=0.2286 \
-    --set NOMPRES=220000 --set INFLPRES=220000 --set FNOMIN=4850 --name "my tyre"
+    --set NOMPRES=220000 --set INFLPRES=220000 --set FNOMIN=4850 --name "my tyre" --notice data/tires/LICENSE-projectchrono.txt
 ```
+
+`--notice` writes the template's licence text into the file: the Chrono tyres are BSD-3 and their `.tir` files carry no notice themselves. **No install at all:** the same fit runs in the browser at `/lab/` of the game's web build
+(`web/public/lab/`, the solver compiled to WebAssembly; `?demo=1&autofit=1` opens it with synthetic data already fitted).
 
 Read the report: rms error per stage, coefficients on a bound, coefficients the data barely determines, and what the data did not cover (those coefficients keep the template's values). Details and limits: `docs/own_tyre_data.md`.
 
