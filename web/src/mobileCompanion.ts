@@ -1,4 +1,4 @@
-// Apache-2.0 — Ultra-Fast Mobile Landing & Live Companion App for OpenGrid (open-grid.racing).
+// Apache-2.0 — Ultra-Fast Mobile Landing & Live Companion App for Open Grid (open-grid.racing).
 // Loads in < 0.3s on phones WITHOUT downloading Three.js, Rapier, WASM, or city tiles (~15 KB vs ~8 MB).
 // Gives mobile visitors a sharp #0A0A0A / #FF1111 motorsport landing page plus live Cloudflare D1
 // Profile (DR/SR/License), Global Hotlaps, and Official Split Schedule, with a discreet opt-in to launch WebGPU.
@@ -108,7 +108,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
       <div class="mc-card"><span class="mc-k">03 · ONLINE</span><b>Official SOF Splits &amp; DR/SR</b><p>Glicko-2 Driver Rating, Fault-Aware Safety Rating (0x Victim Shield), License Ladder (R → PRO) &amp; Restorative Protests.</p></div>
       <div class="mc-card"><span class="mc-k">04 · STREETS</span><b>Speed-Cam Cops &amp; Street Radio</b><p>Roadside radar cameras dispatch CH-04 police scanner pursuits, GPS roadblock reroutes &amp; 5 km proximity CB radio.</p></div>
       <div class="mc-card"><span class="mc-k">05 · GARAGE</span><b>24 Cars &amp; Live Co-Op Showroom</b><p>Bodykits, engine swaps, live dyno, CS2-style live Auction House &amp; invite friends to watch you modify your car live.</p></div>
-      <div class="mc-card"><span class="mc-k">06 · TARGET</span><b>Unreal Engine 5.8 Native</b><p>Same C++20 physics &amp; online backend built natively for UE 5.8 on PC — open source (Apache-2.0) &amp; 100% ad-free.</p></div>
+      <div class="mc-card"><span class="mc-k">06 · OPEN</span><b>Open source</b><p>The physics core and the game are Apache-2.0 on GitHub, and 100% ad-free.</p></div>
     </div>
     <div class="mc-pledge">
       <b>NON-PROFIT PROMISE · 100% AD-FREE</b>
@@ -188,7 +188,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
       <div class="mc-card">
         <span class="mc-k">OPENGRID CLOUD COMPANION</span>
         <b>Check Your DR, SR &amp; License</b>
-        <p>Sign in with Google, GitHub, Discord, or your OpenGrid Email &amp; Password to check your live ratings, Patreon pass status, and career stats on mobile.</p>
+        <p>Sign in with Google, GitHub, Discord, or your Open Grid Email &amp; Password to check your live ratings, Patreon pass status, and career stats on mobile.</p>
         ${oauthBtns ? `<div class="mc-oauth-col">${oauthBtns}</div>` : ''}
         <form id="mc-login-form" class="mc-form">
           <input type="email" id="mc-email" placeholder="Email address" required autocomplete="email" />
@@ -204,7 +204,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
     const inviteBanner = inviteParty || inviteGarage
       ? `<div class="mc-invite">
           <b>${inviteGarage ? '🔧 LIVE CO-OP GARAGE INVITE' : '🏁 MULTIPLAYER PARTY INVITE'} · CODE ${esc((inviteGarage || inviteParty || '').toUpperCase())}</b>
-          <span>Open this invite link on Desktop Chrome or Edge to join in 3D, or tap "Launch WebGPU anyway" below.</span>
+          <span>Tap "Play in the browser" below to join.</span>
         </div>`
       : '';
 
@@ -217,15 +217,15 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
       <div class="mc-wrap">
         <header class="mc-top">
           <div class="mc-logo">OPEN<span>GRID</span></div>
-          <span class="mc-pill">DESKTOP &amp; UE 5.8 SIM</span>
+          <span class="mc-pill">OPEN SOURCE RACING SIM</span>
         </header>
 
         ${inviteBanner}
 
         <section class="mc-hero">
           <div class="mc-kicker">100% AD-FREE · NON-PROFIT · OPEN SOURCE</div>
-          <h1>BUILT FOR DESKTOP,<br/>WHEELS &amp; UE 5.8.</h1>
-          <p>OpenGrid runs a 240 Hz C++20 Pacejka tyre simulation across 18 real-scale 1:1 cities. For the full cockpit, wheel FFB, street radio &amp; 60 FPS WebGPU experience, open <b>open-grid.racing</b> on PC or Mac.</p>
+          <h1>REALISTIC HANDLING,<br/>IN YOUR BROWSER.</h1>
+          <p>Open Grid runs a 240 Hz C++ tyre simulation in the browser. Phones and tablets play a lighter build with the same physics and the same online accounts; PCs get the full build, with steering-wheel support.</p>
           <div class="mc-actions">
             <button type="button" class="mc-btn primary" id="mc-share">${copyStatus || '📋 Copy open-grid.racing'}</button>
             <a class="mc-btn" href="https://youtube.com/@open_grid_motorsport" target="_blank" rel="noopener">▶ YouTube</a>
@@ -245,7 +245,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
 
         <footer class="mc-foot">
           <p>Code Apache-2.0 · Original Assets CC BY-NC 4.0 · Zero Ads</p>
-          <button type="button" class="mc-escape" id="mc-launch-anyway">On a tablet or foldable? Launch WebGPU build anyway →</button>
+          <button type="button" class="mc-escape" id="mc-launch-anyway">Play in the browser →</button>
         </footer>
       </div>`;
 
@@ -272,7 +272,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
       const shareUrl = location.href.replace(/[?&]companion=1/g, '') || 'https://open-grid.racing';
       try {
         if (navigator.share) {
-          await navigator.share({ title: 'OpenGrid Racing Sim', text: 'Play OpenGrid on Desktop Chrome/Edge', url: shareUrl });
+          await navigator.share({ title: 'Open Grid', text: 'Play Open Grid in your browser', url: shareUrl });
           copyStatus = '✓ Shared!';
         } else {
           await navigator.clipboard.writeText(shareUrl);
