@@ -82,14 +82,14 @@ ok('main.ts enables dynamic weather for solo free roam only (not online, not wit
 }
 // ---- feature tiers
 {
-  const { TIERS, TIER_ORDER, tierFor } = await import(pathToFileURL(path.join(here, '../src/tiers.ts')).href);
+  const { TIERS, TIER_ORDER, tierFor, MEASURED_LOW_TRAFFIC } = await import(pathToFileURL(path.join(here, '../src/tiers.ts')).href);
   ok('every preset has a tier', ['max', 'ultra', 'high', 'medium', 'low', 'potato'].every((p) => TIERS[p]));
   const mono = (key) => TIER_ORDER.every((p, i) => i === 0 || TIERS[p][key] >= TIERS[TIER_ORDER[i - 1]][key]);
   ok('background traffic never decreases from potato up to max', mono('backgroundTraffic'));
   ok('pedestrians never decrease from potato up to max', mono('pedestrians'));
   ok('the detailed rival cars stay at the current 5 on every tier (no regression, and they are the expensive kind)', TIER_ORDER.every((p) => TIERS[p].rivalCars === 5));
-  ok('the minimum tier (low) has at most 12 background cars and no pedestrians until measured', TIERS.low.backgroundTraffic <= 12 && TIERS.low.pedestrians === 0);
-  ok('no tier claims to be measured yet (only a stronger device or the minimum measurement can change that)', TIER_ORDER.every((p) => TIERS[p].measured === false));
+  ok('the minimum tier (low) stays inside the measured range and has no pedestrians (they do not exist yet)', TIERS.low.backgroundTraffic > 0 && TIERS.low.backgroundTraffic <= MEASURED_LOW_TRAFFIC && TIERS.low.pedestrians === 0);
+  ok('only low claims to be measured: the others need a stronger device (or a phone) to be run', TIERS.low.measured === true && TIER_ORDER.filter((p) => p !== 'low').every((p) => TIERS[p].measured === false));
   ok('an unknown preset falls back to the minimum tier', tierFor('nonsense') === TIERS.low);
 }
 console.log(fails ? `\n${fails} of ${checks} FAILED` : `\nall ${checks} passed`);

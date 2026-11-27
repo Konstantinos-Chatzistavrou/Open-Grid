@@ -48,6 +48,8 @@ export interface TrafficAgent {
   /** lateral offset to the right of the road's centre line (m) and the heading the car had when it entered this arc: the pose blends from these over the first 10 m */
   off: number; prevOff: number; prevH: number;
   stalled: number;
+  /** seconds this car stays stopped after the player hit it */
+  hold: number;
   /** junction node this car holds the reservation of, or -1 */
   reserved: number;
   remove: boolean;
@@ -155,15 +157,18 @@ export class TrafficSim {
     if (!ring.length) { this.stats.spawnNoRing++; return false; }
     for (let attempt = 0; attempt < 16; attempt++) {
       const arc = ring[Math.floor(this.rng() * ring.length)];
-      // a point on the road that lies inside the ring (a long road may cross it only in part)
-      let s = -1, p: Pose = this.pose;
-      for (let k = 0; k < 4; k++) {
-        const t = arc.len * (0.1 + 0.8 * this.rng());
-        p = this.graph.poseAt(arc, t - 2, this.pose);
-        const d = Math.hypot(p.x - player.x, p.y - player.y);
-        if (d >= this.spawnMin && d <= this.spawnMax) { s = t; break; }
+      // a point on the road inside the ring: the road is sampled every ~10 m (a long road crosses the ring only in part) and one of the samples in the ring is picked at random
+      const K = Math.min(80, Math.max(4, Math.ceil(arc.len / 10)));
+      const inRing: number[] = [];
+      for (let k = 0; k < K; k++) {
+        const t = arc.len * (0.1 + (0.8 * (k + 0.5)) / K);
+        const q = this.graph.poseAt(arc, t - 2, this.pose);
+        const d = Math.hypot(q.x - player.x, q.y - player.y);
+        if (d >= this.spawnMin && d <= this.spawnMax) inRing.push(t);
       }
-      if (s < 0) { this.stats.spawnNoPoint++; continue; }
+      if (!inRing.length) { this.stats.spawnNoPoint++; continue; }
+      const s = inRing[Math.floor(this.rng() * inRing.length)];
+      const p = this.graph.poseAt(arc, s - 2, this.pose);
       const lane = this.chooseLane(arc);
       let kind = 0;
       { let r = this.rng(); for (let i = 0; i < CAR_KINDS.length; i++) { r -= CAR_KINDS[i].share; if (r <= 0) { kind = i; break; } } }
@@ -173,7 +178,7 @@ export class TrafficSim {
       const vDes = arc.limit * temper;
       const a: TrafficAgent = {
         id: this.nextId++, arc, s, v: vDes * 0.7, vDes, temper, lane, kind, color: Math.floor(this.rng() * CAR_COLORS), length: spec.length, width: spec.width,
-        nextArc: null, x: p.x, y: p.y, h: p.h, off: this.laneOffset(arc, lane), prevOff: this.laneOffset(arc, lane), prevH: p.h, stalled: 0, reserved: -1, remove: false,
+        nextArc: null, x: p.x, y: p.y, h: p.h, off: this.laneOffset(arc, lane), prevOff: this.laneOffset(arc, lane), prevH: p.h, stalled: 0, hold: 0, reserved: -1, remove: false,
       };
       a.nextArc = this.pickNext(arc);
       this.agents.push(a);
@@ -248,6 +253,7 @@ export class TrafficSim {
       }
       accel[i] = Math.max(-9, idmAccel(a.v, vDes, gap, dv));
       limitS[i] = hardS;
+      if (a.hold > 0) { a.hold -= step; accel[i] = -5; }   // hit by the player: it slides on with what the impact gave it, brakes to a stop and waits
     }
 
     for (let i = 0; i < this.agents.length; i++) {
@@ -290,6 +296,12 @@ export class TrafficSim {
       this.agents.push(...keep);
     }
     for (let k = 0; k < 3 && this.agents.length < this.target; k++) if (!this.trySpawn(player)) break;
+  }
+
+  /** The player ran into this car: it takes `dv` m/s along its heading (the half of the impact it is given) and then stays where it is for `holdS` seconds. */
+  hit(a: TrafficAgent, dv: number, holdS: number) {
+    a.v = Math.max(0, a.v + dv);
+    a.hold = Math.max(a.hold, holdS);
   }
 
   /** Pose of the car's centre: on the road's shape, in its lane, blended from the lane of the road it came from. */

@@ -9,13 +9,20 @@ import { stripTypeScriptTypes } from 'node:module';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // load the TypeScript sources as they are: types stripped, './x' imports pointed at the stripped copies
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'traffic-'));
-for (const f of ['roadGraph', 'trafficSim']) {
-  const src = fs.readFileSync(path.join(here, `../src/${f}.ts`), 'utf8').replace(/from '\.\/(\w+)'/g, "from './$1.mjs'");
+const tmp = fs.mkdtempSync(path.join(here, '..', 'node_modules', '.traffic-test-'));   // inside web/ so `@dimforge/rapier3d-compat` resolves
+// trafficCollision.ts only needs GROUP_CAR from physics/world.ts, which pulls in three.js: take the constant from the source instead of importing the module
+const groupCar = /export const GROUP_CAR = ([^;]+);/.exec(fs.readFileSync(path.join(here, '../src/physics/world.ts'), 'utf8'))[1];
+fs.writeFileSync(path.join(tmp, 'world_shim.mjs'), `export const GROUP_CAR = ${groupCar};\n`);
+for (const f of ['roadGraph', 'trafficSim', 'trafficCarShape', 'trafficCollision']) {
+  const src = fs.readFileSync(path.join(here, `../src/${f}.ts`), 'utf8').replace(/from '\.\/physics\/world'/g, "from './world_shim.mjs'").replace(/from '\.\/(\w+)'/g, "from './$1.mjs'");
   fs.writeFileSync(path.join(tmp, `${f}.mjs`), stripTypeScriptTypes(src, { mode: 'transform' }));
 }
 const { RoadGraph, drivesOnLeft } = await import(pathToFileURL(path.join(tmp, 'roadGraph.mjs')).href);
 const { TrafficSim, idmAccel } = await import(pathToFileURL(path.join(tmp, 'trafficSim.mjs')).href);
+const shape = await import(pathToFileURL(path.join(tmp, 'trafficCarShape.mjs')).href);
+const { TrafficCollision, COLLISION_POOL, HIT_HOLD_S } = await import(pathToFileURL(path.join(tmp, 'trafficCollision.mjs')).href);
+const RAPIER = (await import('@dimforge/rapier3d-compat')).default;
+await RAPIER.init();
 fs.rmSync(tmp, { recursive: true, force: true });
 
 let fails = 0, checks = 0;
@@ -26,6 +33,71 @@ const mapOf = (id) => JSON.parse(fs.readFileSync(path.join(assets, id === 'nyc' 
 ok('driving sides: London, Tokyo, Melbourne and Singapore on the left, New York, Paris and Los Angeles on the right', ['london', 'tokyo', 'melbourne', 'singapore'].every(drivesOnLeft) && !['nyc', 'paris', 'losangeles'].some(drivesOnLeft));
 ok('IDM: a free road accelerates, a close slower leader brakes, a far leader is ignored', idmAccel(0, 14, Infinity, 0) > 1.5 && idmAccel(14, 14, 8, 6) < -2 && Math.abs(idmAccel(10, 14, 500, 0) - idmAccel(10, 14, Infinity, 0)) < 0.01);
 
+{
+  // the car's shape: triangle budget, size, outward normals, colours, the lights mesh
+  const body = shape.buildCarBody(), lights = shape.buildCarLights();
+  const tris = body.position.length / 9, ltris = lights.position.length / 9;
+  const b = { x: [Infinity, -Infinity], y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
+  for (let i = 0; i < body.position.length; i += 3) { for (const [k, o] of [['x', 0], ['y', 1], ['z', 2]]) { const v = body.position[i + o]; b[k][0] = Math.min(b[k][0], v); b[k][1] = Math.max(b[k][1], v); } }
+  ok(`car shape: ${tris} body triangles (budget 260) and ${ltris} light triangles`, tris > 100 && tris <= 260 && ltris === 8);
+  ok(`car shape: ${(b.x[1] - b.x[0]).toFixed(2)} m long, ${(b.z[1] - b.z[0]).toFixed(2)} m wide, ${b.y[1].toFixed(2)} m tall, wheels reach the ground`, Math.abs(b.x[1] - b.x[0] - shape.BASE_LENGTH) < 0.01 && Math.abs(b.z[1] - b.z[0] - shape.BASE_WIDTH) < 0.01 && Math.abs(b.y[0]) < 1e-6 && b.y[1] < 1.5);
+  let bad = 0, hullOut = 0, hull = 0, wheelOut = 0, wheelTris = 0;
+  for (let i = 0; i < body.position.length; i += 9) {
+    const nx = body.normal[i], ny = body.normal[i + 1], nz = body.normal[i + 2];
+    if (Math.abs(Math.hypot(nx, ny, nz) - 1) > 1e-4 || !Number.isFinite(body.position[i])) ++bad;
+    const cx = (body.position[i] + body.position[i + 3] + body.position[i + 6]) / 3, cy = (body.position[i + 1] + body.position[i + 4] + body.position[i + 7]) / 3, cz = (body.position[i + 2] + body.position[i + 5] + body.position[i + 8]) / 3;
+    const isWheel = Math.abs(cz) > 0.68 && cy < 0.66 && Math.abs(Math.abs(cx) - 1.4) < 0.5 && body.color[i] < 0.03;
+    if (isWheel) { ++wheelTris; const wx = cx < 0 ? -1.42 : 1.38, wz = cz < 0 ? -0.8 : 0.8; if (nx * (cx - wx) + ny * (cy - 0.32) + nz * (cz - wz) > 0) ++wheelOut; }
+    else { ++hull; if (nx * cx + ny * (cy - 0.8) + nz * cz > 0) ++hullOut; }   // away from the middle of the car (the underside faces down, which is away from y = 0.8 too)
+  }
+  ok('car shape: every normal is a unit vector and no coordinate is NaN', bad === 0);
+  ok(`car shape: ${hullOut} of ${hull} hull faces point away from the middle of the car, ${wheelOut} of ${wheelTris} wheel faces away from their wheel (all of them)`, hullOut === hull && wheelOut === wheelTris && wheelTris === 4 * 6 * 4 && hull + wheelTris === tris);
+  const glass = []; for (let i = 0; i < body.color.length; i += 9) if (body.color[i] < 0.1 && body.color[i + 2] > 0.06) glass.push(i);
+  ok(`car shape: windows exist (${glass.length} dark-blue faces) and the paint is white vertex colour so the instance colour is the paint`, glass.length >= 8 && body.color.some((v, i) => i % 9 === 0 && v === 1));
+  ok('car shape: head lights are bright white at the front, tail lights red at the back', (() => { let f = 0, r = 0; for (let i = 0; i < lights.position.length; i += 9) { if (lights.position[i] > 2 && lights.color[i] > 0.9 && lights.color[i + 2] > 0.7) ++f; if (lights.position[i] < -2 && lights.color[i] > 0.9 && lights.color[i + 1] < 0.1) ++r; } return f === 4 && r === 4; })());
+}
+{
+  // ---- solid cars: the player (a dynamic box on the real Rapier) runs into a parked car at 20 m/s, stepped at 400 Hz with the same calls main.ts makes
+  const road = new RoadGraph({ nodes: [[0, 0], [600, 0]], edges: [{ a: 0, b: 1, w: 7, hw: 'residential', oneway: true, ms: 30 }] });
+  const run = (hitFromBehind, releaseFirst) => {
+    const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+    world.timestep = 1 / 400;
+    world.createCollider(RAPIER.ColliderDesc.cuboid(500, 0.5, 500).setTranslation(300, -0.5, 0));
+    const sim = new TrafficSim(road, { count: 1, seed: 3, spawnMin: 10, spawnMax: 80 });
+    const col = new TrafficCollision({ world }, sim, () => 0);
+    const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 0.7, 0).setCcdEnabled(true));
+    const collider = world.createCollider(RAPIER.ColliderDesc.cuboid(2.2, 0.55, 0.9).setMass(1400).setFriction(0.3).setCollisionGroups(Number(0x00010000 | 0xfffd)), body);
+    sim.reset({ x: 0, y: 0, vx: 0, vy: 0 });
+    const A = sim.agents[0];
+    A.v = 0; A.hold = 5;   // parked for 5 s: only the impact can make it wait longer
+    body.setTranslation({ x: A.x - 22, y: 0.7, z: 0 }, true);
+    body.setLinvel({ x: 20, y: 0, z: 0 }, true);
+    const carX0 = A.x;
+    let maxCarV = 0, maxX = -1e9, hit = false, finite = true, maxVy = 0, maxPen = -1e9;
+    for (let tick = 0; tick < 400 * 2.5; tick++) {
+      const p = body.translation();
+      if (tick % 13 === 0) { sim.update(13 / 400, { x: p.x, y: -p.z, vx: 0, vy: 0 }); col.sync(p.x, p.z); if (releaseFirst) col.releaseAll(); }
+      col.tick(1 / 400);
+      const lv = body.linvel(), av = body.angvel();
+      world.step();
+      if (col.afterStep(collider, body, lv, av)) hit = true;
+      const q = body.translation(), v = body.linvel();
+      maxX = Math.max(maxX, q.x); maxCarV = Math.max(maxCarV, A.v); maxVy = Math.max(maxVy, Math.abs(v.y));
+      maxPen = Math.max(maxPen, q.x + 2.2 - (A.x - A.length / 2));   // how far the player's nose is past the car's tail, at this very step
+      if (![q.x, q.y, q.z, v.x, v.y, v.z].every(Number.isFinite)) finite = false;
+    }
+    const v = body.linvel(), parked = col.slots.filter((s) => s.agent).length;
+    return { hit, speed: Math.hypot(v.x, v.z), maxX, carX0, maxPen, carX: A.x, carHalf: A.length / 2, maxCarV, finite, maxVy, hold: A.hold, peak: col.lastHit && col.lastHit.dv, active: parked, sameAgent: sim.agents.includes(A) };
+  };
+  const r = run(true, false);
+  ok(`solid cars: the player is stopped by the car (20 m/s -> ${r.speed.toFixed(1)} m/s) and its nose is never more than ${r.maxPen.toFixed(2)} m past the car's tail (0.6 allowed)`, r.hit && r.speed < 3 && r.maxPen < 0.6);
+  ok(`solid cars: nothing explodes: every value finite, vertical speed at most ${r.maxVy.toFixed(1)} m/s`, r.finite && r.maxVy < 6);
+  ok(`solid cars: hit from behind the car is shoved on (up to ${r.maxCarV.toFixed(1)} m/s) and the contact's peak speed change is recorded (${(r.peak ?? 0).toFixed(1)} m/s)`, r.maxCarV > 3 && r.peak > 3);
+  ok(`solid cars: the impact makes the car wait ${HIT_HOLD_S} s (it started with 5; ${r.hold.toFixed(1)} s are left after the 2.5 s run)`, r.hold > 8 && r.sameAgent);
+  const free = run(true, true);
+  ok(`solid cars: with the traffic switched off (boxes released) the player drives through the car's place (reaches x = ${free.maxX.toFixed(1)} m, the car stood at ${free.carX0.toFixed(1)} m; no contact, no box left: ${free.active})`, !free.hit && free.maxX > free.carX0 + 3 && free.active === 0);
+  ok(`solid cars: the pool is ${COLLISION_POOL} boxes`, COLLISION_POOL === 8);
+}
 for (const city of ['london', 'nyc', 'tokyo', 'losangeles']) {
   const raw = mapOf(city);
   const g = new RoadGraph(raw);

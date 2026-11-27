@@ -76,6 +76,9 @@ import { RaceNodes } from './raceNodes';
 import { CarMeetHub } from './carMeet';
 import { INSURANCE_PREMIUM_XP, conditionOf, loadMaintenance, recordRaceDamage, repairCarCondition, repairCostOf, saveMaintenance, submitModerationReport, towFeeOf } from './maintenance';
 import { WorldClock } from './worldClock';
+import { CityTraffic } from './cityTraffic';
+import { RoadGraph, drivesOnLeft } from './roadGraph';
+import { TIERS, tierFor } from './tiers';
 import { AUCTION_LOTS, ENGINE_SWAPS, applyNightRunnersToPhysics, engineOf, loadNightRunners, saveNightRunners, stanceOf, tickEngineAndNos } from './nightRunners';
 import { PARTY_BONUS_MUL, advanceChallenge, loadRetention, saveRetention, triggerPrestigeReset } from './retention';
 import { VoiceChat } from './voice';
@@ -1179,7 +1182,34 @@ async function main() {
   /** Dynamic streetlights alive simultaneously via Clustered Forward+ WGSL compute pass (100+ on high/ultra/max, ?lights=N overrides) */
   const LIGHT_CAP: Record<PresetName, number> = { max: 128, ultra: 112, high: 100, medium: 76, low: 48, potato: 12 };
   const lightsOverride = params.has('lights') ? Math.max(0, Math.min(256, num('lights', 112))) : null;
+  // Background city traffic (Free Roam): cheap instanced cars on the street graph (cityTraffic.ts). How many follows the quality preset (tiers.ts) and the time of day (worldClock.trafficDensity);
+  // `?traffic=N` forces a count, for measuring. It is local to this browser: other players of a party do not see these cars, and the cars are not yet solid for the player.
+  let cityTraffic: CityTraffic | null = null;
+  let trafficOn = false;
+  let trafficLoading = false;
+  const trafficCount = () => (params.has('traffic') ? Math.max(0, num('traffic', 0)) : Math.round(tierFor(post.preset).backgroundTraffic * worldClock.trafficDensity));
+  const applyTrafficTier = () => { if (cityTraffic) cityTraffic.setCount(trafficOn ? trafficCount() : 0); };
+  const startCityTraffic = async () => {
+    if (cityTraffic || trafficLoading || !nyc) return;
+    trafficLoading = true;
+    const id = cityInfo.id;
+    try {
+      const m = await fetch(cityInfo.base + 'map.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      if (!m || cityInfo.id !== id) return;
+      cityTraffic = new CityTraffic(scene, { graph: new RoadGraph(m), maxCars: Math.max(TIERS.max.backgroundTraffic, num('traffic', 0)), leftHand: drivesOnLeft(id), heightAt: (x, z) => (nyc ? nyc.heightAt(x, z) : 0), physics: pw });
+      cityTraffic.setActive(trafficOn);
+      (globalThis as { __game?: { cityTraffic?: CityTraffic | null } }).__game!.cityTraffic = cityTraffic;
+      applyTrafficTier();
+    } finally { trafficLoading = false; }
+  };
+  const setTrafficOn = (on: boolean) => {
+    trafficOn = on;
+    cityTraffic?.setActive(on);
+    if (on) void startCityTraffic();
+    applyTrafficTier();
+  };
   post.onPreset = (p) => {
+    applyTrafficTier();
     city.setBundled(true); city.props.drawScale = driving() ? DRAW_SCALE[p] : Math.min(0.45, DRAW_SCALE[p]);
     const sp = nyc?.streetProps;
     if (sp) { sp.nearR = NEAR_TREES[p]; sp.rangeScale = LIGHT_RANGE[p]; sp.lightCap = lightsOverride ?? LIGHT_CAP[p]; }
@@ -2957,6 +2987,7 @@ async function main() {
       grid = { ds: 0, lat: 0 };
       grid = { ds: 0, lat: ai.setGrid(new THREE.Vector3(s0.x, s0.z, -s0.y)) };
       ai.setMode('race');
+      setTrafficOn(false);
       if (potato && !rivalsCompiled) {
         // potato skipped the rivals at boot: build their pipelines now, behind "Getting ready…", not as a freeze on the grid
         rivalsCompiled = true;
@@ -2969,10 +3000,12 @@ async function main() {
     } else if (isFreeSession) {
       // Free Roam social sandbox: cruising AI street traffic (no police!)
       ai.setMode(ai.cars.length ? 'cruise' : 'off');
+      setTrafficOn(true);
       const slot = party ? Math.max(0, party.members.findIndex((m) => m.id === party!.selfId)) : 0;
       grid = mode === 'online' ? { ds: -8 * (slot >> 1), lat: slot % 2 ? 2.2 : -2.2 } : { ds: 0, lat: 0 };
     } else {
       ai.setMode('off');
+      setTrafficOn(false);
       const slot = party ? Math.max(0, party.members.findIndex((m) => m.id === party!.selfId)) : 0;
       grid = mode === 'online' ? { ds: -8 * (slot >> 1), lat: slot % 2 ? 2.2 : -2.2 } : { ds: 0, lat: 0 };
     }
@@ -3440,6 +3473,7 @@ async function main() {
   if (params.get('menu') === '0') {
     sel.mode = 'free';
     ai.setMode(ai.cars.length ? 'cruise' : 'off');
+    setTrafficOn(true);
     zones.setVisible(true);
     raceNodes.setVisible(true);
     hud.show();
@@ -3611,6 +3645,7 @@ async function main() {
       if (inShowroom) { car.body.setLinvel({ x: 0, y: Math.min(0, car.body.linvel().y), z: 0 }, true); car.body.setAngvel({ x: 0, y: 0, z: 0 }, true); settledShowroom++; }   // parked for the showroom
       const copObs = cops.active || cops.roadblockWorld ? cops.obstacleList() : undefined;
       ai.tick(DT, car.body.translation(), copObs);
+      if (trafficOn) cityTraffic?.physicsTick(DT);
       remote?.tick(now - (acc - DT) * 1000, DT);   // other players' bodies at this tick's time
       if (remote?.colliders.size || obstacles || nyc || ai.mode !== 'off' || cops.active || cops.roadblockWorld) { const lv = car.body.linvel(), av = car.body.angvel(); preV.set(lv.x, lv.y, lv.z); preW.set(av.x, av.y, av.z); }
       const t0 = performance.now();
@@ -3619,6 +3654,7 @@ async function main() {
       if (nyc && driving()) { const w = nyc.breaches.check(car.collider, car.body, core.info.mass, preV, preW); if (w) wallHit(w); }
       if (remote?.colliders.size) halveRemoteHits(now - (acc - DT) * 1000);
       if (ai.mode !== 'off') ai.afterStep(car.collider, car.body, preV, preW);   // rivals & cruising traffic take their half of a hit (ai.ts)
+      if (trafficOn && cityTraffic) cityTraffic.afterStep(car.collider, car.body, preV, preW);   // so do the background cars next to you (trafficCollision.ts)
       if (cops.active || cops.roadblockWorld) cops.afterStep(car.collider, car.body, preV, preW);   // police cruisers share collision impulse & take exact CoreDamageSim damage!
       stepMs += (performance.now() - t0 - stepMs) * 0.01;   // Rapier cost per 400 Hz step, smoothed
       readBody(physPos, physQuat);
@@ -3808,6 +3844,7 @@ async function main() {
       }
       if (!inShowroom || settledShowroom <= 40) {
         ai.update(alpha, camera, live ? frame : 0);
+        if (trafficOn && cityTraffic) cityTraffic.update(live ? frame : 0, pos.x, pos.z);
         damage.update(live ? frame : 0, () => core.damage());
       }
     }
@@ -3941,6 +3978,11 @@ async function main() {
         const ct = `${worldClock.hudText()} · ${Math.round(tTrack)}°C · WIND ${tWindKmh} km/h${tRain > 0.3 ? ` · ${tRain.toFixed(1)} mm/h` : ''}`;
         if (ct !== lastClockText) { worldClockEl.textContent = lastClockText = ct; }
         if (ai.mode === 'cruise') ai.setCruiseDensity(worldClock.trafficDensity);
+        if (trafficOn && cityTraffic) {
+          applyTrafficTier();
+          const h = worldClock.hour;
+          cityTraffic.setNight(Math.max(0, Math.min(1, h >= 12 ? (h - 18) / 1.5 : (6.5 - h) / 1.5)));   // lights come on at dusk and go off at dawn
+        }
         workerAirC = tAir; workerTrackC = tTrack; workerHumidity = tHum;
         p2Core?.setRoadWater(tWaterMm);
         audio.roadWaterMm = tWaterMm;
