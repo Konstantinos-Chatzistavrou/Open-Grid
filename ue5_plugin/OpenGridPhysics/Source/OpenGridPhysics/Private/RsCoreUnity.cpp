@@ -18,6 +18,7 @@ THIRD_PARTY_INCLUDES_START
 #include "src/damage.cpp"
 #include "src/route.cpp"
 #include "src/ai.cpp"
+#include "src/neural_driver.cpp"
 #include "src/racing_line.cpp"
 #include "src/incandescence.cpp"
 #include "src/dyno.cpp"

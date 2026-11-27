@@ -222,6 +222,7 @@ export function mountMobileCompanion(onLaunchAnyway: () => void) {
           <p>Open Grid runs a 240 Hz C++ tyre simulation in the browser. Phones and tablets play a lighter build with the same physics and the same online accounts; PCs get the full build, with steering-wheel support.</p>
           <div class="mc-actions">
             <button type="button" class="mc-btn primary" id="mc-share">${copyStatus || '📋 Copy open-grid.racing'}</button>
+            <a class="mc-btn" href="https://discord.gg/RhKdTvAdf" target="_blank" rel="noopener">💬 Discord</a>
             <a class="mc-btn" href="https://youtube.com/@open_grid_motorsport" target="_blank" rel="noopener">▶ YouTube</a>
             <a class="mc-btn" href="https://github.com/Konstantinos-Chatzistavrou/Open-Grid" target="_blank" rel="noopener">GitHub</a>
             <a class="mc-btn" href="https://github.com/sponsors/Konstantinos-Chatzistavrou" target="_blank" rel="noopener">♥ Sponsor</a>

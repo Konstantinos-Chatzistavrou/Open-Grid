@@ -9,7 +9,7 @@
 
 Open-source, non-profit street & circuit racing simulator built around an engine-independent **C++20 vehicle physics core (`core/`)** targeting **Unreal Engine 5.8** natively, with a full playable **WebGPU + WebAssembly** browser build (`web/`) and a **$0/month Cloudflare Workers + D1** competitive online network (`cloud/`).
 
-**[Play live at open-grid.racing](https://open-grid.racing/)** · **[Official YouTube (@open_grid_motorsport)](https://youtube.com/@open_grid_motorsport)** · **[Sponsor on GitHub](https://github.com/sponsors/Konstantinos-Chatzistavrou)**
+**[Play live at open-grid.racing](https://open-grid.racing/)** · **[Discord Community](https://discord.gg/RhKdTvAdf)** · **[Official YouTube (@open_grid_motorsport)](https://youtube.com/@open_grid_motorsport)** · **[Sponsor on GitHub](https://github.com/sponsors/Konstantinos-Chatzistavrou)**
 
 Desktop Chrome or Edge recommended (keyboard, controller, or force-feedback wheel); phones and tablets get the same game in a lighter touch mode ([docs/platforms.md](docs/platforms.md)).
 

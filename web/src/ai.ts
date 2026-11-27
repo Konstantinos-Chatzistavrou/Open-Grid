@@ -31,6 +31,7 @@ import {
   type FrenetPlanResult,
   type OptimalRacingLine,
 } from './aiPlanner';
+import { getNeuralDriver, NEURAL_OBS_DIM, type NeuralActionOut, type NeuralDriverPolicy } from './neuralDriver';
 
 /** strength of a rival's clustered headlight beam (SpotLight on WebGPU Clustered Forward+) */
 const AI_BEAM = 340;
@@ -286,6 +287,10 @@ export class AiTraffic {
   optLine: OptimalRacingLine;
   private diffProfile: DifficultyProfile = difficultyProfile(88);
   private adaptive = new AdaptiveDifficulty(88);
+  private neural: NeuralDriverPolicy = getNeuralDriver(assetUrl('ai/neural_driver.json'));
+  private neuralObs = new Float64Array(NEURAL_OBS_DIM);
+  private neuralAct: NeuralActionOut = { steer: 0, throttle: 0, brake: 0 };
+  private neuralBoost = { speedMul: 1, accelMul: 1, latNudge: 0 };
   private frenet = new FrenetPlanner();
   private frenetObs: FrenetObstacle[] = [];
   private frenetInput: FrenetPlanInput = {
@@ -781,6 +786,58 @@ export class AiTraffic {
   }
 
   /**
+   * Evaluate the trained Open Grid Neural Driver policy (when loaded, on Pro/Alien difficulties)
+   * to provide learned apex sharpening, corner-exit acceleration, and racecraft speed modulation.
+   * Zero per-tick allocations; silently returns identity if offline or below Pro difficulty.
+   */
+  private evalNeuralBoost(
+    c: AiCar,
+    target: number,
+    room: { left: number; right: number },
+    obsDs: number,
+    obsRelLatRight: number,
+    hasObs: boolean,
+  ) {
+    const out = this.neuralBoost;
+    out.speedMul = 1;
+    out.accelMul = 1;
+    out.latNudge = 0;
+    const effPct = this.effectiveDifficultyPct;
+    if (effPct < 92 || !this.neural.ready) return out;
+
+    const blend = Math.max(0, Math.min(1, (effPct - 90) / 18));
+    const optLatRight = this.optLine.latAt(c.s);
+    const latErrLeft = -(c.lat - optLatRight); // core convention: + = left
+    const headingErr = c.v > 1.0 ? Math.atan2(-c.latDot, c.v) - c.yawOff : -c.yawOff;
+    const slipAngle = c.v > 1.0 ? Math.atan2(-c.latV, c.v) : 0;
+
+    const obs = this.neuralObs;
+    obs[0] = Math.max(-1, Math.min(1, c.v / 80));
+    obs[1] = Math.max(-2, Math.min(2, latErrLeft / 5));
+    obs[2] = Math.sin(headingErr);
+    obs[3] = Math.max(-2, Math.min(2, -c.yawRate / 2));
+    obs[4] = Math.max(-2, Math.min(2, slipAngle / 0.5));
+    // Core convention: + curvature = left turn (lane.signedCurv is + right turn, so negate)
+    obs[5] = Math.max(-1, Math.min(1, -this.lane.signedCurv(c.s, 9, 21) * 40));
+    obs[6] = Math.max(-1, Math.min(1, -this.lane.signedCurv(c.s, 27, 43) * 40));
+    obs[7] = Math.max(-1, Math.min(1, -this.lane.signedCurv(c.s, 55, 75) * 40));
+    obs[8] = Math.max(-1, Math.min(1, -this.lane.signedCurv(c.s, 98, 122) * 40));
+    obs[9] = Math.max(0, Math.min(1, Math.max(0, room.left + c.lat) / 8));
+    obs[10] = Math.max(0, Math.min(1, Math.max(0, room.right - c.lat) / 8));
+    obs[11] = Math.max(-1, Math.min(1, (c.v - target) / 25));
+    obs[12] = hasObs ? Math.max(0, Math.min(1, obsDs / 60)) : 1.0;
+    obs[13] = hasObs ? Math.max(-1, Math.min(1, -obsRelLatRight / 5)) : 0.0;
+
+    const act = this.neural.infer(obs, this.neuralAct);
+    const netDrive = act.throttle - act.brake;
+    out.speedMul = 1 + blend * Math.max(-0.04, Math.min(0.06, netDrive * 0.06));
+    out.accelMul = 1 + blend * Math.max(0, (act.throttle - 0.5) * 0.10);
+    // Core steer > 0 turns left -> negative right-offset nudge in web/src/ai.ts coordinates
+    out.latNudge = -act.steer * 0.55 * blend;
+    return out;
+  }
+
+  /**
    * Populate the zero-allocation Frenet obstacle scratch list, evaluate tactical racecraft
    * (minimum-curvature optimal racing line, slipstream drafting tow, clean single-move P1/P2
    * inside corner defense, human pressure bobble), and run the C2-continuous quintic
@@ -952,7 +1009,22 @@ export class AiTraffic {
       } else if (draftTarget && draftDs > 12 && !leadBlocker) {
         // Tuck cleanly into the slipstream on a straight before pulling out to pass
         desiredLat = draftTarget.lat;
+      } else {
+        // Open Grid Neural Driver apex & racecraft refinement on Pro/Alien difficulties
+        const nb = this.evalNeuralBoost(
+          c,
+          target,
+          room,
+          leadBlocker ? leadBlockerDs : 60,
+          leadBlocker ? leadBlocker.lat - c.lat : 0,
+          !!leadBlocker,
+        );
+        desiredLat += nb.latNudge;
       }
+    } else {
+      this.neuralBoost.speedMul = 1;
+      this.neuralBoost.accelMul = 1;
+      this.neuralBoost.latNudge = 0;
     }
 
     desiredLat = Math.max(-room.left, Math.min(room.right, desiredLat));
@@ -1123,8 +1195,12 @@ export class AiTraffic {
 
       const room = this.lane.roomInto(c.s, this.roomScratch);
       let draftBonus = false;
+      this.neuralBoost.speedMul = 1;
+      this.neuralBoost.accelMul = 1;
+      this.neuralBoost.latNudge = 0;
       if (driven && !spun) {
         draftBonus = this.planFrenetLane(c, carIdx, i, dt, target, room, isCruise, playerLat, extraObstacles);
+        if (!isCruise) target *= this.neuralBoost.speedMul;
         // Clean longitudinal speed cap when directly boxed in behind a slower vehicle or hard block
         if (c.frenetOut.blockedSpeedCap < Infinity) {
           target = Math.min(target, c.frenetOut.blockedSpeedCap);
@@ -1139,7 +1215,7 @@ export class AiTraffic {
       // Longitudinal dynamics: exact-parity powerScale, gripScale, dragScale + diffProfile.accelUtil + 3.5% straight-line draft tow
       const lim = (c as AiCar & { lim: CarLimits }).lim;
       const drag = (0.5 * 1.2 * lim.dragArea * dragScale * c.v * c.v) / lim.mass;
-      const effPower = lim.power * powerScale * (draftBonus ? 1.035 : 1.0);
+      const effPower = lim.power * powerScale * (draftBonus ? 1.035 : 1.0) * (isCruise ? 1.0 : this.neuralBoost.accelMul);
       const effGrip = c.aGrip * gripScale;
       const accelUtil = isCruise ? 1.0 : this.diffProfile.accelUtil;
       const acc = Math.max(0.2 * powerScale, (Math.min(effGrip, effPower / (lim.mass * Math.max(3, c.v))) - drag) * accelUtil);
