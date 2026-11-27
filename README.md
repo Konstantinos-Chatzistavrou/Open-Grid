@@ -44,6 +44,9 @@ Help wanted: drivers on wheels to test force feedback ([testing program](docs/te
 ## System Requirements
 
 - **Browser**: WebGPU where enabled by default: Chrome / Edge 113+ on Windows, macOS, ChromeOS; Chrome 121+ on Android 12+; Safari 26; Firefox 141+ on Windows. Everywhere else (including Linux Chrome without flags), Open Grid falls back automatically to WebGL 2 (`?webgl=1` forces WebGL 2; on Linux Chrome you can enable `chrome://flags` → **Unsafe WebGPU Support**).
+- **Graphics card (what matters)**: the game is limited by the GPU, not the CPU (the physics for 8 cars costs about 0.5 ms a frame). On the integrated graphics of a laptop it runs at around 30 fps, and the built-in automatic tuner lowers resolution and effects first to hold that. A dedicated graphics card or a recent Apple M-series chip should do much better, but **no measured numbers exist for those yet**.
+- **Minimum / recommended**: there is no spec sheet yet, because there is no measured data to base one on. Minimum is anything that runs the browsers above and can run WebGL 2. Recommended is a dedicated GPU, with Chrome or Edge. Phones and tablets run a lighter touch mode ([docs/platforms.md](docs/platforms.md)).
+- **Help build the real table**: open the game, choose **Benchmark** on the title menu, and post the copied result (GPU, browser, fps per quality preset) in an issue. Reports from many different machines turn this section into a measured table instead of a guess.
 - **Development**: Node 24+ (or 20+), CMake 3.16+, C++20 compiler (GCC 13+, Clang 16+, or MSVC 2022+).
 - **Native / UE 5.8 Target**: 64-bit x86_64/ARM64 CPU, 8 GB+ RAM, Vulkan 1.2 / DirectX 12 GPU.
 - **Sim Telemetry (optional)**: Run `node tools/simhub_udp_bridge.mjs` for 60 Hz 311-byte Forza/SimHub Dash V2 UDP packets (`127.0.0.1:20777`), or export **MoTeC i2 Pro** (`.ld` / `.ldx`) logs directly from the Pause or Results screen.
