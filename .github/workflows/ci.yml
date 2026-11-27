@@ -99,3 +99,8 @@ jobs:
           npx tsc --noEmit
           npm run test:pace
           npm run test:competitive
+      - name: Self-hosted servers (PeerJS matchmaking smoke test, big Free Roam room server)
+        working-directory: server
+        run: |
+          npm ci
+          npm test
