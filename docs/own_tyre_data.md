@@ -64,7 +64,36 @@ fy0    Fy         765     18       60.86 ( 0.85 % of peak)        193    150  (i
 
 The file's limits (slip, camber, load) are widened to span your data, because the fit runs with the limits on exactly as the tyre is used.
 
-## 4. How good is it, on the evidence we have
+## 4. From the tyre file to a car
+
+```bash
+node tools/new_car.mjs --name "My Car" --layout rwd --mass 1300 --wheelbase 2.6 --track 1.55 --cg-height 0.5 --weight-front 0.52 \
+    --power-kw 250 --redline 7500 --tyre my_tyre.tir --out data/cars
+```
+
+This writes `data/cars/my_car.json` (schema `car/1`) and `my_car.visual.json`, prints the catalog entry, and runs `rs_carcheck` on the car. Optional: `--tyre-rear`, `--id`, `--template <car id>`,
+`--visual-from`, `--compound road|semi_slick|slick`, `--cda`, `--cla`, `--top-speed-kmh`, `--no-check`.
+
+**What is yours, what is scaled.** Mass, wheelbase, track, CG height, front weight share, peak power, redline and the tyres (the file's own grip, stiffness, load and camber sensitivity, aligning torque, size) are taken as given.
+Everything else is the numbers of a shipped car of the same layout (default `vela_gt` rwd, `mistra_200t` fwd, `kaze_ryujin` awd), SCALED: inertias with mass and length, spring / damper / anti-roll rates with the corner mass
+(same ride frequency as the template), suspension hardpoints with track and wheel radius, the torque-curve shape (power and rpm), gear ratios (final drive chosen so top gear reaches the redline just above the speed the power and drag allow), brakes,
+aero, clutch. They make a plausible car of that size, not data about yours: replace them where you have real numbers. The visual reuses the template's 3D model, so its wheels line up only if wheelbase and track are close
+(`docs/adding_a_car.md` for a real model).
+
+**The check.** `rs_carcheck my_car.json` (built with `cmake --build core/build --target rs_carcheck`) measures 0-100 km/h, 60-0 mph and a 300 ft skidpad and compares them with limits the car's own data implies:
+
+| check | FAIL when | WARN when |
+|---|---|---|
+| finite results, deterministic | the car cannot launch / stop / hold a circle, or two identical runs differ | |
+| 0-100 against the engine | faster than kinetic energy / peak power allows | more than 6 x slower than that |
+| braking against the tyres | more than 1.15 x the tyres' peak grip | less than 40 % of it |
+| cornering against the tyres | more than 1.15 x the tyres' peak grip | less than 40 % of it |
+| tyre load | | static load per tyre below 0.4 x or above 2.5 x the file's nominal load |
+
+These are **self-consistency checks**. They catch impossible or broken cars (a typo that makes 3 g, a tyre file for a truck, a gearbox that cannot launch); the test `car_pipeline` feeds them deliberately broken cars and
+checks that each is caught. They do NOT show that the car matches its real counterpart: that needs measured data. `node tools/validate_mod.mjs --dir <folder>` is the separate, existing limit check for mods.
+
+## 5. How good is the fit, on the evidence we have
 
 Synthetic only. Truth = a Chrono tyre, fit started from another tyre of a different size class with only its geometry copied, errors on held-out loads (0.6 to 1.4 x nominal) and cambers, in rms % of the peak force:
 
@@ -84,7 +113,7 @@ What these numbers do not say:
 - A first version started the optimiser from the template only and failed on a truck tyre fitted from a car tyre (16 % of peak error on its own training data); the data-driven first guess for peak grip and slope per load fixed it. That pair is
   now part of the test.
 
-## 5. Licences
+## 6. Licences
 
 `rs_tirfit` is Apache-2.0. A fitted file starts from a template: coefficients the data did not determine are the template's numbers and its notices stay in the file (the Chrono tyres in `data/tires/` are BSD-3, see
 `LICENSING.md`). Your measurements are yours; check the licence of any dataset you did not measure yourself before you publish a tyre fitted from it.
