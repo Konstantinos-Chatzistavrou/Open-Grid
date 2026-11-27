@@ -1,10 +1,10 @@
 // Pacejka Magic Formula MF 5.2 / 6.1 / 6.2 steady-state tyre model with a .tir reader (FITTYP 5 / 6 / 21 = MF 5.2 / PAC2002 family, 61, 62).
 //
 // STATUS (read this before quoting it): a complete, self-contained evaluator of forces, moments, loaded radius and relaxation lengths for one
-// operating point, written against MFeval 4.3.1's MATLAB source and tested for internal consistency (tests/test_mf62.cpp) and by loading every
-// committed tyre file. It is NOT yet driven by the vehicle (rs::magic_formula in tire.hpp is still the game's tyre model) and its numbers are
-// NOT yet compared with MFeval's output (docs/mf62.md says how: a MATLAB / Octave run of tools/validation/mfeval_reference.m). Turn slip is as
-// unvalidated as in MFeval itself (its own docs say so).
+// operating point, written against MFeval 4.3.1's MATLAB source. Its output equals the unmodified MFeval's (run under GNU Octave 8.4) on 393 operating
+// points for each of MFeval's three example tyres (MF 5.2, 6.1, 6.2), all columns, 1e-6 relative: see docs/mf62.md for what that does and does not
+// show (three tyres, Octave not MATLAB, turn slip as unvalidated as MFeval's own). It is NOT yet driving the vehicle: rs::magic_formula in tire.hpp
+// is still the game's tyre.
 //
 // Equations: H. B. Pacejka, "Tire and Vehicle Dynamics", 3rd ed. revised (Elsevier, 2012), section 4.3 and appendix 3; I. J. M. Besselink,
 // A. J. C. Schmeitz, H. B. Pacejka, "An improved Magic Formula/Swift tyre model that can handle inflation pressure changes", Vehicle System

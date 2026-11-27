@@ -10,13 +10,23 @@ function mfeval_reference(tirFile, casesFile, outFile)
 % pressure = p_rel*NOMPRES, and p_rel = 0 means the file's INFLPRES (filled in here: MFeval treats a pressure column that is not all zero literally).
 % The output CSV has MFeval's column order, %.17g precision, and NaN where MFeval returned NaN.
   here = fileparts(mfilename('fullpath'));
-  if exist('OCTAVE_VERSION', 'builtin')
+  isOctave = exist('OCTAVE_VERSION', 'builtin') ~= 0;
+  if isOctave
+    % Octave resolves "mfeval.readTIR" to the FUNCTION mfeval.m instead of the +mfeval package (MATLAB does it the other way round), so under
+    % Octave only the package is put on the path (a temporary copy of the vendored, unmodified files) and its Solver is called directly: that is
+    % all the six-line wrapper mfeval.m does after validating its arguments.
     addpath(fullfile(here, 'octave_shims'));
-  end
-  if ~exist('mfeval.m', 'file')
+    pkgRoot = tempname();
+    mkdir(pkgRoot);
+    copyfile(fullfile(here, 'mfeval', '+mfeval'), fullfile(pkgRoot, '+mfeval'));
+    addpath(pkgRoot);
+  elseif ~exist('mfeval.m', 'file')
     addpath(fullfile(here, 'mfeval'));                    % the vendored, unmodified MFeval sources
   end
   par = mfeval.readTIR(tirFile);
+  if isOctave
+    solver = mfeval.Solver;
+  end
   C = dlmread(casesFile, ',', 1, 0);                      % header row skipped
   n = size(C, 1);
   fz = C(:, 1) * par.FNOMIN;
@@ -24,11 +34,16 @@ function mfeval_reference(tirFile, casesFile, outFile)
   pr = C(:, 7) * par.NOMPRES;
   pr(C(:, 7) == 0) = par.INFLPRES;
   out = nan(n, 30);
-  modes = unique(C(:, 8));
-  for k = 1:numel(modes)
-    idx = (C(:, 8) == modes(k));
-    inp = [fz(idx), C(idx, 2), C(idx, 3), C(idx, 4), C(idx, 5), vx(idx), pr(idx)];
-    out(idx, :) = mfeval(par, inp, modes(k));
+  % One point per call, on purpose. MFeval's rolling-radius loop ("while abs(Re_old - Re) > 1e-9") is vectorised: it stops as soon as ANY row has
+  % converged (a standstill or zero-load row converges at once), leaving every other row at iteration 2. So Re, omega, Rl, rho and Cz of a row would
+  % depend on which other rows share the call (up to ~3e-5 relative in omega). A single-row call converges properly, which is what rs::mf62 computes.
+  for i = 1:n
+    inp = [fz(i), C(i, 2), C(i, 3), C(i, 4), C(i, 5), vx(i), pr(i)];
+    if isOctave
+      out(i, :) = solver.fullSteadyState(par, inp, C(i, 8));
+    else
+      out(i, :) = mfeval(par, inp, C(i, 8));
+    end
   end
   names = {'Fx','Fy','Fz','Mx','My','Mz','kappa','alpha','gamma','phit','Vx','P','Re','rho','two_a','t','mux','muy','omega','Rl','two_b','Mzr', ...
            'Cx','Cy','Cz','Kya','sigmax','sigmay','instKya','Kxk'};

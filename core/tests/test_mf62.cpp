@@ -369,6 +369,7 @@ RS_TEST(mf62_vs_mfeval) {
         test::check((std::string(s.tag) + ": reference has one row per case with 30 columns").c_str(), ref.size() == cases.size() && !ref.empty() && ref[0].size() == 30);
         if (ref.size() != cases.size()) continue;
         int bad_total = 0, ref_nan = 0, evaluated = 0;
+        double worst_rel = 0;
         int bad_by_col[30] = {0};
         double worst[30] = {0};
         std::size_t worst_row[30] = {0};
@@ -386,12 +387,13 @@ RS_TEST(mf62_vs_mfeval) {
                 if (std::isnan(r) || std::isinf(r)) { ++ref_nan; continue; }   // MFeval itself gave no number here
                 const double d = std::abs(mine[col] - r), tol = atol(col) + 1e-6 * std::abs(r);
                 const bool ok = std::isfinite(mine[col]) && d <= tol;
+                if (std::isfinite(mine[col])) worst_rel = std::max(worst_rel, d / (std::abs(r) + 1e-9));
                 if (!ok) { ++bad_total; ++bad_by_col[col]; }
                 if (!std::isfinite(mine[col])) { worst[col] = 1e300; worst_row[col] = i; }
                 else if (d / tol > worst[col]) { worst[col] = d / tol; worst_row[col] = i; }
             }
         }
-        std::printf("         %s: %d cases, %d values compared, %d MFeval NaN / Inf values skipped\n", s.tag, evaluated, evaluated * 29 - ref_nan, ref_nan);
+        std::printf("         %s: %d cases, %d values compared, %d MFeval NaN / Inf values skipped, worst relative deviation %.2e\n", s.tag, evaluated, evaluated * 29 - ref_nan, ref_nan, worst_rel);
         for (int col = 0; col < 30; ++col)
             if (bad_by_col[col]) {
                 const auto& c = cases[worst_row[col]];
