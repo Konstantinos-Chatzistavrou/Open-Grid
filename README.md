@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/logo/open-grid-logo-transparent.svg">
+    <img alt="Open Grid" src="docs/media/logo/open-grid-logo-light.svg" width="220">
+  </picture>
+</p>
+
 # Open Grid
 
 Open-source, non-profit street & circuit racing simulator built around an engine-independent **C++20 vehicle physics core (`core/`)** targeting **Unreal Engine 5.8** natively, with a full playable **WebGPU + WebAssembly** browser build (`web/`) and a **$0/month Cloudflare Workers + D1** competitive online network (`cloud/`).
