@@ -29,4 +29,5 @@ The vehicle checks use thresholds fixed in advance and loose enough for differen
 ## Status and licences
 
 v0.1, 2026-11-27. Checked against this repository's own core (all eight tyres equal MFeval; all 25 shipped cars pass the vehicle checks). No other simulation has been run through it yet: the interface has been written down, not field-tested.
-The runner and the reference adapter are Apache-2.0. The data keeps its own terms (`LICENSES.md` in the pack, `LICENSING.md` in the repository): MFeval and its example tyres and Project Chrono's tyre file are BSD-3; the case list and the two synthetic tyres are CC BY-NC 4.0 (non-commercial).
+The runner and the reference adapter are Apache-2.0. This README, `SPEC.md`, the case list and the two synthetic tyres are **CC BY 4.0**: use them commercially or not, with credit. Credit it as: "OpenGrid conformance suite by Konstantinos Chatzistavrou, https://github.com/Konstantinos-Chatzistavrou/Open-Grid, CC BY 4.0" (the runner prints this line and writes it into its `--json` result: publish that file with any result you quote).
+MFeval, its example tyres and Project Chrono's tyre file keep their BSD-3 terms (`LICENSES.md` in the pack, `LICENSING.md` in the repository). The name and the "OpenGrid Conformant" mark are covered by `TRADEMARKS.md`; to work with the project, `PARTNERS.md`.

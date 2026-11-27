@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use the Open Grid physics core, tyre-fitting tools or conformance suite in your work, please cite it as below."
+title: "Open Grid: an open vehicle-dynamics core with a Magic Formula tyre evaluator, tyre-fitting tools and a conformance suite"
+type: software
+authors:
+  - family-names: Chatzistavrou
+    given-names: Konstantinos
+    alias: Konstantinos-Chatzistavrou
+repository-code: "https://github.com/Konstantinos-Chatzistavrou/Open-Grid"
+url: "https://open-grid.racing/"
+license: Apache-2.0
+abstract: >-
+  Open Grid is an open-source motorsport simulator. Its engine-independent C++20 physics core includes a
+  Pacejka Magic Formula 5.2 / 6.1 / 6.2 tyre evaluator that is checked against the MFeval reference
+  implementation, a tool that fits tyre property files to measured curves, a generator and checker for
+  car files, and a file-based conformance suite that other simulations can run.
+keywords:
+  - vehicle dynamics
+  - Pacejka Magic Formula
+  - tyre model
+  - racing simulation
+  - conformance testing

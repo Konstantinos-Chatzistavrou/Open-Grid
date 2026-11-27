@@ -57,15 +57,27 @@ Changing `core/` or `web/wasm/bridge.cpp`? Rebuild the WebAssembly with `bash we
 Your contribution is published under the licence of the folder it goes into (details in [LICENSING.md](LICENSING.md)):
 
 - **Code** (C++, TypeScript, JavaScript, shaders, scripts): **Apache-2.0**.
-- **Art, car and track data, docs**: **CC BY-NC 4.0**. Open Grid is non-profit and keeps its art non-commercial.
+- **The conformance suite's documents and the tyre-validation data** (`conformance/`, `docs/verify.md`, `data/validation/mf62/`): **CC BY 4.0**, credit required, commercial use allowed.
+- **Art, car and track data, other docs**: **CC BY-NC 4.0**. Open Grid is non-profit and keeps its art non-commercial.
 - The bots and examples in `packages/vehicle-physics/` marked CC0 stay CC0.
 
 Third-party material must allow that: your own work, CC0 or CC BY for art (credited in `CREDITS.md`); MIT, BSD,
 Apache-2.0 or similar for code. Never: Fab / Megascans, paid marketplace assets, ripped game assets, Google Maps /
 Street View / Earth imagery, real brand logos. See the [art bible](docs/art_bible.md).
 
+## Sign your commits (Developer Certificate of Origin)
+
+By adding `Signed-off-by: Your Name <your@email>` to a commit (`git commit -s`) you certify the Developer Certificate of Origin, version 1.1 (https://developercertificate.org/): the work is yours or you have the right to submit it
+under the licence of the folder it goes into. It is a statement about where the work comes from; it does not transfer copyright and it does not let the project relicense your contribution under other terms. Nothing checks sign-offs automatically yet:
+the maintainer will ask for one before merging an outside contribution.
+
+## Names and credit
+
+The names "Open Grid" / "OpenGrid", the logo and the "OpenGrid Conformant" mark are covered by [TRADEMARKS.md](TRADEMARKS.md). If you build on the project, credit it as [NOTICE](NOTICE) and [CITATION.cff](CITATION.cff) ask; to work with it,
+see [PARTNERS.md](PARTNERS.md); to check what it claims, [docs/verify.md](docs/verify.md).
+
 ## Conduct
 
 Be kind and specific. Criticise the work, not the person. Harassment, discrimination or personal attacks get you
-removed from the project. To report a problem privately, contact the maintainer through his GitHub profile
+removed from the project. To report a problem privately, contact the maintainer through the maintainer's GitHub profile
 ([@Konstantinos-Chatzistavrou](https://github.com/Konstantinos-Chatzistavrou)).

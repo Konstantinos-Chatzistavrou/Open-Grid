@@ -21,6 +21,10 @@
     <a href="docs/ue5_roadmap.md">Unreal Engine 5.8</a>
     &nbsp;&middot;&nbsp;
     <a href="#licence">Licence</a>
+    &nbsp;&middot;&nbsp;
+    <a href="docs/verify.md">Verify the physics</a>
+    &nbsp;&middot;&nbsp;
+    <a href="PARTNERS.md">Partner with us</a>
   </strong>
 </p>
 

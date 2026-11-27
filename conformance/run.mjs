@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // OpenGrid conformance runner: judges the FILES a simulation wrote (SPEC.md); it knows nothing about how they were made. Node 18+, no dependencies.
 //
-//   node conformance/run.mjs tyre    --impl <dir> [--columns fx,fy,mz] [--rtol 1e-6] [--manifest conformance/tyre/manifest.json]
-//   node conformance/run.mjs vehicle --spec <spec.json> --logs <dir>
+//   node conformance/run.mjs tyre    --impl <dir> [--columns fx,fy,mz] [--rtol 1e-6] [--manifest conformance/tyre/manifest.json] [--json result.json]
+//   node conformance/run.mjs vehicle --spec <spec.json> --logs <dir> [--json result.json]
 //   node conformance/run.mjs selftest --adapter <path to rs_conformance> [--car data/cars/vela_gt.json]    (the reference adapter run through the same judges, plus deliberately broken inputs)
 //
 // WHAT A PASS MEANS. tyre: your tyre model returns MFeval's numbers (the MATLAB reference implementation of Pacejka's Magic Formula 5.2 / 6.1 / 6.2, BSD-3, run under GNU Octave) on 393 operating points per tyre.
+// Licence: this runner is Apache-2.0; the suite's data and documents are CC BY 4.0 (credit line printed below and written into --json). Publishing a result? Publish the --json file with it.
 // vehicle: the logs obey physics the car's own spec implies (weights, drag, energy, grip, symmetry, determinism, step-size convergence). That is SELF-CONSISTENCY: it catches impossible or broken
 // vehicle models, it does not show the car matches its real counterpart. A tyre pass is a statement about one equation set; a vehicle pass is not a statement about accuracy.
 import fs from 'node:fs';
@@ -19,6 +20,9 @@ const argv = process.argv.slice(2);
 const cmd = argv[0];
 const opt = (k, d) => { const i = argv.indexOf(k); return i >= 0 && i + 1 < argv.length ? argv[i + 1] : d; };
 const G = 9.80665;
+const SUITE_VERSION = '0.1';
+const CREDIT = 'OpenGrid conformance suite by Konstantinos Chatzistavrou, https://github.com/Konstantinos-Chatzistavrou/Open-Grid, CC BY 4.0';
+const creditLine = () => `\nJudged with the ${CREDIT} (version ${SUITE_VERSION}).`;
 
 // ---------------------------------------------------------------------------------------------- csv
 function readCsv(file) {
@@ -65,19 +69,23 @@ function runTyre() {
   const columns = opt('--columns') ? opt('--columns').toLowerCase().split(',') : null;
   const rtol = Number(opt('--rtol', manifest.tolerance?.rtol ?? 1e-6));
   let failed = 0, missing = 0;
+  const results = [];
   console.log(`tyre conformance against ${manifest.reference.name}: ${manifest.tyres.length} tyres, ${manifest.cases_count} cases each, rtol ${rtol}${columns ? ', columns ' + columns.join(',') : ''}`);
   for (const t of manifest.tyres) {
     const f = path.join(implDir, `${t.tag}.csv`);
-    if (!fs.existsSync(f)) { console.log(`  [MISSING] ${t.tag}: ${f}`); ++missing; continue; }
+    if (!fs.existsSync(f)) { console.log(`  [MISSING] ${t.tag}: ${f}`); ++missing; results.push({ tag: t.tag, status: 'missing' }); continue; }
     const ref = readCsv(path.resolve(dir, t.golden)), impl = readCsv(f);
     const r = compareTyre(ref, impl, { columns, rtol });
     const nBad = Object.values(r.bad).reduce((a, b) => a + b.length, 0);
     const ok = r.rowsMatch && nBad === 0 && r.compared > 0;
     console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${t.tag.padEnd(26)} ${t.version.padEnd(5)} ${r.compared} values over ${r.columns} columns, worst relative deviation ${r.worstRel.toExponential(1)}${r.rowsMatch ? '' : `, ROW COUNT ${impl.n} != ${ref.n}`}${r.skippedNaN ? `, ${r.skippedNaN} reference NaN/Inf skipped` : ''}`);
     for (const [c, list] of Object.entries(r.bad).sort((a, b) => b[1].length - a[1].length).slice(0, 6)) console.log(`         ${c}: ${list.length} mismatches, e.g. case line ${list[0].row}: yours ${list[0].mine} reference ${list[0].ref}`);
+    results.push({ tag: t.tag, version: t.version, status: ok ? 'pass' : 'fail', compared: r.compared, columns: r.columns, worst_relative_deviation: r.worstRel, mismatches: Object.fromEntries(Object.entries(r.bad).map(([k, v]) => [k, v.length])) });
     if (!ok) ++failed;
   }
   console.log(failed || missing ? `\n${failed} tyre(s) FAILED, ${missing} missing` : '\nall tyres conform');
+  console.log(creditLine().trimStart());
+  if (opt('--json')) fs.writeFileSync(opt('--json'), JSON.stringify({ suite: 'OpenGrid conformance suite', version: SUITE_VERSION, credit: CREDIT, kind: 'tyre', reference: manifest.reference.name, rtol, columns: columns ?? 'all', pass: !failed && !missing, failed, missing, tyres: results }, null, 2) + '\n');
   return failed || missing ? 1 : 0;
 }
 
@@ -198,7 +206,8 @@ function runVehicle() {
   console.log(`vehicle conformance of ${spec.name ?? specPath}`);
   for (const r of res) { console.log(`  [${r.level}] ${r.name}: ${r.detail}`); fail += r.level === 'FAIL'; warn += r.level === 'WARN'; }
   console.log(`\n${fail} FAIL, ${warn} WARN. These are self-consistency checks: they do not show the vehicle matches its real counterpart.`);
-  if (opt('--json')) fs.writeFileSync(opt('--json'), JSON.stringify({ spec: spec.name, fail, warn, checks: res }, null, 2));
+  console.log(creditLine().trimStart());
+  if (opt('--json')) fs.writeFileSync(opt('--json'), JSON.stringify({ suite: 'OpenGrid conformance suite', version: SUITE_VERSION, credit: CREDIT, kind: 'vehicle', spec: spec.name, fail, warn, checks: res }, null, 2) + '\n');
   return fail ? 1 : 0;
 }
 
@@ -256,6 +265,7 @@ function runSelftest() {
   check('negative control: a stop 8 % longer at half the step is caught (convergence)', f.some((n) => n.startsWith('step size')));
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(failures ? `\n${failures} FAILED` : '\nselftest passed');
+  console.log(creditLine().trimStart());
   return failures ? 1 : 0;
 }
 

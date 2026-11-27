@@ -26,11 +26,14 @@ fs.copyFileSync(path.join(root, 'tools/validation/mfeval/LICENSE.txt'), path.joi
 fs.copyFileSync(path.join(root, 'data/tires/LICENSE-projectchrono.txt'), path.join(out, 'LICENSES/ProjectChrono-BSD-3.txt'));
 fs.writeFileSync(path.join(out, 'LICENSES.md'), `# Licences in this pack
 
-- **run.mjs, SPEC.md, README.md**: Apache-2.0 (OpenGrid).
+- **run.mjs**: Apache-2.0, Copyright 2026 Konstantinos Chatzistavrou and the Open Grid contributors.
+- **SPEC.md, README.md, the case list and the synthetic tyres below**: **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/): commercial use allowed, credit required. Credit as:
+  "OpenGrid conformance suite by Konstantinos Chatzistavrou, https://github.com/Konstantinos-Chatzistavrou/Open-Grid, CC BY 4.0", and say if you changed anything.
+- **The names "Open Grid" / "OpenGrid" and the "OpenGrid Conformant" mark** are not licensed by either licence: see TRADEMARKS.md in the repository.
 - **tyre/files/example_*.tir and the reference output of those tyres**: MFeval's own example tyres and MFeval's output, BSD-3-Clause, Copyright (c) 2020 Marco Furlan Tassara (LICENSES/MFeval-BSD-3.txt). The author does not state where the example tyres' data came from.
 - **tyre/files/audi_pac2002.tir and its reference output**: Project Chrono's Audi 245/40 R18 PAC2002 tyre, BSD-3-Clause, Copyright (c) 2016 Project Chrono Development Team (LICENSES/ProjectChrono-BSD-3.txt).
-- **tyre/files/cases.csv, tyre/files/opengrid_mf6*_synthetic.tir and their reference output**: OpenGrid, **CC BY-NC 4.0 (non-commercial)**. The synthetic tyres also contain the Chrono coefficients above (BSD-3 notice kept in the files).
-  If you need these under terms that allow commercial use, ask the OpenGrid maintainers; the rest of the pack is usable commercially under the notices above.
+- **tyre/files/cases.csv, tyre/files/opengrid_mf6*_synthetic.tir**: CC BY 4.0 as above. The synthetic tyres also contain the Chrono coefficients above (BSD-3, notice in the files).
+- **The *_reference.csv files** are MFeval's recorded output: MFeval's BSD-3 notice applies, no further restriction.
 `);
 
 if (opt('--adapter') && fs.existsSync(opt('--adapter'))) {

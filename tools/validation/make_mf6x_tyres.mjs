@@ -43,6 +43,7 @@ function build(fittyp) {
     `$ OpenGrid SYNTHETIC MF ${fittyp === 62 ? '6.2' : '6.1'} tyre property file (FITTYP = ${fittyp}): NOT a measurement.`,
     '$ Coefficients of the Project Chrono Audi 245/40 R18 PAC2002 tyre (Copyright (c) 2016 Project Chrono Development Team, BSD-3-Clause)',
     '$ plus MF 6.x coefficients chosen by OpenGrid (tools/validation/make_mf6x_tyres.mjs). Used as an MFeval comparison tyre (docs/mf62.md).',
+    '$ Our additions are CC BY 4.0, credit: OpenGrid conformance suite by Konstantinos Chatzistavrou, https://github.com/Konstantinos-Chatzistavrou/Open-Grid (LICENSING.md); the Chrono coefficients stay BSD-3-Clause.',
     '[MODEL]', `FITTYP = ${fittyp}`,
   ].join('\n');
   return `${head}\n${text}\n[OPENGRID_ADDED_COEFFICIENTS]\n${added.sort().join('\n')}\n`;

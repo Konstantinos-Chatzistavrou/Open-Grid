@@ -1,11 +1,21 @@
 Open Grid
-Copyright 2026 Open Grid contributors
+Copyright 2026 Konstantinos Chatzistavrou and the Open Grid contributors
+
+Open Grid was created, and is maintained, by Konstantinos Chatzistavrou (https://github.com/Konstantinos-Chatzistavrou/Open-Grid).
+If you redistribute this software, or a work based on it, you must keep this NOTICE file (Apache License 2.0, section 4(d)).
+If you use the conformance suite or the tyre-validation material (see below), you must also credit it as described there.
+The name "Open Grid" / "OpenGrid", its logo and the "OpenGrid Conformant" mark are not licensed by Apache-2.0: see TRADEMARKS.md.
 
 The software (source code, shaders, scripts, configuration) is licensed under the Apache License, Version 2.0
 (see LICENSE). The 3D models, textures, car and track data, documentation and artwork made by Open Grid contributors
 are NOT covered by the Apache License: they are licensed under Creative Commons Attribution-NonCommercial 4.0
-International (LICENSES/CC-BY-NC-4.0.txt): no commercial use without written permission. LICENSING.md lists which
-files are which.
+International (LICENSES/CC-BY-NC-4.0.txt): no commercial use without written permission.
+
+One part is licensed more openly, so that it can be adopted by anyone, commercial or not, with credit: the conformance suite
+and tyre-validation material (conformance/README.md, conformance/SPEC.md, docs/verify.md, data/validation/mf62/) is licensed
+under Creative Commons Attribution 4.0 International (SPDX CC-BY-4.0, https://creativecommons.org/licenses/by/4.0/). Credit it as:
+"OpenGrid conformance suite by Konstantinos Chatzistavrou, https://github.com/Konstantinos-Chatzistavrou/Open-Grid, CC BY 4.0",
+and say if you changed it. LICENSING.md lists which files are which.
 
 This repository also contains third-party material that keeps its own licence: car models adapted from CC BY 4.0
 originals, map data derived from OpenStreetMap (ODbL 1.0, (c) OpenStreetMap contributors) and NYC Open Data (public
