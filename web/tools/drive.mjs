@@ -166,6 +166,10 @@ try {
       const auth = `${a.id}.${a.token}`; const r = await fetch(API + '/v1/username', { method: 'POST', headers: { authorization: `Bearer ${auth}`, 'content-type': 'application/json' }, body: JSON.stringify({ username: u }) }); return { auth, ok: r.ok }; };
     const other = await mk(`Rival_${run}`);
     console.log('other account', other.ok);
+    // a new device meets the welcome gate first (guest / log in / sign up, src/gate.ts): play as a guest, then the username card
+    console.log('first start shows the welcome gate:', await evaluate(`!!document.querySelector('.gate-card')`));
+    await shot('p0_gate.png');
+    console.log('guest button:', await click('[data-act=gate-guest]')); await sleep(500);
     for (let i = 0; i < 90 && (await evaluate(`window.__game.menu().tuning`)); i++) await sleep(500);
     console.log('first start shows the card:', await evaluate(`!!document.querySelector('.pick-card') && !document.querySelector('[data-act=play]')`));
     await shot('p1_pick.png');

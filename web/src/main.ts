@@ -84,6 +84,7 @@ import { RaceSpotter, type SpotterCar } from './spotter';
 import { ACADEMY_LESSONS, PenaltyTracker, markLessonDone } from './careerEvents';
 import { assetUrl, loadGLTF } from './scene/loaders';
 import { Identity } from './identity';
+import { gateChoice, markGate, needsGate } from './gate';
 import { usernameError } from './username';
 import { formatLap } from './hud';
 import { autoCap, measureRefresh } from './bench';
@@ -2212,7 +2213,7 @@ async function main() {
   if (cloud.available) {
     void cloud.authProviders().then((p) => {
       menu.oauthProviders = p;
-      if (menu.screen === 'profile') menu.render();
+      if (menu.screen === 'profile' || menu.screen === 'welcome') menu.render();
     }).catch(() => {});
     if (cloud.oauthSignedInProvider) {
       const pName = cloud.oauthSignedInProvider[0].toUpperCase() + cloud.oauthSignedInProvider.slice(1);
@@ -3446,7 +3447,14 @@ async function main() {
     audio.muted = false;
   } else {
     setState('title');
-    menu.show('title');
+    // First screen on a new device: the welcome gate (guest / log in / sign up, gate.ts), then the title. A player who already
+    // has an account or a username here, came back from a Google / GitHub / Discord sign-in, or opened ?gate=0 goes straight in.
+    if (cloud.oauthSignedInProvider) markGate('account');
+    const gate = needsGate({
+      skipParam: params.get('gate') === '0', chosen: gateChoice(),
+      returning: !!cloud.id || !identity.needsPick, oauthReturn: !!cloud.oauthSignedInProvider,
+    });
+    menu.show(gate ? 'welcome' : 'title');
     if (adaptive) startTuning(false);
     else menu.setTuning(false, potato ? POTATO_NOTE : params.has('scale') || PRESET_ORDER.includes(params.get('quality') as PresetName) ? 'Graphics pinned by the URL' : `Graphics fixed: ${gfx}`);
     visual.setPaint(paintOf(sel, catalog), sel.finish);

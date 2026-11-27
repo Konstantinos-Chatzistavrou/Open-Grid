@@ -73,6 +73,12 @@ async function waitGameReady(page, timeoutMs = 90000) {
     () => Boolean(window.__game) && !document.getElementById('loading'),
     { timeout: timeoutMs },
   );
+  // A new device meets the welcome gate (guest / log in / sign up) before the title: play as a guest
+  const guest = page.locator('[data-act="gate-guest"]');
+  if (await guest.isVisible().catch(() => false)) {
+    await guest.click();
+    await page.waitForTimeout(400);
+  }
   // Dismiss first-run username modal if present on production build
   const uname = page.locator('#uname');
   if (await uname.isVisible().catch(() => false)) {

@@ -32,6 +32,10 @@ import { MOD_CATALOG, loadModHub, toggleModSub, type ModHubStore } from './modHu
 import { ACADEMY_LESSONS, WEEKLY_CALENDAR, loadCompletedLessons, todayCalendarEvent, type AcademyLesson, type CalendarEvent } from './careerEvents';
 import { AI_DIFFICULTY_PRESETS, difficultyProfile } from './aiPlanner';
 import { renderQrSvg } from './qrSvg';
+import { clearGate, markGate } from './gate';
+
+/** Look of the small cards inside the account forms (Profile screen and the welcome gate). */
+const AUTH_CARD_STYLE = 'margin-top:10px;padding:12px 14px;border-radius:10px;background:#0A0A0A;border:1px solid rgba(255,255,255,.14)';
 
 type GaragePillar = 'rides' | 'style' | 'perf' | 'driver';
 
@@ -69,7 +73,7 @@ const GARAGE_CAMS: { label: string; v: string }[] = [
 ];
 
 export type Gfx = 'auto' | 'max' | 'ultra' | 'high' | 'medium' | 'low' | 'potato';
-export type Screen = 'none' | 'title' | 'garage' | 'modes' | 'lobby' | 'pause' | 'results' | 'busy' | 'controls' | 'settings' | 'shop' | 'profile';
+export type Screen = 'none' | 'welcome' | 'title' | 'garage' | 'modes' | 'lobby' | 'pause' | 'results' | 'busy' | 'controls' | 'settings' | 'shop' | 'profile';
 /** One line of the race standings. fin: finish time (s) or -1; d: distance covered (m); dnf: out of the race. */
 export interface Standing { name: string; you: boolean; fin: number; d: number; best: number; ai: boolean; dnf?: boolean; why?: string }
 export interface ResultData {
@@ -373,6 +377,8 @@ export class Menu {
       if (e.key === 'Enter' && t.id === 'joincode') this.hooks.partyJoin(this.joinCode);
       if (e.key === 'Enter' && t.id === 'uname') void this.saveName();
       if (e.key === 'Enter' && t.id === 'fadd') void this.friendAct(this.friendDraft, 'add');
+      // welcome gate: Enter in the email / password / 2FA box logs in (a new account needs the explicit Create Account button)
+      if (e.key === 'Enter' && this.screen === 'welcome' && (t.id === 'auth-email' || t.id === 'auth-pass' || t.id === 'auth-totp')) void this.submitAuth('login');
       if (t.tagName === 'INPUT' && (t as HTMLInputElement).type === 'text') e.stopPropagation();   // typing a name or code never drives the car
     });
   }
@@ -437,7 +443,7 @@ export class Menu {
       if (el) this.scrollMem.set(sel, { top: el.scrollTop, left: el.scrollLeft });
     }
     const html = {
-      none: () => '', title: () => this.title(), garage: () => this.garage(), modes: () => this.modes(), lobby: () => this.lobby(),
+      none: () => '', welcome: () => this.welcome(), title: () => this.title(), garage: () => this.garage(), modes: () => this.modes(), lobby: () => this.lobby(),
       pause: () => this.pause(), controls: () => this.ctl?.html() ?? '', settings: () => this.settings(), shop: () => this.shop(), profile: () => this.profile(), results: () => (this.lastResults ? this.results(this.lastResults) : ''),
       busy: () => '',   // the loading screen (loading.ts) covers it
     }[this.screen]();
@@ -559,7 +565,7 @@ export class Menu {
             <button class="og-pill og-me" data-act="profile-open" ${dis}>
               <span class="og-avatar">${helmetSvg(skinOf(sel.skin), 20)}</span>
               <b>${esc(this.identity.name)}</b>
-              <span class="og-me-sub ${mp?.email ? 'synced' : ''}">${reqCount ? `${reqCount} req` : mp?.email ? '✓' : 'Log In'}</span>
+              <span class="og-me-sub ${mp?.email ? 'synced' : ''}">${reqCount ? `${reqCount} req` : mp?.email ? '✓' : this.cloud.available ? 'Upgrade' : 'Guest'}</span>
             </button>
           </div>
         </header>
@@ -1705,6 +1711,9 @@ export class Menu {
       case 'laylow': this.hooks.layLow?.(); break;
       case 'garage-open': this.garageHideUi = false; this.garageNote = ''; this.show('garage'); this.hooks.preview(); break;
       case 'home': this.show('title'); break;
+      // welcome gate (gate.ts): play as a guest, or carry on after signing in / saving the recovery codes of a new account
+      case 'gate-guest': markGate('guest'); this.authNote = ''; this.show('title'); break;
+      case 'gate-continue': markGate('account'); this.authNote = ''; this.recoveryCodes = []; this.show('title'); break;
       case 'profile-open': this.profileFrom = this.screen === 'profile' ? this.profileFrom : this.screen; this.unameDraft = null; this.unameNote = ''; this.friendNote = ''; this.show('profile'); break;
       case 'profile-back': this.show(this.profileFrom); break;
       case 'uname-save': void this.saveName(); break;
@@ -2064,7 +2073,8 @@ export class Menu {
       case 'auth-copy-codes': this.copyRecoveryCodes(); break;
       case 'auth-dismiss-codes':
         this.recoveryCodes = [];
-        this.render();
+        if (this.screen === 'welcome' && this.mp.profile?.email) { markGate('account'); this.authNote = ''; this.show('title'); }   // codes saved: the gate is done
+        else this.render();
         break;
       case 'auth-2fa-setup': void this.start2faSetup(); break;
       case 'auth-2fa-enable': void this.submitEnable2fa(); break;
@@ -2277,12 +2287,58 @@ export class Menu {
     this.hooks.preview();
   }
 
+  // ---- welcome gate (gate.ts) ----------------------------------------------------------------------------------------------
+  /** The first screen on a new device: play as a guest, or log in / sign up. Then the title (a new player gets the username card there). */
+  private welcome() {
+    const online = this.cloud.available;
+    const busy = this.authBusy ? 'disabled' : '';
+    // a brand-new account first has to see its one-time recovery codes (shown only once)
+    if (this.recoveryCodes.length > 0) {
+      return `<div class="lobby-screen"><div class="card lobby-card pick-card gate-card">
+        <div class="kicker">ACCOUNT CREATED</div><h2>Save your recovery codes</h2>
+        ${this.recoveryCardHtml()}
+        <div class="lobby-foot"><span class="dim small-note">You can make a new set any time in Profile.</span>
+          <button class="primary huge" data-act="gate-continue">Continue ▶</button></div>
+      </div></div>`;
+    }
+    const oauthBtns = [
+      this.oauthProviders.google ? `<button class="small og-oauth google" data-act="auth-oauth" data-v="google" ${busy}>G · Continue with Google</button>` : '',
+      this.oauthProviders.github ? `<button class="small og-oauth github" data-act="auth-oauth" data-v="github" ${busy}>⌥ · Continue with GitHub</button>` : '',
+      this.oauthProviders.discord ? `<button class="small og-oauth discord" data-act="auth-oauth" data-v="discord" ${busy}>💬 · Continue with Discord</button>` : '',
+    ].filter(Boolean).join('');
+    const secondStep = this.authNeeds2fa || this.authForgotOpen;   // 2FA code / password reset replace the plain form
+    const goodNote = this.authBusy || this.authNote.startsWith('✓') || this.authNote.startsWith('Signed out');
+    const note = this.authNote ? `<div class="pnote ${goodNote ? '' : 'bad'}">${this.authBusy ? '<span class="spin inline"></span> ' : ''}${esc(this.authNote)}</div>` : '';
+    const signIn = !online
+      ? `<div class="dim note gate-offline">Accounts need the online service, which cannot be reached right now. Guest play works fully offline, and you can sign in later from your Profile.</div>`
+      : `<div class="gate-or"><span>or sign in to keep your progress everywhere</span></div>
+        ${oauthBtns && !secondStep ? `<div class="chips gate-oauth">${oauthBtns}</div>` : ''}
+        ${secondStep ? '' : `<div class="joinrow gate-form">
+          <input id="auth-email" type="email" value="${esc(this.authEmail)}" placeholder="Email address" autocomplete="email" />
+          <input id="auth-pass" type="password" value="${esc(this.authPass)}" placeholder="Password (8+ characters)" autocomplete="current-password" />
+        </div>
+        <div class="opts gate-actions">
+          <button class="primary" data-act="auth-login" ${busy}>Log In</button>
+          <button data-act="auth-register" ${busy}>Create Account</button>
+          <button class="small" data-act="auth-forgot-toggle" ${busy}>Forgot password?</button>
+        </div>`}
+        ${this.auth2faCardHtml()}
+        ${this.authForgotCardHtml()}`;
+    return `<div class="lobby-screen"><div class="card lobby-card pick-card gate-card">
+      <div class="kicker">WELCOME TO OPEN GRID</div><h2>How do you want to get in?</h2>
+      <button class="primary huge gate-guest" data-act="gate-guest" ${busy}>Continue as Guest ▶</button>
+      <p class="dim small-note">No sign-up needed. Your cars and progress save on this device, and you can upgrade to a full account any time from your Profile, with nothing lost.</p>
+      ${signIn}
+      ${note}
+    </div></div>`;
+  }
+
   // ---- username and friends (identity.ts) -----------------------------------------------------------------------------------
   /** First start: a username before anything else (how friends find you; shown in races and on your plate). */
   private pickName() {
     const draft = this.unameDraft ?? (usernameError(this.sel.name) ? '' : this.sel.name);
     return `<div class="lobby-screen"><div class="card lobby-card pick-card">
-      <div class="kicker">WELCOME TO OPEN GRID</div><h2>Choose your username</h2>
+      <div class="kicker">ONE LAST STEP</div><h2>Choose your username</h2>
       <p class="dim">Friends add you by it, and everyone sees it in races: on the leaderboard, over your car and on your number plate.
         ${this.cloud.available ? 'It is yours alone: nobody else can take it.' : ''}</p>
       ${this.unameField(draft)}
@@ -2356,7 +2412,9 @@ export class Menu {
     this.render();
     try {
       if (kind === 'register') {
-        const res = await this.cloud.registerEmail(this.authEmail, this.authPass, this.identity.claimed ? undefined : (this.unameDraft ?? this.sel.name));
+        // a first-time player has no valid username yet (the default name is reserved and the server rejects it): send one only when valid
+        const wanted = this.identity.claimed ? '' : (this.unameDraft ?? this.sel.name).trim();
+        const res = await this.cloud.registerEmail(this.authEmail, this.authPass, wanted && !usernameError(wanted) ? wanted : undefined);
         this.mp.profile = res.profile;
         if (res.profile.username) { this.sel.name = res.profile.username; this.save(); }
         this.authPass = '';
@@ -2365,6 +2423,7 @@ export class Menu {
         this.authNote = `✓ Account saved for ${res.profile.email ?? this.authEmail} — works across Web & UE 5.8!`;
         void this.mp.refresh();
         void this.identity.sync(res.profile);
+        this.gatePassed();
       } else {
         const res = await this.cloud.loginEmail(this.authEmail, this.authPass, this.authNeeds2fa ? this.authTotp.trim() : undefined);
         if (res.requires2fa) {
@@ -2379,6 +2438,7 @@ export class Menu {
           this.authNote = `✓ Welcome back, ${res.profile.name}!`;
           void this.mp.refresh();
           void this.identity.sync(res.profile);
+          this.gatePassed();
         }
       }
     } catch (e) {
@@ -2432,6 +2492,7 @@ export class Menu {
       this.authNote = `✓ Password reset! Signed in as ${res.profile.name}.`;
       void this.mp.refresh();
       void this.identity.sync(res.profile);
+      this.gatePassed();
     } catch (e) {
       this.authNote = (e as Error).message || 'Password reset failed.';
     } finally {
@@ -2594,7 +2655,18 @@ export class Menu {
     this.resetSecurityPanels();
     this.authNote = 'Signed out on this device.';
     this.authBusy = false;
-    this.render();
+    clearGate();            // signing out brings the welcome screen back (guest / log in / sign up)
+    this.show('welcome');
+  }
+
+  /** Signed in or signed up from the welcome screen: on to the title. A brand-new account first has to see its one-time
+   *  recovery codes, so then the gate stays up (its Continue button moves on). */
+  private gatePassed() {
+    if (this.screen !== 'welcome') return;
+    markGate('account');
+    if (this.recoveryCodes.length) return;
+    this.authNote = '';
+    this.show('title');
   }
 
   private async startOAuthLogin(provider: OAuthProvider) {
@@ -2610,6 +2682,52 @@ export class Menu {
       this.authBusy = false;
       this.render();
     }
+  }
+
+  // ---- shared by the Profile screen and the welcome gate ----------------------------------------------------------------
+  private recoveryCardHtml() {
+    const cardStyle = AUTH_CARD_STYLE;
+    return this.recoveryCodes.length > 0 ? `<div style="${cardStyle};border-color:rgba(255,17,17,.55)">
+      <div style="font-weight:700;color:#fbbf24;margin-bottom:4px">🛡 Save these 8 one-time recovery/backup codes somewhere safe — shown once!</div>
+      <p class="dim small-note" style="margin:0 0 8px">Each code can recover your account or bypass 2FA once if you lose access to your authenticator.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:6px;margin-bottom:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px">
+        ${this.recoveryCodes.map((c) => `<code style="padding:5px 8px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);text-align:center;letter-spacing:.08em;user-select:all">${esc(c)}</code>`).join('')}
+      </div>
+      <div class="opts" style="gap:8px">
+        <button class="small primary" data-act="auth-copy-codes">📋 Copy Codes</button>
+        <button class="small" data-act="auth-dismiss-codes">Dismiss</button>
+      </div>
+    </div>` : '';
+  }
+
+  private auth2faCardHtml() {
+    const cardStyle = AUTH_CARD_STYLE;
+    return this.authNeeds2fa ? `<div style="${cardStyle};border-color:rgba(255,17,17,.45)">
+      <div style="font-weight:700;margin-bottom:6px">🔐 Two-Factor Authentication Required</div>
+      <div class="joinrow" style="flex-wrap:wrap;gap:6px">
+        <input id="auth-totp" type="text" inputmode="numeric" maxlength="16" value="${esc(this.authTotp)}" placeholder="6-digit 2FA or backup code" autocomplete="one-time-code" style="max-width:210px" />
+        <button class="primary" data-act="auth-login" ${this.authBusy ? 'disabled' : ''}>Verify 2FA &amp; Log In</button>
+        <button class="small" data-act="auth-2fa-login-cancel" ${this.authBusy ? 'disabled' : ''}>Cancel</button>
+      </div>
+    </div>` : '';
+  }
+
+  private authForgotCardHtml() {
+    const cardStyle = AUTH_CARD_STYLE;
+    return this.authForgotOpen ? `<div style="${cardStyle}">
+      <div style="font-weight:700;margin-bottom:4px">🔑 Reset Password</div>
+      <p class="dim small-note" style="margin:0 0 8px">Request a reset code by email or use one of your saved 8-character recovery codes.</p>
+      <div class="joinrow" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">
+        <input id="auth-reset-email" type="email" value="${esc(this.authResetEmail)}" placeholder="Account email address" autocomplete="email" />
+        <button class="small" data-act="auth-forgot-send" ${this.authBusy ? 'disabled' : ''}>Send Reset Code</button>
+      </div>
+      <div class="joinrow" style="flex-wrap:wrap;gap:6px">
+        <input id="auth-reset-code" type="text" value="${esc(this.authResetCode)}" placeholder="Reset or recovery code" autocomplete="one-time-code" spellcheck="false" />
+        <input id="auth-reset-pass" type="password" value="${esc(this.authResetPass)}" placeholder="New password (8+ chars)" autocomplete="new-password" />
+        <button class="primary" data-act="auth-reset-submit" ${this.authBusy ? 'disabled' : ''}>Reset Password &amp; Sign In</button>
+        <button class="small" data-act="auth-forgot-toggle" ${this.authBusy ? 'disabled' : ''}>Cancel</button>
+      </div>
+    </div>` : '';
   }
 
   private profile() {
@@ -2636,17 +2754,7 @@ export class Menu {
       this.oauthProviders.discord ? `<button class="small og-oauth discord" data-act="auth-oauth" data-v="discord" ${this.authBusy ? 'disabled' : ''}>💬 · Continue with Discord</button>` : '',
     ].filter(Boolean).join('');
     const cardStyle = 'margin-top:10px;padding:12px 14px;border-radius:10px;background:#0A0A0A;border:1px solid rgba(255,255,255,.14)';
-    const recoveryCodesCard = this.recoveryCodes.length > 0 ? `<div style="${cardStyle};border-color:rgba(255,17,17,.55)">
-      <div style="font-weight:700;color:#fbbf24;margin-bottom:4px">🛡 Save these 8 one-time recovery/backup codes somewhere safe — shown once!</div>
-      <p class="dim small-note" style="margin:0 0 8px">Each code can recover your account or bypass 2FA once if you lose access to your authenticator.</p>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:6px;margin-bottom:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px">
-        ${this.recoveryCodes.map((c) => `<code style="padding:5px 8px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);text-align:center;letter-spacing:.08em;user-select:all">${esc(c)}</code>`).join('')}
-      </div>
-      <div class="opts" style="gap:8px">
-        <button class="small primary" data-act="auth-copy-codes">📋 Copy Codes</button>
-        <button class="small" data-act="auth-dismiss-codes">Dismiss</button>
-      </div>
-    </div>` : '';
+    const recoveryCodesCard = this.recoveryCardHtml();
     let securityPanel = '';
     if (mp?.email) {
       if (this.totpSetup) {
@@ -2701,28 +2809,8 @@ export class Menu {
         </div>`;
       }
     }
-    const auth2faChallenge = this.authNeeds2fa ? `<div style="${cardStyle};border-color:rgba(255,17,17,.45)">
-      <div style="font-weight:700;margin-bottom:6px">🔐 Two-Factor Authentication Required</div>
-      <div class="joinrow" style="flex-wrap:wrap;gap:6px">
-        <input id="auth-totp" type="text" inputmode="numeric" maxlength="16" value="${esc(this.authTotp)}" placeholder="6-digit 2FA or backup code" autocomplete="one-time-code" style="max-width:210px" />
-        <button class="primary" data-act="auth-login" ${this.authBusy ? 'disabled' : ''}>Verify 2FA &amp; Log In</button>
-        <button class="small" data-act="auth-2fa-login-cancel" ${this.authBusy ? 'disabled' : ''}>Cancel</button>
-      </div>
-    </div>` : '';
-    const authForgotCard = this.authForgotOpen ? `<div style="${cardStyle}">
-      <div style="font-weight:700;margin-bottom:4px">🔑 Reset Password</div>
-      <p class="dim small-note" style="margin:0 0 8px">Request a reset code by email or use one of your saved 8-character recovery codes.</p>
-      <div class="joinrow" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">
-        <input id="auth-reset-email" type="email" value="${esc(this.authResetEmail)}" placeholder="Account email address" autocomplete="email" />
-        <button class="small" data-act="auth-forgot-send" ${this.authBusy ? 'disabled' : ''}>Send Reset Code</button>
-      </div>
-      <div class="joinrow" style="flex-wrap:wrap;gap:6px">
-        <input id="auth-reset-code" type="text" value="${esc(this.authResetCode)}" placeholder="Reset or recovery code" autocomplete="one-time-code" spellcheck="false" />
-        <input id="auth-reset-pass" type="password" value="${esc(this.authResetPass)}" placeholder="New password (8+ chars)" autocomplete="new-password" />
-        <button class="primary" data-act="auth-reset-submit" ${this.authBusy ? 'disabled' : ''}>Reset Password &amp; Sign In</button>
-        <button class="small" data-act="auth-forgot-toggle" ${this.authBusy ? 'disabled' : ''}>Cancel</button>
-      </div>
-    </div>` : '';
+    const auth2faChallenge = this.auth2faCardHtml();
+    const authForgotCard = this.authForgotCardHtml();
     const authBlock = !online ? '<div class="dim note">Email login activates automatically once connected to the Open Grid cloud backend.</div>'
       : mp?.email ? `<div class="opts" style="flex-wrap:wrap;gap:8px">
           <span class="pill gold">✓ SIGNED IN · ${esc(mp.email)}</span>

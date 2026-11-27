@@ -54,7 +54,7 @@ html, body { font-family: var(--text); font-size: 15px; background: var(--ink); 
 #menu .card::before { content: ""; position: absolute; left: 0; top: 0; width: 64px; height: 3px; background: var(--hot); }
 #menu .note { font-size: 12px; color: var(--dim); }
 #menu .pill { border-radius: 0; font: 700 11px/1 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: .08em; padding: 4px 8px; }
-#menu input[type=text] { border-radius: 0; font-family: var(--text); }
+#menu input[type=text], #menu input[type=email], #menu input[type=password] { border-radius: 0; font-family: var(--text); }
 #menu .back-btn { font-size: 13px; letter-spacing: .14em; color: var(--dim); background: transparent; clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 100%, 0 100%); padding-right: 22px; }
 #menu .back-btn:hover:not(:disabled) { color: var(--fg); }
 #menu .nav-focus { outline: 2px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 5px #ff111170; }
