@@ -594,19 +594,39 @@ body.touch #minimap.expanded { width: min(94vw, calc((100vh - 54px) * 1.6 + 12px
 #menu .pick-card { width: min(520px, 100%); }
 #menu .pick-card h2 { margin: 4px 0 8px; }
 #menu .pick-card #uname, #menu .profile-card #uname { font-size: 18px; letter-spacing: .02em; }
-/* welcome gate (gate.ts): guest / log in / sign up before the title */
-#menu .gate-card { width: min(560px, 100%); }
-#menu .gate-card h2 { margin: 4px 0 14px; }
-#menu .gate-guest { width: 100%; justify-content: center; }
-#menu .gate-card .small-note { margin: 8px 0 0; }
-#menu .gate-or { display: flex; align-items: center; gap: 12px; margin: 20px 0 12px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; opacity: .7; }
-#menu .gate-or::before, #menu .gate-or::after { content: ''; flex: 1; height: 1px; background: rgba(255, 255, 255, .16); }
-#menu .gate-oauth { margin: 0 0 12px; gap: 8px; }
-#menu .gate-form { flex-wrap: wrap; gap: 8px; }
-#menu .gate-form input { flex: 1 1 210px; min-width: 0; letter-spacing: .02em; text-transform: none; font-size: 15px; }
-#menu .gate-form input::placeholder { letter-spacing: .02em; text-transform: none; }
-#menu .gate-actions { margin-top: 10px; gap: 8px; flex-wrap: wrap; align-items: center; }
-#menu .gate-offline { margin-top: 18px; }
+/* welcome gate (gate.ts): guest / log in / sign up before the title. One centred column, everything the same width, flat and
+   rounded (the rest of the menu keeps its chamfered look). No blur / backdrop filters: it sits over the live 3D scene. */
+#menu .card.gate-card { width: min(400px, 100%); padding: 40px 32px 30px; border-radius: 20px; clip-path: none; text-align: center; background: #0b0d12ee; border: 1px solid var(--line); }
+#menu .card.gate-card::before { left: 50%; width: 44px; height: 3px; transform: translateX(-50%); border-radius: 0 0 3px 3px; }
+#menu .gate-head { margin-bottom: 22px; }
+#menu .gate-head .kicker { margin-bottom: 10px; letter-spacing: .4em; padding-left: .4em; color: var(--dim); }
+#menu .gate-head h2 { margin: 0; font-size: 34px; letter-spacing: .01em; text-transform: none; }
+#menu .card.gate-card button, #menu .card.gate-card input { box-sizing: border-box; border-radius: 12px; clip-path: none; text-transform: none; letter-spacing: .01em; font-size: 15px; }
+#menu .card.gate-card button { height: 46px; padding: 0 16px; font-weight: 600; }
+#menu .card.gate-card button.primary { background: var(--hot); color: #fff; letter-spacing: .02em; }
+#menu .card.gate-card button.primary:hover:not(:disabled) { background: var(--hot-hi); }
+#menu .card.gate-card .gate-main { width: 100%; height: 52px; font-size: 17px; }
+#menu .gate-hint { margin: 10px 0 0; font-size: 12.5px; color: var(--dim); }
+#menu .gate-or { display: flex; align-items: center; gap: 14px; margin: 22px 0 18px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+#menu .gate-or::before, #menu .gate-or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+#menu .gate-socials { display: flex; justify-content: center; gap: 12px; margin-bottom: 16px; }
+#menu .card.gate-card button.gate-social { width: 56px; height: 56px; padding: 0; display: grid; place-items: center; border-radius: 14px; background: #ffffff0d; border: 1px solid var(--line2); color: #fff; }
+#menu .card.gate-card button.gate-social:hover:not(:disabled) { background: #ffffff1c; border-color: #ffffff66; }
+#menu .gate-social svg { display: block; width: 24px; height: 24px; }
+#menu .gate-form { display: grid; gap: 10px; }
+#menu .card.gate-card .gate-form input { width: 100%; height: 46px; padding: 0 14px; font-size: 15px; text-align: left; }
+#menu .card.gate-card .gate-form input::placeholder { letter-spacing: .01em; text-transform: none; }
+#menu .gate-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+#menu .card.gate-card button.gate-link { height: auto; margin-top: 14px; padding: 4px 8px; background: none; border: 0; color: var(--dim); font-weight: 500; font-size: 13px; }
+#menu .card.gate-card button.gate-link:hover:not(:disabled) { background: none; color: #fff; text-decoration: underline; }
+#menu .card.gate-card .pnote { margin-top: 14px; text-align: center; }
+#menu .card.gate-card .pnote.info { color: var(--dim); }
+#menu .card.gate-card .opts { justify-content: center; }
+#menu .gate-step { display: grid; gap: 12px; margin-top: 22px; }
+#menu .gate-step-title { font: 700 15px/1 var(--display); letter-spacing: .1em; text-transform: uppercase; }
+#menu .gate-step .gate-hint { margin: 0; }
+#menu .gate-step .gate-actions { margin-top: 2px; }
+#menu .gate-offline { margin-top: 20px; }
 #menu .profile-card .members { grid-template-columns: 1fr; }
 #menu .profile-card .member .mtext { flex: 1; }
 #menu .profile-card .member > .avatar .dot { position: static; width: 12px; height: 12px; border-color: #ffffff30; }

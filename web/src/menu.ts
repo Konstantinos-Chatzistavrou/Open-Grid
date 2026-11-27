@@ -37,6 +37,14 @@ import { clearGate, markGate } from './gate';
 /** Look of the small cards inside the account forms (Profile screen and the welcome gate). */
 const AUTH_CARD_STYLE = 'margin-top:10px;padding:12px 14px;border-radius:10px;background:#0A0A0A;border:1px solid rgba(255,255,255,.14)';
 
+/** Sign-in provider marks for the welcome gate's icon buttons: four-colour Google G, white GitHub mark, Discord blurple. */
+const BRAND_NAME: Record<OAuthProvider, string> = { google: 'Google', github: 'GitHub', discord: 'Discord' };
+const BRAND_ICON: Record<OAuthProvider, string> = {
+  google: '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>',
+  github: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>',
+  discord: '<svg viewBox="0 0 24 24" fill="#5865F2" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg>',
+};
+
 type GaragePillar = 'rides' | 'style' | 'perf' | 'driver';
 
 /** Granular NFS Heat-inspired Garage sub-categories: each focuses on ONE zone & swings the camera onto that exact part. */
@@ -2288,49 +2296,75 @@ export class Menu {
   }
 
   // ---- welcome gate (gate.ts) ----------------------------------------------------------------------------------------------
-  /** The first screen on a new device: play as a guest, or log in / sign up. Then the title (a new player gets the username card there). */
+  /** The first screen on a new device: play as a guest, or log in / sign up. Then the title (a new player gets the username card there).
+   *  One centred column, every row the same width: guest, provider icons, email + password, two equal buttons. */
   private welcome() {
     const online = this.cloud.available;
     const busy = this.authBusy ? 'disabled' : '';
+    const head = (kicker: string, title: string) => `<div class="gate-head"><div class="kicker">${kicker}</div><h2>${title}</h2></div>`;
     // a brand-new account first has to see its one-time recovery codes (shown only once)
     if (this.recoveryCodes.length > 0) {
       return `<div class="lobby-screen"><div class="card lobby-card pick-card gate-card">
-        <div class="kicker">ACCOUNT CREATED</div><h2>Save your recovery codes</h2>
+        ${head('ACCOUNT CREATED', 'Save your recovery codes')}
         ${this.recoveryCardHtml()}
-        <div class="lobby-foot"><span class="dim small-note">You can make a new set any time in Profile.</span>
-          <button class="primary huge" data-act="gate-continue">Continue ▶</button></div>
+        <button class="primary gate-main" style="margin-top:16px" data-act="gate-continue">Continue</button>
+        <p class="gate-hint">You can make a new set any time in Profile.</p>
       </div></div>`;
     }
-    const oauthBtns = [
-      this.oauthProviders.google ? `<button class="small og-oauth google" data-act="auth-oauth" data-v="google" ${busy}>G · Continue with Google</button>` : '',
-      this.oauthProviders.github ? `<button class="small og-oauth github" data-act="auth-oauth" data-v="github" ${busy}>⌥ · Continue with GitHub</button>` : '',
-      this.oauthProviders.discord ? `<button class="small og-oauth discord" data-act="auth-oauth" data-v="discord" ${busy}>💬 · Continue with Discord</button>` : '',
-    ].filter(Boolean).join('');
+    const socials = (['google', 'github', 'discord'] as const).filter((p) => this.oauthProviders[p]).map((p) => {
+      const label = `Continue with ${BRAND_NAME[p]}`;
+      return `<button class="gate-social" data-act="auth-oauth" data-v="${p}" aria-label="${label}" title="${label}" ${busy}>${BRAND_ICON[p]}</button>`;
+    }).join('');
     const secondStep = this.authNeeds2fa || this.authForgotOpen;   // 2FA code / password reset replace the plain form
-    const goodNote = this.authBusy || this.authNote.startsWith('✓') || this.authNote.startsWith('Signed out');
-    const note = this.authNote ? `<div class="pnote ${goodNote ? '' : 'bad'}">${this.authBusy ? '<span class="spin inline"></span> ' : ''}${esc(this.authNote)}</div>` : '';
+    // prompts (2FA code, signed out) are neutral, confirmations green, everything else an error
+    const noteCls = /^(Enter the 6-digit|Signed out)/.test(this.authNote) ? 'info' : (this.authBusy || this.authNote.startsWith('✓')) ? '' : 'bad';
+    const note = this.authNote ? `<div class="pnote ${noteCls}">${this.authBusy ? '<span class="spin inline"></span> ' : ''}${esc(this.authNote)}</div>` : '';
     const signIn = !online
       ? `<div class="dim note gate-offline">Accounts need the online service, which cannot be reached right now. Guest play works fully offline, and you can sign in later from your Profile.</div>`
-      : `<div class="gate-or"><span>or sign in to keep your progress everywhere</span></div>
-        ${oauthBtns && !secondStep ? `<div class="chips gate-oauth">${oauthBtns}</div>` : ''}
-        ${secondStep ? '' : `<div class="joinrow gate-form">
+      : `${secondStep ? '' : `<div class="gate-or"><span>or</span></div>
+        ${socials ? `<div class="gate-socials">${socials}</div>` : ''}
+        <div class="gate-form">
           <input id="auth-email" type="email" value="${esc(this.authEmail)}" placeholder="Email address" autocomplete="email" />
           <input id="auth-pass" type="password" value="${esc(this.authPass)}" placeholder="Password (8+ characters)" autocomplete="current-password" />
         </div>
-        <div class="opts gate-actions">
-          <button class="primary" data-act="auth-login" ${busy}>Log In</button>
-          <button data-act="auth-register" ${busy}>Create Account</button>
-          <button class="small" data-act="auth-forgot-toggle" ${busy}>Forgot password?</button>
-        </div>`}
-        ${this.auth2faCardHtml()}
-        ${this.authForgotCardHtml()}`;
+        <div class="gate-actions">
+          <button class="primary" data-act="auth-login" ${busy}>Log in</button>
+          <button data-act="auth-register" ${busy}>Create account</button>
+        </div>
+        <button class="gate-link" data-act="auth-forgot-toggle" ${busy}>Forgot password?</button>`}
+        ${this.gateStepHtml(busy)}`;
     return `<div class="lobby-screen"><div class="card lobby-card pick-card gate-card">
-      <div class="kicker">WELCOME TO OPEN GRID</div><h2>How do you want to get in?</h2>
-      <button class="primary huge gate-guest" data-act="gate-guest" ${busy}>Continue as Guest ▶</button>
-      <p class="dim small-note">No sign-up needed. Your cars and progress save on this device, and you can upgrade to a full account any time from your Profile, with nothing lost.</p>
+      ${head('OPEN GRID', 'Welcome')}
+      <button class="primary gate-main" data-act="gate-guest" ${busy}>Continue as guest</button>
+      <p class="gate-hint">No account needed. Upgrade any time from your Profile.</p>
       ${signIn}
       ${note}
     </div></div>`;
+  }
+
+  /** The welcome gate's second step, stacked to the card's width: the 2FA code, or the password reset (same ids / actions as the Profile's). */
+  private gateStepHtml(busy: string) {
+    if (this.authNeeds2fa) {
+      return `<div class="gate-step">
+        <div class="gate-step-title">Two-factor code</div>
+        <div class="gate-form"><input id="auth-totp" type="text" inputmode="numeric" maxlength="16" value="${esc(this.authTotp)}" placeholder="6-digit or backup code" autocomplete="one-time-code" /></div>
+        <div class="gate-actions"><button class="primary" data-act="auth-login" ${busy}>Verify</button><button data-act="auth-2fa-login-cancel" ${busy}>Back</button></div>
+      </div>`;
+    }
+    if (this.authForgotOpen) {
+      return `<div class="gate-step">
+        <div class="gate-step-title">Reset password</div>
+        <p class="gate-hint">Get a code by email, or use one of your saved recovery codes.</p>
+        <div class="gate-form">
+          <input id="auth-reset-email" type="email" value="${esc(this.authResetEmail)}" placeholder="Account email" autocomplete="email" />
+          <button data-act="auth-forgot-send" ${busy}>Send reset code</button>
+          <input id="auth-reset-code" type="text" value="${esc(this.authResetCode)}" placeholder="Reset or recovery code" autocomplete="one-time-code" spellcheck="false" />
+          <input id="auth-reset-pass" type="password" value="${esc(this.authResetPass)}" placeholder="New password (8+ characters)" autocomplete="new-password" />
+        </div>
+        <div class="gate-actions"><button class="primary" data-act="auth-reset-submit" ${busy}>Reset &amp; log in</button><button data-act="auth-forgot-toggle" ${busy}>Back</button></div>
+      </div>`;
+    }
+    return '';
   }
 
   // ---- username and friends (identity.ts) -----------------------------------------------------------------------------------
