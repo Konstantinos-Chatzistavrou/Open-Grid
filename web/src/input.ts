@@ -96,6 +96,9 @@ export class Input {
   private anchors = new Map<number, { id: string; axes: number[]; buttons: number[] }>();
   family: PadFamily = 'generic';
   wheel: { model: WheelModel; key: string } | null = null;
+  /** Optional timestamped WebHID axis sampler (returns normalized [-1, +1] steering at `timeMs` for 400 Hz substeps). */
+  highRateSteer: ((timeMs: number) => number | null) | null = null;
+  private wheelCalCache: { rest: number; span: number; rot: number } | null = null;
   /** steering wheel position as a fraction of the car's lock (+ left; beyond +-1 = past the lock) and its speed */
   wheelPos = 0;
   wheelVel = 0;
@@ -482,10 +485,14 @@ export class Input {
   private lastWheel = 0;
   private readWheel(pad: Gamepad, r: RawInput) {
     const cal = this.cal(pad);
+    const rot = this.rotation(pad);
     r.device = 2;
-    const raw = pad.axes[cal.steer.index] ?? cal.steer.rest, span = cal.steer.full - cal.steer.rest;
+    const span = cal.steer.full - cal.steer.rest;
+    this.wheelCalCache = cal.steer.index === 0 ? { rest: cal.steer.rest, span, rot } : null;
+    const hidRaw = cal.steer.index === 0 && this.highRateSteer ? this.highRateSteer(performance.now()) : null;
+    const raw = hidRaw ?? (pad.axes[cal.steer.index] ?? cal.steer.rest);
     const frac = Math.abs(span) < 1e-3 ? 0 : (raw - cal.steer.rest) / span;     // +1 = hardware full left
-    const deg = frac * this.rotation(pad) / 2;
+    const deg = frac * rot / 2;
     const pos = deg / (this.settings.wheelLockToLock / 2);
     const now = performance.now();
     if (this.lastWheel) { const dt = Math.max(1e-3, (now - this.lastWheel) / 1000); this.wheelVel += ((pos - this.wheelPos) / dt - this.wheelVel) * Math.min(1, dt / 0.03); }
@@ -509,6 +516,17 @@ export class Input {
       this.assists.autoGearbox = false;                                    // the lever is the gearbox
       for (const [gear, btn] of Object.entries(cal.hShifter)) if (b(btn)) r.directGear = Number(gear);
     }
+  }
+
+  /** Refine steering for a specific 400 Hz physics substep timestamp using buffered WebHID input reports. */
+  refineTick(r: RawInput, tickTimeMs: number) {
+    if (this.source !== 'wheel' || !this.highRateSteer || !this.wheelCalCache || this.suspended) return;
+    const raw = this.highRateSteer(tickTimeMs);
+    if (raw === null) return;
+    const { rest, span, rot } = this.wheelCalCache;
+    const frac = Math.abs(span) < 1e-3 ? 0 : (raw - rest) / span;
+    const pos = (frac * rot / 2) / (this.settings.wheelLockToLock / 2);
+    r.steer = Math.max(-1, Math.min(1, pos));
   }
 
   /** Help line for the HUD, for the device in use. */

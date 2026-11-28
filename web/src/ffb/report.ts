@@ -15,12 +15,20 @@ export interface HIDCollectionInfo {
   usagePage?: number; usage?: number; type?: number;
   children?: HIDCollectionInfo[]; inputReports?: HIDReportInfo[]; outputReports?: HIDReportInfo[]; featureReports?: HIDReportInfo[];
 }
+export interface HIDInputReportEvent {
+  device: HIDDevice;
+  reportId: number;
+  data: DataView;
+  timeStamp: number;
+}
 export interface HIDDevice {
   opened: boolean; vendorId: number; productId: number; productName: string; collections: HIDCollectionInfo[];
   open(): Promise<void>; close(): Promise<void>;
   sendReport(reportId: number, data: BufferSource): Promise<void>;
   sendFeatureReport(reportId: number, data: BufferSource): Promise<void>;
   receiveFeatureReport(reportId: number): Promise<DataView>;
+  addEventListener?(type: 'inputreport', listener: (ev: HIDInputReportEvent) => void): void;
+  removeEventListener?(type: 'inputreport', listener: (ev: HIDInputReportEvent) => void): void;
 }
 
 export const usage = (page: number, id: number) => ((page << 16) | id) >>> 0;
@@ -112,4 +120,60 @@ export function allReports(cols: HIDCollectionInfo[], kind: 'outputReports' | 'f
   };
   for (const c of cols) walk(c, 0);
   return out;
+}
+
+export interface HidAxisField {
+  reportId: number;
+  bitOffset: number;
+  reportSize: number;
+  signed: boolean;
+  min: number;
+  max: number;
+}
+
+/** Locate the primary steering axis (Generic Desktop X / 0x00010030) in HID input reports for zero-alloc parsing. */
+export function findSteerInputField(cols: HIDCollectionInfo[]): HidAxisField | null {
+  const X_USAGE = usage(0x01, 0x30);
+  for (const { r } of allReports(cols, 'inputReports')) {
+    let bit = 0;
+    for (const it of r.items ?? []) {
+      const us = usagesOf(it);
+      for (let i = 0; i < it.reportCount; i++) {
+        if (!it.isConstant && !it.isArray) {
+          const u = us[Math.min(i, us.length - 1)];
+          if (u === X_USAGE && it.reportSize > 0 && it.reportSize <= 32 && it.logicalMaximum > it.logicalMinimum) {
+            return {
+              reportId: r.reportId ?? 0,
+              bitOffset: bit,
+              reportSize: it.reportSize,
+              signed: it.logicalMinimum < 0,
+              min: it.logicalMinimum,
+              max: it.logicalMaximum,
+            };
+          }
+        }
+        bit += it.reportSize;
+      }
+    }
+  }
+  return null;
+}
+
+/** Extract a single HID integer field and normalize to [-1, +1] matching Gamepad axis convention. */
+export function readNormalizedHidField(field: HidAxisField, data: DataView): number | null {
+  const totalBits = data.byteLength * 8;
+  if (field.bitOffset + field.reportSize > totalBits) return null;
+  let val = 0;
+  for (let b = 0; b < field.reportSize; b++) {
+    const p = field.bitOffset + b;
+    if ((data.getUint8(p >> 3) >> (p & 7)) & 1) val |= 1 << b;
+  }
+  if (field.signed && field.reportSize < 32 && (val & (1 << (field.reportSize - 1)))) {
+    val |= ~((1 << field.reportSize) - 1);
+  }
+  if (field.signed && field.reportSize === 32) val = val | 0;
+  if (!field.signed) val = val >>> 0;
+  const span = field.max - field.min;
+  if (span <= 0) return null;
+  return Math.max(-1, Math.min(1, ((val - field.min) / span) * 2 - 1));
 }

@@ -11,6 +11,7 @@
         2.1
       ],
       "web_size": 2048,
+      "nor_size": 1024,
       "disp_size": 1024,
       "has_metal": false,
       "files": {
@@ -35,6 +36,7 @@
         3.0
       ],
       "web_size": 2048,
+      "nor_size": 1024,
       "disp_size": 1024,
       "has_metal": false,
       "files": {
@@ -59,6 +61,7 @@
         2.5
       ],
       "web_size": 2048,
+      "nor_size": 1024,
       "disp_size": 1024,
       "has_metal": false,
       "files": {
@@ -83,6 +86,7 @@
         4.0
       ],
       "web_size": 2048,
+      "nor_size": 1024,
       "disp_size": 1024,
       "has_metal": false,
       "files": {
@@ -107,6 +111,7 @@
         2.0
       ],
       "web_size": 2048,
+      "nor_size": 1024,
       "disp_size": 1024,
       "has_metal": false,
       "files": {
@@ -131,6 +136,7 @@
         2.0
       ],
       "web_size": 1024,
+      "nor_size": 1024,
       "disp_size": 512,
       "has_metal": false,
       "files": {
@@ -155,6 +161,7 @@
         1.5
       ],
       "web_size": 1024,
+      "nor_size": 1024,
       "disp_size": 512,
       "has_metal": false,
       "files": {
@@ -179,6 +186,7 @@
         1.52
       ],
       "web_size": 1024,
+      "nor_size": 1024,
       "disp_size": 512,
       "has_metal": false,
       "files": {
@@ -203,6 +211,7 @@
         1.4
       ],
       "web_size": 1024,
+      "nor_size": 1024,
       "disp_size": 512,
       "has_metal": false,
       "files": {
@@ -227,6 +236,7 @@
         2.5
       ],
       "web_size": 1024,
+      "nor_size": 1024,
       "disp_size": 512,
       "has_metal": false,
       "files": {
@@ -251,6 +261,7 @@
         2.0
       ],
       "web_size": 1024,
+      "nor_size": 1024,
       "disp_size": 512,
       "has_metal": true,
       "files": {
@@ -275,6 +286,7 @@
         2.5
       ],
       "web_size": 1024,
+      "nor_size": 1024,
       "disp_size": 512,
       "has_metal": false,
       "files": {

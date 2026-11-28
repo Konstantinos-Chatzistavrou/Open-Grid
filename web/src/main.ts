@@ -24,7 +24,7 @@ import { CoreCar, CoreRace, OUT, configureWeather, loadCore, stepWeather, type L
 import { applyCityWeather } from './weatherLive';
 import { CarBody, DT, PhysicsWorld, loadRapier, type CarShape } from './physics/world';
 import { PhysicsWorkerClient } from './physics/workerClient';
-import { CityLighting, loadCity } from './scene/city';
+import { CityLighting, loadCity, type City } from './scene/city';
 import { NycStreamer, nycCityShim } from './scene/nyc';
 import { setGroundCity, setGroundGrid } from './scene/nyc/groundMaterials';
 import { setSignCity } from './scene/nyc/signAtlas';
@@ -503,59 +503,16 @@ async function main() {
   const pw = new PhysicsWorld();
   if (potato) setMobileFacadeMode(true);
   setKitMaterialsEnabled(webgpu && !potato && kitMaterialsOn(params));
-  let nyc = useNyc ? new NycStreamer(scene, renderer, pw, camera, {
-    base: cityInfo.base,
-    surfaces: core.info.surfaces,
-    debug: params.get('nycdebug') === '1',
-    fogDensity: num('fog', potato ? 0.0045 : 0.0024),
-    // Phones: the far ring is skyline only and the fog eats most of it anyway, but every far tile is a draw and the
-    // phone is draw-submission bound (docs/performance.md "Where the CPU goes"), so it stops at 560 m there. The
-    // near ring is what the player actually drives through. ?far= overrides both for tests.
-    // Potato: both rings pulled in (every tile is draws and triangles a Mali-G57 cannot afford) and the fog thickened
-    // so the edge is not seen: at 0.0045 the 420 m ring edge is at 3 % visibility.
-    farLoad: num('far', potato ? 420 : isTouch ? 560 : 1000),
-    farKeep: num('farkeep', potato ? 500 : isTouch ? 660 : 1150),
-    ...(potato ? { nearLoad: num('near', 300), nearKeep: num('nearkeep', 380), treeDensity: num('trees', 0.4) } : {}),
-    onProgress: (f) => say(`Streaming ${cityInfo.name}… ${Math.round(f * 100)}%`, 20 + f * 55),
-  }) : null;
-  if (nyc) {
-    await nyc.ready();
-    // WebGL 2 has no clustered lighting: every light in the scene costs every lit pixel, dark ones too (props.ts limitLights)
-    if (!webgpu) nyc.streetProps?.limitLights(num('lights', 12));
-    mark('city first ring');
-    camera.far = potato ? 560 : 1600;
-    camera.updateProjectionMatrix();
-  }
-  let nycS0 = nyc ? nyc.spawnPoint() : null;
-  // Poles, hydrants, bins, shelters, kiosks and tree trunks near the car are solid (obstacles.ts)
-  let streetProps = nyc?.streetProps ?? null;
-  let obstacles = streetProps && params.get('solidprops') !== '0' ? new StreetObstacles(pw, streetProps) : null;
-  const city = nyc ? nycCityShim() : await loadCity(scene, pw, core.info.surfaces, (f) => say(`Loading city… ${Math.round(f * 100)}%`, 20 + f * 55), webgpu && num('bundle', 1) === 1);
-  const cityLights = new CityLighting(scene, city.lights, webgpu, num('lights', 12));
-  // Kit HDRIs (fx/kitHdri.ts): real captured skies for what the captures reflect. ?hdri=0: the look before the kit.
-  const kitSky = webgpu && kitHdriOn(params) ? await KitSky.load(cityInfo.id) : null;
-  kitSky?.setWeather(worldClock.weather);
-  // Reflections: capture the lit city once from street level (the car isn't in the scene yet).
-  {
-    const s0 = nycS0 ?? route.samples[0];
-    camera.position.set(s0.x, s0.z + 2, -s0.y);
-    cityLights.update(1, camera);
-    kitSky?.wrapSky(scene);
-    // Potato: a generated night environment (fx/nightEnv.ts) instead of the capture, which compiles every city
-    // material again for the cube pass (44 pipelines: minutes of a weak phone's load). With the kit: the HDRI itself.
-    if (potato) {
-      if (kitSky) scene.environment = pmrem.fromEquirectangular(kitSky.night).texture;
-      else { const eq = nightEnvTexture(); scene.environment = pmrem.fromEquirectangular(eq).texture; eq.dispose(); }
-    } else {
-      const cap = () => pmrem.fromScene(scene, 0.02, 0.5, 400, { size: 256, position: camera.position.clone() }).texture;
-      scene.environment = kitSky ? kitSky.during(cap) : cap();
-    }
-    // The capture is for REFLECTIONS (lamps and neon in paint and wet asphalt). At full strength its
-    // diffuse part lit every wall like an overcast sky and undid the darkness.
-    scene.environmentIntensity = nyc ? 0.65 : 0.5;
-  }
-  mark('environment capture');
-  say('Loading car…', 80);
+  const deferWorldBoot = params.get('menu') !== '0';
+  let nyc: NycStreamer | null = null;
+  let nycS0: { x: number; y: number; z: number; heading: number } | null = null;
+  let streetProps: NycStreamer['streetProps'] = null;
+  let obstacles: StreetObstacles | null = null;
+  let city: City = nycCityShim();
+  let cityLights = new CityLighting(scene, city.lights, webgpu, num('lights', 12));
+  let kitSky: KitSky | null = null;
+  camera.far = potato ? 560 : 1600;
+  camera.updateProjectionMatrix();
   // Frame cap: potato & low modes cap cleanly at 60 fps; medium+ on phones cap at 30 fps to prevent thermal throttling;
   // desktop medium+ runs uncapped (native refresh). Explicit ?cap=N always wins.
   const hz = await refreshP;
@@ -563,6 +520,7 @@ async function main() {
     params.has('cap') ? num('cap', 0) : (potato || p === 'low' ? 60 : isTouch ? 30 : 0);
   let capFps = computeCapFps(PRESET_ORDER[presetIdx]);
   let capInterval = capFps > 0 ? 1000 / capFps : 0;
+  say('Loading car…', 65);
   const loadedCar = await carLoadP;
   let visualCfg = loadedCar.cfg;
   let visual = loadedCar.vis;
@@ -576,25 +534,21 @@ async function main() {
   const probeIntensity = num('probei', 1.25);
   const probeSize = num('probesize', isTouch ? 48 : 128);
   const probe = webgpu && probeEvery > 0 ? new CarProbe(renderer, scene, pmrem, probeSize, probeEvery) : null;
-  if (probe && kitSky) probe.captureSky = kitSky.capture;
-  // The garage: its own scene (scene/garage). Built while the car loads; its cube matches the probe's so the probe
-  // can prefilter the room into the texture the car's materials already sample (no material ever changes).
-  // Potato has no garage room: the title and the garage menus show the car parked on the street (the showroom camera's
-  // street path below). The room is a second scene - 88 more pipelines, 15 textures, a mirror pass - for a backdrop.
-  const garageP: Promise<Garage | null> = potato ? Promise.resolve(null) : Garage.create(renderer, pmrem, probe ? probeSize : 128);
+  let garage: Garage | null = null;
   let readyDone = () => {};
   /** resolves when the game is on screen: potato loads the optional car parts after it, not alongside the city */
   const readyP = new Promise<void>((r) => { readyDone = r; });
-  const partsGate = potato ? readyP : Promise.resolve();
-  // Panels authored in Blender for the Vela GT (cut from its own bumpers and bonnet): loaded once, and fitted to a
-  // Vela only. They used to be put on whichever car the game started with, where they sat in the Vela's coordinates.
-  const authoredP = partsGate.then(() => Promise.all([
+  // Panels authored in Blender for the Vela GT (cut from its own bumpers and bonnet): loaded once when Vela is shown
+  // in the Garage or on the street, never eagerly on the menu.
+  let authoredP: Promise<(THREE.Object3D | null)[]> | null = null;
+  const ensureAuthoredParts = () => (authoredP ??= Promise.all([
     'vela_front_wide', 'vela_front_track', 'vela_hood_domed', 'vela_rear_wide', 'vela_hood_dome', 'vela_hood_track',
     'vela_hood_vent_auth', 'vela_front_split_auth', 'vela_front_bumper_pro', 'vela_hood_pro',
   ].map((n) => loadGLTF(assetUrl(`cars/v3/${n}.glb`)).then((g) => g.scene).catch(() => null))));
-  const fitAuthored = (v: CarVisual, path: string) => {
+  const fitAuthored = (v: CarVisual, path: string, loadIfMissing = !deferWorldBoot) => {
     if (path !== DEFAULT_VISUAL) return;
-    void authoredP.then(([wide, track, domed, rearWide, dome, hoodTrack, vent, split, bumperPro, hoodPro]) => {
+    if (!authoredP && !loadIfMissing) return;
+    void ensureAuthoredParts().then(([wide, track, domed, rearWide, dome, hoodTrack, vent, split, bumperPro, hoodPro]) => {
       if (wide && track) v.custom.setShells(wide.clone(true), track.clone(true));
       const extra: Record<string, THREE.Object3D> = {};
       for (const [id, g] of [['hood-blender', domed], ['rear-blender', rearWide], ['hood-dome', dome], ['hood-track', hoodTrack],
@@ -667,37 +621,10 @@ async function main() {
   // Rapier only indexes new colliders for queries during a step: step once so the spawn probe
   // below can see the city (without this the first spawn misses the road and drops 3 m).
   pw.world.step();
-  const garage = await garageP;
-  if (garage && kitSky) garage.setHdri(kitSky.garage ?? kitSky.night, num('garagehdri', 1) * kitSky.garageStrength);   // ?garagehdri=x: x times the measured strength
   const aiCount = Math.max(0, Math.min(5, num('ai', 5)));
-  if (aiCount > 0) say('Loading rivals…');
-  const ai = await AiTraffic.create(scene, pw, defaultCfg, route.samples, aiCount, params.get('blackcar') === '1', physics.vela_gt ?? physics[catalog[0].id], route.closed !== false);
+  let ai = await AiTraffic.create(scene, pw, defaultCfg, route.samples, 0, params.get('blackcar') === '1', physics.vela_gt ?? physics[catalog[0].id], route.closed !== false);
   ai.setDifficulty(sel.aiDiff, sel.aiAdaptive);
   ai.onWreck = (name) => { hud.toast('RIVAL OUT', `${name} WRECKED`); };
-  if (garage) try {
-    const parked: THREE.Object3D[] = [];
-    for (const i of [0, 1]) {
-      const src = (ai as unknown as { cars?: { model?: THREE.Object3D }[] }).cars?.[i]?.model;
-      if (!src) continue;
-      const clone = src.clone(true);
-      clone.traverse((o) => {
-        const mesh = o as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-        mesh.material = Array.isArray(mesh.material) ? mats.map((x) => x.clone()) : (mats[0] as THREE.Material).clone();
-        const mm = mesh.material as THREE.MeshStandardMaterial;
-        if (mm && mm.color && /paint/i.test(mm.name ?? '')) mm.color.setHex(i ? 0x2a4fd6 : 0xe8e8ea);
-        // parked cars are switched off: their headlights at emissive 10 bloom into a huge white orb in the garage
-        for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-          const st = mat as THREE.MeshStandardMaterial;
-          if (st && st.emissive && /light|drl|lens|tail|turn|interior/i.test(st.name ?? '')) st.emissiveIntensity = 0.05;
-          else if (st && st.emissive && st.emissiveIntensity > 0.5) st.emissiveIntensity = 0.05;
-        }
-      });
-      parked.push(clone);
-    }
-    garage.park(parked);
-  } catch { /* no parked cars */ }
 
   // Start line = first route sample (core coords: Z-up) -> three (x, z, -y).
   let s0 = nycS0 ?? route.samples[0];
@@ -848,31 +775,19 @@ async function main() {
       radioComms.aiStreetRadio(callsign, text, clipId);
     },
   });
-  // Police Interceptor template: Falcorn Hellhound muscle interceptor dressed with black-and-white livery,
-  // steel pushbar, full LED lightbar & real flashing red/blue lights (built in policeCar.ts).
-  void loadGLTF(pubUrl('/assets/cars/v5/falcorn_hellhound_hero.glb')).then((g) => {
-    cops.setupVisuals(g.scene, scene, pw);
-  }).catch(() => {
-    void loadGLTF(pubUrl('/assets/cars/v3/vela_gt_traffic.glb')).then((g) => {
+  // Police Interceptor & Garage background cars load lazily (when world/garage actually load, never on the menu).
+  let copsVisualsLoaded = false;
+  const ensureCopsVisuals = () => {
+    if (copsVisualsLoaded) return;
+    copsVisualsLoaded = true;
+    void loadGLTF(pubUrl('/assets/cars/v5/falcorn_hellhound_hero.glb')).then((g) => {
       cops.setupVisuals(g.scene, scene, pw);
-    }).catch(() => { /* pursuit & roadblock logic still runs even without cruiser mesh */ });
-  });
-  // 2 parked Friends' Cars in the background bays of the Garage showroom.
-  if (garage) {
-    void loadGLTF(pubUrl('/assets/cars/v3/vela_gt_traffic.glb')).then((g) => {
-      const baySpecs = [
-        { x: -6.2, z: -5.4, yaw: 0.42 },
-        { x: 6.4, z: -5.8, yaw: -0.48 },
-      ];
-      for (const b of baySpecs) {
-        const fc = g.scene.clone(true);
-        fc.position.set(b.x, 0, b.z);
-        fc.rotation.y = b.yaw;
-        fc.scale.setScalar(0.98);
-        garage.scene.add(fc);
-      }
-    }).catch(() => {});
-  }
+    }).catch(() => {
+      void loadGLTF(pubUrl('/assets/cars/v3/vela_gt_traffic.glb')).then((g) => {
+        cops.setupVisuals(g.scene, scene, pw);
+      }).catch(() => { /* pursuit & roadblock logic still runs even without cruiser mesh */ });
+    });
+  };
   let playerS = 0, copSpawned = false, cachedVmaxKey = '', cachedPlayerMaxKmh = 295;
   /** test/dev hook: the headless probes set the dial directly */
   const setHeat = (n: number) => { heat.level = Math.max(0, Math.min(HEAT_MAX, n)); heat.lastGain = Date.now(); renderHeat(); menu.heat = heat.level; return heat.level; };
@@ -1083,7 +998,7 @@ async function main() {
   const DRAW_SCALE: Record<PresetName, number> = { max: 1, ultra: 0.9, high: 0.9, medium: 0.78, low: 0.62, potato: 0.42 };
   const post = new Post(renderer, scene, camera, { bloom: params.get('bloom') !== '0', aa: params.get('aa') !== '0', scale, preset: PRESET_ORDER[presetIdx] });
   // The showroom's own pipeline on the garage scene. Phones keep their tuned pixel budget there too.
-  const showPost = garage ? new ShowroomPost(renderer, garage.scene, camera, PRESET_ORDER[presetIdx]) : null;
+  let showPost: ShowroomPost | null = null;
   // ---- rear-view mirror (Settings > Rear mirror; post.ts mirror pass, the #mirror frame in ui.css) -----------------------
   // A camera just behind the tail looks back along the car's heading (yaw only: the picture does not roll with the body).
   // The frame's place on screen is CSS: its rect is copied into post.mirrorRect (re-read twice a second: resize,
@@ -1227,19 +1142,6 @@ async function main() {
   let headShadows = visual.headlights.filter((s) => s.castShadow).map((s) => s.shadow);
   for (const sh of headShadows) sh.autoUpdate = false;
 
-  rig.update(1, pos.copy(car.body.translation() as THREE.Vector3), quat.copy(car.body.rotation() as THREE.Quaternion), new THREE.Vector3(), car.out);
-  cityLights.update(1, camera);
-  city.update(camera, true);
-  mark('car, rivals, garage room, post');
-  say('Compiling shaders…', 90);
-  // Fast unified warm-up behind the loading screen: compile all scene materials once with unculled
-  // meshes + props + particle sprites so GPU buffers, bind groups, and pipelines are created in one pass.
-  /**
-   * Precompile everything visible in a scene FOR THE TARGET IT IS DRAWN INTO. A pipeline belongs to its render target's
-   * formats; renderer.compileAsync builds for whatever target happens to be current - at boot that was the environment
-   * prefilter's leftover target, so every street material was compiled for a target nothing draws to and then again,
-   * synchronously, on the first real frame (measured in potato: 136 of 220 pipelines were never used).
-   */
   const compileFor = async (sc: THREE.Scene, target: THREE.RenderTarget) => {
     // Potato skips it: the precompile generates every shader a second time on the main thread (the warm-up frame that
     // follows builds its own copy), which doubled a throttled load (22 s -> 11 s without it, same 88 pipelines). The
@@ -1257,64 +1159,187 @@ async function main() {
     for (const sh of headShadows) sh.needsUpdate = true;
     post.warmup();
   };
-  city.props.warmup(true);
-  nyc?.breaches.warmup(true, pos);   // room / rubble / portal materials compiled now, not at the first crash
-  damage.warmup(true);
-  visual.warmup(true);   // exhaust flames, wheel blur, rotor glow: pipelines now, not at the first backfire / speed / hot brake
-  forzaVfx.warmup(true); // 4-wheel smoke, wet spray, titanium sparks, speed rain: pipelines compiled behind loader
-  visual.update(pos, quat, car.out);
-  if (ai.cars.length && !potato) {   // potato compiles the rivals at the first race start (compileRivals), not here
-    const yaw = Math.atan2(Math.cos(s0.heading), -Math.sin(s0.heading));
-    ai.stage(pos.clone().setY(pos.y - core.info.cgHeight - 0.05), yaw);
-    ai.mode = 'race';
-    ai.update(1, camera);
-  }
-  {
-    const culled: THREE.Object3D[] = [];
-    scene.traverse((o) => { if (o.frustumCulled && (o as THREE.Mesh).isMesh) { o.frustumCulled = false; culled.push(o); } });
-    if (mirrorOn) { placeMirrorCam(); post.mirror = true; post.mirrorEvery = 1; }   // its pipelines and buffers now, not at the first race
-    await warm();
-    mark('compile street');
-    // one real frame per likely preset with culling off: GPU buffers/bind groups for every city tile + prop
-    // are created now (rendering presets back to back inside one frame skips per-frame node updates)
-    await post.warmupFrames();
-    post.mirror = false;
-    for (const o of culled) o.frustumCulled = true;
-  }
-  mark('warm presets');
-  {
-    const dmgInt = damage as unknown as { killLights(n: string[]): void; fireLight: THREE.PointLight };
-    visual.lightsOn = false; visual.applyHeadlights();
-    dmgInt.killLights([...visualCfg.front_lights, ...visualCfg.rear_lights]);
-    dmgInt.fireLight.intensity = 30;
-    await compileFor(scene, post.sceneTarget);
-    post.render();
-    dmgInt.fireLight.intensity = 0;
-    damage.repair();
-    visual.lightsOn = true; visual.applyHeadlights();
-  }
-  mark('compile damage states');
-  // the garage: car in the room, room into the cube, every showroom preset once
-  if (garage && showPost) {
-    setGarage(true);
-    await compileFor(garage.scene, showPost.sceneTarget);
-    garage.captureEnv();
-    probe?.fromCube(garage.cube.texture);
-    await showPost.warmup();
-    setGarage(false, false);
-  }
-  mark('compile garage');
-  if (garage) void garage.loadProps().catch(() => { /* the room works without its dressing */ });
-  ai.setMode('off');
-  city.props.warmup(false);
-  nyc?.breaches.warmup(false);
-  nyc?.endWarm();
-  damage.warmup(false);
-  visual.warmup(false);
-  forzaVfx.warmup(false);
+
+  let garageLoadP: Promise<Garage | null> | null = null;
+  const ensureGarageLoaded = (): Promise<Garage | null> => {
+    if (potato) return Promise.resolve(null);
+    if (garage) return Promise.resolve(garage);
+    if (garageLoadP) return garageLoadP;
+    garageLoadP = (async () => {
+      const [gInst, sky] = await Promise.all([
+        Garage.create(renderer, pmrem, probe ? probeSize : 128),
+        kitSky ? Promise.resolve(kitSky) : (webgpu && kitHdriOn(params) ? KitSky.loadGarageOnly() : Promise.resolve(null)),
+      ]);
+      if (!kitSky && sky) {
+        kitSky = sky;
+        if (probe) probe.captureSky = sky.capture;
+      }
+      const gTex = kitSky ? await kitSky.ensureGarage() : null;
+      if (gTex && kitSky) gInst.setHdri(gTex, num('garagehdri', 1) * kitSky.garageStrength);
+      garage = gInst;
+      showPost = new ShowroomPost(renderer, gInst.scene, camera, PRESET_ORDER[presetIdx]);
+      syncShowPreset();
+      fitAuthored(visual, visualPath, true);
+      if (visualPath === DEFAULT_VISUAL && authoredP) await authoredP;
+      // Park 2 friends' cars in the background bays of the Garage showroom.
+      void loadGLTF(pubUrl('/assets/cars/v3/vela_gt_traffic.glb')).then((gl) => {
+        const baySpecs = [
+          { x: -6.2, z: -5.4, yaw: 0.42 },
+          { x: 6.4, z: -5.8, yaw: -0.48 },
+        ];
+        for (const b of baySpecs) {
+          const fc = gl.scene.clone(true);
+          fc.position.set(b.x, 0, b.z);
+          fc.rotation.y = b.yaw;
+          fc.scale.setScalar(0.98);
+          gInst.scene.add(fc);
+        }
+        gInst.dirtyEnv = true;
+      }).catch(() => {});
+      const wasInGarage = inGarage;
+      setGarage(true);
+      await compileFor(gInst.scene, showPost.sceneTarget);
+      gInst.captureEnv();
+      probe?.fromCube(gInst.cube.texture);
+      await showPost.warmup();
+      if (!wasInGarage && menu.screen !== 'garage') setGarage(false, false);
+      void gInst.loadProps().catch(() => { /* the room works without its dressing */ });
+      Object.assign(g.__game, { garage, showPost });
+      return gInst;
+    })();
+    return garageLoadP;
+  };
+
+  let worldLoaded = false;
+  let worldLoadP: Promise<void> | null = null;
+  const ensureWorldLoaded = (onProg?: (msg: string, pct: number) => void): Promise<void> => {
+    if (worldLoaded) return Promise.resolve();
+    if (worldLoadP) return worldLoadP;
+    worldLoadP = (async () => {
+      onProg?.(`Streaming ${cityInfo.name}…`, 25);
+      const nextNyc = useNyc ? new NycStreamer(scene, renderer, pw, camera, {
+        base: cityInfo.base,
+        surfaces: core.info.surfaces,
+        debug: params.get('nycdebug') === '1',
+        fogDensity: num('fog', potato ? 0.0045 : 0.0024),
+        farLoad: num('far', potato ? 420 : isTouch ? 560 : 1000),
+        farKeep: num('farkeep', potato ? 500 : isTouch ? 660 : 1150),
+        ...(potato ? { nearLoad: num('near', 300), nearKeep: num('nearkeep', 380), treeDensity: num('trees', 0.4) } : {}),
+        onProgress: (f) => onProg?.(`Streaming ${cityInfo.name}… ${Math.round(f * 100)}%`, 25 + f * 45),
+      }) : null;
+      nyc = nextNyc;
+      if (nyc) {
+        await nyc.ready();
+        if (!webgpu) nyc.streetProps?.limitLights(num('lights', 12));
+        mark('city first ring');
+      }
+      nycS0 = nyc ? nyc.spawnPoint() : null;
+      s0 = nycS0 ?? route.samples[0];
+      startYaw = Math.atan2(Math.cos(s0.heading), -Math.sin(s0.heading));
+      streetProps = nyc?.streetProps ?? null;
+      obstacles = streetProps && params.get('solidprops') !== '0' ? new StreetObstacles(pw, streetProps) : null;
+      city = nyc ? nycCityShim() : await loadCity(scene, pw, core.info.surfaces, (f) => onProg?.(`Loading city… ${Math.round(f * 100)}%`, 25 + f * 45), webgpu && num('bundle', 1) === 1);
+      cityLights = new CityLighting(scene, city.lights, webgpu, num('lights', 12));
+      wireCityImpactCallbacks();
+
+      // Kit HDRIs: load only the city's night sky now (overcast loads lazily if rain starts).
+      if (webgpu && kitHdriOn(params)) {
+        if (kitSky) await kitSky.ensureCity(cityInfo.id);
+        else kitSky = await KitSky.load(cityInfo.id);
+        kitSky?.setWeather(worldClock.weather);
+        if (probe && kitSky) probe.captureSky = kitSky.capture;
+      }
+      // Capture city environment reflections once at street level.
+      {
+        const envPos = new THREE.Vector3(s0.x, s0.z + 2, -s0.y);
+        camera.position.copy(envPos);
+        cityLights.update(1, camera);
+        kitSky?.wrapSky(scene);
+        const oldEnv = scene.environment;
+        if (potato) {
+          if (kitSky) scene.environment = pmrem.fromEquirectangular(kitSky.night).texture;
+          else { const eq = nightEnvTexture(); scene.environment = pmrem.fromEquirectangular(eq).texture; eq.dispose(); }
+        } else {
+          const cap = () => pmrem.fromScene(scene, 0.02, 0.5, 400, { size: 256, position: envPos }).texture;
+          scene.environment = kitSky ? kitSky.during(cap) : cap();
+        }
+        oldEnv?.dispose();
+        scene.environmentIntensity = nyc ? 0.65 : 0.5;
+      }
+      mark('environment capture');
+
+      pw.world.step();
+      if (aiCount > 0) {
+        onProg?.('Loading rivals…', 75);
+        ai = await AiTraffic.create(scene, pw, defaultCfg, route.samples, aiCount, params.get('blackcar') === '1', physics.vela_gt ?? physics[catalog[0].id], route.closed !== false);
+        ai.setDifficulty(sel.aiDiff, sel.aiAdaptive);
+        ai.onWreck = (name) => { hud.toast('RIVAL OUT', `${name} WRECKED`); };
+      }
+      ensureCopsVisuals();
+      fitAuthored(visual, visualPath, true);
+      if (visualPath === DEFAULT_VISUAL && authoredP) await authoredP;
+      post.onPreset?.(post.preset);
+
+      onProg?.('Compiling shaders…', 88);
+      spawn();
+      syncPose();
+      rig.update(1, pos, quat, new THREE.Vector3(), car.out);
+      cityLights.update(1, camera);
+      city.update(camera, true);
+
+      city.props.warmup(true);
+      nyc?.breaches.warmup(true, pos);
+      damage.warmup(true);
+      visual.warmup(true);
+      forzaVfx.warmup(true);
+      visual.update(pos, quat, car.out);
+      if (ai.cars.length && !potato) {
+        ai.stage(pos.clone().setY(pos.y - core.info.cgHeight - 0.05), startYaw);
+        ai.mode = 'race';
+        ai.update(1, camera);
+      }
+      {
+        const culled: THREE.Object3D[] = [];
+        scene.traverse((o) => { if (o.frustumCulled && (o as THREE.Mesh).isMesh) { o.frustumCulled = false; culled.push(o); } });
+        if (mirrorOn) { placeMirrorCam(); post.mirror = true; post.mirrorEvery = 1; }
+        await warm();
+        mark('compile street');
+        await post.warmupFrames();
+        post.mirror = false;
+        for (const o of culled) o.frustumCulled = true;
+      }
+      mark('warm presets');
+      {
+        const dmgInt = damage as unknown as { killLights(n: string[]): void; fireLight: THREE.PointLight };
+        visual.lightsOn = false; visual.applyHeadlights();
+        dmgInt.killLights([...visualCfg.front_lights, ...visualCfg.rear_lights]);
+        dmgInt.fireLight.intensity = 30;
+        await compileFor(scene, post.sceneTarget);
+        post.render();
+        dmgInt.fireLight.intensity = 0;
+        damage.repair();
+        visual.lightsOn = true; visual.applyHeadlights();
+      }
+      mark('compile damage states');
+      ai.setMode('off');
+      city.props.warmup(false);
+      nyc?.breaches.warmup(false);
+      nyc?.endWarm();
+      damage.warmup(false);
+      visual.warmup(false);
+      forzaVfx.warmup(false);
+      city.update(camera, true);
+      if (webgpu) await (renderer.backend as unknown as { device: GPUDevice }).device.queue.onSubmittedWorkDone();
+      worldLoaded = true;
+      Object.assign(g.__game, { city, nyc, ai, streetProps, obstacles, routeSamples: route.samples });
+    })();
+    return worldLoadP;
+  };
+
+  rig.update(1, pos.copy(car.body.translation() as THREE.Vector3), quat.copy(car.body.rotation() as THREE.Quaternion), new THREE.Vector3(), car.out);
+  cityLights.update(1, camera);
   city.update(camera, true);
-  if (webgpu) await (renderer.backend as unknown as { device: GPUDevice }).device.queue.onSubmittedWorkDone();
-  const pipelinesAtStart =(renderer as unknown as { _pipelines: { caches: Map<string, unknown> } })._pipelines.caches.size;
+  let pipelinesAtStart = pipelineCount();
   mark('ready');
   readyDone();
   const setExtra = () => (hud.extra = `${backend} · ${Math.floor(renderer.domElement.width * scale)}×${Math.floor(renderer.domElement.height * scale)}`
@@ -1594,6 +1619,13 @@ async function main() {
       if (sc === 'title' || sc === 'garage' || sc === 'modes' || sc === 'lobby') setState(sc);
       if (sc === 'garage') {
         preloadGarageCars();
+        if (!garage && !potato) {
+          void loader.show('Opening Garage…', 'SHOWROOM', 35).then(() => ensureGarageLoaded()).then(() => {
+            if (menu.screen === 'garage') { setGarage(true); menu.render(); }
+            loader.text('Ready!', 100);
+            loader.hide();
+          });
+        }
         if (!menu.visitingGarage) broadcastGarageState(`Opened Garage`);
         syncGarageVisitorsList();
       } else if (party && party.liveGarage?.hostId === party.selfId) {
@@ -2215,6 +2247,7 @@ async function main() {
   drivingLine.setCar(applyMods(physics[sel.car], modsOf(sel)));
   // every input device: force feedback (WebHID wheels), the Controls screen, pad / keyboard menu navigation
   const ffb = new ForceFeedback();
+  input.highRateSteer = (t) => ffb.sampleSteerAxisAt(t);
   const forwardGears = () => Math.max(1, ((physics[sel.car] as { drivetrain?: { gear_ratios?: number[] } })?.drivetrain?.gear_ratios?.length ?? 8) - 2);
   menu.ctl = new ControlsUi(input, ffb, () => { if (menu.screen === 'controls') menu.render(); }, forwardGears);
   const menuNav = new MenuNav(document.getElementById('menu')!);
@@ -2686,6 +2719,30 @@ async function main() {
     citySwitching = true;
     const wasInGarage = inGarage;
     try {
+      if (!worldLoaded) {
+        saveCity(nextCity.id);
+        cityInfo = nextCity;
+        setGroundGrid(cityInfo.grid);
+        setGroundCity(cityInfo.id);
+        setSignCity(cityInfo.id);
+        setTreeCity(cityInfo.id);
+        updateCreditsLine();
+        minimap.setLandmarks(cityInfo.landmarks);
+        minimap.setTileBase(cityInfo.base);
+        const newRoute = await fetch(cityInfo.route).then((r) => r.json());
+        route = newRoute;
+        routeJson = JSON.stringify(route);
+        minimap.setRoute(route.samples, route.closed !== false);
+        ai.setRoute(route.samples, route.closed !== false);
+        cops.setLane(new Lane(route.samples, route.closed !== false));
+        s0 = route.samples[0];
+        startYaw = Math.atan2(Math.cos(s0.heading), -Math.sin(s0.heading));
+        Object.assign(g.__game, { routeSamples: route.samples });
+        party?.updateMe(meForParty());
+        menu.render();
+        citySwitching = false;
+        return;
+      }
       await loader.show(`Switching to ${nextCity.name}…`, `${nextCity.name.toUpperCase()} · ${nextCity.district.toUpperCase()}`, 8);
       saveCity(nextCity.id);
       try {
@@ -2952,8 +3009,9 @@ async function main() {
     const modeTitle = splitActive
       ? (mode === 'race' ? `2P SPLIT-SCREEN RACE · ${sel.laps} LAPS` : '2P SPLIT-SCREEN FREE ROAM')
       : mode === 'online' ? 'MULTIPLAYER SESSION' : mode === 'race' ? `RACE · ${sel.laps} LAPS` : sp.testingMode ? 'TESTING FREE ROAM' : 'FREE ROAM';
-    await loader.show(mode === 'online' ? 'Syncing party session…' : `Preparing ${cityInfo.name}…`, `${cityInfo.name.toUpperCase()} · ${modeTitle}`, 22);
+    await loader.show(mode === 'online' ? 'Syncing party session…' : `Preparing ${cityInfo.name}…`, `${cityInfo.name.toUpperCase()} · ${modeTitle}`, 18);
     menu.show('none');
+    await ensureWorldLoaded((m, p) => loader.text(m, p));
     if (mode === 'online' && cloud.available) {
       // online: drive only what the online account owns (the race room checks it), from a fresh profile
       await mp.refresh();
@@ -3449,6 +3507,12 @@ async function main() {
     }
   };
   wireCityImpactCallbacks();
+  if (!deferWorldBoot) {
+    await ensureWorldLoaded((m, p) => say(m, p));
+    await ensureGarageLoaded();
+    pipelinesAtStart = pipelineCount();
+    setExtra();
+  }
   const carBox = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), half: [0, 0, 0] as [number, number, number], centre: [0, 0, 0] as [number, number, number] };
   const halveRemoteHits = (tTick: number) => {
     let touching = false;
@@ -3493,8 +3557,10 @@ async function main() {
       returning: !!cloud.id || !identity.needsPick, oauthReturn: !!cloud.oauthSignedInProvider,
     });
     menu.show(gate ? 'welcome' : 'title');
-    if (adaptive) startTuning(false);
-    else menu.setTuning(false, potato ? POTATO_NOTE : params.has('scale') || PRESET_ORDER.includes(params.get('quality') as PresetName) ? 'Graphics pinned by the URL' : `Graphics fixed: ${gfx}`);
+    if (adaptive) {
+      if (deferWorldBoot && Number.isNaN(stored)) menu.setTuning(false, 'Auto quality (tunes on first drive)');
+      else startTuning(false);
+    } else menu.setTuning(false, potato ? POTATO_NOTE : params.has('scale') || PRESET_ORDER.includes(params.get('quality') as PresetName) ? 'Graphics pinned by the URL' : `Graphics fixed: ${gfx}`);
     visual.setPaint(paintOf(sel, catalog), sel.finish);
   }
   setExtra();
@@ -3588,8 +3654,10 @@ async function main() {
         p2PrevPos.copy(p2PhysPos);
         p2PrevQuat.copy(p2PhysQuat);
       }
+      const tickTimeMs = now - (acc - DT) * 1000;
       const script = (g.__game as { script?: ((tick: number) => RawInput) | null }).script;   // dev / replay: inputs by tick
       let tin = script ? script(ticks) : state === 'race' ? (polled ??= input.poll()) : IDLE;
+      if (!script && state === 'race') input.refineTick(tin, tickTimeMs);
       if (state === 'countdown' && input.raw.throttle > 0.5) launchArmed = true;
       if (state === 'race' && launchUntil > 0 && ticks * DT < launchUntil) {
         const ph = Math.min(1, Math.max(0, (ticks * DT - (launchUntil - 1.1)) / 1.1));
@@ -3647,7 +3715,7 @@ async function main() {
       const copObs = cops.active || cops.roadblockWorld ? cops.obstacleList() : undefined;
       ai.tick(DT, car.body.translation(), copObs);
       if (trafficOn) cityTraffic?.physicsTick(DT);
-      remote?.tick(now - (acc - DT) * 1000, DT);   // other players' bodies at this tick's time
+      remote?.tick(tickTimeMs, DT);   // other players' bodies at this tick's time
       if (remote?.colliders.size || obstacles || nyc || ai.mode !== 'off' || cops.active || cops.roadblockWorld) { const lv = car.body.linvel(), av = car.body.angvel(); preV.set(lv.x, lv.y, lv.z); preW.set(av.x, av.y, av.z); }
       const t0 = performance.now();
       pw.world.step();
@@ -4079,7 +4147,7 @@ async function main() {
       if (party && driving()) { const out = remote.outgoing(now, pos, quat, car.body.linvel()); if (out) party.sendPose(out, paintInt()); }
     }
     // The 3D garage ONLY runs when actually inside the Garage screen (zero GPU waste on Main Menu / Modes / Lobby / Shop / Settings / Profile!)
-    const wants3dGarage = menu.screen === 'garage';
+    const wants3dGarage = menu.screen === 'garage' && !!garage;
     const menuStaticBg = !tuning && !driving() && state !== 'busy' && !wants3dGarage;
     setGarage(wants3dGarage && !tuning);
     if (inGarage) {

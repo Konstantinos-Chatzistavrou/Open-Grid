@@ -142,5 +142,18 @@ const collections = [{ usagePage: GD, usage: 0x04, children: [{ usagePage: PID, 
   eq('pid block 1 fallback', out[0][1], 1);
 }
 
+// ---- High-rate WebHID steering input axis parser ---------------------------------------------------------------------
+{
+  const steerRep = { reportId: 1, items: [v([[GD, 0x30]], 16, 0, 65535), v([[GD, 0x31]], 16, 0, 65535)] };
+  const f = R.findSteerInputField([{ usagePage: GD, usage: 0x04, inputReports: [steerRep] }]);
+  eq('steer field found', Boolean(f && f.reportId === 1 && f.bitOffset === 0 && f.reportSize === 16), true);
+  const leftView = new DataView(new Uint8Array([0x00, 0x00, 0xff, 0xff]).buffer);
+  const midView = new DataView(new Uint8Array([0xff, 0x7f, 0x00, 0x00]).buffer);
+  const rightView = new DataView(new Uint8Array([0xff, 0xff, 0x00, 0x00]).buffer);
+  eq('hid steer left', Math.round(R.readNormalizedHidField(f, leftView) * 100), -100);
+  eq('hid steer center', Math.abs(R.readNormalizedHidField(f, midView)) < 0.01, true);
+  eq('hid steer right', Math.round(R.readNormalizedHidField(f, rightView) * 100), 100);
+}
+
 console.log(`${checks - fails}/${checks} force-feedback checks passed`);
 process.exit(fails ? 1 : 0);

@@ -9,7 +9,7 @@ Runs inside Blender's Python for its bundled OpenImageIO + NumPy, and encodes KT
 For every Phase C kit material (assets_source/masters/kit/<id>/):
   web/public/assets/kit/materials/<id>/
     diff.ktx2    sRGB albedo (2048 px road surfaces, 1024 px walls/roofs/metals), ETC1S + mipmaps
-    nor.ktx2     linear OpenGL normal (Y-up, re-normalized after resize), UASTC RDO + zstd + mipmaps
+    nor.ktx2     linear OpenGL normal (Y-up, re-normalized after resize, <=1024 px), UASTC RDO + zstd + mipmaps
     arm.ktx2     linear packed AO (R), Roughness (G), Metalness (B), ETC1S + mipmaps
     disp.ktx2    linear height/displacement (half web size: 1024 px roads, 512 px walls), ETC1S + mipmaps
   web/public/assets/kit/materials/manifest.json
@@ -214,11 +214,12 @@ def main():
 
             # ---- Web KTX2 exports (committed)
             web_kb = 0
+            nor_sz = min(web_sz, 1024)
             disp_sz = web_sz // 2
             if do_web:
                 web_dir = os.path.join(WEB, aid)
                 w_diff = resize_arr(diff, web_sz)
-                w_nor = renormalize_normals(resize_arr(nor, web_sz))
+                w_nor = renormalize_normals(resize_arr(nor, nor_sz))
                 w_arm = resize_arr(arm, web_sz)
                 w_disp = np.repeat(resize_arr(disp, disp_sz), 3, axis=2)  # RGB grayscale for universal ETC1S->BC7
                 jobs = [
@@ -243,6 +244,7 @@ def main():
                 "name": d["name"],
                 "tile_m": tm,
                 "web_size": web_sz,
+                "nor_size": nor_sz,
                 "disp_size": disp_sz,
                 "has_metal": bool(p_metal),
                 "files": {

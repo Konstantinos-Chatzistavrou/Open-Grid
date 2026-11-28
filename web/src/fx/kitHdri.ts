@@ -56,14 +56,34 @@ export class KitSky {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private texNode: any;   // the TSL typings do not chain texture nodes (the shader files use `any` the same way)
   private wrapped: unknown = null;
+  private weather: 'dry' | 'rain' = 'dry';
+  private cache = new Map<string, Promise<THREE.DataTexture | null>>();
+  private listP: Promise<KitHdriEntry[]> | null = null;
+  private overcastP: Promise<void> | null = null;
 
-  private constructor(readonly night: THREE.DataTexture, readonly nightEntry: KitHdriEntry,
-    readonly overcast: THREE.DataTexture | null, readonly overcastEntry: KitHdriEntry | null,
-    readonly garage: THREE.DataTexture | null, readonly garageEntry: KitHdriEntry | null) {
+  private constructor(
+    private list: KitHdriEntry[],
+    public night: THREE.DataTexture,
+    public nightEntry: KitHdriEntry,
+    public overcast: THREE.DataTexture | null,
+    public overcastEntry: KitHdriEntry | null,
+    public garage: THREE.DataTexture | null,
+    public garageEntry: KitHdriEntry | null,
+  ) {
     this.texNode = texture(night, equirectUV(positionWorldDirection));
     this.strength.value = nightEntry.strength;
   }
 
+  private loadCached(e: KitHdriEntry): Promise<THREE.DataTexture | null> {
+    let p = this.cache.get(e.id);
+    if (!p) {
+      p = loadTex(e);
+      this.cache.set(e.id, p);
+    }
+    return p;
+  }
+
+  /** Load ONLY the city's night HDRI up front; overcast rain & garage HDRIs load lazily when actually needed. */
   static async load(cityId: string): Promise<KitSky | null> {
     const list = await loadManifest();
     const by = (id: string) => list.find((e) => e.id === id) ?? null;
@@ -71,12 +91,56 @@ export class KitSky {
     if (!nightEntry) return null;
     const overcastEntry = list.find((e) => e.role === 'overcast') ?? null;
     const garageEntry = by(GARAGE_HDRI);
-    const [night, overcast, garage] = await Promise.all([
-      loadTex(nightEntry), overcastEntry ? loadTex(overcastEntry) : null,
-      garageEntry && garageEntry !== nightEntry ? loadTex(garageEntry) : null,
-    ]);
+    const night = await loadTex(nightEntry);
     if (!night) return null;
-    return new KitSky(night, nightEntry, overcast, overcastEntry, garageEntry === nightEntry ? night : garage, garageEntry);
+    const sky = new KitSky(
+      list,
+      night,
+      nightEntry,
+      null,
+      overcastEntry,
+      garageEntry && garageEntry.id === nightEntry.id ? night : null,
+      garageEntry,
+    );
+    sky.cache.set(nightEntry.id, Promise.resolve(night));
+    return sky;
+  }
+
+  /** Load ONLY the garage HDRI (e.g. when opening Garage from the menu before any city is streamed). */
+  static async loadGarageOnly(): Promise<KitSky | null> {
+    const list = await loadManifest();
+    const by = (id: string) => list.find((e) => e.id === id) ?? null;
+    const garageEntry = by(GARAGE_HDRI) ?? list.find((e) => e.role === 'night') ?? null;
+    if (!garageEntry) return null;
+    const overcastEntry = list.find((e) => e.role === 'overcast') ?? null;
+    const gTex = await loadTex(garageEntry);
+    if (!gTex) return null;
+    const sky = new KitSky(list, gTex, garageEntry, null, overcastEntry, gTex, garageEntry);
+    sky.cache.set(garageEntry.id, Promise.resolve(gTex));
+    return sky;
+  }
+
+  async ensureGarage(): Promise<THREE.DataTexture | null> {
+    if (this.garage) return this.garage;
+    if (!this.garageEntry) return this.night;
+    const tex = await this.loadCached(this.garageEntry);
+    if (tex) this.garage = tex;
+    return this.garage ?? this.night;
+  }
+
+  async ensureCity(cityId: string): Promise<void> {
+    const list = this.list.length ? this.list : await (this.listP ??= loadManifest());
+    const by = (id: string) => list.find((e) => e.id === id) ?? null;
+    const nextEntry = by(NIGHT_FOR[cityId] ?? 'shanghai_bund') ?? list.find((e) => e.role === 'night') ?? null;
+    if (!nextEntry || nextEntry.id === this.nightEntry.id) return;
+    const tex = await this.loadCached(nextEntry);
+    if (!tex) return;
+    this.night = tex;
+    this.nightEntry = nextEntry;
+    if (this.weather === 'dry' || !this.overcast) {
+      this.texNode.value = this.night;
+      this.strength.value = this.nightEntry.strength;
+    }
   }
 
   /** the garage HDRI's measured strength (its sky at the game's night-sky luminance) */
@@ -96,8 +160,20 @@ export class KitSky {
     this.wrapped = node;
   }
 
-  /** rain reflects the overcast sky (at its own, much lower strength), dry nights the city's night HDRI */
+  /** rain reflects the overcast sky (lazy-loaded on first rain), dry nights the city's night HDRI */
   setWeather(w: 'dry' | 'rain') {
+    this.weather = w;
+    if (w === 'rain' && !this.overcast && this.overcastEntry && !this.overcastP) {
+      this.overcastP = this.loadCached(this.overcastEntry).then((t) => {
+        if (t) {
+          this.overcast = t;
+          if (this.weather === 'rain' && this.overcastEntry) {
+            this.texNode.value = t;
+            this.strength.value = this.overcastEntry.strength;
+          }
+        }
+      });
+    }
     const rain = w === 'rain' && this.overcast && this.overcastEntry;
     this.texNode.value = rain ? this.overcast! : this.night;
     this.strength.value = rain ? this.overcastEntry!.strength : this.nightEntry.strength;

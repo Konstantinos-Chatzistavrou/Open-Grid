@@ -12,7 +12,7 @@
 // page close and disconnect. Linux: the browser needs read/write on /dev/hidraw* (a udev rule, see docs).
 import { FFB_VENDOR_IDS } from '../devices';
 import { LogitechClassic, PidDriver, supportsPid, type FfbDriver } from './drivers';
-import type { HIDDevice } from './report';
+import { findSteerInputField, readNormalizedHidField, type HIDDevice, type HIDInputReportEvent, type HidAxisField } from './report';
 
 type HID = { getDevices(): Promise<HIDDevice[]>; requestDevice(o: { filters: { vendorId: number }[] }): Promise<HIDDevice[]>;
   addEventListener(t: 'disconnect', f: (e: { device: HIDDevice }) => void): void };
@@ -47,6 +47,13 @@ export class ForceFeedback {
   private joltPhase = 0;
   private test = 0;
   private sending = false;
+  // Pre-allocated 64-sample ring buffer for native-rate (250-1000 Hz) WebHID steering input reports.
+  private steerField: HidAxisField | null = null;
+  private readonly sampleT = new Float64Array(64);
+  private readonly sampleV = new Float64Array(64);
+  private sampleHead = 0;
+  private sampleCount = 0;
+  private onInputReport: ((ev: HIDInputReportEvent) => void) | null = null;
   onChange: () => void = () => {};
 
   static get available() { return !!hid(); }
@@ -54,10 +61,71 @@ export class ForceFeedback {
   constructor() {
     const h = hid();
     if (!h) return;
-    h.addEventListener('disconnect', (e) => { if (e.device === this.device) { this.driver = null; this.device = null; this.status = 'Wheel disconnected'; this.onChange(); } });
+    h.addEventListener('disconnect', (e) => {
+      if (e.device === this.device) {
+        this.detachInput();
+        this.driver = null;
+        this.device = null;
+        this.status = 'Wheel disconnected';
+        this.onChange();
+      }
+    });
     addEventListener('pagehide', () => void this.stop());
     document.addEventListener('visibilitychange', () => { if (document.hidden) void this.stop(); });
     void this.connect(false);   // a wheel the user picked before reconnects without asking
+  }
+
+  private detachInput() {
+    if (this.device && this.onInputReport) {
+      this.device.removeEventListener?.('inputreport', this.onInputReport);
+    }
+    this.onInputReport = null;
+    this.steerField = null;
+    this.sampleHead = 0;
+    this.sampleCount = 0;
+  }
+
+  private attachInput(d: HIDDevice) {
+    this.detachInput();
+    const field = findSteerInputField(d.collections ?? []);
+    if (!field || !d.addEventListener) return;
+    this.steerField = field;
+    this.onInputReport = (ev: HIDInputReportEvent) => {
+      if (ev.reportId !== field.reportId) return;
+      const norm = readNormalizedHidField(field, ev.data);
+      if (norm === null) return;
+      const t = ev.timeStamp > 0 ? ev.timeStamp : performance.now();
+      this.sampleT[this.sampleHead] = t;
+      this.sampleV[this.sampleHead] = norm;
+      this.sampleHead = (this.sampleHead + 1) & 63;
+      if (this.sampleCount < 64) this.sampleCount++;
+    };
+    d.addEventListener('inputreport', this.onInputReport);
+  }
+
+  /** Sample the hardware WebHID steering axis at `timeMs` (interpolated across sub-frame HID reports). */
+  sampleSteerAxisAt(timeMs: number): number | null {
+    const n = this.sampleCount;
+    if (n === 0 || !this.steerField) return null;
+    const newestIdx = (this.sampleHead - 1 + 64) & 63;
+    const newestT = this.sampleT[newestIdx];
+    if (timeMs - newestT > 150) return null;   // stale (e.g. device idle or OS dropped HID reports)
+    if (n === 1 || timeMs >= newestT) return this.sampleV[newestIdx];
+    const oldestIdx = (this.sampleHead - n + 64) & 63;
+    if (timeMs <= this.sampleT[oldestIdx]) return this.sampleV[oldestIdx];
+    for (let k = 1; k < n; k++) {
+      const idxB = (this.sampleHead - k + 64) & 63;
+      const idxA = (idxB - 1 + 64) & 63;
+      const tA = this.sampleT[idxA];
+      const tB = this.sampleT[idxB];
+      if (timeMs >= tA && timeMs <= tB) {
+        const span = tB - tA;
+        if (span <= 1e-4) return this.sampleV[idxB];
+        const f = (timeMs - tA) / span;
+        return this.sampleV[idxA] + (this.sampleV[idxB] - this.sampleV[idxA]) * f;
+      }
+    }
+    return this.sampleV[newestIdx];
   }
 
   /** request = true: show the browser's device picker (needs a click). */
@@ -90,6 +158,7 @@ export class ForceFeedback {
       return false;
     }
     this.driver = drv; this.device = d;
+    this.attachInput(d);
     this.status = `${d.productName} · ${drv.name} force feedback`;
     this.onChange();
     return true;
