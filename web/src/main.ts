@@ -3009,8 +3009,9 @@ async function main() {
     const modeTitle = splitActive
       ? (mode === 'race' ? `2P SPLIT-SCREEN RACE · ${sel.laps} LAPS` : '2P SPLIT-SCREEN FREE ROAM')
       : mode === 'online' ? 'MULTIPLAYER SESSION' : mode === 'race' ? `RACE · ${sel.laps} LAPS` : sp.testingMode ? 'TESTING FREE ROAM' : 'FREE ROAM';
-    await loader.show(mode === 'online' ? 'Syncing party session…' : `Preparing ${cityInfo.name}…`, `${cityInfo.name.toUpperCase()} · ${modeTitle}`, 18);
+    // Close the menu before showing the loader: Menu.show('none') normally hides any active loader.
     menu.show('none');
+    await loader.show(mode === 'online' ? 'Syncing party session…' : `Preparing ${cityInfo.name}…`, `${cityInfo.name.toUpperCase()} · ${modeTitle}`, 18);
     await ensureWorldLoaded((m, p) => loader.text(m, p));
     if (mode === 'online' && cloud.available) {
       // online: drive only what the online account owns (the race room checks it), from a fresh profile
