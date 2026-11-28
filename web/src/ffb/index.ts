@@ -94,7 +94,19 @@ export class ForceFeedback {
       if (ev.reportId !== field.reportId) return;
       const norm = readNormalizedHidField(field, ev.data);
       if (norm === null) return;
-      const t = ev.timeStamp > 0 ? ev.timeStamp : performance.now();
+      // WebHID report timestamps are expected to be monotonic within this device stream. A delayed
+      // event must not be inserted into the ring: sampleSteerAxisAt() interpolates chronologically.
+      const eventTime = Number.isFinite(ev.timeStamp) && ev.timeStamp > 0 ? ev.timeStamp : performance.now();
+      const newestIdx = (this.sampleHead - 1 + 64) & 63;
+      const newestTime = this.sampleCount > 0 ? this.sampleT[newestIdx] : -Infinity;
+      if (eventTime < newestTime) return;
+      const t = eventTime;
+      if (this.sampleCount > 0 && t === newestTime) {
+        // Some browsers/devices can timestamp two reports in the same clock tick.
+        // Keep the newest value without creating a zero-duration interpolation segment.
+        this.sampleV[newestIdx] = norm;
+        return;
+      }
       this.sampleT[this.sampleHead] = t;
       this.sampleV[this.sampleHead] = norm;
       this.sampleHead = (this.sampleHead + 1) & 63;
