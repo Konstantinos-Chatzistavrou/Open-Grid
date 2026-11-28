@@ -42,6 +42,9 @@
   <a href="https://www.patreon.com/Open_Grid"><img src="https://img.shields.io/badge/Patreon-Support-FF424D?style=flat-square&logo=patreon&logoColor=white" alt="Support on Patreon" /></a>
 </p>
 
+
+### 🎮 [PLAY OPEN GRID IN YOUR BROWSER ON ITCH.IO](https://konstantinos-ch.itch.io/open-grid)
+
 <p align="center">
   <em>Open-source, non-profit street &amp; circuit racing simulator built around an engine-independent <strong>C++20 vehicle physics core (<code>core/</code>)</strong> targeting <strong>Unreal Engine 5.8</strong> natively, with a playable <strong>WebGPU + WebAssembly</strong> browser build (<code>web/</code>) and a <strong>100% free Cloudflare Workers + D1</strong> competitive online network (<code>cloud/</code>).</em>
 </p>
