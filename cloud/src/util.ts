@@ -62,6 +62,7 @@ export function cors(r: Response, env: Env) {
   h.set('access-control-allow-origin', env.ALLOWED_ORIGINS === '*' || !env.ALLOWED_ORIGINS ? '*' : env.ALLOWED_ORIGINS.split(',')[0]);
   h.set('access-control-allow-headers', 'content-type, authorization, x-opengrid-signature, x-patreon-signature, x-patreon-event');
   h.set('access-control-allow-methods', 'GET, POST, OPTIONS');
+  h.set('cross-origin-resource-policy', 'cross-origin');
   return new Response(r.body, { status: r.status, headers: h });
 }
 

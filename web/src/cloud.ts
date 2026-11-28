@@ -196,9 +196,22 @@ export class Cloud {
   }
 
   /** Start a 1-click Google / GitHub / Discord OAuth login (automatically upgrades current guest account in-place!). */
+  async startOAuthSession(
+    provider: OAuthProvider,
+    returnTo = `${location.origin}${location.pathname}${location.search}`,
+    popup = false,
+  ): Promise<{ url: string; ticket?: string }> {
+    return this.call<{ url: string; ticket?: string }>('POST', `/v1/auth/oauth/${provider}/start`, { returnTo, popup }, true);
+  }
+
   async startOAuth(provider: OAuthProvider, returnTo = `${location.origin}${location.pathname}${location.search}`): Promise<string> {
-    const j = await this.call<{ url: string }>('POST', `/v1/auth/oauth/${provider}/start`, { returnTo }, true);
+    const j = await this.startOAuthSession(provider, returnTo, false);
     return j.url;
+  }
+
+  /** Poll one-time popup OAuth ticket (works inside COOP / SharedArrayBuffer iframes where window.opener is severed). */
+  async pollOAuthTicket(ticket: string): Promise<{ ready: boolean; code?: string; provider?: OAuthProvider }> {
+    return this.call<{ ready: boolean; code?: string; provider?: OAuthProvider }>('POST', '/v1/auth/oauth/poll', { ticket }, true);
   }
 
   me() { return this.call<Profile>('GET', '/v1/me'); }

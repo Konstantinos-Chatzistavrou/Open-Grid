@@ -60,7 +60,10 @@ export function sanitizeReturnTo(raw: string | undefined): string {
       host === 'open-grid.racing' ||
       host === 'www.open-grid.racing' ||
       host === 'racing-game-brown-six.vercel.app' ||
-      host.endsWith('.open-grid.racing')
+      host.endsWith('.open-grid.racing') ||
+      host === 'itch.io' ||
+      host.endsWith('.itch.io') ||
+      host.endsWith('.itch.zone')
     );
     const allowedLocal = u.protocol === 'http:' && (host === '127.0.0.1' || host === 'localhost');
     if (!allowedHttps && !allowedLocal) return fallback;

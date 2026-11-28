@@ -277,18 +277,37 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (!isOAuthProvider(provider)) return json({ error: 'unsupported provider' }, 400);
     const creds = oauthCreds(provider, env);
     if (!creds) return json({ error: `${provider} sign-in is not configured yet.` }, 503);
-    const body = await req.json<{ returnTo?: string }>().catch(() => ({ returnTo: undefined }));
+    const body = await req.json<{ returnTo?: string; popup?: boolean }>().catch(() => ({ returnTo: undefined, popup: false }));
     const returnTo = sanitizeReturnTo(body.returnTo);
+    const isPopup = Boolean(body.popup);
+    const ticket = isPopup ? randomId(32) : '';
     const existing = await accountOf(req, env);
     const guestId = existing && !existing.email ? existing.id : '';
     const exp = Date.now() + 10 * 60_000;
-    const payloadStr = `${provider}|${guestId}|${returnTo}|${exp}`;
+    const payloadStr = isPopup
+      ? `${provider}|${guestId}|${returnTo}|${exp}|popup|${ticket}`
+      : `${provider}|${guestId}|${returnTo}|${exp}`;
     const payloadB64 = btoa(payloadStr).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     const secret = `${creds.clientSecret}|${env.IP_SALT ?? 'opengrid-oauth'}`;
     const sig = await hmacSha256Hex(secret, payloadB64);
     const state = `${payloadB64}.${sig}`;
     const redirectUri = `${url.origin}/v1/auth/oauth/${provider}/callback`;
-    return json({ url: buildOAuthAuthorizeUrl(provider, creds.clientId, redirectUri, state) });
+    return json({ url: buildOAuthAuthorizeUrl(provider, creds.clientId, redirectUri, state), ...(isPopup ? { ticket } : {}) });
+  }
+
+  // ---- One-time OAuth Popup Ticket Poll (handles COOP / SharedArrayBuffer iframes where window.opener is severed) ----
+  if (path === '/v1/auth/oauth/poll' && req.method === 'POST') {
+    const b = await req.json<{ ticket?: string }>().catch(() => ({ ticket: '' }));
+    const ticket = String(b.ticket ?? '').trim();
+    if (!/^[a-z0-9]{16,64}$/i.test(ticket)) return json({ ready: false });
+    const th = await sha256(ticket);
+    const now = Date.now();
+    const row = await env.DB.prepare('SELECT code, provider, expires_at FROM oauth_tickets WHERE ticket_hash = ?')
+      .bind(th).first<{ code: string; provider: string; expires_at: number }>();
+    if (!row) return json({ ready: false });
+    await env.DB.prepare('DELETE FROM oauth_tickets WHERE ticket_hash = ?').bind(th).run();
+    if (row.expires_at < now) return json({ ready: false });
+    return json({ ready: true, code: row.code, provider: row.provider });
   }
 
   // ---- OAuth2 Callback (Google / GitHub / Discord) -> In-Place Guest Upgrade or Verified-Email Match ----
@@ -315,7 +334,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     } catch {
       return new Response('Malformed sign-in state.', { status: 400 });
     }
-    const [stProvider, guestId, rawReturnTo, expStr] = decoded.split('|');
+    const [stProvider, guestId, rawReturnTo, expStr, mode, ticket] = decoded.split('|');
     if (stProvider !== provider || (Number(expStr) || 0) < Date.now()) {
       return new Response('Sign-in link expired. Please return to OpenGrid and try again.', { status: 400 });
     }
@@ -387,8 +406,38 @@ async function route(req: Request, env: Env): Promise<Response> {
       ]);
     }
 
+    const authCode = `${targetId}.${newToken}`;
+    if (mode === 'popup') {
+      // Store short-lived one-time claim ticket for COOP / SharedArrayBuffer iframes (itch.io)
+      if (ticket && /^[a-z0-9]{16,64}$/i.test(ticket)) {
+        const th = await sha256(ticket);
+        await env.DB.batch([
+          env.DB.prepare('DELETE FROM oauth_tickets WHERE expires_at < ?').bind(now),
+          env.DB.prepare('INSERT OR REPLACE INTO oauth_tickets (ticket_hash, code, provider, expires_at) VALUES (?, ?, ?, ?)')
+            .bind(th, authCode, provider, now + 2 * 60_000),
+        ]);
+      }
+      let targetOrigin = 'https://open-grid.racing';
+      try { targetOrigin = new URL(returnTo).origin; } catch { /* keep default */ }
+      const safeJson = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
+      const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Open Grid — Signed In</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a0a0a;color:#f5f7fa;font-family:system-ui,sans-serif;text-align:center;padding:24px}
+.box{max-width:420px;background:#111317;border:1px solid rgba(255,255,255,.15);border-top:3px solid #ff1111;padding:28px 24px}
+h1{margin:0 0 10px;font-size:20px;letter-spacing:.04em;text-transform:uppercase}p{margin:0;color:#8e96a4;font-size:14px;line-height:1.5}</style></head>
+<body><div class="box"><h1>Signed in to Open Grid</h1><p>Returning to the game… You can close this window.</p></div>
+<script>(function(){try{if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'og_auth',code:${safeJson(authCode)},provider:${safeJson(provider)}},${safeJson(targetOrigin)});}}catch(e){}setTimeout(function(){try{window.close();}catch(e){}},350);})();</script></body></html>`;
+      return new Response(html, {
+        status: 200,
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+          'cross-origin-opener-policy': 'unsafe-none',
+        },
+      });
+    }
+
     // Hand off credentials via URL hash fragment (never sent to servers or Referer logs!)
-    const dest = `${returnTo}#og_auth=${encodeURIComponent(`${targetId}.${newToken}`)}&og_provider=${provider}`;
+    const dest = `${returnTo}#og_auth=${encodeURIComponent(authCode)}&og_provider=${provider}`;
     return Response.redirect(dest, 302);
   }
 

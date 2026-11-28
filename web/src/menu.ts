@@ -2705,14 +2705,91 @@ export class Menu {
 
   private async startOAuthLogin(provider: OAuthProvider) {
     if (this.authBusy) return;
+    const inIframe = (() => { try { return window.self !== window.top; } catch { return true; } })();
+    // Open popup synchronously inside the user gesture before any await so popup blockers never block it.
+    const popup = inIframe
+      ? window.open('about:blank', 'opengrid_oauth', 'width=540,height=680,menubar=no,toolbar=no,status=no')
+      : null;
+
     this.authBusy = true;
-    this.authNote = `Connecting to ${provider[0].toUpperCase() + provider.slice(1)}…`;
+    const label = BRAND_NAME[provider];
+    this.authNote = inIframe ? `Complete ${label} sign-in in the popup window…` : `Connecting to ${label}…`;
     this.render();
+
     try {
-      const authUrl = await this.cloud.startOAuth(provider);
-      location.href = authUrl;
+      const { url: authUrl, ticket } = await this.cloud.startOAuthSession(provider, undefined, inIframe);
+      if (!inIframe) {
+        location.href = authUrl;
+        return;
+      }
+      if (popup && !popup.closed) {
+        popup.location.href = authUrl;
+        try { popup.focus(); } catch { /* ignore */ }
+      } else {
+        // Fallback if browser blocked the popup: try opening directly in a new tab
+        const tab = window.open(authUrl, '_blank', 'noopener');
+        if (!tab) {
+          this.authNote = `Popup blocked — allow popups for this page to sign in with ${label}, or use Email + Password below.`;
+          this.authBusy = false;
+          this.render();
+          return;
+        }
+      }
+
+      // Listen for BOTH instant postMessage (when window.opener survives) AND one-time ticket polling
+      // (when itch.io SharedArrayBuffer / COOP severs window.opener cross-origin).
+      const cloudOrigin = (() => { try { return new URL(this.cloud.base).origin; } catch { return ''; } })();
+      const result = await new Promise<{ code: string; provider: OAuthProvider } | null>((resolve) => {
+        let settled = false;
+        let pollTimer = 0;
+        const deadline = Date.now() + 180_000;
+        const finish = (val: { code: string; provider: OAuthProvider } | null) => {
+          if (settled) return;
+          settled = true;
+          window.removeEventListener('message', onMsg);
+          clearInterval(pollTimer);
+          resolve(val);
+        };
+        const onMsg = (ev: MessageEvent) => {
+          if (cloudOrigin && ev.origin !== cloudOrigin) return;
+          const d = ev.data as { type?: string; code?: string; provider?: string } | null;
+          if (d?.type === 'og_auth' && typeof d.code === 'string' && d.code) {
+            const p = (d.provider === 'google' || d.provider === 'github' || d.provider === 'discord') ? d.provider : provider;
+            finish({ code: d.code, provider: p });
+          }
+        };
+        window.addEventListener('message', onMsg);
+
+        pollTimer = window.setInterval(() => {
+          if (settled) return;
+          if (Date.now() > deadline) { finish(null); return; }
+          if (ticket) {
+            void this.cloud.pollOAuthTicket(ticket).then((r) => {
+              if (r.ready && r.code) {
+                finish({ code: r.code, provider: r.provider ?? provider });
+              }
+            }).catch(() => { /* keep polling */ });
+          } else if (popup && popup.closed) {
+            finish(null);
+          }
+        }, 1500);
+      });
+
+      if (result && this.cloud.restore(result.code)) {
+        this.cloud.oauthSignedInProvider = result.provider;
+        await this.mp.refresh();
+        this.authNote = `✓ Signed in with ${BRAND_NAME[result.provider]}.`;
+        this.authBusy = false;
+        this.gatePassed();
+        this.render();
+      } else {
+        this.authNote = `${label} sign-in did not complete. Try again or sign in with Email + Password.`;
+        this.authBusy = false;
+        this.render();
+      }
     } catch (e) {
-      this.authNote = e instanceof Error ? e.message : `Could not start ${provider} login.`;
+      if (popup && !popup.closed) { try { popup.close(); } catch { /* ignore */ } }
+      this.authNote = e instanceof Error ? e.message : `Could not start ${label} login.`;
       this.authBusy = false;
       this.render();
     }
